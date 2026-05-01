@@ -1,0 +1,40 @@
+{
+  "name": "inventory-system",
+  "version": "1.0.0",
+  "description": "本地进销存管理系统",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "electron:dev": "set NODE_ENV=development && electron .",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "electron .",
+    "build": "npm run build:frontend && electron-builder --win portable"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.inventory.system",
+    "productName": "进销存管理系统",
+    "directories": {
+      "output": "dist-new"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "electron/icon.ico"
+    },
+    "portable": {
+      "artifactName": "进销存管理系统.exe"
+    }
+  }
+}

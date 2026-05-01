@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>批量导出测试</title>
+<style>
+body { font-family: sans-serif; padding: 20px; }
+button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+#log { background: #f5f5f5; padding: 10px; margin-top: 20px; white-space: pre-wrap; min-height: 200px; }
+</style>
+</head>
+<body>
+<h2>库存商品批量导出测试</h2>
+<p>确保 localStorage 中有 currentAccountId（默认为1）</p>
+<button id="btn1">测试 exportProductsBatch (excel)</button>
+<button id="btn2">测试 exportProductsBatch (csv)</button>
+<button id="btn3">清除 localStorage</button>
+<div id="log"></div>
+
+<script type="module">
+const log = document.getElementById('log')
+function append(msg) { log.textContent += new Date().toLocaleTimeString() + ' - ' + msg + '\n' }
+
+// 模拟 api/index.js 的请求逻辑
+import axios from '/node_modules/axios/dist/axios.js'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 10000
+})
+
+api.interceptors.request.use(config => {
+  let accountId = localStorage.getItem('currentAccountId')
+  if (!accountId) {
+    accountId = '1'
+    localStorage.setItem('currentAccountId', accountId)
+    append('设置默认 accountId = 1')
+  }
+  config.headers['X-Account-ID'] = accountId
+  append('请求头 X-Account-ID: ' + accountId)
+  return config
+})
+
+api.interceptors.response.use(
+  res => {
+    append('响应状态: ' + res.status)
+    if (res.config.responseType === 'blob') {
+      append('blob 响应，返回完整 response')
+      return res
+    }
+    return res.data
+  },
+  err => {
+    append('请求错误: ' + (err.response?.status || 'network') + ' - ' + JSON.stringify(err.response?.data || err.message))
+    return Promise.reject(err)
+  }
+)
+
+document.getElementById('btn1').onclick = async () => {
+  try {
+    append('=== 测试 Excel 导出 ===')
+    const res = await api.get('/export/products-batch', {
+      params: { product_ids: '1', format: 'excel' },
+      responseType: 'blob'
+    })
+    append('res.data 类型: ' + (res.data instanceof Blob ? 'Blob ✓' : typeof res.data))
+    const blob = res.data
+    append('Blob size: ' + blob.size)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', 'test.xlsx')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    append('下载已触发')
+  } catch (e) {
+    append('导出失败: ' + e.message)
+  }
+}
+
+document.getElementById('btn2').onclick = async () => {
+  try {
+    append('=== 测试 CSV 导出 ===')
+    const res = await api.get('/export/products-batch', {
+      params: { product_ids: '1', format: 'csv' },
+      responseType: 'blob'
+    })
+    append('res.data 类型: ' + (res.data instanceof Blob ? 'Blob ✓' : typeof res.data))
+    const blob = res.data
+    append('Blob size: ' + blob.size)
+    // 显示 CSV 内容
+    const text = await blob.text()
+    append('CSV 内容:\n' + text.substring(0, 500))
+  } catch (e) {
+    append('导出失败: ' + e.message)
+  }
+}
+
+document.getElementById('btn3').onclick = () => {
+  localStorage.removeItem('currentAccountId')
+  append('已清除 localStorage')
+}
+</script>
+</body>
+</html>

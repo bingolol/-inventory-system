@@ -1,0 +1,44 @@
+INFO:     Started server process [6296]
+INFO:     Waiting for application startup.
+2026-04-30 12:27:49,113 [INFO] inventory: 迁移: project_incomes 表添加 uq_income_source 唯一索引
+2026-04-30 12:27:49,156 [INFO] inventory: 迁移: projects 表添加 uq_projects_account_name 唯一索引
+2026-04-30 12:27:49,158 [INFO] inventory: 迁移: 旧数据 project_id 回填 + 销售单收入回填完成
+2026-04-30 12:27:49,158 [INFO] inventory: 进销存管理系统启动完成
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56842 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56883 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56886 - "GET /api/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56888 - "GET /api/products/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56889 - "GET /api/inventory/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /api/inventory/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56892 - "GET /api/reports/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56893 - "GET /api/reports/purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56894 - "GET /api/reports/sale HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56897 - "GET /api/reports/profit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56898 - "GET /api/reports/tax-report?year=2026&quarter=2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56899 - "GET /api/suppliers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56901 - "GET /api/customers/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56902 - "GET /api/expenses/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56903 - "GET /api/personal/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56976 - "GET /api/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56983 - "GET /api/products/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56987 - "GET /api/products/categories/list HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56992 - "GET /api/suppliers/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56997 - "GET /api/customers/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57001 - "GET /api/inventory/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57006 - "GET /api/inventory/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57010 - "GET /api/sales/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57017 - "GET /api/purchases/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57022 - "GET /api/invoices/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57034 - "GET /api/projects/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57042 - "GET /api/expenses/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57050 - "GET /api/reports/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57054 - "GET /api/reports/purchase HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57060 - "GET /api/reports/sale HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57066 - "GET /api/reports/profit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57070 - "GET /api/reports/trend?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57076 - "GET /api/tax-report/?year=2025&quarter=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57084 - "GET /api/income-tax-report/?year=2025 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/personal/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57101 - "GET /api/personal/?limit=5 HTTP/1.1" 200 OK

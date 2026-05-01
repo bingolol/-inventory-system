@@ -1,0 +1,84 @@
+<template>
+  <div>
+    <el-card shadow="never">
+      <template #header>
+        <span style="font-weight:600;">操作日志</span>
+      </template>
+      <div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;">
+        <el-select v-model="entityType" placeholder="实体类型" clearable style="width:140px" @change="loadData">
+          <el-option label="商品" value="product" />
+          <el-option label="供应商" value="supplier" />
+          <el-option label="客户" value="customer" />
+          <el-option label="采购单" value="purchase_order" />
+          <el-option label="销售单" value="sale_order" />
+          <el-option label="库存" value="inventory" />
+        </el-select>
+        <el-select v-model="operation" placeholder="操作类型" clearable style="width:120px" @change="loadData">
+          <el-option label="创建" value="create" />
+          <el-option label="更新" value="update" />
+          <el-option label="删除" value="delete" />
+          <el-option label="盘点" value="adjust" />
+        </el-select>
+        <el-date-picker v-model="dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" @change="loadData" />
+        <el-button @click="loadData">查询</el-button>
+      </div>
+      <el-table :data="list" stripe style="width:100%">
+        <el-table-column prop="created_at" label="时间" width="180">
+          <template #default="{ row }">{{ row.created_at?.replace('T', ' ').slice(0, 19) }}</template>
+        </el-table-column>
+        <el-table-column prop="operation" label="操作" width="100">
+          <template #default="{ row }">
+            <el-tag :type="opTagType(row.operation)" size="small">{{ opLabel(row.operation) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="entity_type" label="类型" width="100">
+          <template #default="{ row }">{{ entityLabel(row.entity_type) }}</template>
+        </el-table-column>
+        <el-table-column prop="entity_id" label="ID" width="80" />
+        <el-table-column prop="operator" label="操作者" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.operator === 'ai' ? 'warning' : 'primary'" size="small">
+              {{ row.operator === 'ai' ? 'AI' : '我' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="detail" label="详情" min-width="200" />
+      </el-table>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import api from '../api'
+
+const list = ref([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
+const entityType = ref('')
+const operation = ref('')
+const dateRange = ref(null)
+
+const opLabel = (op) => ({ create: '创建', update: '更新', delete: '删除', adjust: '盘点' }[op] || op)
+const opTagType = (op) => ({ create: 'success', update: 'warning', delete: 'danger', adjust: 'info' }[op] || '')
+const entityLabel = (type) => ({ product: '商品', supplier: '供应商', customer: '客户', purchase_order: '采购单', sale_order: '销售单', inventory: '库存', expense: '费用', invoice: '发票', project: '项目', project_cost: '项目成本', project_income: '项目收入', personal: '个人流水' }[type] || type)
+
+const loadData = async () => {
+  try {
+    const params = { page: page.value, page_size: pageSize.value }
+    if (entityType.value) params.entity_type = entityType.value
+    if (operation.value) params.operation = operation.value
+    if (dateRange.value) { params.start_date = dateRange.value[0]; params.end_date = dateRange.value[1] }
+    const res = await api.getLogs(params)
+    total.value = res.total
+    list.value = res.items
+  } catch (e) { ElMessage.error('加载失败') }
+}
+
+onMounted(loadData)
+</script>
