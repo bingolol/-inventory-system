@@ -67,3 +67,7 @@
 2026-06-02 09:36:43,057 [WARNING] inventory: [Invariant] sale_order.deleted 违规 16 项: [{'invariant': 'III', 'type': 'income_mismatch', 'detail': '项目ID=5 stored_total_income=20000.00 != calc=0.00'}, {'invariant': 'III', 'type': 'profit_mismatch', 'detail': '项目ID=5 stored_profit=20000.00 != calc=0.00'}, {'invariant': 'III', 'type': 'income_mismatch', 'detail': '项目ID=6 stored_total_income=20000.00 != calc=0.00'}]
 2026-06-02 09:36:46,316 [INFO] inventory: [EventBus] sale_order.deleted | handlers=1 | 41.8ms
 2026-06-02 09:36:46,330 [WARNING] inventory: [Invariant] sale_order.deleted 违规 16 项: [{'invariant': 'III', 'type': 'income_mismatch', 'detail': '项目ID=5 stored_total_income=20000.00 != calc=0.00'}, {'invariant': 'III', 'type': 'profit_mismatch', 'detail': '项目ID=5 stored_profit=20000.00 != calc=0.00'}, {'invariant': 'III', 'type': 'income_mismatch', 'detail': '项目ID=6 stored_total_income=20000.00 != calc=0.00'}]
+2026-06-14 22:51:49,089 [INFO] inventory: 迁移: 联动迁移已跳过（项目功能已移除）
+2026-06-14 22:51:49,092 [INFO] inventory: Float→Numeric 迁移: 已完成，跳过
+2026-06-14 23:02:13,870 [INFO] inventory: 迁移: 联动迁移已跳过（项目功能已移除）
+2026-06-14 23:02:13,873 [INFO] inventory: Float→Numeric 迁移: 已完成，跳过

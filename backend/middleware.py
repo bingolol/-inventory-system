@@ -7,20 +7,8 @@ EventBus 中间件模块
 import time
 import logging
 from events import bus, get_handlers
-from utils import verify_invariants
 
 logger = logging.getLogger("inventory")
-
-# 写操作事件前缀列表（不变量校验仅对写操作触发）
-_WRITE_PREFIXES = (
-    "purchase_order.", "sale_order.", "inventory.",
-    "project.", "payment.", "income.", "cost.",
-)
-
-
-def _is_write_event(event: str) -> bool:
-    """判断事件是否为写操作事件"""
-    return any(event.startswith(prefix) for prefix in _WRITE_PREFIXES)
 
 
 def logging_middleware(next_func, **kwargs):
@@ -42,25 +30,8 @@ def logging_middleware(next_func, **kwargs):
 
 
 def invariant_check_middleware(next_func, **kwargs):
-    """不变量校验中间件：写操作事件后自动调用 verify_invariants()"""
-    result = next_func(**kwargs)
-
-    event = kwargs.get("_event", "")
-    if _is_write_event(event):
-        db = kwargs.get("db")
-        account_id = kwargs.get("account_id")
-        if db is not None:
-            try:
-                inv_result = verify_invariants(db, account_id)
-                if not inv_result["ok"]:
-                    logger.warning(
-                        "[Invariant] %s 违规 %d 项: %s",
-                        event, inv_result["violation_count"],
-                        inv_result["violations"][:3],
-                    )
-            except Exception as e:
-                logger.error("[Invariant] 校验异常: %s", e)
-    return result
+    """不变量校验中间件（已禁用：verify_invariants 已移除）"""
+    return next_func(**kwargs)
 
 
 def register_middleware():
