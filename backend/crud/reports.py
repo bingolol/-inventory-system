@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 import models, schemas
 
+from enums import OrderStatus
 from .products import get_stock_alerts
 
 
@@ -13,23 +14,23 @@ def get_overview(db: Session, account_id: int):
 
     inv_data = db.query(models.Inventory).filter(models.Inventory.account_id == account_id).all()
     total_stock_value = sum(
-        max(inv.quantity or 0, 0) * (inv.product.purchase_price or 0)
+        max(inv.quantity if inv.quantity is not None else 0, 0) * (inv.product.purchase_price if inv.product and inv.product.purchase_price is not None else 0)
         for inv in inv_data
     )
-    positive_stock_count = sum(inv.quantity for inv in inv_data if (inv.quantity or 0) > 0)
-    negative_stock_count = sum(abs(inv.quantity) for inv in inv_data if (inv.quantity or 0) < 0)
+    positive_stock_count = sum(inv.quantity for inv in inv_data if (inv.quantity if inv.quantity is not None else 0) > 0)
+    negative_stock_count = sum(abs(inv.quantity) for inv in inv_data if (inv.quantity if inv.quantity is not None else 0) < 0)
     total_inventory_quantity = positive_stock_count - negative_stock_count
 
     today = datetime.now().strftime("%Y-%m-%d")
     today_purchase_orders = db.query(models.PurchaseOrder).filter(
         models.PurchaseOrder.account_id == account_id,
         models.PurchaseOrder.purchase_date >= today,
-        models.PurchaseOrder.status == "completed"
+        models.PurchaseOrder.status == OrderStatus.COMPLETED,
     ).all()
     today_sale_orders = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= today,
-        models.SaleOrder.status == "completed"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
     ).all()
 
     low_stock_count = len(get_stock_alerts(db, account_id))
@@ -51,7 +52,7 @@ def get_overview(db: Session, account_id: int):
 def get_purchase_report(db: Session, account_id: int, start_date: str = None, end_date: str = None):
     q = db.query(models.PurchaseOrder).filter(
         models.PurchaseOrder.account_id == account_id,
-        models.PurchaseOrder.status == "completed"
+        models.PurchaseOrder.status == OrderStatus.COMPLETED,
     )
     if start_date:
         q = q.filter(models.PurchaseOrder.purchase_date >= start_date)
@@ -63,7 +64,7 @@ def get_purchase_report(db: Session, account_id: int, start_date: str = None, en
 def get_sale_report(db: Session, account_id: int, start_date: str = None, end_date: str = None):
     q = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
-        models.SaleOrder.status == "completed"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
     )
     if start_date:
         q = q.filter(models.SaleOrder.sale_date >= start_date)
@@ -73,35 +74,46 @@ def get_sale_report(db: Session, account_id: int, start_date: str = None, end_da
 
 
 def get_profit_report(db: Session, account_id: int, start_date: str = None, end_date: str = None):
-    q_purchase = db.query(models.PurchaseOrder).filter(
-        models.PurchaseOrder.account_id == account_id,
-        models.PurchaseOrder.status == "completed"
-    )
+    """利润报表：收入=所有销售单金额，成本=销售行项的商品采购价合计
+
+    成本 = Σ(SaleItem.quantity × Product.purchase_price)，即商品成本而非采购单金额
+    """
+    from decimal import Decimal
+
     q_sale = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
-        models.SaleOrder.status == "completed"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
     )
     if start_date:
-        q_purchase = q_purchase.filter(models.PurchaseOrder.purchase_date >= start_date)
         q_sale = q_sale.filter(models.SaleOrder.sale_date >= start_date)
     if end_date:
-        q_purchase = q_purchase.filter(models.PurchaseOrder.purchase_date <= end_date + " 23:59:59")
         q_sale = q_sale.filter(models.SaleOrder.sale_date <= end_date + " 23:59:59")
 
-    purchase_orders = q_purchase.all()
     sale_orders = q_sale.all()
 
-    total_purchase = sum(o.total_price for o in purchase_orders)
-    total_sale = sum(o.total_price for o in sale_orders)
+    # 收入 = 所有已完成销售单的 total_price
+    total_revenue = sum(Decimal(str(o.total_price or 0)) for o in sale_orders)
+
+    # 成本 = 销售行项的 quantity × product.purchase_price
+    total_cost = Decimal('0')
+    for order in sale_orders:
+        for item in order.items:
+            product = db.query(models.Product).filter(
+                models.Product.id == item.product_id,
+                models.Product.account_id == account_id,
+            ).first()
+            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
+            total_cost += Decimal(str(item.quantity)) * purchase_price
+
+    total_profit = total_revenue - total_cost
 
     return {
-        "total_purchase_amount": round(total_purchase, 2),
-        "total_sale_amount": round(total_sale, 2),
-        "total_profit": round(total_sale - total_purchase, 2),
-        "purchase_count": len(purchase_orders),
+        "total_sale_amount": round(float(total_revenue), 2),
+        "total_profit": round(float(total_profit), 2),
         "sale_count": len(sale_orders),
-        "purchase_orders": purchase_orders,
         "sale_orders": sale_orders,
+        "total_revenue": round(float(total_revenue), 2),
+        "total_cost": round(float(total_cost), 2),
     }
 
 
@@ -117,7 +129,7 @@ def get_trend(db: Session, account_id: int, days: int = 7):
                 models.PurchaseOrder.account_id == account_id,
                 models.PurchaseOrder.purchase_date >= d_str,
                 models.PurchaseOrder.purchase_date < next_d,
-                models.PurchaseOrder.status == "completed"
+                models.PurchaseOrder.status == OrderStatus.COMPLETED,
             ).all()
         )
         sale_amount = sum(
@@ -125,7 +137,7 @@ def get_trend(db: Session, account_id: int, days: int = 7):
                 models.SaleOrder.account_id == account_id,
                 models.SaleOrder.sale_date >= d_str,
                 models.SaleOrder.sale_date < next_d,
-                models.SaleOrder.status == "completed"
+                models.SaleOrder.status == OrderStatus.COMPLETED,
             ).all()
         )
         result.append({

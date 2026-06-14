@@ -1,39 +1,39 @@
 <template>
   <div class="dashboard">
-    <el-row :gutter="16" class="stat-row">
+    <el-row :gutter="16" class="stat-row" v-loading="loading">
       <el-col :span="6">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #ecf5ff; color: #409eff;"><el-icon :size="28"><Goods /></el-icon></div>
+          <div class="stat-icon stat-icon--primary"><el-icon :size="28"><Goods /></el-icon></div>
           <div class="stat-info">
-            <div class="stat-value">{{ overview.total_products || 0 }}</div>
+            <div class="stat-value">{{ overview.total_products ?? 0 }}</div>
             <div class="stat-label">商品种类</div>
           </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #f0f9eb; color: #67c23a;"><el-icon :size="28"><Box /></el-icon></div>
+          <div class="stat-icon stat-icon--success"><el-icon :size="28"><Box /></el-icon></div>
           <div class="stat-info">
-            <div class="stat-value">{{ overview.total_inventory_quantity || 0 }}</div>
+            <div class="stat-value">{{ overview.total_inventory_quantity ?? 0 }}</div>
             <div class="stat-label">库存总量</div>
           </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #fdf6ec; color: #e6a23c;"><el-icon :size="28"><ShoppingCart /></el-icon></div>
+          <div class="stat-icon stat-icon--warning"><el-icon :size="28"><ShoppingCart /></el-icon></div>
           <div class="stat-info">
-            <div class="stat-value">{{ overview.today_purchase_count || 0 }}</div>
-            <div class="stat-label">今日采购 (¥{{ overview.today_purchase_amount || 0 }})</div>
+            <div class="stat-value">¥{{ formatMoney(overview.today_purchase_amount ?? 0) }}</div>
+            <div class="stat-label">今日采购 ({{ overview.today_purchase_count ?? 0 }}笔)</div>
           </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #fef0f0; color: #f56c6c;"><el-icon :size="28"><Sell /></el-icon></div>
+          <div class="stat-icon stat-icon--danger"><el-icon :size="28"><Sell /></el-icon></div>
           <div class="stat-info">
-            <div class="stat-value">{{ overview.today_sale_count || 0 }}</div>
-            <div class="stat-label">今日销售 (¥{{ overview.today_sale_amount || 0 }})</div>
+            <div class="stat-value">¥{{ formatMoney(overview.today_sale_amount ?? 0) }}</div>
+            <div class="stat-label">今日销售 ({{ overview.today_sale_count ?? 0 }}笔)</div>
           </div>
         </div>
       </el-col>
@@ -88,7 +88,7 @@
           </template>
           <div style="padding: 20px 0; text-align: center;">
             <div style="font-size: 36px; font-weight: 700; color: var(--primary);">
-              ¥{{ (overview.total_stock_value || 0).toLocaleString() }}
+              ¥{{ formatMoney(overview.total_stock_value ?? 0) }}
             </div>
             <div style="color: var(--text-secondary); margin-top: 8px;">库存总价值（按进价计算）</div>
             <div v-if="overview.negative_stock_count > 0" style="color: var(--danger); margin-top: 8px; font-size: 13px;">
@@ -102,17 +102,26 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import api from '../api'
+import { ElMessage } from 'element-plus'
+import productsApi from '../api/products'
+import financeApi from '../api/finance'
+import { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
+
+// ECharts 颜色常量（Canvas 不支持 CSS 变量，须用 JS 常量）
+const CHART_COLOR_WARNING = '#e6a23c'
+const CHART_COLOR_DANGER = '#f56c6c'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const overview = ref({})
+const loading = ref(false)
 const alerts = ref([])
 const trendData = ref([])
 const trendDays = ref(7)
@@ -139,33 +148,37 @@ const trendOption = computed(() => {
     xAxis: { type: 'category', data: dates },
     yAxis: { type: 'value', axisLabel: { formatter: val => val >= 10000 ? (val / 10000).toFixed(1) + '万' : val } },
     series: [
-      { name: '采购金额', type: 'line', data: purchases, smooth: true, itemStyle: { color: '#e6a23c' }, areaStyle: { color: 'rgba(230,162,60,0.08)' } },
-      { name: '销售金额', type: 'line', data: sales, smooth: true, itemStyle: { color: '#f56c6c' }, areaStyle: { color: 'rgba(245,108,108,0.08)' } }
+      { name: '采购金额', type: 'line', data: purchases, smooth: true, itemStyle: { color: CHART_COLOR_WARNING }, areaStyle: { color: 'rgba(230,162,60,0.08)' } },
+      { name: '销售金额', type: 'line', data: sales, smooth: true, itemStyle: { color: CHART_COLOR_DANGER }, areaStyle: { color: 'rgba(245,108,108,0.08)' } }
     ]
   }
 })
 
 const loadTrend = async () => {
   try {
-    trendData.value = await api.getTrend({ days: trendDays.value })
+    trendData.value = await financeApi.getTrend({ days: trendDays.value })
   } catch (e) {
     console.error(e)
   }
 }
 
 const loadData = async () => {
+  loading.value = true
   try {
-    overview.value = await api.getOverview()
-    alerts.value = await api.getAlerts()
+    overview.value = await financeApi.getOverview()
   } catch (e) {
-    console.error(e)
+    console.error('加载总览数据失败:', e)
+    ElMessage.error('加载总览数据失败，请检查后端服务')
   }
+  try {
+    alerts.value = await productsApi.getAlerts()
+  } catch (e) {
+    console.error('加载库存预警失败:', e)
+  }
+  finally { loading.value = false }
 }
 
-onMounted(() => {
-  loadData()
-  loadTrend()
-})
+useAccountAwareData(loadData, loadTrend)
 </script>
 
 <style scoped>
@@ -183,5 +196,21 @@ onMounted(() => {
   justify-content: flex-start;
   justify-content: center;
   flex-shrink: 0;
+}
+.stat-icon--primary {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.stat-icon--success {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.stat-icon--warning {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+}
+.stat-icon--danger {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 </style>

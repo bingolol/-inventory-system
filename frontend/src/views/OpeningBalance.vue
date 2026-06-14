@@ -1,6 +1,9 @@
 <template>
   <div class="opening-balance-container">
-    <h2>期初余额设置</h2>
+    <el-card shadow="never">
+      <template #header>
+        <span style="font-weight:600;">期初余额设置</span>
+      </template>
     
     <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
       <el-row :gutter="20">
@@ -74,6 +77,7 @@
         <el-button @click="loadLatest" v-if="!isNew">加载最新</el-button>
       </el-form-item>
     </el-form>
+    </el-card>
     
     <!-- 期初余额历史记录 -->
     <el-card class="history-card" v-if="openingBalances.length > 0">
@@ -88,37 +92,37 @@
         </el-table-column>
         <el-table-column prop="cash_balance" label="现金" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.cash_balance.toFixed(2) }}
+            {{ formatMoney(scope.row.cash_balance) }}
           </template>
         </el-table-column>
         <el-table-column prop="bank_balance" label="银行存款" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.bank_balance.toFixed(2) }}
+            {{ formatMoney(scope.row.bank_balance) }}
           </template>
         </el-table-column>
         <el-table-column prop="accounts_receivable" label="应收账款" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.accounts_receivable.toFixed(2) }}
+            {{ formatMoney(scope.row.accounts_receivable) }}
           </template>
         </el-table-column>
         <el-table-column prop="inventory_value" label="库存" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.inventory_value.toFixed(2) }}
+            {{ formatMoney(scope.row.inventory_value) }}
           </template>
         </el-table-column>
         <el-table-column prop="accounts_payable" label="应付账款" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.accounts_payable.toFixed(2) }}
+            {{ formatMoney(scope.row.accounts_payable) }}
           </template>
         </el-table-column>
         <el-table-column prop="tax_payable" label="应交税费" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.tax_payable.toFixed(2) }}
+            {{ formatMoney(scope.row.tax_payable) }}
           </template>
         </el-table-column>
         <el-table-column prop="retained_earnings" label="未分配利润" width="100" align="right">
           <template #default="scope">
-            {{ scope.row.retained_earnings.toFixed(2) }}
+            {{ formatMoney(scope.row.retained_earnings) }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="150" align="center">
@@ -133,9 +137,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import api from '../api'
+import financeApi from '../api/finance'
+import { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const formRef = ref()
 const loading = ref(false)
@@ -175,9 +181,9 @@ const balanceStatus = computed(() => {
   const difference = totalAssets - (totalLiabilities + totalEquity)
   
   if (Math.abs(difference) < 0.01) {
-    return `资产负债表平衡 ✓ (资产: ${totalAssets.toFixed(2)} = 负债: ${totalLiabilities.toFixed(2)} + 权益: ${totalEquity.toFixed(2)})`
+    return `资产负债表平衡 ✓ (资产: ${formatMoney(totalAssets)} = 负债: ${formatMoney(totalLiabilities)} + 权益: ${formatMoney(totalEquity)})`
   } else {
-    return `资产负债表不平衡 ✗ (差额: ${difference.toFixed(2)})`
+    return `资产负债表不平衡 ✗ (差额: ${formatMoney(difference)})`
   }
 })
 
@@ -187,7 +193,7 @@ const formatDate = (dateStr) => {
 
 const loadOpeningBalances = async () => {
   try {
-    const response = await api.getOpeningBalances()
+    const response = await financeApi.getOpeningBalances()
     openingBalances.value = response
   } catch (error) {
     ElMessage.error('加载期初余额失败')
@@ -207,10 +213,10 @@ const submitForm = async () => {
       loading.value = true
       try {
         if (isNew.value) {
-          await api.createOpeningBalance(form.value)
+          await financeApi.createOpeningBalance(form.value)
           ElMessage.success('期初余额创建成功')
         } else {
-          await api.updateOpeningBalance(currentId.value, form.value)
+          await financeApi.updateOpeningBalance(currentId.value, form.value)
           ElMessage.success('期初余额更新成功')
         }
         resetForm()
@@ -240,7 +246,16 @@ const resetForm = () => {
 }
 
 const editOpeningBalance = (row) => {
-  form.value = { ...row }
+  form.value = {
+    ...row,
+    cash_balance: Number(row.cash_balance) || 0,
+    bank_balance: Number(row.bank_balance) || 0,
+    accounts_receivable: Number(row.accounts_receivable) || 0,
+    inventory_value: Number(row.inventory_value) || 0,
+    accounts_payable: Number(row.accounts_payable) || 0,
+    tax_payable: Number(row.tax_payable) || 0,
+    retained_earnings: Number(row.retained_earnings) || 0
+  }
   isNew.value = false
   currentId.value = row.id
 }
@@ -253,7 +268,7 @@ const deleteOpeningBalance = async (id) => {
       type: 'warning'
     })
     
-    await api.deleteOpeningBalance(id)
+    await financeApi.deleteOpeningBalance(id)
     ElMessage.success('删除成功')
     loadOpeningBalances()
   } catch (error) {
@@ -265,9 +280,18 @@ const deleteOpeningBalance = async (id) => {
 
 const loadLatest = async () => {
   try {
-    const response = await api.getLatestOpeningBalance()
+    const response = await financeApi.getLatestOpeningBalance()
     if (response) {
-      form.value = { ...response }
+      form.value = {
+        ...response,
+        cash_balance: Number(response.cash_balance) || 0,
+        bank_balance: Number(response.bank_balance) || 0,
+        accounts_receivable: Number(response.accounts_receivable) || 0,
+        inventory_value: Number(response.inventory_value) || 0,
+        accounts_payable: Number(response.accounts_payable) || 0,
+        tax_payable: Number(response.tax_payable) || 0,
+        retained_earnings: Number(response.retained_earnings) || 0
+      }
       isNew.value = false
       currentId.value = response.id
     }
@@ -276,9 +300,7 @@ const loadLatest = async () => {
   }
 }
 
-onMounted(() => {
-  loadOpeningBalances()
-})
+useAccountAwareData(loadOpeningBalances)
 </script>
 
 <style scoped>

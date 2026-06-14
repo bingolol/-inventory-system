@@ -14,7 +14,6 @@
               @change="loadBalanceSheet"
             />
             <el-button type="primary" @click="loadBalanceSheet" :loading="loading">刷新</el-button>
-            <el-button @click="exportReport">导出</el-button>
           </div>
         </div>
       </template>
@@ -27,8 +26,8 @@
           <el-table-column prop="item" label="项目" width="300" />
           <el-table-column prop="amount" label="金额" width="200" align="right">
             <template #default="scope">
-              <strong v-if="scope.row.isTotal">{{ scope.row.amount.toFixed(2) }}</strong>
-              <span v-else>{{ scope.row.amount.toFixed(2) }}</span>
+              <strong v-if="scope.row.isTotal">{{ formatMoney(scope.row.amount) }}</strong>
+              <span v-else>{{ formatMoney(scope.row.amount) }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -39,8 +38,8 @@
           <el-table-column prop="item" label="项目" width="300" />
           <el-table-column prop="amount" label="金额" width="200" align="right">
             <template #default="scope">
-              <strong v-if="scope.row.isTotal">{{ scope.row.amount.toFixed(2) }}</strong>
-              <span v-else>{{ scope.row.amount.toFixed(2) }}</span>
+              <strong v-if="scope.row.isTotal">{{ formatMoney(scope.row.amount) }}</strong>
+              <span v-else>{{ formatMoney(scope.row.amount) }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -64,9 +63,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import financeApi from '../api/finance'
+import { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { formatDate } from '../utils/format'
 
 const props = defineProps({
   date: {
@@ -79,10 +81,15 @@ const loading = ref(false)
 const balanceSheet = ref(null)
 const reportDate = ref(props.date)
 
+watch(() => props.date, (newDate) => {
+  reportDate.value = newDate
+  loadBalanceSheet()
+})
+
 const loadBalanceSheet = async () => {
   loading.value = true
   try {
-    const response = await api.getBalanceSheet(reportDate.value)
+    const response = await financeApi.getBalanceSheet(reportDate.value)
     balanceSheet.value = response
   } catch (error) {
     ElMessage.error('加载资产负债表失败')
@@ -92,9 +99,7 @@ const loadBalanceSheet = async () => {
   }
 }
 
-const formatDate = (dateStr) => {
-  return new Date(dateStr).toLocaleDateString('zh-CN')
-}
+
 
 const assetData = computed(() => {
   if (!balanceSheet.value) return []
@@ -144,19 +149,13 @@ const balanceCheckMessage = computed(() => {
   const difference = totalAssets - (totalLiabilities + totalEquity)
   
   if (Math.abs(difference) < 0.01) {
-    return `资产负债表平衡 ✓ (资产总计: ${totalAssets.toFixed(2)} = 负债和所有者权益总计: ${(totalLiabilities + totalEquity).toFixed(2)})`
+    return `资产负债表平衡 ✓ (资产总计: ${formatMoney(totalAssets)} = 负债和所有者权益总计: ${formatMoney(totalLiabilities + totalEquity)})`
   } else {
-    return `资产负债表不平衡 ✗ (差额: ${difference.toFixed(2)})`
+    return `资产负债表不平衡 ✗ (差额: ${formatMoney(difference)})`
   }
 })
 
-const exportReport = () => {
-  ElMessage.info('导出功能开发中...')
-}
-
-onMounted(() => {
-  loadBalanceSheet()
-})
+useAccountAwareData(loadBalanceSheet)
 </script>
 
 <style scoped>

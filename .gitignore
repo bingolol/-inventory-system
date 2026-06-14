@@ -1,0 +1,62 @@
+# Repomix output
+repomix/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.env
+.env.local
+
+# Uploads & PDFs
+backend/pdfs/
+backend/uploads/
+
+# Hot backup
+hot_backup/
+
+# Code review graph
+.code-review-graph/
+
+# JoyCode
+.joycode/
+
+# Build artifacts
+build/
+build2/
+dist2/
+*.spec.bak
+
+# Temporary scripts
+_*.py
+fix_*.py
+create_*.py
+
+# PyInstaller
+build/
+
+# Misc
+.webui_secret_key
+.pytest_cache/
+project/
+project1/
+*.pre_numeric_backup

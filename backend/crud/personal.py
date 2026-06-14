@@ -7,17 +7,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 import models, schemas
 
+from utils import _d, Q2
+
 logger = logging.getLogger("inventory")
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
 
 
 def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limit: int = 100, type: str = None, category: str = None, start_date: str = None, end_date: str = None):
@@ -31,8 +23,10 @@ def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limi
     if end_date:
         q = q.filter(models.PersonalTransaction.date <= end_date + " 23:59:59")
     total = q.count()
-    sum_income = q.filter(models.PersonalTransaction.type == "income").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar() or 0
-    sum_expense = q.filter(models.PersonalTransaction.type == "expense").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar() or 0
+    sum_income = q.filter(models.PersonalTransaction.type == "income").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar()
+    sum_income = sum_income if sum_income is not None else 0
+    sum_expense = q.filter(models.PersonalTransaction.type == "expense").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar()
+    sum_expense = sum_expense if sum_expense is not None else 0
     items = q.order_by(models.PersonalTransaction.date.desc()).offset(skip).limit(limit).all()
     return total, items, _d(sum_income).quantize(Q2), _d(sum_expense).quantize(Q2)
 
@@ -119,7 +113,8 @@ def get_personal_monthly_summary(db: Session, account_id: int, type: str = None,
         )
         if type:
             q = q.filter(models.PersonalTransaction.type == type)
-        total = q.scalar() or 0
+        total = q.scalar()
+        total = total if total is not None else 0
         data.append({
             "month": month_key,
             "label": f"{y}年{m:02d}月",
@@ -136,23 +131,27 @@ def get_personal_summary(db: Session, account_id: int):
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "income",
         models.PersonalTransaction.date >= month_start
-    ).scalar() or 0
+    ).scalar()
+    month_income = month_income if month_income is not None else 0
 
     month_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "expense",
         models.PersonalTransaction.date >= month_start
-    ).scalar() or 0
+    ).scalar()
+    month_expense = month_expense if month_expense is not None else 0
 
     total_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "income"
-    ).scalar() or 0
+    ).scalar()
+    total_income = total_income if total_income is not None else 0
 
     total_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "expense"
-    ).scalar() or 0
+    ).scalar()
+    total_expense = total_expense if total_expense is not None else 0
 
     return schemas.PersonalSummary(
         month_income=_d(month_income).quantize(Q2),

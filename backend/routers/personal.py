@@ -2,24 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from database import get_db
-from account_dep import get_account_id
+from account_dep import get_account_id, get_operator
 from models import PersonalTransaction
 from image_utils import delete_old_image
 from enums import PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES
 import schemas, crud
+from commands import dispatch, CreatePersonalTransaction, UpdatePersonalTransaction, DeletePersonalTransaction
 from uow import unit_of_work
+from utils import _d, Q2
 
 router = APIRouter()
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
 
 
 def _validate_personal_category(type: str, category: str):
@@ -57,7 +49,7 @@ def get_summary(account_id: int = Depends(get_account_id), db: Session = Depends
     return crud.get_personal_summary(db, account_id)
 
 
-@router.get("/")
+@router.get("")
 def list_transactions(
     page: int = 1, page_size: int = 20,
     type: str = None, category: str = None, start_date: str = None, end_date: str = None,
@@ -70,17 +62,26 @@ def list_transactions(
     return {"total": total, "items": items, "sum_income": sum_income, "sum_expense": sum_expense, "sum_balance": (_d(sum_income) - _d(sum_expense)).quantize(Q2)}
 
 
-@router.post("/", response_model=schemas.PersonalTransactionOut)
-def create_transaction(data: schemas.PersonalTransactionCreate, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+@router.post("", response_model=schemas.PersonalTransactionOut)
+def create_transaction(data: schemas.PersonalTransactionCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     _validate_personal_category(data.type, data.category)
     with unit_of_work(db):
-        tx = crud.create_personal_transaction(db, account_id, data)
+        tx = dispatch(CreatePersonalTransaction(
+            account_id=account_id,
+            operator=operator,
+            type=data.type,
+            amount=data.amount,
+            category=data.category,
+            description=data.description,
+            image_url=data.image_url or "",
+            date=data.date,
+        ), db)
     db.refresh(tx)
     return tx
 
 
 @router.put("/{tx_id}", response_model=schemas.PersonalTransactionOut)
-def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     # 先查原记录，用于校验和确定 type
     tx = db.query(PersonalTransaction).filter(
         PersonalTransaction.id == tx_id,
@@ -96,13 +97,25 @@ def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, acco
         _validate_personal_category(final_type, data.category)
 
     with unit_of_work(db):
-        tx = crud.update_personal_transaction(db, account_id, tx_id, data)
+        tx = dispatch(UpdatePersonalTransaction(
+            account_id=account_id,
+            operator=operator,
+            tx_id=tx_id,
+            type=data.type,
+            amount=data.amount,
+            category=data.category,
+            description=data.description,
+            image_url=data.image_url,
+            date=data.date,
+        ), db)
+    if not tx:
+        raise HTTPException(status_code=404, detail="记录不存在")
     db.refresh(tx)
     return tx
 
 
 @router.delete("/{tx_id}")
-def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     # 先查记录获取image_url
     tx = db.query(PersonalTransaction).filter(
         PersonalTransaction.id == tx_id,
@@ -114,6 +127,10 @@ def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), db
     if tx.image_url:
         delete_old_image(tx.image_url)
     with unit_of_work(db):
-        if not crud.delete_personal_transaction(db, account_id, tx_id):
+        if not dispatch(DeletePersonalTransaction(
+            account_id=account_id,
+            operator=operator,
+            tx_id=tx_id,
+        ), db):
             raise HTTPException(status_code=404, detail="记录不存在")
     return {"message": "已删除"}

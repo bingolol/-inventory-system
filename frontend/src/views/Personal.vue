@@ -92,7 +92,7 @@
         <el-table-column prop="amount" label="金额" width="120">
           <template #default="{ row }">
             <span :style="{ color: row.type === 'income' ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }">
-              {{ row.type === 'income' ? '+' : '-' }}¥{{ row.amount?.toFixed(2) }}
+              {{ row.type === 'income' ? '+' : '-' }}¥{{ formatMoney(row.amount) }}
             </span>
           </template>
         </el-table-column>
@@ -115,9 +115,9 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:10px 16px;background:var(--fill-light);border-radius:6px;">
         <div style="display:flex;gap:24px;font-size:14px;">
           <span>筛选合计：</span>
-          <span style="color:var(--success);font-weight:600;">收入 ¥{{ filterSummary.sum_income?.toFixed(2) }}</span>
-          <span style="color:var(--danger);font-weight:600;">支出 ¥{{ filterSummary.sum_expense?.toFixed(2) }}</span>
-          <span style="color:var(--primary);font-weight:600;">结余 ¥{{ filterSummary.sum_balance?.toFixed(2) }}</span>
+          <span style="color:var(--success);font-weight:600;">收入 ¥{{ formatMoney(filterSummary.sum_income) }}</span>
+          <span style="color:var(--danger);font-weight:600;">支出 ¥{{ formatMoney(filterSummary.sum_expense) }}</span>
+          <span style="color:var(--primary);font-weight:600;">结余 ¥{{ formatMoney(filterSummary.sum_balance) }}</span>
         </div>
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
       </div>
@@ -146,7 +146,7 @@
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="附件图片">
-          <ImageUpload v-model="form.image_url" business-type="personal" :record-id="editingId || 0" :update-api="api.updatePersonalTransaction" />
+          <ImageUpload v-model="form.image_url" business-type="personal" :record-id="editingId || 0" :update-api="personalApi.updatePersonalTransaction" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -158,16 +158,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import api from '../api'
-import { resolveImageUrl } from '../api'
+import personalApi from '../api/personal'
+import commonApi from '../api/common'
+import { formatMoney } from '../api/common'
+import { resolveImageUrl } from '../api/index'
 import ImageUpload from '../components/ImageUpload.vue'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -242,9 +245,9 @@ const onTypeChange = () => {
 
 const loadEnums = async () => {
   try {
-    const enums = await api.getEnums()
-    expenseCategories.value = enums.personal_expense_categories
-    incomeCategories.value = enums.personal_income_categories
+    const enums = await commonApi.getEnums()
+    expenseCategories.value = enums.values.personal_expense_categories
+    incomeCategories.value = enums.values.personal_income_categories
   } catch (e) { /* 降级：保留空列表 */ }
 }
 
@@ -254,7 +257,7 @@ const loadData = async () => {
     if (typeFilter.value) params.type = typeFilter.value
     if (categoryFilter.value) params.category = categoryFilter.value
     if (dateRange.value) { params.start_date = dateRange.value[0]; params.end_date = dateRange.value[1] }
-    const res = await api.getPersonalTransactions(params)
+    const res = await personalApi.getPersonalTransactions(params)
     total.value = res.total
     list.value = res.items
     filterSummary.value = { sum_income: res.sum_income || 0, sum_expense: res.sum_expense || 0, sum_balance: res.sum_balance || 0 }
@@ -263,7 +266,7 @@ const loadData = async () => {
 
 const loadSummary = async () => {
   try {
-    summary.value = await api.getPersonalSummary()
+    summary.value = await personalApi.getPersonalSummary()
   } catch (e) { /* ignore */ }
 }
 
@@ -271,7 +274,7 @@ const loadCategorySummary = async () => {
   try {
     const params = { type: categoryChartType.value }
     if (dateRange.value) { params.start_date = dateRange.value[0]; params.end_date = dateRange.value[1] }
-    categorySummaryData.value = await api.getPersonalCategorySummary(params)
+    categorySummaryData.value = await personalApi.getPersonalCategorySummary(params)
   } catch (e) { console.error(e) }
 }
 
@@ -279,7 +282,7 @@ const loadMonthlySummary = async () => {
   try {
     const params = {}
     if (monthlyChartType.value !== 'all') params.type = monthlyChartType.value
-    monthlySummaryData.value = await api.getPersonalMonthlySummary(params)
+    monthlySummaryData.value = await personalApi.getPersonalMonthlySummary(params)
   } catch (e) { console.error(e) }
 }
 
@@ -288,7 +291,7 @@ const showDialog = (row) => {
     editingId.value = row.id
     form.value = {
       type: row.type,
-      amount: row.amount,
+      amount: Number(row.amount) || 0,
       category: row.category || '',
       date: row.date?.slice(0, 10) || '',
       description: row.description || '',
@@ -307,10 +310,10 @@ const handleSave = async () => {
   if (!form.value.date) { ElMessage.warning('请选择日期'); return }
   try {
     if (editingId.value) {
-      await api.updatePersonalTransaction(editingId.value, form.value)
+      await personalApi.updatePersonalTransaction(editingId.value, form.value)
       ElMessage.success('更新成功')
     } else {
-      await api.createPersonalTransaction(form.value)
+      await personalApi.createPersonalTransaction(form.value)
       ElMessage.success('记录成功')
     }
     dialogVisible.value = false
@@ -323,7 +326,7 @@ const handleSave = async () => {
 
 const handleDelete = async (id) => {
   try {
-    await api.deletePersonalTransaction(id)
+    await personalApi.deletePersonalTransaction(id)
     ElMessage.success('已删除')
     loadData()
     loadSummary()
@@ -332,5 +335,6 @@ const handleDelete = async (id) => {
   } catch (e) { ElMessage.error('删除失败') }
 }
 
-onMounted(() => { loadData(); loadSummary(); loadEnums(); loadCategorySummary(); loadMonthlySummary() })
+useAccountAwareData(loadData, loadSummary, loadCategorySummary, loadMonthlySummary)
+loadEnums()
 </script>

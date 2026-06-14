@@ -1,11 +1,14 @@
 <template>
   <div class="tax-report-container">
-    <h2>增值税报表</h2>
-
+    <el-card shadow="never">
+      <template #header>
+        <span style="font-weight:600;">增值税报表</span>
+      </template>
+    
     <!-- 月份/季度切换 -->
     <el-radio-group v-model="reportType" @change="onReportTypeChange" style="margin-bottom: 15px;">
-      <el-radio label="quarterly">按季度</el-radio>
-      <el-radio label="monthly">按月份</el-radio>
+      <el-radio value="quarterly">按季度</el-radio>
+      <el-radio value="monthly">按月份</el-radio>
     </el-radio-group>
 
     <!-- 季度选择 -->
@@ -44,6 +47,7 @@
         <el-button type="primary" @click="getMonthlyTaxReport">查询</el-button>
       </el-form-item>
     </el-form>
+    </el-card>
 
     <!-- 纳税人身份标签 -->
     <el-tag v-if="taxReport" :type="taxReport.taxpayer_type === 'small_scale' ? 'info' : 'primary'" size="large" class="taxpayer-tag">
@@ -66,7 +70,7 @@
           <el-table-column prop="item" label="项目" width="300" />
           <el-table-column prop="value" label="金额" width="200" align="right">
             <template #default="scope">
-              {{ typeof scope.row.value === 'number' ? scope.row.value.toFixed(2) : scope.row.value }}
+              {{ typeof scope.row.value === 'number' ? formatMoney(scope.row.value) : scope.row.value }}
             </template>
           </el-table-column>
         </el-table>
@@ -78,7 +82,7 @@
           <el-table-column prop="item" label="项目" width="300" />
           <el-table-column prop="value" label="金额" width="200" align="right">
             <template #default="scope">
-              {{ typeof scope.row.value === 'number' ? scope.row.value.toFixed(2) : scope.row.value }}
+              {{ typeof scope.row.value === 'number' ? formatMoney(scope.row.value) : scope.row.value }}
             </template>
           </el-table-column>
         </el-table>
@@ -105,17 +109,17 @@
             </el-table-column>
             <el-table-column prop="tax_rate" label="税率" width="80" align="center">
               <template #default="scope">
-                {{ (scope.row.tax_rate * 100).toFixed(0) }}%
+                {{ (Number(scope.row.tax_rate) * 100).toFixed(0) }}%
               </template>
             </el-table-column>
             <el-table-column prop="amount_without_tax" label="不含税金额" width="120" align="right">
               <template #default="scope">
-                {{ scope.row.amount_without_tax.toFixed(2) }}
+                {{ formatMoney(scope.row.amount_without_tax) }}
               </template>
             </el-table-column>
             <el-table-column prop="tax_amount" label="税额" width="100" align="right">
               <template #default="scope">
-                {{ scope.row.tax_amount.toFixed(2) }}
+                {{ formatMoney(scope.row.tax_amount) }}
               </template>
             </el-table-column>
             <el-table-column prop="counterparty_name" label="对方名称" width="150" />
@@ -134,10 +138,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import { accountStore } from '../stores/account'
-import api from '../api'
+import { ElMessage } from 'element-plus'
+import { useAccountStore } from '../stores/account'
+const accountStore = useAccountStore()
+import invoicesApi from '../api/invoices'
+import { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 // 报告类型: quarterly / monthly
 const reportType = ref('quarterly')
@@ -211,10 +219,11 @@ const generalData = computed(() => {
 const getTaxReport = async () => {
   loading.value = true
   try {
-    const response = await api.getTaxReport(queryForm.value.year, queryForm.value.quarter)
+    const response = await invoicesApi.getTaxReport(queryForm.value.year, queryForm.value.quarter)
     taxReport.value = response
   } catch (error) {
     console.error('获取税务报表失败:', error)
+    ElMessage.error(error.response?.data?.detail || '获取税务报表失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -224,10 +233,11 @@ const getTaxReport = async () => {
 const getMonthlyTaxReport = async () => {
   loading.value = true
   try {
-    const response = await api.getTaxReportMonthly(monthlyForm.value.year, monthlyForm.value.month)
+    const response = await invoicesApi.getTaxReportMonthly(monthlyForm.value.year, monthlyForm.value.month)
     taxReport.value = response
   } catch (error) {
     console.error('获取月度税务报表失败:', error)
+    ElMessage.error(error.response?.data?.detail || '获取月度税务报表失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -243,10 +253,17 @@ const onReportTypeChange = () => {
   }
 }
 
-onMounted(() => {
-  generateYears()
-  getTaxReport()
-})
+// 根据当前报告类型获取数据
+const fetchData = () => {
+  if (reportType.value === 'quarterly') {
+    getTaxReport()
+  } else {
+    getMonthlyTaxReport()
+  }
+}
+
+generateYears()
+useAccountAwareData(fetchData)
 </script>
 
 <style scoped>

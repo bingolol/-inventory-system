@@ -1,6 +1,12 @@
 <template>
   <div class="expenses-container">
-    <h2>费用管理</h2>
+    <el-card shadow="never">
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:600;">费用管理</span>
+          <el-button type="primary" @click="dialogVisible = true"><el-icon><Plus /></el-icon> 新增费用</el-button>
+        </div>
+      </template>
     
     <!-- 筛选条件 -->
     <el-form :inline="true" :model="filterForm" class="filter-form">
@@ -20,13 +26,12 @@
       </el-form-item>
     </el-form>
 
-    <!-- 操作按钮 -->
-    <el-button type="primary" @click="dialogVisible = true">新增费用</el-button>
-
     <!-- 费用列表 -->
-    <el-table :data="expenses" style="width: 100%">
+    <el-table :data="expenses" style="width: 100%" v-loading="loading">
+      <template #empty>
+        <el-empty description="暂无费用记录" />
+      </template>
       <el-table-column prop="expense_date" label="日期" width="120" />
-      <el-table-column prop="project_name" label="项目" width="150" />
       <el-table-column prop="category" label="类别" width="100" align="center">
         <template #default="scope">
           <el-tag :type="getCategoryType(scope.row.category)">
@@ -36,7 +41,7 @@
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" align="right">
         <template #default="scope">
-          {{ scope.row.amount.toFixed(2) }}
+          <span class="money">¥{{ formatMoney(scope.row.amount) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="has_invoice" label="有发票" width="100" align="center">
@@ -49,7 +54,7 @@
       <el-table-column prop="payment_method" label="支付方式" width="120" align="center">
         <template #default="scope">
           <el-tag :type="scope.row.payment_method === 'company' ? 'primary' : 'warning'">
-            {{ scope.row.payment_method === 'company' ? '公司' : '个人垫付' }}
+            {{ enumsStore.getLabel('payment_method', scope.row.payment_method) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -65,12 +70,15 @@
           <el-button @click="editExpense(scope.row)" type="primary" size="small">
             编辑
           </el-button>
-          <el-button @click="deleteExpense(scope.row.id)" type="danger" size="small">
-            删除
-          </el-button>
+          <el-popconfirm title="确定删除此费用记录？" @confirm="deleteExpense(scope.row.id)">
+            <template #reference>
+              <el-button type="danger" size="small">删除</el-button>
+            </template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
+    </el-card>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
@@ -80,12 +88,7 @@
     >
       <el-form :model="expenseForm" label-width="100px">
         <el-form-item label="日期" required>
-          <el-date-picker v-model="expenseForm.expense_date" type="date" placeholder="请选择日期" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="项目">
-          <el-select v-model="expenseForm.project_name" placeholder="请选择项目" allow-create filterable>
-            <el-option v-for="project in projects" :key="project" :label="project" :value="project" />
-          </el-select>
+          <el-date-picker v-model="expenseForm.expense_date" type="date" placeholder="请选择日期" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
         <el-form-item label="类别" required>
           <el-select v-model="expenseForm.category" placeholder="请选择类别">
@@ -100,15 +103,14 @@
         </el-form-item>
         <el-form-item label="支付方式" required>
           <el-select v-model="expenseForm.payment_method" placeholder="请选择支付方式">
-            <el-option label="公司" value="company" />
-            <el-option label="个人垫付" value="private_advance" />
+            <el-option v-for="opt in enumsStore.paymentMethodOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="expenseForm.description" type="textarea" placeholder="请输入描述" />
         </el-form-item>
         <el-form-item label="附件图片">
-          <ImageUpload v-model="expenseForm.image_url" business-type="expense" :record-id="currentExpenseId || 0" :update-api="api.updateExpense" />
+          <ImageUpload v-model="expenseForm.image_url" business-type="expense" :record-id="currentExpenseId || 0" :update-api="expensesApi.updateExpense" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -122,14 +124,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { accountStore } from '../stores/account'
-import api from '../api'
-import { resolveImageUrl } from '../api'
+import { ref, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
+import { useAccountStore } from '../stores/account'
+const accountStore = useAccountStore()
+import expensesApi from '../api/expenses'
+import commonApi, { formatMoney } from '../api/common'
+import { resolveImageUrl } from '../api/index'
 import ImageUpload from '../components/ImageUpload.vue'
+import { useEnumsStore } from '../stores/enums'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
+
+const enumsStore = useEnumsStore()
 
 // 费用列表
 const expenses = ref([])
+const loading = ref(false)
 // 筛选表单
 const filterForm = ref({
   category: '',
@@ -137,15 +148,14 @@ const filterForm = ref({
 })
 // 年份列表
 const years = ref([])
-// 项目列表
-const projects = ref([])
+// 年份列表
+const years = ref([])
 
 // 弹窗相关
 const dialogVisible = ref(false)
 const dialogType = ref('create')
 const currentExpenseId = ref(null)
 const expenseForm = ref({
-  project_name: '',
   category: '',
   amount: 0,
   expense_date: '',
@@ -155,15 +165,8 @@ const expenseForm = ref({
   image_url: ''
 })
 
-// 费用类别选项（从API获取，支持allow-create自由输入）
-const categoryOptions = ref([])
-
-const loadEnums = async () => {
-  try {
-    const enums = await api.getEnums()
-    categoryOptions.value = enums.expense_categories.map(c => ({ label: c, value: c }))
-  } catch (e) { /* 降级：保留空列表 */ }
-}
+// 费用类别选项（从Pinia枚举store获取，支持allow-create自由输入）
+const categoryOptions = computed(() => enumsStore.expenseCategoryOptions)
 
 // 生成年份列表
 const generateYears = () => {
@@ -175,6 +178,7 @@ const generateYears = () => {
 
 // 获取费用列表
 const getExpenses = async () => {
+  loading.value = true
   try {
     // 过滤空字符串参数，避免 422 错误
     const params = {}
@@ -183,11 +187,13 @@ const getExpenses = async () => {
         params[key] = value
       }
     }
-    const response = await api.getExpenses(params)
+    const response = await expensesApi.getExpenses(params)
     expenses.value = response?.items || []
   } catch (error) {
     console.error('获取费用列表失败:', error)
     expenses.value = []
+  } finally {
+    loading.value = false
   }
 }
 
@@ -204,14 +210,17 @@ const resetFilter = () => {
 const saveExpense = async () => {
   try {
     if (dialogType.value === 'create') {
-      await api.createExpense(expenseForm.value)
+      await expensesApi.createExpense(expenseForm.value)
+      ElMessage.success('费用创建成功')
     } else {
-      await api.updateExpense(currentExpenseId.value, expenseForm.value)
+      await expensesApi.updateExpense(currentExpenseId.value, expenseForm.value)
+      ElMessage.success('费用更新成功')
     }
     dialogVisible.value = false
     getExpenses()
   } catch (error) {
     console.error('保存费用失败:', error)
+    ElMessage.error(error.response?.data?.detail || '保存费用失败')
   }
 }
 
@@ -220,8 +229,7 @@ const editExpense = (expense) => {
   dialogType.value = 'edit'
   currentExpenseId.value = expense.id
   expenseForm.value = {
-    ...expense,
-    expense_date: expense.expense_date ? new Date(expense.expense_date) : ''
+    ...expense
   }
   dialogVisible.value = true
 }
@@ -229,10 +237,12 @@ const editExpense = (expense) => {
 // 删除费用
 const deleteExpense = async (id) => {
   try {
-    await api.deleteExpense(id)
+    await expensesApi.deleteExpense(id)
+    ElMessage.success('费用已删除')
     getExpenses()
   } catch (error) {
     console.error('删除费用失败:', error)
+    ElMessage.error('删除费用失败')
   }
 }
 
@@ -260,15 +270,9 @@ const getCategoryType = (category) => {
   }
 }
 
-onMounted(() => {
-  generateYears()
-  getExpenses()
-  loadEnums()
-  // 获取项目列表
-  api.getProjects().then(response => {
-    projects.value = response?.items ? response.items.map(item => item.project_name) : []
-  })
-})
+generateYears()
+useAccountAwareData(getExpenses)
+enumsStore.fetchEnums()
 </script>
 
 <style scoped>

@@ -1,3 +1,6 @@
+# ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
+# 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -9,16 +12,8 @@ from database import get_db
 from models import Account, Invoice
 from schemas import TaxReport, TaxReportMonth, InvoiceOut
 from account_dep import get_account_id
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
+from enums import InvoiceDirection, InvoiceType, CertificationStatus, TaxpayerType
+from utils import _d, Q2
 
 router = APIRouter()
 
@@ -30,14 +25,14 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
 
     out_invoices = db.query(Invoice).filter(
         Invoice.account_id == account_id,
-        Invoice.direction == "out",
+        Invoice.direction == InvoiceDirection.OUT,
         Invoice.issue_date >= start_date,
         Invoice.issue_date < end_date
     ).all()
 
     in_invoices = db.query(Invoice).filter(
         Invoice.account_id == account_id,
-        Invoice.direction == "in",
+        Invoice.direction == InvoiceDirection.IN,
         Invoice.issue_date >= start_date,
         Invoice.issue_date < end_date
     ).all()
@@ -51,9 +46,9 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
     input_total = Decimal('0')
     input_tax = Decimal('0')
 
-    if account.taxpayer_type == "general":
+    if account.taxpayer_type == TaxpayerType.GENERAL:
         for inv in in_invoices:
-            if inv.invoice_type == "special" and inv.certification_status == "certified":
+            if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status == CertificationStatus.CERTIFIED:
                 input_total += _d(inv.amount_without_tax)
                 input_tax += _d(inv.tax_amount)
     else:
@@ -101,7 +96,7 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
     }
 
 
-@router.get("/", response_model=TaxReport)
+@router.get("", response_model=TaxReport)
 async def get_tax_report(
     year: int,
     quarter: int,

@@ -1,6 +1,9 @@
 <template>
   <div class="cash-flow-container">
-    <h2>现金流量表</h2>
+    <el-card shadow="never">
+      <template #header>
+        <span style="font-weight:600;">现金流量表</span>
+      </template>
 
     <!-- 期间选择 -->
     <el-form :inline="true" :model="queryForm" class="query-form">
@@ -17,6 +20,7 @@
         <el-button type="success" @click="showNewTransaction">新增现金流水</el-button>
       </el-form-item>
     </el-form>
+    </el-card>
 
     <!-- 现金流量表 -->
     <el-card v-if="cashFlowStatement" class="report-card">
@@ -126,7 +130,10 @@
       <template #header>
         <span>现金流水记录</span>
       </template>
-      <el-table :data="cashFlowTransactions" style="width: 100%">
+      <el-table :data="cashFlowTransactions" style="width: 100%" v-loading="loading">
+        <template #empty>
+          <el-empty description="暂无现金流水记录" />
+        </template>
         <el-table-column prop="transaction_date" label="日期" width="120">
           <template #default="{ row }">
             {{ row.transaction_date?.split('T')[0] }}
@@ -147,7 +154,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="amount" label="金额" width="120" align="right">
-          <template #default="scope">{{ scope.row.amount?.toFixed(2) ?? '0.00' }}</template>
+          <template #default="scope">{{ formatMoney(scope.row.amount) }}</template>
         </el-table-column>
         <el-table-column prop="description" label="描述" />
         <el-table-column prop="related_entity_type" label="关联类型" width="100" />
@@ -199,9 +206,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import financeApi from '../api/finance'
+import { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const queryForm = ref({
   startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
@@ -210,6 +219,7 @@ const queryForm = ref({
 
 const cashFlowStatement = ref(null)
 const cashFlowTransactions = ref([])
+const loading = ref(false)
 const showAddDialog = ref(false)
 const editingTransactionId = ref(null)
 const newTransaction = ref({
@@ -221,17 +231,20 @@ const newTransaction = ref({
 })
 
 const getCashFlowStatement = async () => {
+  loading.value = true
   try {
-    cashFlowStatement.value = await api.getCashFlowStatement(queryForm.value.startDate, queryForm.value.endDate)
+    cashFlowStatement.value = await financeApi.getCashFlowStatement(queryForm.value.startDate, queryForm.value.endDate)
   } catch (error) {
     console.error('获取现金流量表失败:', error)
     ElMessage.error('获取现金流量表失败')
+  } finally {
+    loading.value = false
   }
 }
 
 const loadTransactions = async () => {
   try {
-    const res = await api.getCashFlowTransactions({
+    const res = await financeApi.getCashFlowTransactions({
       start_date: queryForm.value.startDate,
       end_date: queryForm.value.endDate,
       limit: 100
@@ -268,7 +281,7 @@ const showEditTransaction = (row) => {
 
 const handleDeleteTransaction = async (id) => {
   try {
-    await api.deleteCashFlowTransaction(id)
+    await financeApi.deleteCashFlowTransaction(id)
     ElMessage.success('已删除')
     getCashFlowStatement()
     loadTransactions()
@@ -278,10 +291,10 @@ const handleDeleteTransaction = async (id) => {
 const saveTransaction = async () => {
   try {
     if (editingTransactionId.value) {
-      await api.updateCashFlowTransaction(editingTransactionId.value, newTransaction.value)
+      await financeApi.updateCashFlowTransaction(editingTransactionId.value, newTransaction.value)
       ElMessage.success('更新成功')
     } else {
-      await api.createCashFlowTransaction(newTransaction.value)
+      await financeApi.createCashFlowTransaction(newTransaction.value)
       ElMessage.success('创建成功')
     }
     showAddDialog.value = false
@@ -311,10 +324,7 @@ const getCategoryLabel = (cat) => {
   return map[cat] || cat
 }
 
-onMounted(() => {
-  getCashFlowStatement()
-  loadTransactions()
-})
+useAccountAwareData(getCashFlowStatement, loadTransactions)
 </script>
 
 <style scoped>

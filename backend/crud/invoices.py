@@ -6,19 +6,11 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 import models, schemas
 
+from enums import InvoiceDirection
 from .base import _log
+from utils import _d, Q2
 
 logger = logging.getLogger("inventory")
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
 
 
 def list_invoices(db: Session, account_id: int, skip: int = 0, limit: int = 100, direction: str = None, invoice_type: str = None, year: int = None, quarter: int = None):
@@ -46,7 +38,7 @@ def get_invoice(db: Session, account_id: int, invoice_id: int):
     ).first()
 
 
-def create_invoice(db: Session, account_id: int, data: schemas.InvoiceCreate):
+def create_invoice(db: Session, account_id: int, data: schemas.InvoiceCreate, operator: str = "user"):
     invoice = models.Invoice(
         account_id=account_id,
         **data.model_dump()
@@ -55,11 +47,11 @@ def create_invoice(db: Session, account_id: int, data: schemas.InvoiceCreate):
         invoice.issue_date = datetime.strptime(data.issue_date, "%Y-%m-%d")
     db.add(invoice)
     db.flush()
-    _log(db, account_id, "create", "invoice", invoice.id, f"创建发票: {invoice.invoice_no} ({invoice.direction}/{invoice.invoice_type})")
+    _log(db, account_id, "create", "invoice", invoice.id, f"创建发票: {invoice.invoice_no} ({invoice.direction}/{invoice.invoice_type})", operator=operator)
     return invoice
 
 
-def update_invoice(db: Session, account_id: int, invoice_id: int, data: schemas.InvoiceUpdate):
+def update_invoice(db: Session, account_id: int, invoice_id: int, data: schemas.InvoiceUpdate, operator: str = "user"):
     invoice = get_invoice(db, account_id, invoice_id)
     if not invoice:
         return None
@@ -69,15 +61,15 @@ def update_invoice(db: Session, account_id: int, invoice_id: int, data: schemas.
     for k, v in changes.items():
         setattr(invoice, k, v)
     db.flush()
-    _log(db, account_id, "update", "invoice", invoice_id, f"更新发票: {invoice.invoice_no}")
+    _log(db, account_id, "update", "invoice", invoice_id, f"更新发票: {invoice.invoice_no}", operator=operator)
     return invoice
 
 
-def delete_invoice(db: Session, account_id: int, invoice_id: int):
+def delete_invoice(db: Session, account_id: int, invoice_id: int, operator: str = "user"):
     invoice = get_invoice(db, account_id, invoice_id)
     if not invoice:
         return False
-    _log(db, account_id, "delete", "invoice", invoice_id, f"删除发票: {invoice.invoice_no}")
+    _log(db, account_id, "delete", "invoice", invoice_id, f"删除发票: {invoice.invoice_no}", operator=operator)
     db.delete(invoice)
     db.flush()
     return True
@@ -92,14 +84,14 @@ def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
 
     out_invoices = db.query(models.Invoice).filter(
         models.Invoice.account_id == account_id,
-        models.Invoice.direction == "out",
+        models.Invoice.direction == InvoiceDirection.OUT,
         models.Invoice.issue_date >= quarter_start_str,
         models.Invoice.issue_date < quarter_end_str
     ).all()
 
     in_invoices = db.query(models.Invoice).filter(
         models.Invoice.account_id == account_id,
-        models.Invoice.direction == "in",
+        models.Invoice.direction == InvoiceDirection.IN,
         models.Invoice.issue_date >= quarter_start_str,
         models.Invoice.issue_date < quarter_end_str
     ).all()

@@ -1,19 +1,23 @@
 <template>
   <div class="invoices-container">
-    <h2>发票管理</h2>
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="page-title">发票管理</span>
+          <el-button type="primary" @click="dialogVisible = true"><el-icon><Plus /></el-icon> 新增发票</el-button>
+        </div>
+      </template>
     
     <!-- 筛选条件 -->
     <el-form :inline="true" :model="filterForm" class="filter-form">
       <el-form-item label="方向">
         <el-select v-model="filterForm.direction" placeholder="全部">
-          <el-option label="销项" value="out" />
-          <el-option label="进项" value="in" />
+          <el-option v-for="opt in enumsStore.invoiceDirectionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </el-form-item>
       <el-form-item label="类型">
         <el-select v-model="filterForm.invoice_type" placeholder="全部">
-          <el-option label="普票" value="ordinary" />
-          <el-option label="专票" value="special" />
+          <el-option v-for="opt in enumsStore.invoiceTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </el-form-item>
       <el-form-item label="年份">
@@ -31,9 +35,7 @@
       </el-form-item>
       <el-form-item label="认证状态">
         <el-select v-model="filterForm.certification_status" placeholder="全部">
-          <el-option label="未认证" value="pending" />
-          <el-option label="已认证" value="certified" />
-          <el-option label="无需认证" value="n_a" />
+          <el-option v-for="opt in enumsStore.certificationStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -41,9 +43,6 @@
         <el-button @click="resetFilter">重置</el-button>
       </el-form-item>
     </el-form>
-
-    <!-- 操作按钮 -->
-    <el-button type="primary" @click="dialogVisible = true">新增发票</el-button>
 
     <!-- 本季度税务统计 -->
     <div class="tax-stats">
@@ -56,60 +55,62 @@
         <div class="stats-content">
           <div class="stat-item">
             <span class="stat-label">销项税额</span>
-            <span class="stat-value">{{ taxStats.outputTax.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatMoney(taxStats.outputTax) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">进项税额</span>
-            <span class="stat-value">{{ taxStats.inputTax.toFixed(2) }}</span>
+            <span class="stat-value">{{ formatMoney(taxStats.inputTax) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">应纳税额</span>
-            <span class="stat-value text-red">{{ taxStats.taxPayable.toFixed(2) }}</span>
+            <span class="stat-value text-red">{{ formatMoney(taxStats.taxPayable) }}</span>
           </div>
         </div>
       </el-card>
     </div>
 
     <!-- 发票列表 -->
-    <el-table :data="invoices" style="width: 100%">
+    <el-table :data="invoices" stripe v-loading="loading" style="width: 100%">
+      <template #empty>
+        <el-empty description="暂无发票记录" />
+      </template>
       <el-table-column prop="invoice_no" label="发票号码" width="150" />
       <el-table-column prop="direction" label="方向" width="80" align="center">
         <template #default="scope">
           <el-tag :type="scope.row.direction === 'out' ? 'primary' : 'success'">
-            {{ scope.row.direction === 'out' ? '销项' : '进项' }}
+            {{ enumsStore.getLabel('invoice_direction', scope.row.direction) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="invoice_type" label="类型" width="80" align="center">
         <template #default="scope">
           <el-tag :type="scope.row.invoice_type === 'special' ? 'warning' : 'info'">
-            {{ scope.row.invoice_type === 'special' ? '专票' : '普票' }}
+            {{ enumsStore.getLabel('invoice_type', scope.row.invoice_type) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="tax_rate" label="税率" width="80" align="center">
         <template #default="scope">
-          {{ (scope.row.tax_rate * 100).toFixed(0) }}%
+          {{ Number(scope.row.tax_rate * 100).toFixed(0) }}%
         </template>
       </el-table-column>
       <el-table-column prop="amount_without_tax" label="不含税金额" width="120" align="right">
         <template #default="scope">
-          {{ scope.row.amount_without_tax.toFixed(2) }}
+          {{ formatMoney(scope.row.amount_without_tax) }}
         </template>
       </el-table-column>
       <el-table-column prop="tax_amount" label="税额" width="100" align="right">
         <template #default="scope">
-          {{ scope.row.tax_amount.toFixed(2) }}
+          {{ formatMoney(scope.row.tax_amount) }}
         </template>
       </el-table-column>
       <el-table-column prop="amount_with_tax" label="价税合计" width="120" align="right">
         <template #default="scope">
-          {{ scope.row.amount_with_tax.toFixed(2) }}
+          {{ formatMoney(scope.row.amount_with_tax) }}
         </template>
       </el-table-column>
       <el-table-column prop="counterparty_name" label="对方名称" width="150" />
       <el-table-column prop="issue_date" label="开票日期" width="120" />
-      <el-table-column prop="project_name" label="关联项目" width="150" />
       <el-table-column prop="certification_status" label="认证状态" width="100" align="center">
         <template #default="scope">
           <el-tag :type="getCertificationType(scope.row.certification_status)">
@@ -128,15 +129,18 @@
           <el-button @click="editInvoice(scope.row)" type="primary" size="small">
             编辑
           </el-button>
-          <el-button @click="deleteInvoice(scope.row.id)" type="danger" size="small">
-            删除
-          </el-button>
+          <el-popconfirm title="确定删除此发票？" @confirm="deleteInvoice(scope.row.id)">
+            <template #reference>
+              <el-button type="danger" size="small">删除</el-button>
+            </template>
+          </el-popconfirm>
           <el-button v-if="scope.row.direction === 'in' && scope.row.invoice_type === 'special' && scope.row.certification_status === 'n_a'" @click="certifyInvoice(scope.row.id)" type="success" size="small">
             认证
           </el-button>
         </template>
       </el-table-column>
     </el-table>
+    </el-card>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
@@ -150,14 +154,12 @@
         </el-form-item>
         <el-form-item label="方向" required>
           <el-select v-model="invoiceForm.direction" placeholder="请选择方向">
-            <el-option label="销项" value="out" />
-            <el-option label="进项" value="in" />
+            <el-option v-for="opt in enumsStore.invoiceDirectionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="类型" required>
           <el-select v-model="invoiceForm.invoice_type" placeholder="请选择类型">
-            <el-option label="普票" value="ordinary" />
-            <el-option label="专票" value="special" />
+            <el-option v-for="opt in enumsStore.invoiceTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="对方名称" required>
@@ -187,11 +189,6 @@
             <el-option label="13%" value="0.13" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联项目">
-          <el-select v-model="invoiceForm.project_name" placeholder="请选择项目" allow-create filterable>
-            <el-option v-for="project in projects" :key="project" :label="project" :value="project" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="PDF上传">
           <el-upload
             class="upload-demo"
@@ -209,7 +206,7 @@
           </el-upload>
         </el-form-item>
         <el-form-item label="附件图片">
-          <ImageUpload v-model="invoiceForm.image_url" business-type="invoice" :record-id="currentInvoiceId || 0" :update-api="api.updateInvoice" />
+          <ImageUpload v-model="invoiceForm.image_url" business-type="invoice" :record-id="currentInvoiceId || 0" :update-api="invoicesApi.updateInvoice" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="invoiceForm.notes" type="textarea" placeholder="请输入备注" />
@@ -240,15 +237,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { accountStore } from '../stores/account'
-import api from '../api'
-import { resolveImageUrl } from '../api'
+import { ref, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
+import { useAccountStore } from '../stores/account'
+const accountStore = useAccountStore()
+import invoicesApi from '../api/invoices'
+import commonApi from '../api/common'
+import { resolveImageUrl } from '../api/index'
+import { formatMoney } from '../api/common'
 import ImageUpload from '../components/ImageUpload.vue'
+import { useEnumsStore } from '../stores/enums'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 const accountId = computed(() => accountStore.currentAccount.id)
+const enumsStore = useEnumsStore()
 
 // 发票列表
 const invoices = ref([])
+const loading = ref(false)
 // 筛选表单
 const filterForm = ref({
   direction: '',
@@ -265,9 +271,6 @@ const taxStats = ref({
   inputTax: 0,
   taxPayable: 0
 })
-// 项目列表
-const projects = ref([])
-
 // 弹窗相关
 const dialogVisible = ref(false)
 const dialogType = ref('create')
@@ -285,7 +288,6 @@ const invoiceForm = ref({
   issue_date: '',
   pdf_path: '',
   image_url: '',
-  project_name: '',
   notes: ''
 })
 
@@ -305,8 +307,26 @@ const generateYears = () => {
   }
 }
 
+// 获取当前季度
+const getCurrentQuarter = () => Math.ceil((new Date().getMonth() + 1) / 3)
+
+// 获取本季度税务统计
+const fetchTaxStats = async (year, quarter) => {
+  try {
+    const y = year || new Date().getFullYear()
+    const q = quarter || getCurrentQuarter()
+    const taxRes = await invoicesApi.getTaxReport(y, q)
+    taxStats.value = {
+      outputTax: taxRes.output_tax || 0,
+      inputTax: taxRes.input_tax || 0,
+      taxPayable: taxRes.tax_payable || 0
+    }
+  } catch (e) { console.error('获取税务统计失败:', e) }
+}
+
 // 获取发票列表
 const getInvoices = async () => {
+  loading.value = true
   try {
     // 过滤空字符串参数，避免 422 错误
     const params = {}
@@ -315,23 +335,20 @@ const getInvoices = async () => {
         params[key] = value
       }
     }
-    const response = await api.getInvoices(params)
+    const response = await invoicesApi.getInvoices(params)
     invoices.value = response?.items || []
-    
-    // 更新税务统计
+
+    // 更新税务统计：优先用筛选器的年份/季度，否则用当前季度
     if (filterForm.value.year && filterForm.value.quarter) {
-      try {
-        const taxRes = await api.getTaxReport(parseInt(filterForm.value.year), parseInt(filterForm.value.quarter))
-        taxStats.value = {
-          outputTax: taxRes.output_tax || 0,
-          inputTax: taxRes.input_tax || 0,
-          taxPayable: taxRes.tax_payable || 0
-        }
-      } catch (e) { /* ignore */ }
+      await fetchTaxStats(parseInt(filterForm.value.year), parseInt(filterForm.value.quarter))
+    } else {
+      await fetchTaxStats()
     }
   } catch (error) {
     console.error('获取发票列表失败:', error)
     invoices.value = []
+  } finally {
+    loading.value = false
   }
 }
 
@@ -368,14 +385,15 @@ const saveInvoice = async () => {
     }
 
     if (dialogType.value === 'create') {
-      await api.createInvoice(invoiceForm.value)
+      await invoicesApi.createInvoice(invoiceForm.value)
     } else {
-      await api.updateInvoice(currentInvoiceId.value, invoiceForm.value)
+      await invoicesApi.updateInvoice(currentInvoiceId.value, invoiceForm.value)
     }
     dialogVisible.value = false
     getInvoices()
   } catch (error) {
     console.error('保存发票失败:', error)
+    ElMessage.error(error.response?.data?.detail || '保存发票失败')
   }
 }
 
@@ -394,20 +412,22 @@ const editInvoice = (invoice) => {
 // 删除发票
 const deleteInvoice = async (id) => {
   try {
-    await api.deleteInvoice(id)
+    await invoicesApi.deleteInvoice(id)
     getInvoices()
   } catch (error) {
     console.error('删除发票失败:', error)
+    ElMessage.error(error.response?.data?.detail || '删除发票失败')
   }
 }
 
 // 认证发票
 const certifyInvoice = async (id) => {
   try {
-    await api.certifyInvoice(id)
+    await invoicesApi.certifyInvoice(id)
     getInvoices()
   } catch (error) {
     console.error('认证发票失败:', error)
+    ElMessage.error(error.response?.data?.detail || '认证发票失败')
   }
 }
 
@@ -431,7 +451,7 @@ const handleUploadSuccess = (response) => {
 const beforeUpload = (file) => {
   const isPDF = file.type === 'application/pdf'
   if (!isPDF) {
-    alert('只能上传 PDF 文件!')
+    ElMessage.warning('只能上传 PDF 文件!')
   }
   return isPDF
 }
@@ -483,14 +503,9 @@ watch([() => invoiceForm.value.amount_with_tax, () => invoiceForm.value.amount_w
   }
 })
 
-onMounted(() => {
-  generateYears()
-  getInvoices()
-  // 获取项目列表
-  api.getProjects().then(response => {
-    projects.value = response.items ? response.items.map(item => item.project_name) : []
-  })
-})
+generateYears()
+useAccountAwareData(getInvoices)
+enumsStore.fetchEnums()
 </script>
 
 <style scoped>

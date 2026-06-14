@@ -1,19 +1,13 @@
+# ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
+# 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from database import get_db
 from account_dep import get_account_id
 import schemas, crud
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
+from utils import _d, Q2
 
 router = APIRouter()
 
@@ -88,7 +82,3 @@ def get_tax_report(year: int, quarter: int, account_id: int = Depends(get_accoun
     return crud.get_tax_report(db, account_id, year, quarter)
 
 
-@router.get("/project")
-def get_project_report(project_id: int = None, start_date: str = None, end_date: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    """获取项目报表"""
-    return crud.get_project_report(db, account_id, project_id, start_date, end_date)

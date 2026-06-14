@@ -27,23 +27,23 @@
               </template>
               <div class="summary-item">
                 <span class="label">现金余额:</span>
-                <span class="value">{{ financialSummary.balance_sheet.assets.current_assets.cash.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.cash) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">银行存款:</span>
-                <span class="value">{{ financialSummary.balance_sheet.assets.current_assets.bank.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.bank) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">应收账款:</span>
-                <span class="value">{{ financialSummary.balance_sheet.assets.current_assets.accounts_receivable.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.accounts_receivable) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">库存价值:</span>
-                <span class="value">{{ financialSummary.balance_sheet.assets.current_assets.inventory.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.inventory) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">资产总计:</span>
-                <span class="value">{{ financialSummary.balance_sheet.assets.total_assets.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.total_assets) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -55,15 +55,15 @@
               </template>
               <div class="summary-item">
                 <span class="label">应付账款:</span>
-                <span class="value">{{ financialSummary.balance_sheet.liabilities.current_liabilities.accounts_payable.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.current_liabilities.accounts_payable) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">应交税费:</span>
-                <span class="value">{{ financialSummary.balance_sheet.liabilities.current_liabilities.tax_payable.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.current_liabilities.tax_payable) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">负债合计:</span>
-                <span class="value">{{ financialSummary.balance_sheet.liabilities.total_liabilities.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.total_liabilities) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -75,11 +75,11 @@
               </template>
               <div class="summary-item">
                 <span class="label">未分配利润:</span>
-                <span class="value">{{ financialSummary.balance_sheet.equity.retained_earnings.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.equity.retained_earnings) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">权益合计:</span>
-                <span class="value">{{ financialSummary.balance_sheet.equity.total_equity.toFixed(2) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.equity.total_equity) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -93,7 +93,7 @@
               </template>
               <el-row :gutter="20">
                 <el-col :span="6">
-                  <el-statistic title="资产负债率" :value="debtRatio" precision="2" suffix="%">
+                  <el-statistic title="资产负债率" :value="debtRatio" :precision="2" suffix="%">
                     <template #suffix>
                       <span :class="debtRatio < 50 ? 'healthy' : debtRatio < 70 ? 'warning' : 'danger'">
                         {{ debtRatio < 50 ? '健康' : debtRatio < 70 ? '注意' : '风险' }}
@@ -102,7 +102,7 @@
                   </el-statistic>
                 </el-col>
                 <el-col :span="6">
-                  <el-statistic title="流动比率" :value="currentRatio" precision="2">
+                  <el-statistic title="流动比率" :value="currentRatio" :precision="2">
                     <template #suffix>
                       <span :class="currentRatio > 2 ? 'healthy' : currentRatio > 1 ? 'warning' : 'danger'">
                         {{ currentRatio > 2 ? '良好' : currentRatio > 1 ? '一般' : '紧张' }}
@@ -111,7 +111,7 @@
                   </el-statistic>
                 </el-col>
                 <el-col :span="6">
-                  <el-statistic title="权益比率" :value="equityRatio" precision="2" suffix="%">
+                  <el-statistic title="权益比率" :value="equityRatio" :precision="2" suffix="%">
                     <template #suffix>
                       <span :class="equityRatio > 50 ? 'healthy' : equityRatio > 30 ? 'warning' : 'danger'">
                         {{ equityRatio > 50 ? '稳健' : equityRatio > 30 ? '一般' : '偏低' }}
@@ -120,13 +120,14 @@
                   </el-statistic>
                 </el-col>
                 <el-col :span="6">
-                  <el-statistic title="期初余额状态" :value="openingBalanceStatus.text">
-                    <template #suffix>
-                      <el-tag :type="openingBalanceStatus.type" size="small">
+                  <div class="status-statistic">
+                    <div class="statistic-title">期初余额状态</div>
+                    <div class="statistic-content">
+                      <el-tag :type="openingBalanceStatus.type" size="large">
                         {{ openingBalanceStatus.text }}
                       </el-tag>
-                    </template>
-                  </el-statistic>
+                    </div>
+                  </div>
                 </el-col>
               </el-row>
             </el-card>
@@ -142,9 +143,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import financeApi from '../api/finance'
+import { formatMoney } from '../api/common'
+import { formatDate } from '../utils/format'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const props = defineProps({
   date: {
@@ -157,10 +161,15 @@ const loading = ref(false)
 const financialSummary = ref(null)
 const reportDate = ref(props.date)
 
+watch(() => props.date, (newDate) => {
+  reportDate.value = newDate
+  loadFinancialSummary()
+})
+
 const loadFinancialSummary = async () => {
   loading.value = true
   try {
-    const response = await api.getFinancialSummary(reportDate.value)
+    const response = await financeApi.getFinancialSummary(reportDate.value)
     financialSummary.value = response
   } catch (error) {
     ElMessage.error('加载财务汇总失败')
@@ -170,9 +179,7 @@ const loadFinancialSummary = async () => {
   }
 }
 
-const formatDate = (dateStr) => {
-  return new Date(dateStr).toLocaleDateString('zh-CN')
-}
+
 
 const debtRatio = computed(() => {
   if (!financialSummary.value) return 0
@@ -205,9 +212,7 @@ const openingBalanceStatus = computed(() => {
     : { text: '未设置', type: 'warning' }
 })
 
-onMounted(() => {
-  loadFinancialSummary()
-})
+useAccountAwareData(loadFinancialSummary)
 </script>
 
 <style scoped>
@@ -286,5 +291,19 @@ onMounted(() => {
 .no-data {
   text-align: center;
   padding: 40px;
+}
+
+.status-statistic {
+  text-align: center;
+  padding: 8px 0;
+}
+.status-statistic .statistic-title {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.status-statistic .statistic-content {
+  font-size: 20px;
+  font-weight: bold;
 }
 </style>

@@ -19,10 +19,10 @@
     </div>
     <div v-if="imageUrl" style="margin-top:8px;">
       <el-image
-        :src="resolveUrl(imageUrl)"
+        :src="resolveImageUrl(imageUrl)"
         style="max-width:200px;max-height:150px;"
         fit="contain"
-        :preview-src-list="[resolveUrl(imageUrl)]"
+        :preview-src-list="[resolveImageUrl(imageUrl)]"
       />
     </div>
   </div>
@@ -31,9 +31,8 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
-
-const API_BASE = 'http://localhost:8000'
+import commonApi from '../api/common'
+import { resolveImageUrl } from '../api/index'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -47,12 +46,6 @@ const imageUrl = ref(props.modelValue)
 const uploading = ref(false)
 
 watch(() => props.modelValue, (val) => { imageUrl.value = val })
-
-const resolveUrl = (url) => {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  return `${API_BASE}${url}`
-}
 
 const beforeUpload = (file) => {
   const isImage = file.type.startsWith('image/')
@@ -71,10 +64,10 @@ const handleUpload = async ({ file }) => {
     let res
     if (imageUrl.value) {
       // 换图
-      res = await api.replaceImage(formData, props.businessType, props.recordId, imageUrl.value)
+      res = await commonApi.replaceImage(formData, props.businessType, props.recordId, imageUrl.value)
     } else {
       // 新上传
-      res = await api.uploadImage(formData, props.businessType, props.recordId)
+      res = await commonApi.uploadImage(formData, props.businessType, props.recordId)
     }
     imageUrl.value = res.image_url
     emit('update:modelValue', res.image_url)
@@ -99,7 +92,7 @@ const handleUpload = async ({ file }) => {
 const handleRemove = async () => {
   try {
     if (imageUrl.value) {
-      await api.deleteImage(resolveUrl(imageUrl.value))
+      await commonApi.deleteImage(resolveImageUrl(imageUrl.value))
     }
   } catch (e) { /* 即使删文件失败也清空URL */ }
   const oldUrl = imageUrl.value

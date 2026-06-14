@@ -15,7 +15,7 @@ from uow import unit_of_work
 router = APIRouter()
 
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def get_expenses(
     category: Optional[str] = None,
     year: Optional[int] = None,
@@ -58,7 +58,7 @@ async def get_expenses(
     return PaginatedResponse(total=total, items=expense_outs)
 
 
-@router.post("/", response_model=ExpenseOut)
+@router.post("", response_model=ExpenseOut)
 async def create_expense(
     expense: ExpenseCreate,
     db: Session = Depends(get_db),

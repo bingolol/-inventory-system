@@ -55,21 +55,21 @@
       <el-table :data="result.items" stripe border style="width: 100%" @row-click="onRowClick">
         <el-table-column prop="partner_name" label="对方名称" min-width="150" />
         <el-table-column prop="opening_balance" label="期初欠款" width="110" align="right">
-          <template #default="{ row }">¥{{ row.opening_balance?.toFixed(2) }}</template>
+          <template #default="{ row }">¥{{ formatMoney(row.opening_balance) }}</template>
         </el-table-column>
         <el-table-column prop="current_amount" label="本期发生" width="110" align="right">
-          <template #default="{ row }">¥{{ row.current_amount?.toFixed(2) }}</template>
+          <template #default="{ row }">¥{{ formatMoney(row.current_amount) }}</template>
         </el-table-column>
         <el-table-column prop="paid_amount" label="已收/已付" width="110" align="right">
-          <template #default="{ row }">¥{{ row.paid_amount?.toFixed(2) }}</template>
+          <template #default="{ row }">¥{{ formatMoney(row.paid_amount) }}</template>
         </el-table-column>
         <el-table-column prop="closing_balance" label="期末欠款" width="110" align="right">
           <template #default="{ row }">
-            <span :class="row.closing_balance > 0 ? 'text-danger' : ''">¥{{ row.closing_balance?.toFixed(2) }}</span>
+            <span :class="row.closing_balance > 0 ? 'text-danger' : ''">¥{{ formatMoney(row.closing_balance) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="invoice_amount" label="发票金额" width="110" align="right">
-          <template #default="{ row }">¥{{ row.invoice_amount?.toFixed(2) }}</template>
+          <template #default="{ row }">¥{{ formatMoney(row.invoice_amount) }}</template>
         </el-table-column>
         <el-table-column prop="order_count" label="单据数" width="80" align="center" />
         <el-table-column prop="unpaid_orders" label="未结清" width="80" align="center">
@@ -100,7 +100,7 @@
         <el-table-column prop="date" label="日期" width="100" />
         <el-table-column prop="description" label="描述" min-width="160" />
         <el-table-column prop="amount" label="金额" width="100" align="right">
-          <template #default="{ row }">¥{{ row.amount?.toFixed(2) }}</template>
+          <template #default="{ row }">¥{{ formatMoney(row.amount) }}</template>
         </el-table-column>
         <el-table-column prop="payment_status" label="状态" width="80" align="center">
           <template #default="{ row }">
@@ -122,9 +122,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import commonApi, { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const loading = ref(false)
 const drawerVisible = ref(false)
@@ -149,9 +150,13 @@ const detailResult = reactive({
 })
 
 const loadReconciliations = async () => {
+  if (!filter.start_date || !filter.end_date) {
+    ElMessage.warning('请选择开始日期和结束日期')
+    return
+  }
   loading.value = true
   try {
-    const data = await api.getReconciliations({
+    const data = await commonApi.getReconciliations({
       party_type: filter.party_type,
       start_date: filter.start_date,
       end_date: filter.end_date
@@ -165,9 +170,13 @@ const loadReconciliations = async () => {
 }
 
 const showDetail = async (row) => {
+  if (!filter.start_date || !filter.end_date) {
+    ElMessage.warning('请选择开始日期和结束日期')
+    return
+  }
   loading.value = true
   try {
-    const data = await api.getReconciliationDetail({
+    const data = await commonApi.getReconciliationDetail({
       party_type: filter.party_type,
       partner_id: row.partner_id,
       start_date: filter.start_date,
@@ -195,10 +204,8 @@ const setDefaultDates = () => {
   filter.end_date = `${y}-${m}-${new Date(y, now.getMonth() + 1, 0).getDate()}`
 }
 
-onMounted(() => {
-  setDefaultDates()
-  loadReconciliations()
-})
+setDefaultDates()
+useAccountAwareData(loadReconciliations)
 </script>
 
 <style scoped>

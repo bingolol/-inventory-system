@@ -2,9 +2,9 @@
   <div>
     <el-card shadow="never">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-weight:600;">库存管理</span>
-          <div style="display:flex;gap:8px;">
+        <div class="card-header">
+          <span class="page-title">库存管理</span>
+          <div class="card-header-actions">
             <el-dropdown>
               <el-button><el-icon><Download /></el-icon> 导出</el-button>
               <template #dropdown>
@@ -17,14 +17,14 @@
           </div>
         </div>
       </template>
-      <div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <div class="filter-bar">
         <el-input v-model="searchKeyword" placeholder="搜索商品名称/编码" clearable style="width:220px" @clear="loadData" @keyup.enter="loadData">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="categoryFilter" placeholder="分类筛选" clearable style="width:140px">
+        <el-select v-model="categoryFilter" placeholder="分类筛选" clearable style="width:140px" @change="loadData">
           <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
         </el-select>
-        <el-switch v-model="alertOnly" active-text="仅显示预警" />
+        <el-switch v-model="alertOnly" active-text="仅显示预警" @change="loadData" />
         <el-button type="primary" @click="loadData"><el-icon><Search /></el-icon> 查询</el-button>
       </div>
       <el-table :data="list" stripe style="width:100%">
@@ -47,14 +47,14 @@
             <el-tag v-else type="success" size="small">正常</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="purchase_price" label="进价" width="90">
-          <template #default="{ row }">¥{{ row.purchase_price?.toFixed(2) }}</template>
+        <el-table-column prop="purchase_price" label="进价" width="110" align="right">
+          <template #default="{ row }"><span class="money">¥{{ formatMoney(row.purchase_price) }}</span></template>
         </el-table-column>
-        <el-table-column prop="sale_price" label="售价" width="90">
-          <template #default="{ row }">¥{{ row.sale_price?.toFixed(2) }}</template>
+        <el-table-column prop="sale_price" label="售价" width="110" align="right">
+          <template #default="{ row }"><span class="money">¥{{ formatMoney(row.sale_price) }}</span></template>
         </el-table-column>
-        <el-table-column label="库存价值" width="110">
-          <template #default="{ row }">¥{{ (row.quantity * (row.purchase_price || 0)).toFixed(2) }}</template>
+        <el-table-column label="库存价值" width="120" align="right">
+          <template #default="{ row }"><span class="money">¥{{ formatMoney(row.quantity * (row.purchase_price ?? 0)) }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
@@ -89,9 +89,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import productsApi from '../api/products'
+import commonApi, { formatMoney } from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const list = ref([])
 const total = ref(0)
@@ -109,7 +111,7 @@ const loadData = async () => {
     const params = { page: page.value, page_size: pageSize.value, alert_only: alertOnly.value }
     if (searchKeyword.value) params.search = searchKeyword.value
     if (categoryFilter.value) params.category = categoryFilter.value
-    const res = await api.getInventory(params)
+    const res = await productsApi.getInventory(params)
     total.value = res.total
     list.value = res.items
   } catch (e) { ElMessage.error('加载失败') }
@@ -119,15 +121,15 @@ const showAdjust = (row) => {
   adjustForm.value = {
     product_id: row.product_id,
     product_name: row.product_name,
-    current_quantity: row.quantity,
-    quantity: row.quantity
+    current_quantity: Number(row.quantity) || 0,
+    quantity: Number(row.quantity) || 0
   }
   adjustVisible.value = true
 }
 
 const handleAdjust = async () => {
   try {
-    await api.adjustInventory(adjustForm.value.product_id, { quantity: adjustForm.value.quantity })
+    await productsApi.adjustInventory(adjustForm.value.product_id, { quantity: adjustForm.value.quantity })
     ElMessage.success('库存已调整')
     adjustVisible.value = false
     loadData()
@@ -135,7 +137,7 @@ const handleAdjust = async () => {
 }
 
 const loadCategories = async () => {
-  try { categories.value = await api.getCategories() } catch (e) { /* ignore */ }
+  try { categories.value = await productsApi.getCategories() } catch (e) { /* ignore */ }
 }
 
 const exportData = async (format) => {
@@ -143,9 +145,10 @@ const exportData = async (format) => {
     const params = { alert_only: alertOnly.value }
     if (searchKeyword.value) params.search = searchKeyword.value
     if (categoryFilter.value) params.category = categoryFilter.value
-    await api.exportFile('inventory', format, params)
+    await commonApi.exportFile('inventory', format, params)
   } catch (e) { ElMessage.error('导出失败') }
 }
 
-onMounted(() => { loadData(); loadCategories() })
+useAccountAwareData(loadData)
+loadCategories()
 </script>

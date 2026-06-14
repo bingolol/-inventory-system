@@ -13,17 +13,18 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+import workspace
 from database import get_db, init_db
 import models, schemas, crud
 from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, generate_filename, save_image_file, delete_old_image
-from enums import EXPENSE_CATEGORIES, COST_TYPES, PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, projects, tax, income_tax, expenses, project_costs, opening_balances, financial_reports, cash_flows, backup, reconciliations
+from enums import ALL_ENUMS, ENUM_LABELS
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'app.log'), encoding='utf-8'),
+        logging.FileHandler(workspace.get_log_path(), encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -52,18 +53,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── AI危险操作确认中间件 ──
+# 拦截 AI 发出的 DELETE 和特定 PUT，返回 202 等待用户确认
+from confirm_middleware import ConfirmMiddleware
+app.add_middleware(ConfirmMiddleware)
+
 # ── 422 校验错误处理器：枚举值写错时返回字段名+非法值+合法值列表 ──
-ENUM_MAP = {
-    "direction": ["in", "out"],
-    "invoice_type": ["ordinary", "special"],
-    "certification_status": ["pending", "certified", "n_a"],
-    "type": ["income", "expense"],
-    "payment_method": ["company", "private_advance"],
-    "payment_status": ["pending", "partial", "completed", "paid", "unpaid"],
-    "flow_category": ["operating", "investing", "financing"],
-    "category": EXPENSE_CATEGORIES,
-    "cost_type": COST_TYPES,
+# 字段名 → ALL_ENUMS key 的映射，ENUM_MAP 从 ALL_ENUMS 动态生成，避免重复定义
+FIELD_ENUM_MAP = {
+    "direction": "invoice_direction",
+    "invoice_type": "invoice_type",
+    "certification_status": "certification_status",
+    "type": "personal_transaction_type",
+    "payment_method": "payment_method",
+    "payment_status": "payment_status",
+    "flow_category": "flow_category",
+    "category": "expense_categories",
+    "cost_type": "cost_types",
 }
+ENUM_MAP = {field: ALL_ENUMS[key] for field, key in FIELD_ENUM_MAP.items()}
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -104,8 +112,6 @@ async def generic_error_handler(request: Request, exc: Exception):
 
 
 app.include_router(invoices.router, prefix="/api/invoices", tags=["发票管理"])
-app.include_router(project_costs.router, prefix="/api/costs", tags=["项目成本管理"])
-app.include_router(projects.router, prefix="/api/projects", tags=["项目管理"])
 app.include_router(tax.router, prefix="/api/tax-report", tags=["增值税报表"])
 app.include_router(income_tax.router, prefix="/api/income-tax-report", tags=["企业所得税报表"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["费用管理"])
@@ -124,12 +130,18 @@ app.include_router(financial_reports.router, prefix="/api/financial-reports", ta
 app.include_router(cash_flows.router, prefix="/api/cash-flows", tags=["现金流量"])
 app.include_router(backup.router, prefix="/api/backup", tags=["热备份"])
 app.include_router(reconciliations.router, prefix="/api/reconciliations", tags=["对账管理"])
-app.include_router(reconciliations.router, prefix="/api/reconciliation", tags=["对账管理"])
+app.include_router(confirm.router, prefix="/api/confirm", tags=["操作确认"])
 
 
 @app.on_event("startup")
 def startup():
+    workspace.ensure_workspace()
     init_db()
+    # ── EventBus 初始化 ──
+    from middleware import register_middleware
+    import handlers  # 触发 handler 注册
+    import commands  # 确保 Command 全部注册（虽然 Router 导入已触发，但显式导入更安全）
+    register_middleware()
     logger.info("进销存管理系统启动完成")
 
 
@@ -187,6 +199,39 @@ def list_accounts(db: Session = Depends(get_db)):
     return crud.list_accounts(db)
 
 
+@app.post("/api/accounts", response_model=schemas.AccountOut)
+def create_account(body: schemas.AccountCreate, db: Session = Depends(get_db)):
+    try:
+        account = crud.create_account(db, name=body.name, type=body.type, code=body.code, taxpayer_type=body.taxpayer_type)
+        db.commit()
+        db.refresh(account)
+        return account
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="账本代码已存在，请使用不同的代码")
+
+
+@app.put("/api/accounts/{account_id}", response_model=schemas.AccountOut)
+def update_account(account_id: int, body: schemas.AccountUpdate, db: Session = Depends(get_db)):
+    account = crud.update_account(db, account_id, body.name)
+    if not account:
+        raise HTTPException(status_code=404, detail="账本不存在")
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account(account_id: int, db: Session = Depends(get_db)):
+    try:
+        if not crud.delete_account(db, account_id):
+            raise HTTPException(status_code=404, detail="账本不存在")
+        db.commit()
+        return {"message": "账本已删除"}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
@@ -194,21 +239,16 @@ def health_check():
 
 @app.get("/api/enums")
 def get_enums():
-    """返回所有分类枚举，前端缓存使用"""
-    return {
-        "expense_categories": EXPENSE_CATEGORIES,
-        "cost_types": COST_TYPES,
-        "personal_expense_categories": PERSONAL_EXPENSE_CATEGORIES,
-        "personal_income_categories": PERSONAL_INCOME_CATEGORIES,
-    }
+    """返回所有枚举值和中文标签，前端缓存使用"""
+    return {"values": ALL_ENUMS, "labels": ENUM_LABELS}
 
 # 图片静态文件（必须在前端dist之前挂载）
-uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+uploads_dir = workspace.get_uploads_root()
 if os.path.exists(uploads_dir):
     app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # 前端静态文件（生产环境）
-frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+frontend_dist = workspace.get_frontend_dist_dir()
 if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 

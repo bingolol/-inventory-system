@@ -10,24 +10,20 @@ import os
 from database import get_db
 from models import Invoice
 from schemas import InvoiceCreate, InvoiceUpdate, InvoiceOut, InvoiceQuickCreate, InvoiceList, PaginatedResponse
-from account_dep import get_account_id
+from account_dep import get_account_id, get_operator
+from enums import InvoiceDirection, InvoiceType
 from image_utils import delete_old_image
 from uow import unit_of_work
+from commands.base import dispatch
+from commands.invoice_commands import CreateInvoice, UpdateInvoice, DeleteInvoice, CertifyInvoice
+
+from utils import _d, Q2
+from workspace import get_pdfs_dir as _get_pdfs_dir
 
 router = APIRouter()
 
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
-
 # PDF 文件存储路径
-PDF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pdfs")
+PDF_DIR = _get_pdfs_dir()
 if not os.path.exists(PDF_DIR):
     os.makedirs(PDF_DIR)
 
@@ -57,7 +53,7 @@ def _invoice_to_out(inv: Invoice) -> InvoiceOut:
     )
 
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def get_invoices(
     direction: Optional[str] = None,
     invoice_type: Optional[str] = None,
@@ -102,44 +98,39 @@ async def get_invoices(
     return PaginatedResponse(total=total, items=invoice_outs)
 
 
-@router.post("/", response_model=InvoiceOut)
+@router.post("", response_model=InvoiceOut)
 async def create_invoice(
     invoice: InvoiceCreate,
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """创建发票，校验发票号码唯一性"""
-    # 验证发票号码唯一性
-    existing_invoice = db.query(Invoice).filter(
-        Invoice.account_id == account_id,
-        Invoice.invoice_no == invoice.invoice_no
-    ).first()
-    if existing_invoice:
-        raise HTTPException(status_code=400, detail="发票号码已存在")
-    
-    # 创建发票
-    db_invoice = Invoice(
-        account_id=account_id,
-        invoice_no=invoice.invoice_no,
-        direction=invoice.direction,
-        invoice_type=invoice.invoice_type,
-        tax_rate=invoice.tax_rate,
-        amount_without_tax=invoice.amount_without_tax,
-        tax_amount=invoice.tax_amount,
-        amount_with_tax=invoice.amount_with_tax,
-        counterparty_name=invoice.counterparty_name,
-        issue_date=invoice.issue_date,
-        pdf_path=invoice.pdf_path,
-        certification_status=invoice.certification_status,
-        certification_date=invoice.certification_date if invoice.certification_date else None,
-        project_name=invoice.project_name,
-        related_order_id=invoice.related_order_id,
-        related_order_type=invoice.related_order_type,
-        notes=invoice.notes
-    )
     try:
         with unit_of_work(db):
-            db.add(db_invoice)
+            cmd = CreateInvoice(
+                account_id=account_id,
+                operator=operator,
+                invoice_no=invoice.invoice_no,
+                direction=invoice.direction,
+                invoice_type=invoice.invoice_type,
+                tax_rate=invoice.tax_rate,
+                amount_without_tax=invoice.amount_without_tax,
+                tax_amount=invoice.tax_amount,
+                amount_with_tax=invoice.amount_with_tax,
+                counterparty_name=invoice.counterparty_name,
+                issue_date=invoice.issue_date,
+                pdf_path=invoice.pdf_path,
+                certification_status=invoice.certification_status,
+                certification_date=invoice.certification_date if invoice.certification_date else None,
+                project_name=invoice.project_name,
+                related_order_id=invoice.related_order_id,
+                related_order_type=invoice.related_order_type,
+                notes=invoice.notes,
+            )
+            db_invoice = dispatch(cmd, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except IntegrityError:
         raise HTTPException(status_code=400, detail="发票号码已存在")
     db.refresh(db_invoice)
@@ -150,41 +141,36 @@ async def create_invoice(
 async def quick_create_invoice(
     invoice: InvoiceQuickCreate,
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """AI快捷录入发票，自动计算不含税金额和税额"""
-    # 验证发票号码唯一性
-    existing_invoice = db.query(Invoice).filter(
-        Invoice.account_id == account_id,
-        Invoice.invoice_no == invoice.invoice_no
-    ).first()
-    if existing_invoice:
-        raise HTTPException(status_code=400, detail="发票号码已存在")
-    
     # 自动计算不含税金额和税额
     amount_with_tax = _d(invoice.amount_with_tax)
     tax_rate = _d(invoice.tax_rate)
     amount_without_tax = (amount_with_tax / (Decimal('1') + tax_rate)).quantize(Q2)
     tax_amount = (amount_with_tax - amount_without_tax).quantize(Q2)
-    
-    # 创建发票
-    db_invoice = Invoice(
-        account_id=account_id,
-        invoice_no=invoice.invoice_no,
-        direction=invoice.direction,
-        invoice_type=invoice.invoice_type,
-        tax_rate=tax_rate,
-        amount_without_tax=amount_without_tax,
-        tax_amount=tax_amount,
-        amount_with_tax=amount_with_tax,
-        counterparty_name=invoice.counterparty_name,
-        issue_date=invoice.issue_date,
-        project_name=invoice.project_name,
-        notes=invoice.notes
-    )
+
     try:
         with unit_of_work(db):
-            db.add(db_invoice)
+            cmd = CreateInvoice(
+                account_id=account_id,
+                operator=operator,
+                invoice_no=invoice.invoice_no,
+                direction=invoice.direction,
+                invoice_type=invoice.invoice_type,
+                tax_rate=tax_rate,
+                amount_without_tax=amount_without_tax,
+                tax_amount=tax_amount,
+                amount_with_tax=amount_with_tax,
+                counterparty_name=invoice.counterparty_name,
+                issue_date=invoice.issue_date,
+                project_name=invoice.project_name,
+                notes=invoice.notes,
+            )
+            db_invoice = dispatch(cmd, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except IntegrityError:
         raise HTTPException(status_code=400, detail="发票号码已存在")
     db.refresh(db_invoice)
@@ -204,10 +190,11 @@ async def upload_pdf(
     project_name: str = Form(None),
     notes: str = Form(None),
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """上传发票PDF并创建发票记录，参数与quick接口相同，额外支持文件上传"""
-    # 验证发票号码唯一性
+    # 验证发票号码唯一性（路由层快速校验，Command内部也会校验）
     existing_invoice = db.query(Invoice).filter(
         Invoice.account_id == account_id,
         Invoice.invoice_no == invoice_no
@@ -218,7 +205,8 @@ async def upload_pdf(
     # 保存PDF文件
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="只支持PDF文件")
-    file_path = os.path.join(PDF_DIR, f"{account_id}_{file.filename}")
+    safe_filename = os.path.basename(file.filename)
+    file_path = os.path.join(PDF_DIR, f"{account_id}_{safe_filename}")
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
@@ -234,25 +222,27 @@ async def upload_pdf(
     except ValueError:
         raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
 
-    # 创建发票记录
-    db_invoice = Invoice(
-        account_id=account_id,
-        invoice_no=invoice_no,
-        direction=direction,
-        invoice_type=invoice_type,
-        tax_rate=tax_rate,
-        amount_without_tax=amount_without_tax,
-        tax_amount=tax_amount,
-        amount_with_tax=amount_with_tax,
-        counterparty_name=counterparty_name,
-        issue_date=parsed_date,
-        pdf_path=file_path,
-        project_name=project_name,
-        notes=notes
-    )
     try:
         with unit_of_work(db):
-            db.add(db_invoice)
+            cmd = CreateInvoice(
+                account_id=account_id,
+                operator=operator,
+                invoice_no=invoice_no,
+                direction=direction,
+                invoice_type=invoice_type,
+                tax_rate=tax_rate,
+                amount_without_tax=amount_without_tax,
+                tax_amount=tax_amount,
+                amount_with_tax=amount_with_tax,
+                counterparty_name=counterparty_name,
+                issue_date=parsed_date,
+                pdf_path=file_path,
+                project_name=project_name,
+                notes=notes,
+            )
+            db_invoice = dispatch(cmd, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except IntegrityError:
         raise HTTPException(status_code=400, detail="发票号码已存在")
     db.refresh(db_invoice)
@@ -281,31 +271,20 @@ async def get_invoice_pdf(
 
 
 @router.post("/{invoice_id}/certify")
-async def certify_invoice(
+async def certify_invoice_endpoint(
     invoice_id: int,
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """认证进项专票"""
-    invoice = db.query(Invoice).filter(
-        Invoice.id == invoice_id,
-        Invoice.account_id == account_id
-    ).first()
-    
-    if not invoice:
-        raise HTTPException(status_code=404, detail="发票不存在")
-    
-    if invoice.direction != "in":
-        raise HTTPException(status_code=400, detail="只有进项发票可以认证")
-    
-    if invoice.invoice_type != "special":
-        raise HTTPException(status_code=400, detail="只有专票可以认证")
-    
-    # 认证发票
     with unit_of_work(db):
-        invoice.certification_status = "certified"
-        invoice.certification_date = datetime.now()
-    
+        try:
+            dispatch(CertifyInvoice(account_id=account_id, operator=operator, invoice_id=invoice_id), db)
+        except ValueError as e:
+            if "不存在" in str(e):
+                raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e))
     return {"message": "发票认证成功"}
 
 
@@ -314,33 +293,33 @@ async def update_invoice(
     invoice_id: int,
     invoice_update: InvoiceUpdate,
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """更新发票"""
-    invoice = db.query(Invoice).filter(
-        Invoice.id == invoice_id,
-        Invoice.account_id == account_id
-    ).first()
-    
-    if not invoice:
-        raise HTTPException(status_code=404, detail="发票不存在")
-    
-    # 验证发票号码唯一性（如果修改了发票号码）
-    if invoice_update.invoice_no and invoice_update.invoice_no != invoice.invoice_no:
-        existing_invoice = db.query(Invoice).filter(
-            Invoice.account_id == account_id,
-            Invoice.invoice_no == invoice_update.invoice_no,
-            Invoice.id != invoice_id
-        ).first()
-        if existing_invoice:
-            raise HTTPException(status_code=400, detail="发票号码已存在")
-    
-    # 更新发票
-    update_data = invoice_update.model_dump(exclude_unset=True)
     try:
         with unit_of_work(db):
-            for field, value in update_data.items():
-                setattr(invoice, field, value)
+            update_kwargs = {}
+            for k in ('invoice_no', 'direction', 'invoice_type', 'tax_rate',
+                      'amount_without_tax', 'tax_amount', 'amount_with_tax',
+                      'counterparty_name', 'issue_date', 'pdf_path',
+                      'certification_status', 'certification_date',
+                      'project_name', 'related_order_id', 'related_order_type',
+                      'notes', 'image_url'):
+                v = getattr(invoice_update, k, None)
+                if v is not None:
+                    update_kwargs[k] = v
+            cmd = UpdateInvoice(
+                account_id=account_id,
+                operator=operator,
+                invoice_id=invoice_id,
+                **update_kwargs
+            )
+            invoice = dispatch(cmd, db)
+    except ValueError as e:
+        if "不存在" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except IntegrityError:
         raise HTTPException(status_code=400, detail="发票号码已存在")
     db.refresh(invoice)
@@ -351,30 +330,32 @@ async def update_invoice(
 async def delete_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id)
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
 ):
     """删除发票"""
+    # 先查记录获取pdf_path（路由层删除PDF文件，Command层删除DB记录+图片）
     invoice = db.query(Invoice).filter(
         Invoice.id == invoice_id,
         Invoice.account_id == account_id
     ).first()
-    
     if not invoice:
         raise HTTPException(status_code=404, detail="发票不存在")
-    
-    # 删除PDF文件（如果存在）
-    if invoice.pdf_path and os.path.exists(invoice.pdf_path):
-        try:
-            os.remove(invoice.pdf_path)
-        except Exception:
-            pass
-    
-    # 删除关联图片文件
-    if invoice.image_url:
-        delete_old_image(invoice.image_url)
-    
-    # 删除发票
+
+    # 保存pdf_path，因为dispatch后会丢失
+    pdf_path = invoice.pdf_path
+
     with unit_of_work(db):
-        db.delete(invoice)
-    
+        try:
+            dispatch(DeleteInvoice(account_id=account_id, operator=operator, invoice_id=invoice_id), db)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    # 删除PDF文件（如果存在）
+    if pdf_path and os.path.exists(pdf_path):
+        try:
+            os.remove(pdf_path)
+        except OSError:
+            pass  # 文件清理失败不影响主操作
+
     return {"message": "发票删除成功"}

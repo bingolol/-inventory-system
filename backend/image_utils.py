@@ -3,14 +3,16 @@ import os
 import uuid
 import logging
 
+from workspace import get_uploads_dir as _get_uploads_dir
+
 logger = logging.getLogger("inventory")
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "images")
+UPLOAD_DIR = _get_uploads_dir()
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 IMAGE_BASE_URL = "/uploads/images"
-BUSINESS_TYPES = {"expense", "personal", "purchase", "sale", "invoice", "cost"}
+BUSINESS_TYPES = {"expense", "personal", "purchase", "sale", "invoice"}
 ALLOWED_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}
 MAX_SIZE = 5 * 1024 * 1024  # 5MB
 

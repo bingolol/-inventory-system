@@ -7,7 +7,7 @@ import schemas, crud
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("")
 def list_logs(page: int = 1, page_size: int = 20, entity_type: str = None, operation: str = None, start_date: str = None, end_date: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     skip = (page - 1) * page_size
     total, items = crud.list_operation_logs(db, account_id, skip=skip, limit=page_size, entity_type=entity_type, operation=operation, start_date=start_date, end_date=end_date)

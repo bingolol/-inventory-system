@@ -2,9 +2,9 @@
   <div>
     <el-card shadow="never">
       <template #header>
-        <span style="font-weight:600;">操作日志</span>
+        <span class="page-title">操作日志</span>
       </template>
-      <div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;">
+      <div class="filter-bar">
         <el-select v-model="entityType" placeholder="实体类型" clearable style="width:140px" @change="loadData">
           <el-option label="商品" value="product" />
           <el-option label="供应商" value="supplier" />
@@ -20,11 +20,14 @@
           <el-option label="盘点" value="adjust" />
         </el-select>
         <el-date-picker v-model="dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" @change="loadData" />
-        <el-button @click="loadData">查询</el-button>
+        <el-button type="primary" @click="loadData">查询</el-button>
       </div>
-      <el-table :data="list" stripe style="width:100%">
+      <el-table :data="list" stripe style="width:100%" v-loading="loading">
+        <template #empty>
+          <el-empty description="暂无操作日志" />
+        </template>
         <el-table-column prop="created_at" label="时间" width="180">
-          <template #default="{ row }">{{ row.created_at?.replace('T', ' ').slice(0, 19) }}</template>
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="operation" label="操作" width="100">
           <template #default="{ row }">
@@ -44,7 +47,7 @@
         </el-table-column>
         <el-table-column prop="detail" label="详情" min-width="200" />
       </el-table>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <div class="pagination-bar">
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
       </div>
     </el-card>
@@ -52,11 +55,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import commonApi from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { formatDateTime } from '../utils/format'
 
 const list = ref([])
+const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
@@ -66,19 +72,21 @@ const dateRange = ref(null)
 
 const opLabel = (op) => ({ create: '创建', update: '更新', delete: '删除', adjust: '盘点' }[op] || op)
 const opTagType = (op) => ({ create: 'success', update: 'warning', delete: 'danger', adjust: 'info' }[op] || '')
-const entityLabel = (type) => ({ product: '商品', supplier: '供应商', customer: '客户', purchase_order: '采购单', sale_order: '销售单', inventory: '库存', expense: '费用', invoice: '发票', project: '项目', project_cost: '项目成本', project_income: '项目收入', personal: '个人流水' }[type] || type)
+const entityLabel = (type) => ({ product: '商品', supplier: '供应商', customer: '客户', purchase_order: '采购单', sale_order: '销售单', inventory: '库存', expense: '费用', invoice: '发票', personal: '个人流水' }[type] || type)
 
 const loadData = async () => {
+  loading.value = true
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (entityType.value) params.entity_type = entityType.value
     if (operation.value) params.operation = operation.value
     if (dateRange.value) { params.start_date = dateRange.value[0]; params.end_date = dateRange.value[1] }
-    const res = await api.getLogs(params)
+    const res = await commonApi.getLogs(params)
     total.value = res.total
     list.value = res.items
   } catch (e) { ElMessage.error('加载失败') }
+  finally { loading.value = false }
 }
 
-onMounted(loadData)
+useAccountAwareData(loadData)
 </script>

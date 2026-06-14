@@ -9,14 +9,19 @@
       <div style="padding: 0 12px 12px;">
         <el-select v-model="currentAccountId" size="small" style="width:100%" @change="onAccountChange">
           <el-option v-for="acc in accounts" :key="acc.id" :label="acc.name" :value="acc.id">
-            <span style="display:flex;justify-content:space-between;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
               <span>{{ acc.name }}</span>
               <el-tag size="small" :type="acc.type === 'company' ? 'primary' : 'success'">{{ acc.type === 'company' ? '公司' : '个人' }}</el-tag>
-            </span>
+            </div>
           </el-option>
         </el-select>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <el-button size="small" :icon="Plus" style="flex:1" @click="openCreateDialog" />
+          <el-button size="small" :icon="Edit" style="flex:1" @click="openRenameDialog" />
+          <el-button size="small" :icon="Delete" style="flex:1" @click="openDeleteConfirm" />
+        </div>
       </div>
-      <el-menu :default-active="currentRoute" router class="app-menu" background-color="transparent" :active-text-color="'var(--primary)'">
+      <el-menu :default-active="currentRoute" @select="handleMenuSelect" class="app-menu" background-color="transparent" :active-text-color="'var(--primary)'">
         <template v-if="currentAccount?.type === 'company'">
           <el-menu-item index="/">
             <el-icon><DataAnalysis /></el-icon>
@@ -50,10 +55,6 @@
           <el-menu-item index="/opening-balance">
             <el-icon><Money /></el-icon>
             <span>期初余额</span>
-          </el-menu-item>
-          <el-menu-item index="/projects">
-            <el-icon><Document /></el-icon>
-            <span>项目管理</span>
           </el-menu-item>
           <el-menu-item index="/reports">
             <el-icon><TrendCharts /></el-icon>
@@ -126,18 +127,61 @@
       </el-main>
     </el-container>
   </el-container>
+
+  <!-- 账本重命名对话框 -->
+  <el-dialog v-model="renameDialogVisible" title="修改账本名称" width="360px" :close-on-click-modal="false">
+    <el-input v-model="renameForm.name" placeholder="请输入账本名称" maxlength="50" show-word-limit />
+    <template #footer>
+      <el-button @click="renameDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="renameLoading" @click="handleRename">确定</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 新建账本对话框 -->
+  <el-dialog v-model="createDialogVisible" title="新建账本" width="400px" :close-on-click-modal="false">
+    <el-form label-width="80px">
+      <el-form-item label="账本名称">
+        <el-input v-model="createForm.name" placeholder="如：XX公司" maxlength="50" show-word-limit />
+      </el-form-item>
+      <el-form-item label="账本类型">
+        <el-radio-group v-model="createForm.type">
+          <el-radio value="company">公司</el-radio>
+          <el-radio value="personal">个人</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="纳税人类型" v-if="createForm.type === 'company'">
+        <el-radio-group v-model="createForm.taxpayer_type">
+          <el-radio value="small_scale">小规模纳税人</el-radio>
+          <el-radio value="general">一般纳税人</el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="createDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="createLoading" @click="handleCreate">创建</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- AI危险操作确认对话框 -->
+  <ConfirmDialog ref="confirmDialogRef" />
 </template>
 
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../api'
-import { accountStore } from '../stores/account'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Plus, Delete } from '@element-plus/icons-vue'
+import commonApi from '../api/common'
+import productsApi from '../api/products'
+import { useAccountStore } from '../stores/account'
+import ConfirmDialog from './ConfirmDialog.vue'
+const accountStore = useAccountStore()
+const confirmDialogRef = ref(null)
 
 const route = useRoute()
 const router = useRouter()
 const currentRoute = computed(() => route.path)
-const currentTitle = computed(() => route.meta.title || '仪表盘')
+const currentTitle = computed(() => route.meta.title ?? '仪表盘')
 const alertCount = ref(0)
 const currentDate = ref('')
 const accounts = ref([])
@@ -155,20 +199,26 @@ const updateDate = () => {
 
 const loadAccounts = async () => {
   try {
-    accounts.value = await api.getAccounts()
+    accounts.value = await commonApi.getAccounts()
     accountStore.setAccounts(accounts.value)
     if (!accountStore.currentAccountId && accounts.value.length > 0) {
       accountStore.setCurrentAccount(accounts.value[0].id)
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('加载账本列表失败:', e) }
 }
 
 const loadAlertCount = async () => {
   if (currentAccount.value?.type !== 'company') return
   try {
-    const data = await api.getAlerts()
+    const data = await productsApi.getAlerts()
     alertCount.value = data.length
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('加载库存预警数量失败:', e) }
+}
+
+const handleMenuSelect = (index) => {
+  if (index !== route.path) {
+    router.push(index)
+  }
 }
 
 const onAccountChange = (id) => {
@@ -179,10 +229,112 @@ const onAccountChange = (id) => {
     router.push('/personal')
   } else if (acc?.type === 'company' && (route.path === '/personal')) {
     router.push('/')
-  } else {
-    // 刷新当前页面数据
-    router.go(0)
   }
+  // 不再需要 router.go(0)，Pinia 响应式 + watch 会自动刷新各页面数据
+}
+
+// 账本重命名
+const renameDialogVisible = ref(false)
+const renameForm = ref({ name: '' })
+const renameLoading = ref(false)
+
+const openRenameDialog = () => {
+  const acc = accounts.value.find(a => a.id === Number(accountStore.currentAccountId))
+  if (!acc) {
+    ElMessage.warning('请先选择一个账本')
+    return
+  }
+  renameForm.value.name = acc.name
+  renameDialogVisible.value = true
+}
+
+const handleRename = async () => {
+  const name = renameForm.value.name.trim()
+  if (!name) {
+    ElMessage.warning('账本名称不能为空')
+    return
+  }
+  renameLoading.value = true
+  try {
+    await commonApi.updateAccount(Number(accountStore.currentAccountId), { name })
+    ElMessage.success('账本名称已更新')
+    renameDialogVisible.value = false
+    await loadAccounts()
+  } catch (e) {
+    ElMessage.error('修改失败：' + (e.response?.data?.detail ?? e.message))
+  } finally {
+    renameLoading.value = false
+  }
+}
+
+// 新建账本
+const createDialogVisible = ref(false)
+const createForm = ref({ name: '', type: 'company', taxpayer_type: 'small_scale' })
+const createLoading = ref(false)
+
+const openCreateDialog = () => {
+  createForm.value = { name: '', type: 'company', taxpayer_type: 'small_scale' }
+  createDialogVisible.value = true
+}
+
+const handleCreate = async () => {
+  const name = createForm.value.name.trim()
+  if (!name) {
+    ElMessage.warning('账本名称不能为空')
+    return
+  }
+  createLoading.value = true
+  try {
+    const newAccount = await commonApi.createAccount({
+      name,
+      type: createForm.value.type,
+      taxpayer_type: createForm.value.taxpayer_type
+    })
+    ElMessage.success('账本已创建')
+    createDialogVisible.value = false
+    await loadAccounts()
+    // 自动切换到新账本
+    accountStore.setCurrentAccount(newAccount.id)
+  } catch (e) {
+    ElMessage.error('创建失败：' + (e.response?.data?.detail ?? e.message))
+  } finally {
+    createLoading.value = false
+  }
+}
+
+// 删除账本
+const openDeleteConfirm = () => {
+  const acc = accounts.value.find(a => a.id === Number(accountStore.currentAccountId))
+  if (!acc) {
+    ElMessage.warning('请先选择一个账本')
+    return
+  }
+  ElMessageBox.confirm(
+    `确定要删除账本「${acc.name}」吗？该操作不可撤销，删除前请确保账本下无业务数据。`,
+    '删除账本',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    }
+  ).then(async () => {
+    try {
+      await commonApi.deleteAccount(acc.id)
+      ElMessage.success('账本已删除')
+      await loadAccounts()
+      // 切换到剩余的第一个账本
+      if (accounts.value.length > 0) {
+        accountStore.setCurrentAccount(accounts.value[0].id)
+      } else {
+        accountStore.setCurrentAccount('')
+      }
+    } catch (e) {
+      ElMessage.error('删除失败：' + (e.response?.data?.detail ?? e.message))
+    }
+  }).catch(() => {
+    // 用户取消，不做任何操作
+  })
 }
 
 watch(() => route.path, () => {
@@ -206,7 +358,7 @@ onMounted(() => {
 }
 
 .app-aside {
-  background: #fff;
+  background: var(--el-bg-color);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -245,7 +397,7 @@ onMounted(() => {
 }
 
 .app-header {
-  background: #fff;
+  background: var(--el-bg-color);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;

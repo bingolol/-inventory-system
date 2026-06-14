@@ -121,8 +121,8 @@ metadata:
 ```
 > **project_id** 关联项目（推荐），后端自动反查填充 project_name。
 > **deduct_inventory**：是否由销售单直接扣库存。
-> - **项目销售**：project_id 非空时必须为 false（否则返回400，防止双扣），库存出库统一走项目领料（材料类成本）。
-> - **零售销售**：project_id 为空时可设 true，销售单在 completed 状态下会按 items 扣减库存；取消/删除会回补库存。
+> - **项目专属销售单**：由项目创建，deduct_inventory=true，扣库存逻辑与零售一致。项目销售单只能通过项目创建，零售单禁止设置 project_id。
+> - **零售销售**：project_id 为空，deduct_inventory=true，销售单在 completed 状态下会按 items 扣减库存；取消/删除会回补库存。
 > **total_price**（可选）：自定义订单总额。不传或传null时自动按明细合计计算。传值时与明细合计的差额会自动分配到各行单价（支持整单打折、抹零、含税包价等场景）。
 > - 单价为0的行优先分配（按数量加权）
 > - 所有行都有单价时按金额比例分配（整体打折/加价）
@@ -368,7 +368,7 @@ API：`GET /api/income-tax-report?year=YYYY`
 | 现金流类别 | operating / investing / financing |
 | 图片业务类型 | expense / personal / project_cost / invoice |
 | 收入来源类型 | manual(手动) / sale_order(销售单自动) |
-| 销售扣库存开关 | deduct_inventory: true/false（project_id非空时必须false） |
+| 销售扣库存开关 | deduct_inventory: true/false（项目专属销售单和零售单必须true；零售单禁止设置project_id） |
 | 销售自定义总额 | total_price: 可选float，null=自动计算，传值则差额分配到行单价 |
 | 采购单付款状态 | payment_status: paid/unpaid（PurchaseOrderUpdate现已支持修改） |
 | 同一商品重复 | 同一订单内同一product_id只能出现一次，重复返回400 |
@@ -412,24 +412,40 @@ API：`GET /api/income-tax-report?year=YYYY`
 
 ```
 采购单(project_id) → 入库（库存增加）
+项目专属销售单(project_id) → 扣库存 + 自动生成项目收入
+零售销售单(project_id=NULL, deduct_inventory=true) → 扣库存
 项目领料(材料类成本) → 出库（库存扣减）+ 项目成本记录
-销售单(project_id) → 自动生成项目收入（★不再扣减库存）
 ```
 
 ### 三大不变量
 
 | # | 不变量 | 含义 | 保障 |
 |---|--------|------|------|
-| I | 库存不变量 | 材料成本变动后库存变化=数量差值 | 扣减前校验+assert+UNIQUE索引 |
-| II | 收入不变量 | 同一销售单最多一条自动收入 | 幂等检查+uq_income_source唯一索引 |
-| III | 汇总不变量 | 项目汇总=明细重算结果 | update_project_summary统一重算 |
+| I | 库存不变量 | 销售单扣库存/回补与实际库存变动一致；材料成本变动后库存变化=数量差值；不允许负库存 | 扣减前校验+assert+UNIQUE索引+deduct_inventory统一条件 |
+| II | 收入不变量 | 同一销售单最多一条自动收入；已有sale_order收入时禁止手动创建 | 幂等检查+uq_income_source唯一索引+冲突校验 |
+| III | 汇总不变量 | 项目total_cost=销售单商品进价×数量；total_income=收入合计；profit=收入-成本 | update_project_summary统一重算 |
+
+### 工作流程
+
+```
+项目生命周期：创建项目 → 生成空销售单 → 添加商品(售价+成本价) → 库存随销售单扣减/回补
+                 → 销售单完成 → 自动生成项目收入 → 汇总重算
+                 → 删除一行成本 → 库存立即回补(逐行精度)
+
+零售生命周期：创建零售单(deduct_inventory=true) → 完成扣库存 → 取消回补库存
+                 → 零售单禁止关联project_id
+
+采购生命周期：创建采购单 → 入库(库存增加) → 可关联项目(反查填充project_name)
+```
 
 ### 联动注意事项
 
-1. **项目销售单不扣库存**：库存出库统一走项目领料（材料类成本），销售单仅记录客户和金额
-   - **零售例外**：当 `deduct_inventory=true` 且 `project_id=NULL` 且 `status=completed` 时，销售单会直接扣库存
-2. **材料类成本必填product_id+quantity**：cost_type="材料"时必须关联商品和数量，否则无法联动库存
-3. **库存不足时报错**：材料领料超出库存时返回400错误，整个事务回滚
+1. **项目专属销售单必须扣库存**：项目创建时自动生成空销售单，后续添加商品时库存随销售单变动（扣减/回补），与零售销售单逻辑一致
+   - **零售销售单**：deduct_inventory=true，status=completed 时直接扣库存；取消/删除时回补
+   - **项目专属销售单**：由项目创建，deduct_inventory=true，扣库存逻辑与零售一致
+   - **零售单禁止关联项目**：普通零售销售单不允许设置 project_id，项目销售单只能由项目创建
+2. **材料类成本必填product_id+quantity**：cost_type="材料"时必须关联商品和数量，否则无法联动库存。材料类成本为出库记录/备注，不参与项目total_cost计算
+3. **库存不足时报错**：材料领料或销售单扣库存时，超出库存返回400错误，整个事务回滚
 4. **删除成本自动回补库存**：删除材料类成本时，库存自动恢复
 5. **删除销售单联动删除收入**：删除关联项目的销售单时，自动删除对应的项目收入
 6. **项目删除前置校验**：项目下有未取消的销售单/采购单时禁止删除，需先取消或解除关联
@@ -448,4 +464,4 @@ cd Desktop\inventory-system\backend && python -m uvicorn main:app --host 0.0.0.0
 ```
 
 ---
-版本：v5.5.0 | 更新日期：2026-05-01 | 变更：对账API参数名统一party_type/partner_id、发票上传接口创建发票记录、销售单取消时库存回补修复、party_type必填
+版本：v6.0.0 | 更新日期：2026-06-02 | 变更：项目专属销售单扣库存逻辑统一、零售单禁止关联项目、total_cost改为销售单商品进价×数量、收入冲突检查

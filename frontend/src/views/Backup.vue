@@ -34,7 +34,9 @@
             {{ row.size_kb >= 1024 ? (row.size_kb / 1024).toFixed(1) + ' MB' : row.size_kb + ' KB' }}
           </template>
         </el-table-column>
-        <el-table-column label="备份时间" prop="created_at" width="180" />
+        <el-table-column label="备份时间" width="180">
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="downloadBackup(row.filename)">
@@ -48,8 +50,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import api from '../api'
+import { ref } from 'vue'
+import commonApi from '../api/common'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { formatDateTime } from '../utils/format'
 
 const backupLoading = ref(false)
 const listLoading = ref(false)
@@ -59,7 +63,7 @@ const lastResult = ref(null)
 const loadBackups = async () => {
   listLoading.value = true
   try {
-    backups.value = await api.listBackups()
+    backups.value = await commonApi.listBackups()
   } catch (e) {
     console.error('获取备份列表失败:', e)
   } finally {
@@ -71,7 +75,7 @@ const doBackup = async () => {
   backupLoading.value = true
   lastResult.value = null
   try {
-    const data = await api.hotBackup()
+    const data = await commonApi.hotBackup()
     lastResult.value = data
     await loadBackups()
   } catch (e) {
@@ -85,13 +89,11 @@ const doBackup = async () => {
 }
 
 const downloadBackup = (filename) => {
-  const url = api.getBackupDownloadUrl(filename)
+  const url = commonApi.getBackupDownloadUrl(filename)
   window.open(url, '_blank')
 }
 
-onMounted(() => {
-  loadBackups()
-})
+useAccountAwareData(loadBackups)
 </script>
 
 <style scoped>

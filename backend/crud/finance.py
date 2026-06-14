@@ -7,24 +7,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 import models, schemas
 
+from enums import OrderStatus, PaymentStatus, PaymentMethod, InvoiceDirection, FlowCategory
 from .base import _log
+from utils import _d, Q2
 
 logger = logging.getLogger("inventory")
-
-Q2 = Decimal('0.01')
-
-def _d(val):
-    """安全转换为 Decimal"""
-    if val is None:
-        return Decimal('0')
-    if isinstance(val, Decimal):
-        return val
-    return Decimal(str(val))
 
 
 # ── 期初余额 ──
 
-def create_opening_balance(db: Session, account_id: int, data: schemas.OpeningBalanceCreate):
+def create_opening_balance(db: Session, account_id: int, data: schemas.OpeningBalanceCreate, operator: str = "user"):
     """创建期初余额"""
     existing = db.query(models.OpeningBalance).filter(
         models.OpeningBalance.account_id == account_id,
@@ -36,7 +28,7 @@ def create_opening_balance(db: Session, account_id: int, data: schemas.OpeningBa
     total_assets = _d(data.cash_balance) + _d(data.bank_balance) + _d(data.accounts_receivable) + _d(data.inventory_value)
     total_liabilities = _d(data.accounts_payable) + _d(data.tax_payable)
     total_equity = _d(data.retained_earnings)
-    if total_assets != total_liabilities + total_equity:
+    if abs(total_assets - (total_liabilities + total_equity)) > Decimal('0.01'):
         raise ValueError(f"资产负债表不平衡: 资产={total_assets}, 负债+权益={total_liabilities + total_equity}")
 
     opening_balance = models.OpeningBalance(
@@ -52,7 +44,7 @@ def create_opening_balance(db: Session, account_id: int, data: schemas.OpeningBa
     )
     db.add(opening_balance)
     db.flush()
-    _log(db, account_id, "create", "opening_balance", opening_balance.id, f"创建期初余额: {data.date}")
+    _log(db, account_id, "create", "opening_balance", opening_balance.id, f"创建期初余额: {data.date}", operator=operator)
     return opening_balance
 
 
@@ -76,7 +68,7 @@ def list_opening_balances(db: Session, account_id: int):
     ).order_by(models.OpeningBalance.date.desc()).all()
 
 
-def update_opening_balance(db: Session, account_id: int, opening_balance_id: int, data: schemas.OpeningBalanceUpdate):
+def update_opening_balance(db: Session, account_id: int, opening_balance_id: int, data: schemas.OpeningBalanceUpdate, operator: str = "user"):
     opening_balance = get_opening_balance(db, account_id, opening_balance_id)
     if not opening_balance:
         return None
@@ -89,19 +81,19 @@ def update_opening_balance(db: Session, account_id: int, opening_balance_id: int
     total_assets = _d(opening_balance.cash_balance) + _d(opening_balance.bank_balance) + _d(opening_balance.accounts_receivable) + _d(opening_balance.inventory_value)
     total_liabilities = _d(opening_balance.accounts_payable) + _d(opening_balance.tax_payable)
     total_equity = _d(opening_balance.retained_earnings)
-    if total_assets != total_liabilities + total_equity:
+    if abs(total_assets - (total_liabilities + total_equity)) > Decimal('0.01'):
         raise ValueError(f"资产负债表不平衡: 资产={total_assets}, 负债+权益={total_liabilities + total_equity}")
 
     db.flush()
-    _log(db, account_id, "update", "opening_balance", opening_balance_id, f"更新期初余额: {opening_balance.date}")
+    _log(db, account_id, "update", "opening_balance", opening_balance_id, f"更新期初余额: {opening_balance.date}", operator=operator)
     return opening_balance
 
 
-def delete_opening_balance(db: Session, account_id: int, opening_balance_id: int):
+def delete_opening_balance(db: Session, account_id: int, opening_balance_id: int, operator: str = "user"):
     opening_balance = get_opening_balance(db, account_id, opening_balance_id)
     if not opening_balance:
         return False
-    _log(db, account_id, "delete", "opening_balance", opening_balance_id, f"删除期初余额: {opening_balance.date}")
+    _log(db, account_id, "delete", "opening_balance", opening_balance_id, f"删除期初余额: {opening_balance.date}", operator=operator)
     db.delete(opening_balance)
     db.flush()
     return True
@@ -136,24 +128,24 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= opening_date,
         models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == "completed",
-        models.SaleOrder.payment_status == "paid"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
+        models.SaleOrder.payment_status == PaymentStatus.PAID
     ).scalar())
 
     purchase_paid = _d(db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
         models.PurchaseOrder.account_id == account_id,
         models.PurchaseOrder.purchase_date >= opening_date,
         models.PurchaseOrder.purchase_date <= query_date,
-        models.PurchaseOrder.status == "completed",
-        models.PurchaseOrder.payment_status == "paid",
-        models.PurchaseOrder.payment_method == "company"
+        models.PurchaseOrder.status == OrderStatus.COMPLETED,
+        models.PurchaseOrder.payment_status == PaymentStatus.PAID,
+        models.PurchaseOrder.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
     expense_paid = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
         models.Expense.account_id == account_id,
         models.Expense.expense_date >= opening_date,
         models.Expense.expense_date <= query_date,
-        models.Expense.payment_method == "company"
+        models.Expense.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
     ending_cash = opening_cash + sales_received - purchase_paid - expense_paid
@@ -163,8 +155,8 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= opening_date,
         models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == "completed",
-        models.SaleOrder.payment_status == "unpaid"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
+        models.SaleOrder.payment_status == PaymentStatus.UNPAID
     ).scalar())
 
     inventory_value = Decimal('0')
@@ -176,8 +168,8 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         models.PurchaseOrder.account_id == account_id,
         models.PurchaseOrder.purchase_date >= opening_date,
         models.PurchaseOrder.purchase_date <= query_date,
-        models.PurchaseOrder.status == "completed",
-        models.PurchaseOrder.payment_status == "unpaid"
+        models.PurchaseOrder.status == OrderStatus.COMPLETED,
+        models.PurchaseOrder.payment_status == PaymentStatus.UNPAID
     ).scalar())
 
     expense_payable = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
@@ -191,14 +183,14 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     out_invoices_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
         models.Invoice.account_id == account_id,
-        models.Invoice.direction == "out",
+        models.Invoice.direction == InvoiceDirection.OUT,
         models.Invoice.issue_date >= opening_date,
         models.Invoice.issue_date <= query_date
     ).scalar())
 
     in_invoices_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
         models.Invoice.account_id == account_id,
-        models.Invoice.direction == "in",
+        models.Invoice.direction == InvoiceDirection.IN,
         models.Invoice.issue_date >= opening_date,
         models.Invoice.issue_date <= query_date,
         models.Invoice.certification_status == "certified"
@@ -215,7 +207,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
                 models.SaleOrder.account_id == account_id,
                 models.SaleOrder.sale_date >= opening_date,
                 models.SaleOrder.sale_date <= query_date,
-                models.SaleOrder.status == "completed"
+                models.SaleOrder.status == OrderStatus.COMPLETED
             )
         )
     ).scalar())
@@ -224,7 +216,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= opening_date,
         models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == "completed"
+        models.SaleOrder.status == OrderStatus.COMPLETED
     ).scalar())
 
     period_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
@@ -266,44 +258,64 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     }
 
 
-# ── 利润表 ──
+# ── 利润表（经营口径：实际经营说话）──
+# 与企业所得税（税务口径）的关键区别：
+# - 收入 = 销售单收入（而非销项发票）
+# - 成本 = 销售成本 + 采购成本（而非进项发票）
+# - 费用 = 全部费用（而非仅有票费用）
 
 def generate_income_statement(db: Session, account_id: int, start_date: str, end_date: str):
+    """损益表：收入=所有销售单，成本=所有采购单
+    """
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
-    total_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
+    # ── 收入：所有已完成销售单 ──
+    sale_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= start_dt,
         models.SaleOrder.sale_date <= end_dt,
-        models.SaleOrder.status == "completed"
+        models.SaleOrder.status == OrderStatus.COMPLETED
     ).scalar())
 
-    cogs = _d(db.query(sqlfunc.sum(models.SaleItem.quantity * models.SaleItem.unit_price)).filter(
-        models.SaleItem.order_id.in_(
-            db.query(models.SaleOrder.id).filter(
-                models.SaleOrder.account_id == account_id,
-                models.SaleOrder.sale_date >= start_dt,
-                models.SaleOrder.sale_date <= end_dt,
-                models.SaleOrder.status == "completed"
-            )
-        )
-    ).scalar())
+    total_revenue = sale_revenue
 
+    # ── 销售成本（商品采购价）──
+    sale_cogs = Decimal('0')
+    completed_sales = db.query(models.SaleOrder).filter(
+        models.SaleOrder.account_id == account_id,
+        models.SaleOrder.sale_date >= start_dt,
+        models.SaleOrder.sale_date <= end_dt,
+        models.SaleOrder.status == OrderStatus.COMPLETED
+    ).all()
+    for order in completed_sales:
+        for item in order.items:
+            product = db.query(models.Product).filter(
+                models.Product.id == item.product_id,
+                models.Product.account_id == account_id,
+            ).first()
+            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
+            sale_cogs += Decimal(str(item.quantity)) * purchase_price
+
+    total_cogs = sale_cogs
+
+    # ── 经营费用（全部，含无票费用）──
     operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
         models.Expense.account_id == account_id,
         models.Expense.expense_date >= start_dt,
         models.Expense.expense_date <= end_dt
     ).scalar())
 
-    gross_profit = total_revenue - cogs
+    gross_profit = total_revenue - total_cogs
     operating_profit = gross_profit - operating_expenses
     net_profit = operating_profit
 
     return {
         "period": f"{start_date} 至 {end_date}",
         "revenue": total_revenue.quantize(Q2),
-        "cost_of_goods_sold": cogs.quantize(Q2),
+        "sale_revenue": sale_revenue.quantize(Q2),
+        "cost_of_goods_sold": total_cogs.quantize(Q2),
+        "sale_cogs": sale_cogs.quantize(Q2),
         "gross_profit": gross_profit.quantize(Q2),
         "operating_expenses": operating_expenses.quantize(Q2),
         "operating_profit": operating_profit.quantize(Q2),
@@ -313,7 +325,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
 
 # ── 现金流量 ──
 
-def create_cash_flow_transaction(db: Session, account_id: int, data: schemas.CashFlowTransactionCreate):
+def create_cash_flow_transaction(db: Session, account_id: int, data: schemas.CashFlowTransactionCreate, operator: str = "user"):
     transaction = models.CashFlowTransaction(
         account_id=account_id,
         type=data.type,
@@ -326,7 +338,7 @@ def create_cash_flow_transaction(db: Session, account_id: int, data: schemas.Cas
     )
     db.add(transaction)
     db.flush()
-    _log(db, account_id, "create", "cash_flow", transaction.id, f"创建现金流水: {data.type} {data.amount}")
+    _log(db, account_id, "create", "cash_flow", transaction.id, f"创建现金流水: {data.type} {data.amount}", operator=operator)
     return transaction
 
 
@@ -344,7 +356,7 @@ def list_cash_flow_transactions(db: Session, account_id: int, skip: int = 0, lim
     return total, items
 
 
-def update_cash_flow_transaction(db: Session, account_id: int, transaction_id: int, data: schemas.CashFlowTransactionUpdate):
+def update_cash_flow_transaction(db: Session, account_id: int, transaction_id: int, data: schemas.CashFlowTransactionUpdate, operator: str = "user"):
     transaction = db.query(models.CashFlowTransaction).filter(
         models.CashFlowTransaction.id == transaction_id,
         models.CashFlowTransaction.account_id == account_id
@@ -357,18 +369,18 @@ def update_cash_flow_transaction(db: Session, account_id: int, transaction_id: i
     for key, value in update_data.items():
         setattr(transaction, key, value)
     db.flush()
-    _log(db, account_id, "update", "cash_flow", transaction.id, f"更新现金流水")
+    _log(db, account_id, "update", "cash_flow", transaction.id, f"更新现金流水", operator=operator)
     return transaction
 
 
-def delete_cash_flow_transaction(db: Session, account_id: int, transaction_id: int):
+def delete_cash_flow_transaction(db: Session, account_id: int, transaction_id: int, operator: str = "user"):
     transaction = db.query(models.CashFlowTransaction).filter(
         models.CashFlowTransaction.id == transaction_id,
         models.CashFlowTransaction.account_id == account_id
     ).first()
     if not transaction:
         return False
-    _log(db, account_id, "delete", "cash_flow", transaction.id, f"删除现金流水: {transaction.type} {transaction.amount}")
+    _log(db, account_id, "delete", "cash_flow", transaction.id, f"删除现金流水: {transaction.type} {transaction.amount}", operator=operator)
     db.delete(transaction)
     db.flush()
     return True
@@ -389,8 +401,8 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= start_dt,
         models.SaleOrder.sale_date <= end_dt,
-        models.SaleOrder.status == "completed",
-        models.SaleOrder.payment_status == "paid"
+        models.SaleOrder.status == OrderStatus.COMPLETED,
+        models.SaleOrder.payment_status == PaymentStatus.PAID
     ).scalar())
     operating_inflows += sales_receipts
 
@@ -398,9 +410,9 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
         models.PurchaseOrder.account_id == account_id,
         models.PurchaseOrder.purchase_date >= start_dt,
         models.PurchaseOrder.purchase_date <= end_dt,
-        models.PurchaseOrder.status == "completed",
-        models.PurchaseOrder.payment_status == "paid",
-        models.PurchaseOrder.payment_method == "company"
+        models.PurchaseOrder.status == OrderStatus.COMPLETED,
+        models.PurchaseOrder.payment_status == PaymentStatus.PAID,
+        models.PurchaseOrder.payment_method == PaymentMethod.COMPANY
     ).scalar())
     operating_outflows += purchase_paid
 
@@ -408,41 +420,13 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
         models.Expense.account_id == account_id,
         models.Expense.expense_date >= start_dt,
         models.Expense.expense_date <= end_dt,
-        models.Expense.payment_method == "company"
+        models.Expense.payment_method == PaymentMethod.COMPANY
     ).scalar())
     operating_outflows += expense_paid
-
-    operating_cost_types = ["材料", "人工", "差旅", "外包", "其他"]
-    project_operating = _d(db.query(sqlfunc.sum(models.ProjectCost.amount)).filter(
-        models.ProjectCost.project_id.in_(
-            db.query(models.Project.id).filter(
-                models.Project.account_id == account_id
-            )
-        ),
-        models.ProjectCost.cost_date >= start_dt,
-        models.ProjectCost.cost_date <= end_dt,
-        models.ProjectCost.payment_method == "company",
-        models.ProjectCost.cost_type.in_(operating_cost_types)
-    ).scalar())
-    operating_outflows += project_operating
 
     # 投资活动
     investing_inflows = Decimal('0')
     investing_outflows = Decimal('0')
-
-    investing_cost_types = ["设备"]
-    project_investing = _d(db.query(sqlfunc.sum(models.ProjectCost.amount)).filter(
-        models.ProjectCost.project_id.in_(
-            db.query(models.Project.id).filter(
-                models.Project.account_id == account_id
-            )
-        ),
-        models.ProjectCost.cost_date >= start_dt,
-        models.ProjectCost.cost_date <= end_dt,
-        models.ProjectCost.payment_method == "company",
-        models.ProjectCost.cost_type.in_(investing_cost_types)
-    ).scalar())
-    investing_outflows += project_investing
 
     # 筹资活动
     financing_inflows = Decimal('0')
@@ -457,18 +441,18 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
 
     for tx in cash_transactions:
         if tx.type == "inflow":
-            if tx.flow_category == "operating":
+            if tx.flow_category == FlowCategory.OPERATING:
                 operating_inflows += _d(tx.amount)
-            elif tx.flow_category == "investing":
+            elif tx.flow_category == FlowCategory.INVESTING:
                 investing_inflows += _d(tx.amount)
-            elif tx.flow_category == "financing":
+            elif tx.flow_category == FlowCategory.FINANCING:
                 financing_inflows += _d(tx.amount)
         else:
-            if tx.flow_category == "operating":
+            if tx.flow_category == FlowCategory.OPERATING:
                 operating_outflows += _d(tx.amount)
-            elif tx.flow_category == "investing":
+            elif tx.flow_category == FlowCategory.INVESTING:
                 investing_outflows += _d(tx.amount)
-            elif tx.flow_category == "financing":
+            elif tx.flow_category == FlowCategory.FINANCING:
                 financing_outflows += _d(tx.amount)
 
     net_operating = operating_inflows - operating_outflows

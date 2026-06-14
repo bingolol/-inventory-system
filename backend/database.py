@@ -6,9 +6,11 @@ import os
 import logging
 import shutil
 
+from workspace import get_db_path as _get_db_path
+
 logger = logging.getLogger("inventory")
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inventory.db")
+DB_PATH = _get_db_path()
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -30,7 +32,7 @@ def get_db():
 def _migrate_image_url(engine):
     """为缺少 image_url 列的表自动添加字段（SQLite ALTER TABLE ADD COLUMN）"""
     tables_need_image_url = [
-        "purchase_orders", "sale_orders", "invoices", "project_costs"
+        "purchase_orders", "sale_orders", "invoices"
     ]
     insp = inspect(engine)
     for table in tables_need_image_url:
@@ -55,168 +57,26 @@ def _migrate_operator(engine):
 
 
 def _migrate_linkage(engine):
-    """联动改造：新增字段 + 索引 + 旧数据回填"""
-    insp = inspect(engine)
+    """联动改造迁移（已废弃：项目功能已移除）
+    
+    保留空函数以避免 init_db 调用报错。
+    项目相关表(project_costs, project_incomes, projects)在旧数据库中仍存在，
+    但新代码不再使用。迁移不再需要执行。
+    """
+    logger.info("迁移: 联动迁移已跳过（项目功能已移除）")
+    logger.info("迁移: 联动迁移已跳过（项目功能已移除）")
 
-    # ── 1. sale_orders 增加 project_id + 索引 ──
-    if "sale_orders" in insp.get_table_names():
-        cols = [c["name"] for c in insp.get_columns("sale_orders")]
-        if "project_id" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE sale_orders ADD COLUMN project_id INTEGER REFERENCES projects(id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sale_orders_project_id ON sale_orders(project_id)"))
-                conn.commit()
-            logger.info("迁移: sale_orders 表添加 project_id 列及索引")
-        # ── 1.1 sale_orders 增加 deduct_inventory（零售扣库存开关）──
-        if "deduct_inventory" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE sale_orders ADD COLUMN deduct_inventory INTEGER DEFAULT 0"))
-                conn.commit()
-            logger.info("迁移: sale_orders 表添加 deduct_inventory 列（默认0）")
 
-    # ── 2. purchase_orders 增加 project_id + 索引 ──
-    if "purchase_orders" in insp.get_table_names():
-        cols = [c["name"] for c in insp.get_columns("purchase_orders")]
-        if "project_id" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN project_id INTEGER REFERENCES projects(id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_purchase_orders_project_id ON purchase_orders(project_id)"))
-                conn.commit()
-            logger.info("迁移: purchase_orders 表添加 project_id 列及索引")
 
-    # ── 3. project_costs 增加 product_id, quantity ──
-    if "project_costs" in insp.get_table_names():
-        cols = [c["name"] for c in insp.get_columns("project_costs")]
-        if "product_id" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE project_costs ADD COLUMN product_id INTEGER REFERENCES products(id)"))
-                conn.commit()
-            logger.info("迁移: project_costs 表添加 product_id 列")
-        if "quantity" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE project_costs ADD COLUMN quantity INTEGER"))
-                conn.commit()
-            logger.info("迁移: project_costs 表添加 quantity 列")
-
-    # ── 4. project_incomes 增加 source_type, source_id + UNIQUE 索引 ──
-    if "project_incomes" in insp.get_table_names():
-        cols = [c["name"] for c in insp.get_columns("project_incomes")]
-        if "source_type" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE project_incomes ADD COLUMN source_type VARCHAR(20) DEFAULT 'manual'"))
-                conn.commit()
-        if "source_id" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE project_incomes ADD COLUMN source_id INTEGER"))
-                conn.commit()
-        # ★ 保证收入不变量 II：同一 source_type + source_id 唯一
-        # 仅对 sale_order 类型去重，手动记录(source_type='manual', source_id=NULL)不受影响
-        with engine.connect() as conn:
-            conn.execute(text("""
-                DELETE FROM project_incomes WHERE rowid NOT IN (
-                    SELECT MIN(rowid) FROM project_incomes
-                    WHERE source_type = 'sale_order' AND source_id IS NOT NULL
-                    GROUP BY source_type, source_id
-                ) AND source_type = 'sale_order' AND source_id IS NOT NULL
-            """))
-            conn.commit()
-            conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_income_source "
-                "ON project_incomes(source_type, source_id)"
-            ))
-            conn.commit()
-            logger.info("迁移: project_incomes 表添加 uq_income_source 唯一索引")
-
-    # ★ source_id 单独索引：sale_delete_income 按 source_type+source_id 查询
-    if "project_incomes" in insp.get_table_names():
-        with engine.connect() as conn:
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_project_incomes_source_id "
-                "ON project_incomes(source_id)"
-            ))
-            conn.commit()
-
-    # ── 5. 强制项目名唯一 + 旧数据回填：project_name → project_id ──
-    # 5a. 检测并消除同名项目
-    with engine.connect() as conn:
-        duplicates = conn.execute(text("""
-            SELECT account_id, name, COUNT(*) as cnt
-            FROM projects
-            GROUP BY account_id, name
-            HAVING cnt > 1
-        """)).fetchall()
-        if duplicates:
-            logger.warning(f"回填: 发现 {len(duplicates)} 组同名项目，自动加后缀消除")
-            for account_id_val, dup_name, cnt in duplicates:
-                rows = conn.execute(text("""
-                    SELECT id FROM projects
-                    WHERE account_id = :aid AND name = :n
-                    ORDER BY created_at ASC
-                """), {"aid": account_id_val, "n": dup_name}).fetchall()
-                for i, row in enumerate(rows):
-                    if i > 0:
-                        new_name = f"{dup_name}_{i + 1}"
-                        conn.execute(text(
-                            "UPDATE projects SET name = :nn WHERE id = :pid"
-                        ), {"nn": new_name, "pid": row[0]})
-                        logger.info(f"回填: 项目ID={row[0]} '{dup_name}' 重命名为 '{new_name}'")
-            conn.commit()
-
-    # 5b. 建UNIQUE约束：同账号下项目名唯一
-    with engine.connect() as conn:
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_account_name "
-            "ON projects(account_id, name)"
-        ))
-        conn.commit()
-        logger.info("迁移: projects 表添加 uq_projects_account_name 唯一索引")
-
-    # 5c. 安全回填：现在项目名已唯一，project_name → project_id 精确匹配
-    with engine.connect() as conn:
-        conn.execute(text("""
-            UPDATE sale_orders
-            SET project_id = (
-                SELECT p.id FROM projects p
-                WHERE p.name = sale_orders.project_name
-                  AND p.account_id = sale_orders.account_id
-                LIMIT 1
-            )
-            WHERE project_name IS NOT NULL AND project_name != '' AND project_id IS NULL
-        """))
-        conn.execute(text("""
-            UPDATE purchase_orders
-            SET project_id = (
-                SELECT p.id FROM projects p
-                WHERE p.name = purchase_orders.project_name
-                  AND p.account_id = purchase_orders.account_id
-                LIMIT 1
-            )
-            WHERE project_name IS NOT NULL AND project_name != '' AND project_id IS NULL
-        """))
-        conn.commit()
-
-    # ── 6. 回填销售单收入：为已关联项目的旧销售单自动生成 ProjectIncome ──
-    with engine.connect() as conn:
-        conn.execute(text("""
-            INSERT INTO project_incomes (project_id, amount, payment_status, invoice_status, notes, source_type, source_id, income_date)
-            SELECT so.project_id, so.total_price, 'pending',
-                   CASE WHEN so.has_invoice THEN '已开' ELSE '未开' END,
-                   '数据迁移：销售单 ' || so.order_no || ' 回填生成',
-                   'sale_order', so.id, so.sale_date
-            FROM sale_orders so
-            WHERE so.project_id IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM project_incomes pi
-                  WHERE pi.source_type = 'sale_order' AND pi.source_id = so.id
-              )
-        """))
-        conn.commit()
-    logger.info("迁移: 旧数据 project_id 回填 + 销售单收入回填完成")
 
 
 def _migrate_unique_item_constraint(engine):
     """为 sale_items 和 purchase_items 添加 (order_id, product_id) 唯一约束
-    防止同一订单内同一商品重复出现"""
+    防止同一订单内同一商品重复出现
+
+    注意：迁移函数使用 engine.connect() 而非 Session，其 conn.commit() 独立于 Unit of Work 事务边界。
+    这是设计如此——迁移在应用启动时执行，不属于业务代码范畴。
+    """
     insp = inspect(engine)
     existing_indexes = {row[0] for row in engine.connect().execute(
         text("SELECT name FROM sqlite_master WHERE type='index'")
@@ -292,15 +152,35 @@ def _migrate_numeric_fields(engine):
     
     SQLite不支持ALTER COLUMN，需逐表重建：
     1. RENAME旧表 → 2. CREATE新表（用新models） → 3. INSERT迁移数据 → 4. DROP旧表
+
+    注意：迁移函数使用 engine.connect() 而非 Session，其 conn.commit() 独立于 Unit of Work 事务边界。
+    这是设计如此——迁移在应用启动时执行，不属于业务代码范畴。
     """
     insp = inspect(engine)
-    
-    # 幂等检查：检查 products 表的 purchase_price 字段是否已是 NUMERIC
-    if "products" in insp.get_table_names():
-        cols = [c for c in insp.get_columns("products") if c["name"] == "purchase_price"]
-        if cols and str(cols[0]["type"]).upper().startswith("NUMERIC"):
-            logger.info("Float→Numeric 迁移: 已完成，跳过")
-            return
+
+    # 幂等检查：检查所有关键字段是否已是 NUMERIC（防止部分迁移后跳过）
+    all_numeric = True
+    check_fields = [
+        ("products", "purchase_price"),
+        ("sale_orders", "total_price"),
+    ]
+    for table_name, col_name in check_fields:
+        if table_name in insp.get_table_names():
+            cols = [c for c in insp.get_columns(table_name) if c["name"] == col_name]
+            if cols and not str(cols[0]["type"]).upper().startswith("NUMERIC"):
+                all_numeric = False
+                break
+
+    if all_numeric:
+        # 清理可能因崩溃残留的 __old_numeric 表
+        for t in insp.get_table_names():
+            if t.endswith("__old_numeric"):
+                with engine.connect() as conn:
+                    conn.execute(text(f"DROP TABLE [{t}]"))
+                    conn.commit()
+                logger.info(f"Float→Numeric 迁移: 清理残留表 {t}")
+        logger.info("Float→Numeric 迁移: 已完成，跳过")
+        return
     
     # 备份数据库
     backup_path = DB_PATH + ".pre_numeric_backup"
@@ -316,9 +196,6 @@ def _migrate_numeric_fields(engine):
         "sale_orders",
         "sale_items",
         "invoices",
-        "projects",
-        "project_costs",
-        "project_incomes",
         "expenses",
         "opening_balances",
         "cash_flow_transactions",
@@ -333,22 +210,42 @@ def _migrate_numeric_fields(engine):
         "sale_orders": ["total_price"],
         "sale_items": ["unit_price", "tax_rate", "total_price"],
         "invoices": ["tax_rate", "amount_without_tax", "tax_amount", "amount_with_tax"],
-        "projects": ["total_income", "total_cost", "profit"],
-        "project_costs": ["amount"],
-        "project_incomes": ["amount", "received_amount"],
         "expenses": ["amount"],
         "opening_balances": ["cash_balance", "bank_balance", "accounts_receivable", "inventory_value", "accounts_payable", "tax_payable", "retained_earnings"],
         "cash_flow_transactions": ["amount"],
         "personal_transactions": ["amount"],
     }
     
+    # 清理可能因崩溃残留的 __old_numeric 表（先恢复数据再清理）
+    for t in insp.get_table_names():
+        if t.endswith("__old_numeric"):
+            base_name = t.replace("__old_numeric", "")
+            # 如果新表已存在且旧表残留，直接丢弃旧表（数据已在新表中）
+            if base_name in insp.get_table_names():
+                with engine.connect() as conn:
+                    conn.execute(text(f"DROP TABLE [{t}]"))
+                    conn.commit()
+                logger.info(f"Float→Numeric 迁移: 清理残留表 {t}")
+            else:
+                # 新表不存在，需要恢复：将旧表重命名回原名
+                with engine.connect() as conn:
+                    conn.execute(text(f"ALTER TABLE [{t}] RENAME TO [{base_name}]"))
+                    conn.commit()
+                logger.info(f"Float→Numeric 迁移: 恢复残留表 {t} → {base_name}")
+
     with engine.connect() as conn:
         # 禁用外键约束以避免迁移顺序问题
         conn.execute(text("PRAGMA foreign_keys=OFF"))
         conn.commit()
-        
+
         for table in tables_to_migrate:
             if table not in insp.get_table_names():
+                continue
+
+            # 跳过已经是 NUMERIC 的表
+            table_cols = {c["name"]: str(c["type"]).upper() for c in inspect(engine).get_columns(table)}
+            target_cols = float_columns.get(table, [])
+            if all(table_cols.get(c, "").startswith("NUMERIC") for c in target_cols if c in table_cols):
                 continue
             
             old_table = f"{table}__old_numeric"
@@ -356,11 +253,20 @@ def _migrate_numeric_fields(engine):
             # 1. RENAME旧表
             conn.execute(text(f"ALTER TABLE [{table}] RENAME TO [{old_table}]"))
             conn.commit()
-            
+
+            # 1.5 清理旧表的自定义索引（SQLite 重命名表时索引不跟着走）
+            # 跳过 sqlite_autoindex_ 开头的约束索引（不能 DROP）
+            old_indexes = conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t AND name NOT LIKE 'sqlite_autoindex_%'"
+            ), {"t": old_table}).fetchall()
+            for (idx_name,) in old_indexes:
+                conn.execute(text(f"DROP INDEX IF EXISTS [{idx_name}]"))
+            conn.commit()
+
             # 2. 用新models创建新表结构
             import models
             metadata_table = Base.metadata.tables.get(table)
-            if metadata_table:
+            if metadata_table is not None:
                 metadata_table.create(bind=engine)
             
             # 3. 获取旧表和新表的列名，确保INSERT只插入共有的列
@@ -384,11 +290,24 @@ def _migrate_numeric_fields(engine):
         # 重新启用外键约束
         conn.execute(text("PRAGMA foreign_keys=ON"))
         conn.commit()
-    
-    # 补全所有约束和索引
+
+    logger.info("Float→Numeric 迁移: 全部完成")
+
+
+def _ensure_default_accounts():
+    """确保至少存在默认账本（首次安装时自动创建）"""
     import models
-    Base.metadata.create_all(bind=engine)
-    logger.info("Float→Numeric 迁移: 全部完成，约束和索引已补全")
+    with SessionLocal() as db:
+        count = db.query(models.Account).count()
+        if count == 0:
+            defaults = [
+                models.Account(name="公司账本", type="company", code="company", taxpayer_type="small_scale"),
+                models.Account(name="个人账本", type="personal", code="personal", taxpayer_type="small_scale"),
+            ]
+            for acc in defaults:
+                db.add(acc)
+            db.commit()
+            logger.info("首次安装：已创建默认账本")
 
 
 def init_db():
@@ -399,3 +318,6 @@ def init_db():
     _migrate_linkage(engine)
     _migrate_unique_item_constraint(engine)
     _migrate_numeric_fields(engine)
+    # _migrate_v4_order_type 已删除：所有字段已在 models.py 中定义，create_all 自动创建
+    _ensure_default_accounts()
+    # 旧迁移的第6步"清空数据"无幂等保护，导致每次重启都会丢失所有数据

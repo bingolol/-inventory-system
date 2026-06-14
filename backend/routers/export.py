@@ -68,7 +68,7 @@ def export_inventory(format: str = "excel", alert_only: bool = False, account_id
     rows = []
     for inv in items:
         p = inv.product
-        qty = inv.quantity or 0
+        qty = inv.quantity if inv.quantity is not None else 0
         status = "负库存" if qty < 0 else ("不足" if qty < (p.min_stock if p else 0) else "正常")
         rows.append([inv.id, p.sku if p else "", p.name if p else "", p.category if p else "",
                      p.unit if p else "", qty, p.min_stock if p else 0, status,

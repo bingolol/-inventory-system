@@ -2,16 +2,16 @@
   <div>
     <el-card shadow="never">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-weight:600;">客户列表</span>
+        <div class="card-header">
+          <span class="page-title">客户列表</span>
           <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon> 新增客户</el-button>
         </div>
       </template>
-      <div style="margin-bottom:12px;">
-        <el-input v-model="search" placeholder="搜索客户名称" clearable style="width:240px" @clear="loadData" @keyup.enter="loadData">
+      <div class="filter-bar">
+        <el-input v-model="search" placeholder="搜索客户名称" clearable style="width:220px" @clear="loadData" @keyup.enter="loadData">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button @click="loadData" style="margin-left:8px;">查询</el-button>
+        <el-button type="primary" @click="loadData">查询</el-button>
       </div>
       <el-table :data="list" stripe style="width:100%">
         <el-table-column prop="name" label="客户名称" min-width="140" />
@@ -28,7 +28,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <div class="pagination-bar">
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
       </div>
     </el-card>
@@ -50,9 +50,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../api'
+import { Plus, Search } from '@element-plus/icons-vue'
+import partnersApi from '../api/partners'
+import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const list = ref([])
 const total = ref(0)
@@ -68,7 +70,7 @@ const loadData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
     if (search.value) params.search = search.value
-    const res = await api.getCustomers(params)
+    const res = await partnersApi.getCustomers(params)
     total.value = res.total
     list.value = res.items
   } catch (e) { ElMessage.error('加载失败') }
@@ -82,16 +84,16 @@ const showDialog = (row) => {
 
 const handleSave = async () => {
   try {
-    if (editingId.value) { await api.updateCustomer(editingId.value, form.value); ElMessage.success('更新成功') }
-    else { await api.createCustomer(form.value); ElMessage.success('创建成功') }
+    if (editingId.value) { await partnersApi.updateCustomer(editingId.value, form.value); ElMessage.success('更新成功') }
+    else { await partnersApi.createCustomer(form.value); ElMessage.success('创建成功') }
     dialogVisible.value = false; loadData()
   } catch (e) { ElMessage.error('保存失败') }
 }
 
 const handleDelete = async (id) => {
-  try { await api.deleteCustomer(id); ElMessage.success('已删除'); loadData() }
+  try { await partnersApi.deleteCustomer(id); ElMessage.success('已删除'); loadData() }
   catch (e) { ElMessage.error('删除失败') }
 }
 
-onMounted(loadData)
+useAccountAwareData(loadData)
 </script>

@@ -8,7 +8,6 @@ const routes = [
   { path: '/purchases', name: 'Purchases', component: () => import('../views/Purchases.vue'), meta: { title: '采购管理' } },
   { path: '/sales', name: 'Sales', component: () => import('../views/Sales.vue'), meta: { title: '销售管理' } },
   { path: '/inventory', name: 'Inventory', component: () => import('../views/Inventory.vue'), meta: { title: '库存管理' } },
-  { path: '/projects', name: 'Projects', component: () => import('../views/Projects.vue'), meta: { title: '项目管理' } },
   { path: '/reports', name: 'Reports', component: () => import('../views/Reports.vue'), meta: { title: '报表统计' } },
   { path: '/invoices', name: 'Invoices', component: () => import('../views/Invoices.vue'), meta: { title: '发票管理' } },
   { path: '/tax-report', name: 'TaxReport', component: () => import('../views/TaxReport.vue'), meta: { title: '税务报表' } },

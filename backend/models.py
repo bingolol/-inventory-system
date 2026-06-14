@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, func, UniqueConstraint, Date
+from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, Date, and_
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from decimal import Decimal
+from datetime import datetime
 from database import Base
+from enums import OrderStatus, PaymentStatus, PaymentMethod, CertificationStatus, InvoiceStatus, FlowCategory, OrderType
 
 
 # 账本表：支持多公司/个人记账切换
@@ -14,7 +15,7 @@ class Account(Base):
     type = Column(String(20), nullable=False, default="company", comment="类型: company/personal")
     code = Column(String(50), unique=True, nullable=False, comment="代码标识: riyun=日运办公, qiaoyou=巧游电子, personal=个人")
     taxpayer_type = Column(String(20), nullable=False, default="small_scale", comment="纳税人类型: small_scale / general")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # 期初余额表
@@ -38,8 +39,8 @@ class OpeningBalance(Base):
     # 权益类
     retained_earnings = Column(Numeric(12, 2), default=Decimal('0'), comment="未分配利润")
     
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     account = relationship("Account", backref="opening_balances")
 
@@ -56,11 +57,13 @@ class Product(Base):
     purchase_price = Column(Numeric(12, 2), default=Decimal('0'), comment="进价")
     sale_price = Column(Numeric(12, 2), default=Decimal('0'), comment="售价")
     min_stock = Column(Integer, default=0, comment="最低库存预警")
+    track_inventory = Column(Boolean, nullable=False, default=True, comment="是否追踪库存（人力商品=False）")
     description = Column(Text, default="", comment="描述")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    inventory = relationship("Inventory", back_populates="product", uselist=False)
+    inventory = relationship("Inventory", back_populates="product", uselist=False,
+                             primaryjoin="and_(Product.id==Inventory.product_id, Product.account_id==Inventory.account_id)")
     purchase_items = relationship("PurchaseItem", back_populates="product")
     sale_items = relationship("SaleItem", back_populates="product")
 
@@ -75,7 +78,7 @@ class Supplier(Base):
     phone = Column(String(20), default="", comment="电话")
     address = Column(String(200), default="", comment="地址")
     notes = Column(Text, default="", comment="备注")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
     purchase_orders = relationship("PurchaseOrder", back_populates="supplier")
 
@@ -90,7 +93,7 @@ class Customer(Base):
     phone = Column(String(20), default="", comment="电话")
     address = Column(String(200), default="", comment="地址")
     notes = Column(Text, default="", comment="备注")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
     sale_orders = relationship("SaleOrder", back_populates="customer")
 
@@ -100,24 +103,21 @@ class PurchaseOrder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    order_no = Column(String(20), index=True, comment="采购单号")
+    order_no = Column(String(30), index=True, comment="采购单号")
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), comment="供应商ID")
-    project_name = Column(String(200), nullable=True, index=True, comment="项目名称，文本归集")
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True,
-                        comment="关联项目ID")
+    order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail/purchase_labor")
     total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
     has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")
-    payment_method = Column(String(20), nullable=False, default="company", comment="支付方式: company / private_advance")
-    payment_status = Column(String(20), nullable=False, default="unpaid", comment="付款状态: paid / unpaid")
-    status = Column(String(20), default="completed", comment="状态: pending/completed/cancelled")
+    payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
+    payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="付款状态: paid / unpaid")
+    status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    purchase_date = Column(DateTime, server_default=func.now(), comment="采购日期")
-    created_at = Column(DateTime, server_default=func.now())
+    purchase_date = Column(DateTime, default=datetime.now, comment="采购日期")
+    created_at = Column(DateTime, default=datetime.now)
 
     supplier = relationship("Supplier", back_populates="purchase_orders")
     items = relationship("PurchaseItem", back_populates="order", cascade="all, delete-orphan")
-    project = relationship("Project")
 
 
 class PurchaseItem(Base):
@@ -130,6 +130,7 @@ class PurchaseItem(Base):
     unit_price = Column(Numeric(12, 2), nullable=False, comment="单价")
     tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.13'), comment="税率: 0.01/0.03/0.06/0.09/0.13")
     total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+    notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
 
     order = relationship("PurchaseOrder", back_populates="items")
     product = relationship("Product", back_populates="purchase_items")
@@ -145,25 +146,20 @@ class SaleOrder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    order_no = Column(String(20), index=True, comment="销售单号")
+    order_no = Column(String(30), index=True, comment="销售单号")
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="客户ID(可为空=散客)")
-    project_name = Column(String(200), nullable=True, index=True, comment="项目名称，文本归集")
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True,
-                        comment="关联项目ID")
-    deduct_inventory = Column(Boolean, nullable=True, default=False,
-                              comment="是否由销售单直接扣库存（零售=true；项目业务应为false）")
+    order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail")
     total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
     has_invoice = Column(Boolean, nullable=False, default=False, comment="是否已开票")
-    payment_status = Column(String(20), nullable=False, default="unpaid", comment="支付状态: paid / unpaid")
-    status = Column(String(20), default="completed", comment="状态: pending/completed/cancelled")
+    payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="支付状态: paid / unpaid")
+    status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    sale_date = Column(DateTime, server_default=func.now(), comment="销售日期")
-    created_at = Column(DateTime, server_default=func.now())
+    sale_date = Column(DateTime, default=datetime.now, comment="销售日期")
+    created_at = Column(DateTime, default=datetime.now)
 
     customer = relationship("Customer", back_populates="sale_orders")
     items = relationship("SaleItem", back_populates="order", cascade="all, delete-orphan")
-    project = relationship("Project")
 
 
 class SaleItem(Base):
@@ -176,6 +172,7 @@ class SaleItem(Base):
     unit_price = Column(Numeric(12, 2), nullable=False, comment="单价")
     tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="税率: 0.01/0.03/0.06/0.09/0.13")
     total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+    notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
 
     order = relationship("SaleOrder", back_populates="items")
     product = relationship("Product", back_populates="sale_items")
@@ -186,6 +183,7 @@ class SaleItem(Base):
     )
 
 
+
 class Inventory(Base):
     __tablename__ = "inventory"
 
@@ -193,7 +191,7 @@ class Inventory(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
     quantity = Column(Integer, default=0, comment="当前库存(允许负数)")
-    last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     product = relationship("Product", back_populates="inventory")
 
@@ -213,7 +211,7 @@ class OperationLog(Base):
     entity_id = Column(Integer, nullable=False, comment="实体ID")
     detail = Column(Text, default="", comment="操作详情")
     operator = Column(String(20), nullable=False, default="user", comment="操作者: user / ai")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # 个人流水账（仅 personal 账本使用）
@@ -227,8 +225,8 @@ class PersonalTransaction(Base):
     category = Column(String(50), default="", comment="分类")
     description = Column(Text, default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    date = Column(DateTime, server_default=func.now(), comment="交易日期")
-    created_at = Column(DateTime, server_default=func.now())
+    date = Column(DateTime, default=datetime.now, comment="交易日期")
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # 发票管理
@@ -248,88 +246,17 @@ class Invoice(Base):
     issue_date = Column(DateTime, nullable=False, comment="开票日期")
     pdf_path = Column(String(500), nullable=True, comment="PDF文件路径")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    certification_status = Column(String(20), nullable=False, default="n_a", comment="认证状态: pending / certified / n_a")
+    certification_status = Column(String(20), nullable=False, default=CertificationStatus.N_A, comment="认证状态: pending / certified / n_a")
     certification_date = Column(DateTime, nullable=True, comment="认证日期")
-    project_name = Column(String(200), nullable=True, index=True, comment="项目名称")
     related_order_id = Column(Integer, nullable=True, comment="关联订单ID")
     related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale / purchase")
     notes = Column(Text, default="", comment="备注")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
         UniqueConstraint('account_id', 'invoice_no', name='uix_account_invoice_no'),
     )
 
-
-# 项目管理
-class Project(Base):
-    __tablename__ = "projects"
-
-    id = Column(Integer, primary_key=True, index=True)
-    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    name = Column(String(200), nullable=False, comment="项目名称")
-    customer_id = Column(Integer, ForeignKey("customers.id"), comment="客户ID")
-    status = Column(String(20), default="ongoing", comment="状态: ongoing/completed/cancelled")
-    start_date = Column(DateTime, server_default=func.now(), comment="开始日期")
-    end_date = Column(DateTime, comment="结束日期")
-    total_income = Column(Numeric(12, 2), default=Decimal('0'), comment="总收入")
-    total_cost = Column(Numeric(12, 2), default=Decimal('0'), comment="总成本")
-    profit = Column(Numeric(12, 2), default=Decimal('0'), comment="利润")
-    notes = Column(Text, default="", comment="备注")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    customer = relationship("Customer", backref="projects")
-    costs = relationship("ProjectCost", back_populates="project", cascade="all, delete-orphan")
-    incomes = relationship("ProjectIncome", back_populates="project", cascade="all, delete-orphan")
-
-
-class ProjectCost(Base):
-    __tablename__ = "project_costs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, comment="项目ID")
-    cost_type = Column(String(50), nullable=False, comment="成本类型: 材料/人工/差旅/外包/设备/其他")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    payment_method = Column(String(20), default="company", comment="支付方式: company / private_advance")
-    invoice_status = Column(String(20), default="未开", comment="发票状态: 已开/未开/不需开")
-    supplier_name = Column(String(100), comment="供应商名称")
-    notes = Column(Text, default="", comment="备注")
-    image_url = Column(String(500), default="", comment="附件图片URL")
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=True,
-                        comment="商品ID（材料类成本关联库存）")
-    quantity = Column(Integer, nullable=True,
-                      comment="数量（材料类成本关联库存）")
-    cost_date = Column(DateTime, server_default=func.now(), comment="成本日期")
-    created_at = Column(DateTime, server_default=func.now())
-
-    project = relationship("Project", back_populates="costs")
-    product = relationship("Product")
-
-
-class ProjectIncome(Base):
-    __tablename__ = "project_incomes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, comment="项目ID")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    payment_status = Column(String(20), default="pending", comment="收款状态: pending/partial/completed")
-    received_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="已收金额")
-    invoice_status = Column(String(20), default="未开", comment="发票状态: 已开/未开/不需开")
-    notes = Column(Text, default="", comment="备注")
-    source_type = Column(String(20), nullable=True, default="manual",
-                         comment="来源: manual=手动 / sale_order=销售单自动生成")
-    source_id = Column(Integer, nullable=True,
-                       comment="来源ID（sale_order时为销售单ID）")
-    income_date = Column(DateTime, server_default=func.now(), comment="收入日期")
-    received_date = Column(DateTime, comment="到账日期")
-    created_at = Column(DateTime, server_default=func.now())
-
-    project = relationship("Project", back_populates="incomes")
-
-    __table_args__ = (
-        UniqueConstraint("source_type", "source_id", name="uq_income_source"),
-    )
 
 
 # 费用表（企业所得税用：无票支出记录）
@@ -338,15 +265,14 @@ class Expense(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    project_name = Column(String(200), nullable=True, index=True, comment="项目名称")
     category = Column(String(50), nullable=False, comment="类别: 房租/水电/工资/材料/办公用品/运费/维修/其他")
     amount = Column(Numeric(12, 2), nullable=False, comment="金额")
     expense_date = Column(DateTime, nullable=False, comment="支出日期")
     has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")
-    payment_method = Column(String(20), nullable=False, default="company", comment="支付方式: company / private_advance")
+    payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     description = Column(String(500), default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
 class CashFlowTransaction(Base):
@@ -356,11 +282,11 @@ class CashFlowTransaction(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     type = Column(String(10), nullable=False, comment="类型: inflow/outflow")
     amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    flow_category = Column(String(20), nullable=False, default="operating", comment="现金流量分类: operating/investing/financing")
+    flow_category = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="现金流量分类: operating/investing/financing")
     description = Column(Text, default="", comment="描述")
     transaction_date = Column(DateTime, nullable=False, comment="交易日期")
-    related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: sale/purchase/expense/project_cost/other")
+    related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: sale/purchase/expense/other")
     related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.now)
 
     account = relationship("Account", backref="cash_flow_transactions")

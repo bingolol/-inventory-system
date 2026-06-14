@@ -7,15 +7,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
 
+import workspace
+
 router = APIRouter()
 
-# __file__ = backend/routers/backup.py → dirname×2 = backend/ → dirname×3 = 项目根目录
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
-BACKUP_ROOT = os.path.join(_PROJECT_ROOT, "hot_backup")
-DB_PATH = os.path.join(_BACKEND_DIR, "inventory.db")
-UPLOADS_DIR = os.path.join(_BACKEND_DIR, "uploads")
-PDFS_DIR = os.path.join(_BACKEND_DIR, "pdfs")
+# 通过 workspace 模块获取路径，支持打包模式
+BACKUP_ROOT = workspace.get_backup_dir()
+DB_PATH = workspace.get_db_path()
+UPLOADS_DIR = workspace.get_uploads_root()
+PDFS_DIR = workspace.get_pdfs_dir()
 MAX_BACKUPS = 12  # 保留最近 12 份（约 3 个月）
 
 
