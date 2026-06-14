@@ -54,8 +54,6 @@ def update_invoice(db: Session, account_id: int, invoice_id: int, data: schemas.
     if not invoice:
         return None
     changes = data.model_dump(exclude_unset=True)
-    if "issue_date" in changes and changes["issue_date"]:
-        changes["issue_date"] = datetime.strptime(changes["issue_date"], "%Y-%m-%d")
     for k, v in changes.items():
         setattr(invoice, k, v)
     db.flush()
