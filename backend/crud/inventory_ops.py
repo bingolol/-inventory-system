@@ -65,8 +65,6 @@ def restore_stock(db: Session, account_id: int, product_id: int, quantity: int, 
 
 def sale_deduct(db: Session, account_id: int, order: models.SaleOrder, operator: str = "user"):
     """销售单扣库存（零售/项目专属销售单均调用）"""
-    if not order.deduct_inventory:
-        return
     for item in order.items:
         product = db.query(models.Product).filter(
             models.Product.id == item.product_id,
@@ -87,8 +85,6 @@ def sale_deduct(db: Session, account_id: int, order: models.SaleOrder, operator:
 
 def sale_restore(db: Session, account_id: int, order: models.SaleOrder, operator: str = "user"):
     """销售单回补库存（CancelSaleOrderHandler/DeleteSaleOrderHandler 调用）"""
-    if not order.deduct_inventory:
-        return
     for item in order.items:
         inv = get_or_create_inventory(db, account_id, item.product_id)
         inv.quantity += item.quantity

@@ -75,7 +75,6 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
             pdf_path=invoice.pdf_path,
             certification_status=invoice.certification_status,
             certification_date=invoice.certification_date,
-            project_name=invoice.project_name,
             related_order_id=invoice.related_order_id,
             related_order_type=invoice.related_order_type,
             notes=invoice.notes,

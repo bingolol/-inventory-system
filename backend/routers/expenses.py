@@ -43,7 +43,6 @@ async def get_expenses(
         expense_out = ExpenseOut(
             id=expense.id,
             account_id=expense.account_id,
-            project_name=expense.project_name,
             category=expense.category,
             amount=expense.amount,
             expense_date=expense.expense_date,
@@ -72,7 +71,6 @@ async def create_expense(
     # 创建费用
     db_expense = Expense(
         account_id=account_id,
-        project_name=expense.project_name,
         category=expense.category,
         amount=expense.amount,
         expense_date=expense.expense_date,
@@ -93,7 +91,6 @@ async def create_expense(
     return ExpenseOut(
         id=db_expense.id,
         account_id=db_expense.account_id,
-        project_name=db_expense.project_name,
         category=db_expense.category,
         amount=db_expense.amount,
         expense_date=db_expense.expense_date,
@@ -137,7 +134,6 @@ async def update_expense(
     return ExpenseOut(
         id=expense.id,
         account_id=expense.account_id,
-        project_name=expense.project_name,
         category=expense.category,
         amount=expense.amount,
         expense_date=expense.expense_date,

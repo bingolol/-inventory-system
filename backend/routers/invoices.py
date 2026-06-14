@@ -44,7 +44,6 @@ def _invoice_to_out(inv: Invoice) -> InvoiceOut:
         pdf_path=inv.pdf_path,
         certification_status=inv.certification_status,
         certification_date=inv.certification_date.strftime("%Y-%m-%d") if inv.certification_date else None,
-        project_name=inv.project_name,
         related_order_id=inv.related_order_id,
         related_order_type=inv.related_order_type,
         notes=inv.notes,
@@ -123,7 +122,6 @@ async def create_invoice(
                 pdf_path=invoice.pdf_path,
                 certification_status=invoice.certification_status,
                 certification_date=invoice.certification_date if invoice.certification_date else None,
-                project_name=invoice.project_name,
                 related_order_id=invoice.related_order_id,
                 related_order_type=invoice.related_order_type,
                 notes=invoice.notes,
@@ -165,7 +163,6 @@ async def quick_create_invoice(
                 amount_with_tax=amount_with_tax,
                 counterparty_name=invoice.counterparty_name,
                 issue_date=invoice.issue_date,
-                project_name=invoice.project_name,
                 notes=invoice.notes,
             )
             db_invoice = dispatch(cmd, db)
@@ -187,7 +184,6 @@ async def upload_pdf(
     tax_rate: Decimal = Form(...),
     counterparty_name: str = Form(...),
     issue_date: str = Form(...),
-    project_name: str = Form(None),
     notes: str = Form(None),
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id),
@@ -237,7 +233,6 @@ async def upload_pdf(
                 counterparty_name=counterparty_name,
                 issue_date=parsed_date,
                 pdf_path=file_path,
-                project_name=project_name,
                 notes=notes,
             )
             db_invoice = dispatch(cmd, db)
@@ -304,7 +299,7 @@ async def update_invoice(
                       'amount_without_tax', 'tax_amount', 'amount_with_tax',
                       'counterparty_name', 'issue_date', 'pdf_path',
                       'certification_status', 'certification_date',
-                      'project_name', 'related_order_id', 'related_order_type',
+                      'related_order_id', 'related_order_type',
                       'notes', 'image_url'):
                 v = getattr(invoice_update, k, None)
                 if v is not None:

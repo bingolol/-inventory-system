@@ -69,7 +69,6 @@ FIELD_ENUM_MAP = {
     "payment_status": "payment_status",
     "flow_category": "flow_category",
     "category": "expense_categories",
-    "cost_type": "cost_types",
 }
 ENUM_MAP = {field: ALL_ENUMS[key] for field, key in FIELD_ENUM_MAP.items()}
 

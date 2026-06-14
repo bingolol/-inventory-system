@@ -43,8 +43,6 @@ def create_invoice(db: Session, account_id: int, data: schemas.InvoiceCreate, op
         account_id=account_id,
         **data.model_dump()
     )
-    if data.issue_date:
-        invoice.issue_date = datetime.strptime(data.issue_date, "%Y-%m-%d")
     db.add(invoice)
     db.flush()
     _log(db, account_id, "create", "invoice", invoice.id, f"创建发票: {invoice.invoice_no} ({invoice.direction}/{invoice.invoice_type})", operator=operator)
@@ -118,7 +116,6 @@ def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
             pdf_path=inv.pdf_path,
             certification_status=inv.certification_status,
             certification_date=inv.certification_date.strftime("%Y-%m-%d") if inv.certification_date else None,
-            project_name=inv.project_name,
             related_order_id=inv.related_order_id,
             related_order_type=inv.related_order_type,
             notes=inv.notes,

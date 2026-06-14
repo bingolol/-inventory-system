@@ -20,6 +20,7 @@ const routes = [
   { path: '/opening-balance', name: 'OpeningBalance', component: () => import('../views/OpeningBalance.vue'), meta: { title: '期初余额' } },
   { path: '/backup', name: 'Backup', component: () => import('../views/Backup.vue'), meta: { title: '数据备份' } },
   { path: '/reconciliations', name: 'Reconciliations', component: () => import('../views/Reconciliations.vue'), meta: { title: '对账管理' } },
+  { path: '/:pathMatch(.*)*', name: 'NotFound', redirect: '/' },
 ]
 
 const router = createRouter({

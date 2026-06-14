@@ -148,8 +148,6 @@ const filterForm = ref({
 })
 // 年份列表
 const years = ref([])
-// 年份列表
-const years = ref([])
 
 // 弹窗相关
 const dialogVisible = ref(false)

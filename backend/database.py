@@ -64,7 +64,6 @@ def _migrate_linkage(engine):
     但新代码不再使用。迁移不再需要执行。
     """
     logger.info("迁移: 联动迁移已跳过（项目功能已移除）")
-    logger.info("迁移: 联动迁移已跳过（项目功能已移除）")
 
 
 
