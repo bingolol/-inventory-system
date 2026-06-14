@@ -101,3 +101,28 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
                 )
 
         return violations
+
+    @classmethod
+    def from_orm(cls, orm_obj) -> SaleOrderDomain:
+        items = [
+            SaleOrderLine(
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit_price=Money(item.unit_price),
+                tax_rate=Decimal(str(item.tax_rate)) if item.tax_rate else Decimal("0"),
+                total_price=Money(item.total_price),
+            )
+            for item in (orm_obj.items or [])
+        ]
+        return cls(
+            id=orm_obj.id,
+            order_no=orm_obj.order_no or "",
+            customer_id=orm_obj.customer_id,
+            total_price=Money(orm_obj.total_price),
+            has_invoice=bool(orm_obj.has_invoice),
+            payment_status=orm_obj.payment_status or "unpaid",
+            status=orm_obj.status or OrderStatus.PENDING,
+            notes=orm_obj.notes or "",
+            order_type=getattr(orm_obj, 'order_type', None) or OrderType.RETAIL,
+            items=items,
+        )
