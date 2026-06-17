@@ -42,57 +42,136 @@
 - Node.js 18+（与 npm）
 
 1) 克隆仓库
-- git clone https://github.com/bingolol/-inventory-system.git
-- cd -inventory-system
+
+```bash
+git clone https://github.com/bingolol/-inventory-system.git
+cd -inventory-system
+```
 
 2) 后端（Python）
-- 创建并激活虚拟环境：
-  - Linux/macOS: python3 -m venv venv && source venv/bin/activate
-  - Windows (PowerShell): python -m venv venv; .\venv\Scripts\Activate.ps1
-- 安装依赖：
-  - pip install -r backend/requirements.txt
 
-3) 前端
-- cd frontend
-- npm install
-  - 或使用：npm ci（当你依赖 package-lock.json 并希望精确重现依赖时）
-- 构建前端产物： npm run build
-- 构建输出位置： frontend/dist（build.py 会将该目录嵌入到打包的 exe）
+在项目根目录：
 
-4) 本地运行（推荐）
-- 推荐使用仓库提供的启动器（与打包后行为一致）：
-  - 在仓库根目录运行： python launcher.py
-  - launcher.py 会：选择 8000~8099 的可用端口（可用环境变量 INVENTORY_PORT 指定端口），初始化工作区（%APPDATA%/...）并自动在浏览器打开应用。
+Windows (PowerShell)：
 
-- 直接使用 uvicorn（便于调试）:
-  - cd backend
-  - uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+```
+
+Linux / macOS：
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements.txt
+```
+
+3) 前端（开发或构建）
+
+开发（热重载）：
+
+```bash
+cd frontend
+npm install
+npm run dev
+# 默认 Vite dev server 在 http://localhost:5173
+```
+
+构建（用于打包）：
+
+```bash
+cd frontend
+npm install
+npm run build
+# 构建输出位于 frontend/dist，build.py 会将其嵌入到打包 exe
+```
+
+4) 本地运行（示例步骤）
+
+A. 使用启动器（推荐 — 等同于打包后行为）
+
+在项目根目录（确保已安装 backend 依赖并构建前端）：
+
+```bash
+python launcher.py
+```
+
+行为说明：
+- launcher.py 会尝试在 8000~8099 范围内选择可用端口（可通过环境变量 INVENTORY_PORT 指定端口）。
+- 启动后会自动打开默认浏览器访问 http://localhost:<port>。
+- 运行时工作区、日志与数据库默认在 %APPDATA%/进销存管理系统（可通过 INVENTORY_WORKSPACE 覆盖）。
+
+B. 调试模式（按模块启动）
+
+```bash
+cd backend
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+5) 验证服务（快速 API 示例）
+
+服务启动后（假设端口 8000），可执行下列命令验证：
+
+- 健康检查：
+
+```bash
+curl http://localhost:8000/api/health
+# 返回 {"status":"ok"}
+```
+
+- 获取枚举：
+
+```bash
+curl http://localhost:8000/api/enums | jq '.'
+```
+
+- 示例：创建账本（Accounts API）
+
+```bash
+curl -X POST http://localhost:8000/api/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"name":"默认账本","type":1,"code":"A001","taxpayer_type":0}'
+```
+
+（请根据后端 schemas/ 和 API 文档调整字段）
+
+6) 如何查看实际端口（打包/启动器场景）
+
+launcher.py 会在工作区创建 `port.txt`，包含实际监听端口：
+
+- Windows 示例路径： `%APPDATA%/进销存管理系统/port.txt`
+- 读取端口：
+
+```powershell
+Get-Content $env:APPDATA\"进销存管理系统\port.txt"
+```
 
 
-一键构建 / 打包（生成可分发安装器）
+详细一键构建 / 打包示例
 
-仓库包含 build.py，自动串联前端构建、数据库模板创建、PyInstaller 打包及安装器生成。
+在已准备好 frontend/dist 的情况下（或让 build.py 自动完成构建），在项目根目录执行：
 
-1) 确保前端构建：
-- cd frontend && npm install && npm run build
+```bash
+python build.py
+```
 
-2) 在项目根目录执行：
-- python build.py
+build.py 将做：
+- 构建 frontend（如需要）-> 生成 frontend/dist
+- 运行 DB 初始化以创建 inventory.db.template（或复制现有 inventory.db）
+- pyinstaller inventory.spec -> 生成 dist/进销存管理系统/
+- 生成安装脚本并复制资源到发布目录
+- 准备 dist2 并运行 pyinstaller --noconfirm installer.spec -> 生成 dist/进销存管理系统安装包.exe
 
-build.py 做了：
-- 检查并构建前端（如 frontend/dist 不存在则自动运行 npm install + npm run build）
-- 运行数据库初始化以创建 inventory.db.template（如果 backend/inventory.db 存在则会复制）
-- 运行 pyinstaller inventory.spec → 输出 dist/进销存管理系统/（包含 exe 与资源）
-- 生成安装脚本（批处理、PowerShell 快捷方式脚本、卸载脚本）并复制图标
-- 将应用目录准备到 dist2 并运行 pyinstaller --noconfirm installer.spec 生成 dist/进销存管理系统安装包.exe
+构建完成后示例操作（Windows）：
 
-手动打包参考：
-- pyinstaller inventory.spec
-- pyinstaller --noconfirm installer.spec
-
-注意：
-- build.py 会在找不到 PyInstaller 时尝试 pip install pyinstaller
-- 若遇到 PyInstaller 报 missing module，请在虚拟环境中安装缺失模块或将其添加到 inventory.spec 的 hiddenimports
+```powershell
+# 打开发布目录
+explorer .\dist\"进销存管理系统"
+# 或运行安装器
+.\dist\"进销存管理系统安装包.exe"
+```
 
 
 工作区、日志与数据位置
@@ -106,20 +185,21 @@ build.py 做了：
 
 
 环境变量与运行时配置
-- INVENTORY_PORT：若设置则 launcher.py 使用该端口并跳过自动端口检测
-  - Windows (cmd): set INVENTORY_PORT=8080
-  - Windows (PowerShell): $env:INVENTORY_PORT = '8080'
-  - Linux/macOS: export INVENTORY_PORT=8080
-- CORS_ORIGINS：向 backend/main.py 追加��许的前端源（逗号分隔）
+- INVENTORY_PORT：强制指定端口（例如 Windows PowerShell: $env:INVENTORY_PORT='8080'）
+- CORS_ORIGINS：向 backend/main.py 追加允许的前端源（逗号分隔）
 - INVENTORY_WORKSPACE：自定义工作区根目录
 
 
 测试
-- 项目包含 tests/ 与 pytest.ini，运行： pytest
+- 项目包含 tests/ 与 pytest.ini，运行：
+
+```bash
+pytest
+```
 
 
 常见问题与排障
-- 浏览器未自动打开：launcher.py 在后台线程延迟 3 秒打开浏览器；若未打开，请手动访问 http://localhost:<port>，端口写在工作区的 port.txt
+- 浏览器未自动打开：launcher.py 会在后台线程延迟 3 秒打开浏览器；若未打开，请手动访问 http://localhost:<port>，端口写在工作区的 port.txt
 - 前端静态文件未被嵌入：确保 frontend/dist 存在（npm run build）并重新运行 build.py
 - 安装器无法创建快捷方式：安装器使用 PowerShell 创建 .lnk（可能因权限或公司策略失败），以管理员运行或手动创建快捷方式
 - 打包时报错 missing module：在虚拟环境安装缺失包，或将包名添加到 inventory.spec 的 hiddenimports
@@ -128,6 +208,3 @@ build.py 做了：
 贡献与许可
 - 欢迎提交 Issue 与 PR。建议：Fork → 新分支 → 添加/更新测试 → PR。
 - 仓库当前未包含 LICENSE 文件。建议在发布前补充合适的许可证（例如 MIT）。
-
-
-我已将 README.md 草稿补充了详细依赖与精确命令，现在准备将其提交到仓库。
