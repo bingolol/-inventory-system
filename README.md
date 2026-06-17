@@ -1,210 +1,265 @@
 # 进销存管理系统（Inventory System）
 
-本仓库为面向 Windows 的进销存（库存/采购/销售）管理系统源码与打包脚本。仓库包含后端（FastAPI）、前端（Vite + Vue3）、打包与安装器脚本，支持将前端构建产物嵌入后端并使用 PyInstaller 生成可分发的 exe 与安装器。
+> 面向中小企业的全栈业务管理平台 —— 库存 · 采购销售 · 项目归集 · 财务税务报表 · 个人流水，一站式记账。
 
-此 README 基于仓库内脚本（例如 build.py、launcher.py、installer.py、inventory.spec、installer.spec）与依赖文件（backend/requirements.txt、frontend/package.json）自动生成并补充了可直接执行的命令与注意事项。
+![Vue](https://img.shields.io/badge/Vue-3.4-42b883) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688) ![SQLite](https://img.shields.io/badge/SQLite-sqlalchemy2-003b57) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
+---
 
-主要亮点
-- 后端：Python + FastAPI（入口：backend/main.py，启动器：launcher.py）
-- 前端：Vue 3 + Vite（位于 frontend/，构建命令：npm run build）
-- 打包：PyInstaller（inventory.spec、installer.spec），一键构建脚本：build.py
-- 安装器：installer.py（tkinter GUI），会被打包为单文件安装器
-- 工作区与数据：默认存放于 Windows 的 %APPDATA%/进销存管理系统（通过 backend/workspace.py 管理）
+## 目录
 
+- [核心功能](#核心功能)
+- [技术栈](#技术栈)
+- [快速开始](#快速开始)
+- [一键打包](#一键打包)
+- [目录结构](#目录结构)
+- [🤖 AI Agent 使用手册](#-ai-agent-使用手册)
+- [环境变量](#环境变量)
+- [测试](#测试)
+- [文档导航](#文档导航)
+- [贡献与许可](#贡献与许可)
 
-技术栈与关键依赖（从仓库文件提取）
+---
 
-后端（backend/requirements.txt）:
-- fastapi>=0.110
-- uvicorn[standard]>=0.29
-- sqlalchemy>=2.0
-- pydantic>=2.0
-- python-multipart
-- httpx
-- openpyxl
+## 核心功能
 
-前端（frontend/package.json）:
-- 运行/构建脚本：
-  - dev: vite
-  - build: vite build
-  - preview: vite preview
-- 依赖（主要）：vue, element-plus, pinia, vue-router, axios, dayjs, echarts, vue-echarts, @element-plus/icons-vue
-- devDependencies：vite, @vitejs/plugin-vue
+- **进销存**：商品/库存管理、采购入库、销售出库，库存自动联动扣减/回补
+- **项目归集**：按项目归集采购/销售单与人工/材料成本，自动结算项目利润（合同金额口径）
+- **财务报表**：资产负债表、利润表（经营口径）、现金流量表、财务汇总
+- **税务双口径**：增值税季度/月度报表（发票口径）、企业所得税报表（销项/进项发票口径）
+- **发票管理**：进项/销项发票、专票认证、PDF 上传、AI 快捷录入接口
+- **多账本隔离**：通过 `X-Account-ID` 请求头隔离多套账本（公司账 / 个人账）
+- **对账管理**：按供应商/客户维度实时计算往来账
+- **个人流水**：独立的个人收支记账模块
+- **备份与日志**：数据热备份、操作日志全程可追溯
 
-其他工具：PyInstaller（用于打包），UPX（可选，.spec 文件启用了 upx），Node.js & npm（用于前端构建），tkinter（用于 installer.py 的 GUI，在大多数 Windows Python 发行版中可用）。
+## 技术栈
 
+| 层次 | 技术 |
+|------|------|
+| 前端框架 | Vue 3 + Vite + Element Plus |
+| 状态管理 | Pinia |
+| 路由 / HTTP | Vue Router 4 + Axios |
+| 图表 | ECharts + vue-echarts |
+| 后端框架 | FastAPI（Python 3.10+） |
+| ORM | SQLAlchemy 2.x |
+| 数据库 | SQLite |
+| 打包 | PyInstaller（生成 exe + 安装器） |
 
-快速开始（开发）
+## 快速开始
 
-环境建议
-- Python 3.10+（建议 3.10/3.11）
-- Node.js 18+（与 npm）
+### 环境要求
 
-1) 克隆仓库
+- **Python 3.10+**（建议 3.10 / 3.11）
+- **Node.js 18+**（含 npm）
+
+### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/bingolol/-inventory-system.git
 cd -inventory-system
 ```
 
-2) 后端（Python）
+### 2. 后端
 
-在项目根目录：
-
-Windows (PowerShell)：
-
-```powershell
+```bash
+# 创建并激活虚拟环境
 python -m venv venv
+# Windows (PowerShell)
 .\venv\Scripts\Activate.ps1
+# Windows (cmd)
+venv\Scripts\activate.bat
+
+# 安装依赖
 pip install -r backend/requirements.txt
 ```
 
-Linux / macOS：
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r backend/requirements.txt
-```
-
-3) 前端（开发或构建）
-
-开发（热重载）：
+### 3. 前端
 
 ```bash
 cd frontend
 npm install
-npm run dev
-# 默认 Vite dev server 在 http://localhost:5173
+npm run build      # 构建生产产物到 frontend/dist
+cd ..
 ```
 
-构建（用于打包）：
+### 4. 启动应用
 
-```bash
-cd frontend
-npm install
-npm run build
-# 构建输出位于 frontend/dist，build.py 会将其嵌入到打包 exe
-```
-
-4) 本地运行（示例步骤）
-
-A. 使用启动器（推荐 — 等同于打包后行为）
-
-在项目根目录（确保已安装 backend 依赖并构建前端）：
+**推荐：使用启动器（与打包后行为一致）**
 
 ```bash
 python launcher.py
 ```
 
-行为说明：
-- launcher.py 会尝试在 8000~8099 范围内选择可用端口（可通过环境变量 INVENTORY_PORT 指定端口）。
-- 启动后会自动打开默认浏览器访问 http://localhost:<port>。
-- 运行时工作区、日志与数据库默认在 %APPDATA%/进销存管理系统（可通过 INVENTORY_WORKSPACE 覆盖）。
+`launcher.py` 会：自动选择 8000~8099 的可用端口（可用 `INVENTORY_PORT` 指定）、初始化工作区（`%APPDATA%\进销存管理系统`）、并在浏览器打开应用。
 
-B. 调试模式（按模块启动）
+**调试模式：直接用 uvicorn**
 
 ```bash
 cd backend
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-5) 验证服务（快速 API 示例）
+访问 [http://localhost:8000](http://localhost:8000) 即可使用。
 
-服务启动后（假设端口 8000），可执行下列命令验证：
+## 一键打包
 
-- 健康检查：
-
-```bash
-curl http://localhost:8000/api/health
-# 返回 {"status":"ok"}
-```
-
-- 获取枚举：
+仓库根目录的 `build.py` 串联：前端构建 → 数据库模板创建 → PyInstaller 打包 → 安装器生成。
 
 ```bash
-curl http://localhost:8000/api/enums | jq '.'
-```
-
-- 示例：创建账本（Accounts API）
-
-```bash
-curl -X POST http://localhost:8000/api/accounts \
-  -H "Content-Type: application/json" \
-  -d '{"name":"默认账本","type":1,"code":"A001","taxpayer_type":0}'
-```
-
-（请根据后端 schemas/ 和 API 文档调整字段）
-
-6) 如何查看实际端口（打包/启动器场景）
-
-launcher.py 会在工作区创建 `port.txt`，包含实际监听端口：
-
-- Windows 示例路径： `%APPDATA%/进销存管理系统/port.txt`
-- 读取端口：
-
-```powershell
-Get-Content $env:APPDATA\"进销存管理系统\port.txt"
-```
-
-
-详细一键构建 / 打包示例
-
-在已准备好 frontend/dist 的情况下（或让 build.py 自动完成构建），在项目根目录执行：
-
-```bash
+# 确保前端已构建（frontend/dist 存在）
 python build.py
 ```
 
-build.py 将做：
-- 构建 frontend（如需要）-> 生成 frontend/dist
-- 运行 DB 初始化以创建 inventory.db.template（或复制现有 inventory.db）
-- pyinstaller inventory.spec -> 生成 dist/进销存管理系统/
-- 生成安装脚本并复制资源到发布目录
-- 准备 dist2 并运行 pyinstaller --noconfirm installer.spec -> 生成 dist/进销存管理系统安装包.exe
+产物：
 
-构建完成后示例操作（Windows）：
+- `dist/进销存管理系统/` —— 应用主程序（exe + 资源）
+- `dist/进销存管理系统安装包.exe` —— 单文件安装器（tkinter GUI）
 
-```powershell
-# 打开发布目录
-explorer .\dist\"进销存管理系统"
-# 或运行安装器
-.\dist\"进销存管理系统安装包.exe"
+> 若 PyInstaller 报 `missing module`，在虚拟环境中安装缺失包，或将其加入 `inventory.spec` 的 `hiddenimports`。
+
+## 目录结构
+
+```
+inventory-system/
+├── backend/
+│   ├── main.py              # FastAPI 入口
+│   ├── routers/             # API 路由层
+│   ├── commands/            # 命令模式（写操作编排）
+│   ├── crud/                # 数据访问层
+│   ├── domain/              # 领域模型（业务规则校验）
+│   ├── schemas/             # Pydantic 模式
+│   ├── models.py            # ORM 模型
+│   ├── enums.py             # 枚举单一真相源
+│   ├── events.py / handlers.py  # 事件总线 + 处理器
+│   └── uow.py               # Unit of Work
+├── frontend/
+│   └── src/
+│       ├── views/           # 页面视图
+│       ├── components/      # 组件
+│       ├── composables/     # 组合式逻辑
+│       ├── stores/          # Pinia 状态
+│       ├── api/             # API 请求
+│       └── utils/           # 工具函数（formatMoney 等）
+├── tests/                   # 单元 / 集成 / E2E 测试
+├── docs/                    # 文档（含 AI Agent 手册）
+├── launcher.py              # 启动器（打包入口）
+├── build.py                 # 一键构建脚本
+├── installer.py             # tkinter 安装向导
+├── CONTEXT.md               # 项目上下文 / 领域语言
+├── AGENTS.md                # Agent 工作约定
+└── UPDATE_LOG.md            # 变更日志
 ```
 
+**架构分层**：`Routers → Commands → CRUD / Domain → Events → EventBus`
 
-工作区、日志与数据位置
-- 默认工作区（打包模式）: %APPDATA%\进销存管理系统（由 backend/workspace.py 的 get_workspace_root() 决定）
-- 数据库路径: 工作区/inventory.db
-- 上传文件: 工作区/uploads/images
-- 日志: 工作区/app.log
-- 端口信息: 工作区/port.txt（launcher.py 会写入实际使用的端口）
+> Command Handler 显式编排库存联动、项目收入、汇总重算，三大不变量（库存一致性 / 项目收入唯一性 / 项目汇总一致性）全程保障。详见 [`CONTEXT.md`](./CONTEXT.md) 与 [`docs/架构参考_正式版.md`](./docs/架构参考_正式版.md)。
 
-注：可通过环境变量 INVENTORY_WORKSPACE 覆盖工作区位置（优先级最高）。
+---
 
+## 🤖 AI Agent 使用手册
 
-环境变量与运行时配置
-- INVENTORY_PORT：强制指定端口（例如 Windows PowerShell: $env:INVENTORY_PORT='8080'）
-- CORS_ORIGINS：向 backend/main.py 追加允许的前端源（逗号分隔）
-- INVENTORY_WORKSPACE：自定义工作区根目录
+本系统为 AI Agent（Claude / GPT / GLM 等）提供**完整的 REST API 操作能力**。所有记账操作都应通过 API 完成，禁止用文本/表格/笔记替代。
 
+### 快速入门（30 秒上手）
 
-测试
-- 项目包含 tests/ 与 pytest.ini，运行：
+```bash
+# 1. 健康检查
+curl http://localhost:8000/api/health
+
+# 2. 确认账本（不确定时先问用户）
+curl -H "X-Account-ID: 1" http://localhost:8000/api/accounts
+
+# 3. 记一笔销售（AI 请求带 X-Operator: ai）
+curl -X POST http://localhost:8000/api/sales \
+  -H "X-Account-ID: 1" \
+  -H "X-Operator: ai" \
+  -H "Content-Type: application/json" \
+  -d '{"customer_name":"张三","items":[{"product_id":1,"quantity":2,"unit_price":25.00}]}'
+```
+
+**必填请求头**：
+
+| Header | 说明 |
+|--------|------|
+| `X-Account-ID` | 账本 ID（区分多套账本，缺失返回 401） |
+| `X-Operator: ai` | AI 请求标识（写入操作日志） |
+| `Content-Type: application/json` | 写操作必需 |
+
+### 完整手册（按需深入）
+
+| 文档 | 内容 | 适用场景 |
+|------|------|----------|
+| 📖 **[docs/SKILL.md](./docs/SKILL.md)** | 操作铁律 + 查询/录入 API 速查表 + 5 大记账场景 | AI 加载为 skill，快速记账 |
+| 📘 **[docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md)** | 24 个模块完整 API 参考 + curl 示例 + 业务规则 + 错误码 | 查询任意端点细节 |
+| 🗂️ **[AGENTS.md](./AGENTS.md)** | Issue tracker / triage labels / domain 文档约定 | Agent 协作开发本仓库代码时 |
+
+**操作铁律**（详见 [`docs/SKILL.md`](./docs/SKILL.md)）：
+
+1. 必须调用 API 获取真实数据，禁止假设/编造
+2. 所有记账走本系统 API，禁止用文本/表格替代
+3. 所有请求必须带 `X-Account-ID` header
+4. 先查后写（幂等创建，避免重复）
+5. 发票录入优先用 `POST /api/invoices/quick`（自动算税）
+
+### 默认账本
+
+| 账本名称 | 代码 | 类型 |
+|---------|------|------|
+| 日运办公 | riyun | 公司 |
+| 巧游电子科技有限公司 | qiaoyou | 公司 |
+| 个人 | personal | 个人 |
+| 李友巧个人流水账 | liyouqiao | 个人 |
+
+> ID 可能变化，始终以 `GET /api/accounts` 返回为准。
+
+---
+
+## 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `INVENTORY_PORT` | 自动 8000~8099 | 指定端口则跳过自动检测 |
+| `INVENTORY_WORKSPACE` | `%APPDATA%\进销存管理系统` | 自定义工作区根目录（优先级最高） |
+| `CORS_ORIGINS` | localhost 白名单 | 追加允许的前端源（逗号分隔） |
+
+```bash
+# Windows (cmd)
+set INVENTORY_PORT=8080
+# Windows (PowerShell)
+$env:INVENTORY_PORT = '8080'
+```
+
+**工作区布局**：数据库 `inventory.db`、上传文件 `uploads/images`、日志 `app.log`、端口记录 `port.txt` 均位于工作区根目录。
+
+## 测试
 
 ```bash
 pytest
 ```
 
+包含单元测试（`tests/unit/`）、集成测试（`tests/integration/`）、E2E 测试（`tests/e2e/`，基于 FastAPI TestClient + 真实 SQLite）。
 
-常见问题与排障
-- 浏览器未自动打开：launcher.py 会在后台线程延迟 3 秒打开浏览器；若未打开，请手动访问 http://localhost:<port>，端口写在工作区的 port.txt
-- 前端静态文件未被嵌入：确保 frontend/dist 存在（npm run build）并重新运行 build.py
-- 安装器无法创建快捷方式：安装器使用 PowerShell 创建 .lnk（可能因权限或公司策略失败），以管理员运行或手动创建快捷方式
-- 打包时报错 missing module：在虚拟环境安装缺失包，或将包名添加到 inventory.spec 的 hiddenimports
+## 文档导航
 
+| 文档 | 内容 |
+|------|------|
+| [CONTEXT.md](./CONTEXT.md) | 项目上下文、技术栈、架构分层、领域语言 |
+| [docs/SKILL.md](./docs/SKILL.md) | AI Agent 操作 skill（精简版手册） |
+| [docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md) | AI Agent 完整 API 参考（1033 行） |
+| [docs/架构参考_正式版.md](./docs/架构参考_正式版.md) | 系统架构、ER 图、数据流、打包部署 |
+| [docs/功能模块说明.md](./docs/功能模块说明.md) | 功能模块详解 |
+| [docs/开发速查表.md](./docs/开发速查表.md) | 开发速查（含反模式红线 AP-1~AP-13） |
+| [docs/文件索引.md](./docs/文件索引.md) | 全仓库文件分类索引 |
+| [UPDATE_LOG.md](./UPDATE_LOG.md) | 完整变更日志 |
+| [AGENTS.md](./AGENTS.md) | Agent 协作约定（issue tracker / triage / domain） |
 
-贡献与许可
-- 欢迎提交 Issue 与 PR。建议：Fork → 新分支 → 添加/更新测试 → PR。
-- 仓库当前未包含 LICENSE 文件。建议在发布前补充合适的许可证（例如 MIT）。
+## 贡献与许可
+
+- 欢迎 Issue 与 PR：Fork → 新分支 → 添加/更新测试 → PR
+- 本仓库使用本地 markdown 跟踪 issue（`.scratch/<feature>/`），详见 [`AGENTS.md`](./AGENTS.md)
+- 仓库当前未包含 LICENSE 文件，发布前建议补充合适的许可证（如 MIT）
+
+---
+
+<p align="center">Built with Vue 3 · FastAPI · Element Plus</p>
