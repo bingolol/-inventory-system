@@ -253,4 +253,11 @@ if os.path.exists(frontend_dist):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    is_dev = os.environ.get("ENV") == "development" or os.environ.get("DEV") == "1"
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=is_dev,
+        reload_dirs=["."] if is_dev else None
+    )
