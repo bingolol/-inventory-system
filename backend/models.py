@@ -26,23 +26,75 @@ class OpeningBalance(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     date = Column(Date, nullable=False, comment="期初日期")
     
-    # 资产类
+    # 流动资产类
     cash_balance = Column(Numeric(12, 2), default=Decimal('0'), comment="现金余额")
     bank_balance = Column(Numeric(12, 2), default=Decimal('0'), comment="银行存款")
     accounts_receivable = Column(Numeric(12, 2), default=Decimal('0'), comment="应收账款")
     inventory_value = Column(Numeric(12, 2), default=Decimal('0'), comment="库存价值")
     
-    # 负债类
+    # 非流动资产类
+    fixed_assets_original = Column(Numeric(12, 2), default=Decimal('0'), comment="固定资产原值")
+    accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
+    intangible_assets_original = Column(Numeric(12, 2), default=Decimal('0'), comment="无形资产原值")
+    accumulated_amortization = Column(Numeric(12, 2), default=Decimal('0'), comment="累计摊销")
+    
+    # 流动负债类
     accounts_payable = Column(Numeric(12, 2), default=Decimal('0'), comment="应付账款")
     tax_payable = Column(Numeric(12, 2), default=Decimal('0'), comment="应交税费")
     
+    # 非流动负债类
+    long_term_borrowings = Column(Numeric(12, 2), default=Decimal('0'), comment="长期借款")
+    
     # 权益类
+    paid_in_capital = Column(Numeric(12, 2), default=Decimal('0'), comment="实收资本")
     retained_earnings = Column(Numeric(12, 2), default=Decimal('0'), comment="未分配利润")
     
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     account = relationship("Account", backref="opening_balances")
+
+
+# 固定资产表
+class FixedAsset(Base):
+    __tablename__ = "fixed_assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    asset_code = Column(String(50), unique=True, comment="资产编码")
+    name = Column(String(100), nullable=False, comment="资产名称")
+    category = Column(String(50), comment="资产类别")
+    original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
+    salvage_rate = Column(Numeric(5, 2), default=Decimal('0.05'), comment="残值率")
+    useful_life = Column(Integer, nullable=False, comment="使用寿命(月)")
+    depreciation_method = Column(String(20), default="年限平均法", comment="折旧方法")
+    start_date = Column(Date, nullable=False, comment="开始折旧日期")
+    accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
+    status = Column(String(20), default="在用", comment="在用/停用/报废")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    account = relationship("Account", backref="fixed_assets")
+
+
+# 无形资产表
+class IntangibleAsset(Base):
+    __tablename__ = "intangible_assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    asset_code = Column(String(50), unique=True, comment="资产编码")
+    name = Column(String(100), nullable=False, comment="资产名称")
+    category = Column(String(50), comment="类别(专利/软件/商标等)")
+    original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
+    useful_life = Column(Integer, nullable=False, comment="使用寿命(月)")
+    start_date = Column(Date, nullable=False, comment="开始摊销日期")
+    accumulated_amortization = Column(Numeric(12, 2), default=Decimal('0'), comment="累计摊销")
+    status = Column(String(20), default="使用中", comment="使用中/已报废")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    account = relationship("Account", backref="intangible_assets")
 
 
 class Product(Base):
@@ -266,6 +318,7 @@ class Expense(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     category = Column(String(50), nullable=False, comment="类别: 房租/水电/工资/材料/办公用品/运费/维修/其他")
+    functional_category = Column(String(20), nullable=False, default="管理费用", comment="功能分类: 销售费用/管理费用/财务费用")
     amount = Column(Numeric(12, 2), nullable=False, comment="金额")
     expense_date = Column(DateTime, nullable=False, comment="支出日期")
     has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")

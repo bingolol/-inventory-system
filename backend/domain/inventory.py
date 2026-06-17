@@ -34,13 +34,21 @@ class InventoryDomain(DomainModel["Inventory"]):
 
     # ── 业务规则 ────────────────────────────────────────────
 
-    def is_available(self, needed: int) -> bool:
-        """库存是否满足需求量"""
-        return self.quantity >= needed
-
     def can_deduct(self, amount: int) -> bool:
         """是否可以扣减指定数量（扣减后不为负）"""
         return self.quantity - amount >= 0
+
+    def is_available(self, needed: int) -> bool:
+        """库存是否满足需求量（委托给 can_deduct）"""
+        return self.can_deduct(needed)
+
+    def deduct(self, amount: int) -> None:
+        """扣减库存，不足时抛出 ValueError"""
+        if amount < 0:
+            raise ValueError(f"扣减数量不能为负: {amount}")
+        if not self.can_deduct(amount):
+            raise ValueError(f"库存不足: 需要 {amount}, 当前 {self.quantity}")
+        self.quantity -= amount
 
     # ── 不变量校验 ──────────────────────────────────────────
 

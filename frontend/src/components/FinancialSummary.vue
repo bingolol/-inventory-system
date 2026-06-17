@@ -26,24 +26,20 @@
                 <div class="card-title">资产状况</div>
               </template>
               <div class="summary-item">
-                <span class="label">现金余额:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.cash) }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">银行存款:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.bank) }}</span>
+                <span class="label">货币资金:</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.monetary_funds) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">应收账款:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.accounts_receivable) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.accounts_receivable) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">库存价值:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.current_assets.inventory) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.inventory) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">资产总计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.assets.total_assets) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_assets) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -55,15 +51,15 @@
               </template>
               <div class="summary-item">
                 <span class="label">应付账款:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.current_liabilities.accounts_payable) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.accounts_payable) }}</span>
               </div>
               <div class="summary-item">
                 <span class="label">应交税费:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.current_liabilities.tax_payable) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.tax_payable) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">负债合计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.liabilities.total_liabilities) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_liabilities) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -75,11 +71,11 @@
               </template>
               <div class="summary-item">
                 <span class="label">未分配利润:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.equity.retained_earnings) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.retained_earnings) }}</span>
               </div>
               <div class="summary-item total">
                 <span class="label">权益合计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.equity.total_equity) }}</span>
+                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_equity) }}</span>
               </div>
             </el-card>
           </el-col>
@@ -183,25 +179,22 @@ const loadFinancialSummary = async () => {
 
 const debtRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const totalAssets = financialSummary.value.balance_sheet.assets.total_assets
-  const totalLiabilities = financialSummary.value.balance_sheet.liabilities.total_liabilities
+  const totalAssets = financialSummary.value.balance_sheet.total_assets
+  const totalLiabilities = financialSummary.value.balance_sheet.total_liabilities
   return totalAssets > 0 ? (totalLiabilities / totalAssets * 100) : 0
 })
 
 const currentRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const currentAssets = financialSummary.value.balance_sheet.assets.current_assets.cash +
-                       financialSummary.value.balance_sheet.assets.current_assets.bank +
-                       financialSummary.value.balance_sheet.assets.current_assets.accounts_receivable +
-                       financialSummary.value.balance_sheet.assets.current_assets.inventory
-  const currentLiabilities = financialSummary.value.balance_sheet.liabilities.total_liabilities
+  const currentAssets = financialSummary.value.balance_sheet.total_current_assets
+  const currentLiabilities = financialSummary.value.balance_sheet.total_liabilities
   return currentLiabilities > 0 ? (currentAssets / currentLiabilities) : 0
 })
 
 const equityRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const totalAssets = financialSummary.value.balance_sheet.assets.total_assets
-  const totalEquity = financialSummary.value.balance_sheet.equity.total_equity
+  const totalAssets = financialSummary.value.balance_sheet.total_assets
+  const totalEquity = financialSummary.value.balance_sheet.total_equity
   return totalAssets > 0 ? (totalEquity / totalAssets * 100) : 0
 })
 

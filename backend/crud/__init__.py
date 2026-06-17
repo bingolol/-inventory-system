@@ -33,6 +33,9 @@ from .finance import (
     create_cash_flow_transaction, list_cash_flow_transactions,
     update_cash_flow_transaction, delete_cash_flow_transaction,
     generate_cash_flow_statement,
+    create_fixed_asset, get_fixed_asset, list_fixed_assets, update_fixed_asset, delete_fixed_asset,
+    create_intangible_asset, get_intangible_asset, list_intangible_assets, update_intangible_asset, delete_intangible_asset,
+    generate_vat_declaration, generate_income_tax_prepayment, generate_asset_depreciation_detail,
 )
 from .logs import list_operation_logs
 from .reports import get_overview, get_purchase_report, get_sale_report, get_profit_report, get_trend

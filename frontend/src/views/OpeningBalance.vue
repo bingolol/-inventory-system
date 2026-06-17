@@ -14,7 +14,7 @@
         </el-col>
       </el-row>
       
-      <el-divider>资产类</el-divider>
+      <el-divider>流动资产类</el-divider>
       <el-row :gutter="20">
         <el-col :span="8">
           <el-form-item label="现金余额" prop="cash_balance">
@@ -32,7 +32,6 @@
           </el-form-item>
         </el-col>
       </el-row>
-      
       <el-row :gutter="20">
         <el-col :span="8">
           <el-form-item label="库存价值" prop="inventory_value">
@@ -41,7 +40,33 @@
         </el-col>
       </el-row>
       
-      <el-divider>负债类</el-divider>
+      <el-divider>非流动资产类</el-divider>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="固定资产原值" prop="fixed_assets_original">
+            <el-input-number v-model="form.fixed_assets_original" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="累计折旧" prop="accumulated_depreciation">
+            <el-input-number v-model="form.accumulated_depreciation" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="无形资产原值" prop="intangible_assets_original">
+            <el-input-number v-model="form.intangible_assets_original" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="累计摊销" prop="accumulated_amortization">
+            <el-input-number v-model="form.accumulated_amortization" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      
+      <el-divider>流动负债类</el-divider>
       <el-row :gutter="20">
         <el-col :span="8">
           <el-form-item label="应付账款" prop="accounts_payable">
@@ -55,8 +80,22 @@
         </el-col>
       </el-row>
       
+      <el-divider>非流动负债类</el-divider>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="长期借款" prop="long_term_borrowings">
+            <el-input-number v-model="form.long_term_borrowings" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      
       <el-divider>权益类</el-divider>
       <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="实收资本" prop="paid_in_capital">
+            <el-input-number v-model="form.paid_in_capital" :precision="2" :min="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
         <el-col :span="8">
           <el-form-item label="未分配利润" prop="retained_earnings">
             <el-input-number v-model="form.retained_earnings" :precision="2" style="width: 100%" />
@@ -155,8 +194,14 @@ const form = ref({
   bank_balance: 0,
   accounts_receivable: 0,
   inventory_value: 0,
+  fixed_assets_original: 0,
+  accumulated_depreciation: 0,
+  intangible_assets_original: 0,
+  accumulated_amortization: 0,
   accounts_payable: 0,
   tax_payable: 0,
+  long_term_borrowings: 0,
+  paid_in_capital: 0,
   retained_earnings: 0
 })
 
@@ -168,16 +213,44 @@ const rules = {
 
 // 计算资产负债表平衡
 const isBalanced = computed(() => {
-  const totalAssets = form.value.cash_balance + form.value.bank_balance + form.value.accounts_receivable + form.value.inventory_value
-  const totalLiabilities = form.value.accounts_payable + form.value.tax_payable
-  const totalEquity = form.value.retained_earnings
+  // 流动资产
+  const totalCurrentAssets = form.value.cash_balance + form.value.bank_balance + form.value.accounts_receivable + form.value.inventory_value
+  // 非流动资产
+  const fixedAssetsNet = form.value.fixed_assets_original - form.value.accumulated_depreciation
+  const intangibleAssetsNet = form.value.intangible_assets_original - form.value.accumulated_amortization
+  const totalNonCurrentAssets = fixedAssetsNet + intangibleAssetsNet
+  const totalAssets = totalCurrentAssets + totalNonCurrentAssets
+  
+  // 流动负债
+  const totalCurrentLiabilities = form.value.accounts_payable + form.value.tax_payable
+  // 非流动负债
+  const totalNonCurrentLiabilities = form.value.long_term_borrowings
+  const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities
+  
+  // 权益
+  const totalEquity = form.value.paid_in_capital + form.value.retained_earnings
+  
   return Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01
 })
 
 const balanceStatus = computed(() => {
-  const totalAssets = form.value.cash_balance + form.value.bank_balance + form.value.accounts_receivable + form.value.inventory_value
-  const totalLiabilities = form.value.accounts_payable + form.value.tax_payable
-  const totalEquity = form.value.retained_earnings
+  // 流动资产
+  const totalCurrentAssets = form.value.cash_balance + form.value.bank_balance + form.value.accounts_receivable + form.value.inventory_value
+  // 非流动资产
+  const fixedAssetsNet = form.value.fixed_assets_original - form.value.accumulated_depreciation
+  const intangibleAssetsNet = form.value.intangible_assets_original - form.value.accumulated_amortization
+  const totalNonCurrentAssets = fixedAssetsNet + intangibleAssetsNet
+  const totalAssets = totalCurrentAssets + totalNonCurrentAssets
+  
+  // 流动负债
+  const totalCurrentLiabilities = form.value.accounts_payable + form.value.tax_payable
+  // 非流动负债
+  const totalNonCurrentLiabilities = form.value.long_term_borrowings
+  const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities
+  
+  // 权益
+  const totalEquity = form.value.paid_in_capital + form.value.retained_earnings
+  
   const difference = totalAssets - (totalLiabilities + totalEquity)
   
   if (Math.abs(difference) < 0.01) {
@@ -237,8 +310,14 @@ const resetForm = () => {
     bank_balance: 0,
     accounts_receivable: 0,
     inventory_value: 0,
+    fixed_assets_original: 0,
+    accumulated_depreciation: 0,
+    intangible_assets_original: 0,
+    accumulated_amortization: 0,
     accounts_payable: 0,
     tax_payable: 0,
+    long_term_borrowings: 0,
+    paid_in_capital: 0,
     retained_earnings: 0
   }
   isNew.value = true
@@ -252,8 +331,14 @@ const editOpeningBalance = (row) => {
     bank_balance: Number(row.bank_balance) || 0,
     accounts_receivable: Number(row.accounts_receivable) || 0,
     inventory_value: Number(row.inventory_value) || 0,
+    fixed_assets_original: Number(row.fixed_assets_original) || 0,
+    accumulated_depreciation: Number(row.accumulated_depreciation) || 0,
+    intangible_assets_original: Number(row.intangible_assets_original) || 0,
+    accumulated_amortization: Number(row.accumulated_amortization) || 0,
     accounts_payable: Number(row.accounts_payable) || 0,
     tax_payable: Number(row.tax_payable) || 0,
+    long_term_borrowings: Number(row.long_term_borrowings) || 0,
+    paid_in_capital: Number(row.paid_in_capital) || 0,
     retained_earnings: Number(row.retained_earnings) || 0
   }
   isNew.value = false
@@ -288,8 +373,14 @@ const loadLatest = async () => {
         bank_balance: Number(response.bank_balance) || 0,
         accounts_receivable: Number(response.accounts_receivable) || 0,
         inventory_value: Number(response.inventory_value) || 0,
+        fixed_assets_original: Number(response.fixed_assets_original) || 0,
+        accumulated_depreciation: Number(response.accumulated_depreciation) || 0,
+        intangible_assets_original: Number(response.intangible_assets_original) || 0,
+        accumulated_amortization: Number(response.accumulated_amortization) || 0,
         accounts_payable: Number(response.accounts_payable) || 0,
         tax_payable: Number(response.tax_payable) || 0,
+        long_term_borrowings: Number(response.long_term_borrowings) || 0,
+        paid_in_capital: Number(response.paid_in_capital) || 0,
         retained_earnings: Number(response.retained_earnings) || 0
       }
       isNew.value = false

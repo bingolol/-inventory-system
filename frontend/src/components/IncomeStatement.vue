@@ -29,7 +29,7 @@
       </template>
       
       <div v-if="incomeStatement" class="report-content">
-        <div class="report-title">利润表（经营口径）</div>
+        <div class="report-title">利润表（会小企02表）</div>
         <div class="report-period">期间: {{ formatDate(startDate) }} 至 {{ formatDate(endDate) }}</div>
         
         <el-table :data="incomeData" style="width: 100%" :show-header="false">
@@ -46,13 +46,16 @@
         
         <div class="profit-summary">
           <el-row :gutter="20">
-            <el-col :span="8">
+            <el-col :span="6">
               <el-statistic title="营业收入" :value="incomeStatement.revenue" :precision="2" />
             </el-col>
-            <el-col :span="8">
+            <el-col :span="6">
               <el-statistic title="营业成本" :value="incomeStatement.cost_of_goods_sold" :precision="2" />
             </el-col>
-            <el-col :span="8">
+            <el-col :span="6">
+              <el-statistic title="营业费用" :value="incomeStatement.total_operating_expenses" :precision="2" />
+            </el-col>
+            <el-col :span="6">
               <el-statistic title="净利润" :value="incomeStatement.net_profit" :precision="2">
                 <template #suffix>
                   <span :class="incomeStatement.net_profit >= 0 ? 'profit-positive' : 'profit-negative'">
@@ -123,14 +126,19 @@ const incomeData = computed(() => {
   const d = incomeStatement.value
   const data = []
   data.push({ item: '一、营业收入', amount: d.revenue, isTotal: true })
-  data.push({ item: '  销售收入', amount: d.sale_revenue ?? 0 })
   data.push({ item: '减：营业成本', amount: d.cost_of_goods_sold, isTotal: true })
-  data.push({ item: '  商品成本', amount: d.sale_cogs ?? 0 })
-  data.push({ item: '  项目成本', amount: d.project_cost ?? 0 })
-  data.push({ item: '二、毛利润', amount: d.gross_profit, isTotal: true })
-  data.push({ item: '减：经营费用', amount: d.operating_expenses })
+  data.push({ item: '二、营业毛利', amount: d.gross_profit, isTotal: true })
+  data.push({ item: '减：营业费用', amount: 0, isSubHeader: true })
+  data.push({ item: '  销售费用', amount: d.selling_expenses })
+  data.push({ item: '  管理费用', amount: d.administrative_expenses })
+  data.push({ item: '  财务费用', amount: d.financial_expenses })
+  data.push({ item: '营业费用合计', amount: d.total_operating_expenses, isTotal: true })
   data.push({ item: '三、营业利润', amount: d.operating_profit, isTotal: true })
-  data.push({ item: '四、净利润', amount: d.net_profit, isTotal: true })
+  data.push({ item: '加：营业外收入', amount: d.non_operating_income })
+  data.push({ item: '减：营业外支出', amount: d.non_operating_expense })
+  data.push({ item: '四、利润总额', amount: d.gross_profit_total, isTotal: true })
+  data.push({ item: '减：所得税费用', amount: d.income_tax_expense })
+  data.push({ item: '五、净利润', amount: d.net_profit, isTotal: true })
   
   return data
 })

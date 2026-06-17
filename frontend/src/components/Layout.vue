@@ -167,7 +167,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit, Plus, Delete } from '@element-plus/icons-vue'
@@ -341,13 +341,20 @@ watch(() => route.path, () => {
   loadAlertCount()
 })
 
+let dateTimer, alertTimer
+
 onMounted(() => {
   updateDate()
   loadAccounts().then(() => {
     loadAlertCount()
   })
-  setInterval(updateDate, 60000)
-  setInterval(loadAlertCount, 30000)
+  dateTimer = setInterval(updateDate, 60000)
+  alertTimer = setInterval(loadAlertCount, 30000)
+})
+
+onUnmounted(() => {
+  clearInterval(dateTimer)
+  clearInterval(alertTimer)
 })
 </script>
 

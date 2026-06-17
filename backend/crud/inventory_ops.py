@@ -9,6 +9,7 @@ track_inventory=False 的商品自动跳过。
 
 from sqlalchemy.orm import Session
 import models
+from domain.inventory import InventoryDomain
 from .base import _log, get_or_create_inventory
 from fastapi import HTTPException
 
@@ -31,6 +32,9 @@ def deduct_stock(db: Session, account_id: int, product_id: int, quantity: int, o
     if not product.track_inventory:
         return
     inv = get_or_create_inventory(db, account_id, product_id)
+    violations = InventoryDomain.from_orm(inv).validate()
+    if violations:
+        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
     if inv.quantity < quantity:
         raise HTTPException(
             status_code=400,
@@ -58,6 +62,9 @@ def restore_stock(db: Session, account_id: int, product_id: int, quantity: int, 
     if not product.track_inventory:
         return
     inv = get_or_create_inventory(db, account_id, product_id)
+    violations = InventoryDomain.from_orm(inv).validate()
+    if violations:
+        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
     inv.quantity += quantity
     _log(db, account_id, "adjust", "inventory", inv.id,
          f"删除项目成本回补库存: +{quantity}", operator=operator)
@@ -73,6 +80,9 @@ def sale_deduct(db: Session, account_id: int, order: models.SaleOrder, operator:
         if not product:
             raise HTTPException(status_code=404, detail=f"商品不存在: ID={item.product_id}")
         inv = get_or_create_inventory(db, account_id, item.product_id)
+        violations = InventoryDomain.from_orm(inv).validate()
+        if violations:
+            raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
         if inv.quantity < item.quantity:
             raise HTTPException(
                 status_code=400,
@@ -87,6 +97,9 @@ def sale_restore(db: Session, account_id: int, order: models.SaleOrder, operator
     """销售单回补库存（CancelSaleOrderHandler/DeleteSaleOrderHandler 调用）"""
     for item in order.items:
         inv = get_or_create_inventory(db, account_id, item.product_id)
+        violations = InventoryDomain.from_orm(inv).validate()
+        if violations:
+            raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
         inv.quantity += item.quantity
         _log(db, account_id, "adjust", "inventory", inv.id,
              f"销售回补库存: +{item.quantity}（{order.order_no}）", operator=operator)

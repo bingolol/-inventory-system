@@ -5,6 +5,18 @@
 # 费用类别（公司账本）
 EXPENSE_CATEGORIES = ["房租", "水电", "工资", "材料", "办公用品", "运费", "维修", "其他"]
 
+# 费用功能分类（小企业会计准则）
+EXPENSE_FUNCTIONAL_CATEGORIES = ["销售费用", "管理费用", "财务费用"]
+
+# 固定资产折旧方法
+DEPRECIATION_METHODS = ["年限平均法", "双倍余额递减法", "年数总和法"]
+
+# 固定资产状态
+ASSET_STATUS = ["在用", "停用", "报废"]
+
+# 无形资产状态
+INTANGIBLE_ASSET_STATUS = ["使用中", "已报废"]
+
 # 个人支出类别
 PERSONAL_EXPENSE_CATEGORIES = ["餐饮", "日用", "交通", "娱乐", "医疗", "烟酒", "其他"]
 
@@ -124,6 +136,10 @@ ENUM_LABELS = {
 # ── 枚举导出映射（供 /api/enums 使用）──
 ALL_ENUMS = {
     "expense_categories": EXPENSE_CATEGORIES,
+    "expense_functional_categories": EXPENSE_FUNCTIONAL_CATEGORIES,
+    "depreciation_methods": DEPRECIATION_METHODS,
+    "asset_status": ASSET_STATUS,
+    "intangible_asset_status": INTANGIBLE_ASSET_STATUS,
     "personal_expense_categories": PERSONAL_EXPENSE_CATEGORIES,
     "personal_income_categories": PERSONAL_INCOME_CATEGORIES,
     "order_status": [OrderStatus.PENDING, OrderStatus.COMPLETED, OrderStatus.CANCELLED],

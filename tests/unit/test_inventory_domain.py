@@ -57,3 +57,38 @@ class TestInventoryValidate:
         """数量为0是合法的（库存清零但非负）"""
         inv = InventoryDomain(account_id=1, product_id=5, quantity=0)
         assert inv.validate() == []
+
+
+class TestSaleDeductPreventsNegative:
+    """销售扣减不应允许库存变为负数"""
+
+    def test_sale_deduct_prevents_negative_inventory(self):
+        """销售扣减不应允许库存变为负数"""
+        # Arrange: 创建商品和库存（库存=5）
+        inv = InventoryDomain(account_id=1, product_id=5, quantity=5)
+
+        # Act & Assert: 尝试扣减10个，应该抛出 ValueError（库存不足）
+        with pytest.raises(ValueError, match="库存不足"):
+            inv.deduct(10)
+
+
+class TestDeductRejectsNegativeAmount:
+    """deduct 不应接受负数"""
+
+    def test_deduct_rejects_negative_amount(self):
+        """deduct 不应接受负数"""
+        inv = InventoryDomain(account_id=1, product_id=1, quantity=10)
+        with pytest.raises(ValueError, match="不能为负"):
+            inv.deduct(-5)
+
+    def test_deduct_success(self):
+        """正常扣减应成功"""
+        inv = InventoryDomain(account_id=1, product_id=1, quantity=10)
+        inv.deduct(3)
+        assert inv.quantity == 7
+
+    def test_deduct_boundary_exact_amount(self):
+        """扣减量恰好等于库存应成功"""
+        inv = InventoryDomain(account_id=1, product_id=1, quantity=5)
+        inv.deduct(5)
+        assert inv.quantity == 0

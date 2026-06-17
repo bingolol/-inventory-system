@@ -105,18 +105,13 @@ def delete_customer(db: Session, account_id: int, customer_id: int, operator: st
     customer = get_customer(db, account_id, customer_id)
     if not customer:
         return False
-    # 关联检查1：存在销售记录则拒绝
+    # 关联检查：存在销售记录则拒绝
     so_count = db.query(models.SaleOrder).filter(
         models.SaleOrder.customer_id == customer_id,
         models.SaleOrder.account_id == account_id
     ).count()
-    # 关联检查2：存在项目关联则拒绝
-    proj_count = db.query(models.Project).filter(
-        models.Project.customer_id == customer_id,
-        models.Project.account_id == account_id
-    ).count()
-    if so_count > 0 or proj_count > 0:
-        raise ValueError(f"该客户存在 {so_count} 条销售记录和 {proj_count} 个项目关联，无法删除")
+    if so_count > 0:
+        raise ValueError(f"该客户存在 {so_count} 条销售记录，无法删除")
     _log(db, account_id, "delete", "customer", customer_id, f"删除客户: {customer.name}", operator=operator)
     db.delete(customer)
     db.flush()

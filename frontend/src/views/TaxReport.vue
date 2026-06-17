@@ -181,18 +181,22 @@ const generateYears = () => {
 const smallScaleData = computed(() => {
   if (!taxReport.value) return []
   return [
-    {
-      item: '应征增值税不含税销售额',
-      value: taxReport.value.output_total
-    },
-    {
-      item: '本期应纳税额',
-      value: taxReport.value.output_tax
-    },
-    {
-      item: '应补退税额',
-      value: taxReport.value.tax_payable
-    }
+    { item: '一、计税依据', value: '', isHeader: true },
+    { item: '  （一）应征增值税不含税销售额（3%征收率）', value: taxReport.value.total_revenue },
+    { item: '二、税款计算', value: '', isHeader: true },
+    { item: '  本期应纳税额', value: taxReport.value.tax_payable_gross },
+    { item: '  本期应纳税额减征额', value: taxReport.value.tax_reduction },
+    { item: '  应纳税额合计', value: taxReport.value.tax_payable },
+    { item: '  本期预缴税额', value: taxReport.value.tax_paid },
+    { item: '  本期应补（退）税额', value: taxReport.value.tax_supplement },
+    { item: '三、附加税费', value: '', isHeader: true },
+    { item: '  城市维护建设税本期应补（退）税额', value: taxReport.value.surcharge_stamp },
+    { item: '  教育费附加本期应补（退）费额', value: taxReport.value.surcharge_education },
+    { item: '  地方教育附加本期应补（退）费额', value: taxReport.value.surcharge_local_education },
+    { item: '  附加税费合计', value: taxReport.value.surcharge_total },
+    { item: '四、减免税明细', value: '', isHeader: true },
+    { item: '  减免项目', value: taxReport.value.reduction_item },
+    { item: '  减免金额', value: taxReport.value.reduction_amount }
   ]
 })
 

@@ -96,50 +96,24 @@ const reportData = computed(() => {
   if (!incomeTaxReport.value) return []
   const r = incomeTaxReport.value
   return [
-    {
-      item: '一、营业收入（销项发票不含税）',
-      value: r.total_revenue
-    },
-    {
-      item: '  销项发票收入',
-      value: r.invoice_revenue ?? r.total_revenue
-    },
-    {
-      item: '减：营业成本（进项发票不含税）',
-      value: r.total_cost
-    },
-    {
-      item: '  进项发票成本',
-      value: r.invoice_cost ?? r.total_cost
-    },
-    {
-      item: '等于：毛利润',
-      value: r.gross_profit
-    },
-    {
-      item: '减：有票费用（可税前扣除）',
-      value: r.operating_expenses
-    },
-    {
-      item: '  有票费用',
-      value: r.invoiced_expenses ?? r.operating_expenses
-    },
-    {
-      item: '  无票费用（不可扣除，仅供参考）',
-      value: r.non_invoice_expenses ?? 0
-    },
-    {
-      item: '等于：应纳税所得额',
-      value: r.taxable_income
-    },
-    {
-      item: '乘以：税率',
-      value: `${(r.tax_rate * 100).toFixed(0)}%`
-    },
-    {
-      item: '等于：应纳企业所得税',
-      value: r.tax_amount
-    }
+    { item: '一、营业收入', value: r.operating_revenue },
+    { item: '二、营业成本', value: r.operating_cost },
+    { item: '三、利润总额', value: r.gross_profit },
+    { item: '四、加：特定业务计算的应纳税所得额', value: r.special_business_income },
+    { item: '五、减：免税收入、减计收入、加计扣除', value: '', isHeader: true },
+    { item: '  免税收入', value: r.tax_exempt_income },
+    { item: '  减计收入', value: r.tax_deduction_income },
+    { item: '  加计扣除', value: r.additional_deduction },
+    { item: '六、减：减免所得额', value: r.tax_reduction_income },
+    { item: '七、实际利润额', value: r.actual_profit },
+    { item: '八、税率', value: `${(r.tax_rate * 100).toFixed(0)}%` },
+    { item: '九、应纳所得税额', value: r.tax_payable },
+    { item: '十、减：减免所得税额', value: '', isHeader: true },
+    { item: '  小微企业减免', value: r.small_micro_discount },
+    { item: '十一、实际应纳所得税额', value: r.actual_tax_payable },
+    { item: '十二、加：特定业务预缴所得税额', value: r.special_business_prepaid },
+    { item: '十三、减：已预缴所得税额', value: r.prepaid_tax },
+    { item: '十四、本期应补(退)所得税额', value: r.tax_supplement }
   ]
 })
 

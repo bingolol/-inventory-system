@@ -309,6 +309,46 @@ def _ensure_default_accounts():
             logger.info("首次安装：已创建默认账本")
 
 
+def _migrate_opening_balance_fields(engine):
+    """为 opening_balances 表添加非流动资产/负债字段"""
+    insp = inspect(engine)
+    if "opening_balances" not in insp.get_table_names():
+        return
+    
+    columns = [col["name"] for col in insp.get_columns("opening_balances")]
+    
+    new_columns = [
+        ("fixed_assets_original", "NUMERIC(12, 2) DEFAULT 0"),
+        ("accumulated_depreciation", "NUMERIC(12, 2) DEFAULT 0"),
+        ("intangible_assets_original", "NUMERIC(12, 2) DEFAULT 0"),
+        ("accumulated_amortization", "NUMERIC(12, 2) DEFAULT 0"),
+        ("long_term_borrowings", "NUMERIC(12, 2) DEFAULT 0"),
+        ("paid_in_capital", "NUMERIC(12, 2) DEFAULT 0"),
+    ]
+    
+    with engine.connect() as conn:
+        for col_name, col_type in new_columns:
+            if col_name not in columns:
+                conn.execute(text(f"ALTER TABLE opening_balances ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+                logger.info(f"迁移: opening_balances 表添加 {col_name} 列")
+
+
+def _migrate_expense_functional_category(engine):
+    """为 expenses 表添加 functional_category 字段"""
+    insp = inspect(engine)
+    if "expenses" not in insp.get_table_names():
+        return
+    
+    columns = [col["name"] for col in insp.get_columns("expenses")]
+    
+    if "functional_category" not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE expenses ADD COLUMN functional_category VARCHAR(20) NOT NULL DEFAULT '管理费用'"))
+            conn.commit()
+            logger.info("迁移: expenses 表添加 functional_category 列")
+
+
 def init_db():
     import models
     Base.metadata.create_all(bind=engine)
@@ -317,6 +357,8 @@ def init_db():
     _migrate_linkage(engine)
     _migrate_unique_item_constraint(engine)
     _migrate_numeric_fields(engine)
+    _migrate_opening_balance_fields(engine)
+    _migrate_expense_functional_category(engine)
     # _migrate_v4_order_type 已删除：所有字段已在 models.py 中定义，create_all 自动创建
     _ensure_default_accounts()
     # 旧迁移的第6步"清空数据"无幂等保护，导致每次重启都会丢失所有数据

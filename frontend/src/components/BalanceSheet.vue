@@ -107,11 +107,20 @@ const assetData = computed(() => {
   const data = []
   data.push({ item: '资产', amount: 0, isHeader: true })
   data.push({ item: '流动资产:', amount: 0, isSubHeader: true })
-  data.push({ item: '  现金', amount: balanceSheet.value.assets.current_assets.cash })
-  data.push({ item: '  银行存款', amount: balanceSheet.value.assets.current_assets.bank })
-  data.push({ item: '  应收账款', amount: balanceSheet.value.assets.current_assets.accounts_receivable })
-  data.push({ item: '  库存', amount: balanceSheet.value.assets.current_assets.inventory })
-  data.push({ item: '资产总计', amount: balanceSheet.value.assets.total_assets, isTotal: true })
+  data.push({ item: '  货币资金', amount: balanceSheet.value.monetary_funds })
+  data.push({ item: '  应收账款', amount: balanceSheet.value.accounts_receivable })
+  data.push({ item: '  预付账款', amount: balanceSheet.value.prepayments })
+  data.push({ item: '  存货', amount: balanceSheet.value.inventory })
+  data.push({ item: '流动资产合计', amount: balanceSheet.value.total_current_assets, isTotal: true })
+  data.push({ item: '非流动资产:', amount: 0, isSubHeader: true })
+  data.push({ item: '  固定资产原值', amount: balanceSheet.value.fixed_assets_original })
+  data.push({ item: '  减：累计折旧', amount: balanceSheet.value.accumulated_depreciation })
+  data.push({ item: '  固定资产净值', amount: balanceSheet.value.fixed_assets_net })
+  data.push({ item: '  无形资产原值', amount: balanceSheet.value.intangible_assets_original })
+  data.push({ item: '  减：累计摊销', amount: balanceSheet.value.accumulated_amortization })
+  data.push({ item: '  无形资产净值', amount: balanceSheet.value.intangible_assets_net })
+  data.push({ item: '非流动资产合计', amount: balanceSheet.value.total_non_current_assets, isTotal: true })
+  data.push({ item: '资产总计', amount: balanceSheet.value.total_assets, isTotal: true })
   
   return data
 })
@@ -121,35 +130,38 @@ const liabilityEquityData = computed(() => {
   
   const data = []
   data.push({ item: '负债和所有者权益', amount: 0, isHeader: true })
-  data.push({ item: '负债:', amount: 0, isSubHeader: true })
-  data.push({ item: '  应付账款', amount: balanceSheet.value.liabilities.current_liabilities.accounts_payable })
-  data.push({ item: '  应交税费', amount: balanceSheet.value.liabilities.current_liabilities.tax_payable })
-  data.push({ item: '负债合计', amount: balanceSheet.value.liabilities.total_liabilities, isTotal: true })
+  data.push({ item: '流动负债:', amount: 0, isSubHeader: true })
+  data.push({ item: '  应付账款', amount: balanceSheet.value.accounts_payable })
+  data.push({ item: '  应交税费', amount: balanceSheet.value.tax_payable })
+  data.push({ item: '流动负债合计', amount: balanceSheet.value.total_current_liabilities, isTotal: true })
+  data.push({ item: '非流动负债:', amount: 0, isSubHeader: true })
+  data.push({ item: '  长期借款', amount: balanceSheet.value.long_term_borrowings })
+  data.push({ item: '非流动负债合计', amount: balanceSheet.value.total_non_current_liabilities, isTotal: true })
+  data.push({ item: '负债合计', amount: balanceSheet.value.total_liabilities, isTotal: true })
   data.push({ item: '所有者权益:', amount: 0, isSubHeader: true })
-  data.push({ item: '  未分配利润', amount: balanceSheet.value.equity.retained_earnings })
-  data.push({ item: '所有者权益合计', amount: balanceSheet.value.equity.total_equity, isTotal: true })
-  data.push({ item: '负债和所有者权益总计', amount: balanceSheet.value.liabilities.total_liabilities + balanceSheet.value.equity.total_equity, isTotal: true })
+  data.push({ item: '  实收资本', amount: balanceSheet.value.paid_in_capital })
+  data.push({ item: '  未分配利润', amount: balanceSheet.value.retained_earnings })
+  data.push({ item: '所有者权益合计', amount: balanceSheet.value.total_equity, isTotal: true })
+  data.push({ item: '负债和所有者权益总计', amount: balanceSheet.value.total_liabilities_and_equity, isTotal: true })
   
   return data
 })
 
 const isBalanced = computed(() => {
   if (!balanceSheet.value) return false
-  const totalAssets = balanceSheet.value.assets.total_assets
-  const totalLiabilities = balanceSheet.value.liabilities.total_liabilities
-  const totalEquity = balanceSheet.value.equity.total_equity
-  return Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01
+  const totalAssets = balanceSheet.value.total_assets
+  const totalLiabilitiesAndEquity = balanceSheet.value.total_liabilities_and_equity
+  return Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01
 })
 
 const balanceCheckMessage = computed(() => {
   if (!balanceSheet.value) return ''
-  const totalAssets = balanceSheet.value.assets.total_assets
-  const totalLiabilities = balanceSheet.value.liabilities.total_liabilities
-  const totalEquity = balanceSheet.value.equity.total_equity
-  const difference = totalAssets - (totalLiabilities + totalEquity)
+  const totalAssets = balanceSheet.value.total_assets
+  const totalLiabilitiesAndEquity = balanceSheet.value.total_liabilities_and_equity
+  const difference = totalAssets - totalLiabilitiesAndEquity
   
   if (Math.abs(difference) < 0.01) {
-    return `资产负债表平衡 ✓ (资产总计: ${formatMoney(totalAssets)} = 负债和所有者权益总计: ${formatMoney(totalLiabilities + totalEquity)})`
+    return `资产负债表平衡 ✓ (资产总计: ${formatMoney(totalAssets)} = 负债和所有者权益总计: ${formatMoney(totalLiabilitiesAndEquity)})`
   } else {
     return `资产负债表不平衡 ✗ (差额: ${formatMoney(difference)})`
   }

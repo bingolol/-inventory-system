@@ -14,6 +14,7 @@ import models
 from enums import OrderStatus, OrderType, PaymentStatus
 from events import emit
 from domain.sale_order import SaleOrderDomain
+from domain.inventory import InventoryDomain
 
 from .base import Command, CommandHandler, register
 from .crud_compat import (
@@ -109,6 +110,9 @@ class CreateSaleOrderHandler(CommandHandler):
 
         # 7. Domain 状态机转换：pending → completed
         domain = SaleOrderDomain.from_orm(order)
+        violations = domain.validate()
+        if violations:
+            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
         domain.transition_to(OrderStatus.COMPLETED)
         order.status = domain.status
         db.flush()
@@ -147,6 +151,9 @@ class CancelSaleOrderHandler(CommandHandler):
 
         # Domain 状态机校验 + 转换
         domain = SaleOrderDomain.from_orm(order)
+        violations = domain.validate()
+        if violations:
+            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
         domain.transition_to(OrderStatus.CANCELLED)
         order.status = domain.status
 
@@ -187,6 +194,9 @@ class RestoreSaleOrderHandler(CommandHandler):
 
         # Domain 状态机校验 + 转换
         domain = SaleOrderDomain.from_orm(order)
+        violations = domain.validate()
+        if violations:
+            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
         domain.transition_to(OrderStatus.COMPLETED)
         order.status = domain.status
 
@@ -286,6 +296,9 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
             if old_status == OrderStatus.COMPLETED:
                 for item_data in old_items:
                     inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
+                    violations = InventoryDomain.from_orm(inv).validate()
+                    if violations:
+                        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
                     inv.quantity += item_data['quantity']
             _log(db, cmd.account_id, "delete", "sale_order", cmd.order_id,
                  f"删除销售单 {order.order_no}（商品行数归零自动删除）", operator=cmd.operator)
@@ -333,6 +346,9 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
         if old_status == OrderStatus.COMPLETED:
             for item_data in old_items:
                 inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
+                violations = InventoryDomain.from_orm(inv).validate()
+                if violations:
+                    raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
                 inv.quantity += item_data['quantity']
         if order.status == OrderStatus.COMPLETED:
             sale_deduct(db, cmd.account_id, order, operator=cmd.operator)
