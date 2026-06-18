@@ -33,21 +33,15 @@ logger = logging.getLogger("inventory")
 app = FastAPI(title="进销存管理系统", version="1.0.0")
 
 # CORS：开发环境允许 localhost，生产环境限制来源
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",      # Vite dev server
-    "http://localhost:4173",      # Vite preview
-    "http://localhost:8000",      # Same-origin fallback
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:8000",
-]
-# 如果环境变量指定了额外来源，追加进去
-_extra = os.environ.get("CORS_ORIGINS", "")
-if _extra:
-    ALLOWED_ORIGINS.extend(_extra.split(","))
+# 用正则匹配 localhost 开发端口（5173-5179/4173/8000），避免 Vite 端口漂移后 CORS 拦截
+ALLOWED_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:(517\d|4173|8000))?$"
+# 环境变量可追加明确来源（生产环境部署）
+_extra_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=_extra_origins,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
