@@ -155,18 +155,6 @@ useAccountAwareData(loadIncomeStatement)
   padding: 20px;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
 .report-content {
   padding: 20px;
 }
@@ -181,24 +169,24 @@ useAccountAwareData(loadIncomeStatement)
 .report-period {
   text-align: center;
   font-size: 16px;
-  color: #666;
+  color: var(--text-regular);
   margin-bottom: 30px;
 }
 
 .profit-summary {
   margin-top: 20px;
   padding: 20px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
+  background-color: var(--bg-page);
+  border-radius: var(--radius);
 }
 
 .profit-positive {
-  color: #67c23a;
+  color: var(--success);
   font-weight: bold;
 }
 
 .profit-negative {
-  color: #f56c6c;
+  color: var(--danger);
   font-weight: bold;
 }
 

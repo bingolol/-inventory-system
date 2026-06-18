@@ -175,18 +175,6 @@ useAccountAwareData(loadBalanceSheet)
   padding: 20px;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
 .report-content {
   padding: 20px;
 }
@@ -201,7 +189,7 @@ useAccountAwareData(loadBalanceSheet)
 .report-date {
   text-align: center;
   font-size: 16px;
-  color: #666;
+  color: var(--text-regular);
   margin-bottom: 30px;
 }
 

@@ -213,18 +213,6 @@ useAccountAwareData(loadFinancialSummary)
   padding: 20px;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
 .summary-content {
   padding: 20px;
 }
@@ -242,7 +230,7 @@ useAccountAwareData(loadFinancialSummary)
   display: flex;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .summary-item:last-child {
@@ -252,32 +240,32 @@ useAccountAwareData(loadFinancialSummary)
 .summary-item.total {
   font-weight: bold;
   font-size: 16px;
-  border-top: 2px solid #ddd;
+  border-top: 2px solid var(--border-color);
   margin-top: 10px;
   padding-top: 10px;
 }
 
 .label {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .value {
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .healthy {
-  color: #67c23a;
+  color: var(--success);
   font-weight: bold;
 }
 
 .warning {
-  color: #e6a23c;
+  color: var(--warning);
   font-weight: bold;
 }
 
 .danger {
-  color: #f56c6c;
+  color: var(--danger);
   font-weight: bold;
 }
 
@@ -292,7 +280,7 @@ useAccountAwareData(loadFinancialSummary)
 }
 .status-statistic .statistic-title {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 .status-statistic .statistic-content {

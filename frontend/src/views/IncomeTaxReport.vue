@@ -1,12 +1,12 @@
 <template>
-  <div class="income-tax-report-container">
+  <div class="income-tax-report-container" v-loading="loading">
     <el-card shadow="never">
       <template #header>
-        <span style="font-weight:600;">企业所得税报表（税务口径）</span>
+        <span class="page-title">企业所得税报表（税务口径）</span>
       </template>
-    
+
     <!-- 年份/季度选择 -->
-    <el-form :inline="true" :model="queryForm" class="query-form">
+    <el-form :inline="true" :model="queryForm" class="filter-bar">
       <el-form-item label="年份">
         <el-select v-model="queryForm.year" placeholder="请选择年份" required>
           <el-option v-for="year in years" :key="year" :label="year" :value="year" />
@@ -27,11 +27,9 @@
     </el-card>
 
     <!-- 报表内容 -->
-    <el-card v-if="incomeTaxReport" class="report-card">
+    <el-card v-if="incomeTaxReport" shadow="never">
       <template #header>
-        <div class="card-header">
-          <span>{{ queryForm.year }}年第{{ queryForm.quarter }}季度企业所得税报表</span>
-        </div>
+        <span>{{ queryForm.year }}年第{{ queryForm.quarter }}季度企业所得税报表</span>
       </template>
 
       <div class="report-content">
@@ -44,25 +42,15 @@
           </el-table-column>
         </el-table>
       </div>
-
     </el-card>
 
     <el-empty v-else-if="!loading" description="请选择年份和季度后点击查询" />
-
-    <!-- 加载中 -->
-    <div v-if="loading" class="loading-overlay">
-      <el-icon class="loading-icon"><Loading /></el-icon>
-      <span>加载中...</span>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useAccountStore } from '../stores/account'
-const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
 import { formatMoney } from '../api/common'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -141,53 +129,7 @@ useAccountAwareData(getIncomeTaxReport)
   padding: 20px;
 }
 
-.query-form {
-  margin-bottom: 20px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.report-card {
-  margin-top: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .report-content {
   margin: 20px 0;
-}
-
-.details {
-  margin-top: 20px;
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.loading-icon {
-  font-size: 48px;
-  color: #fff;
-  animation: rotate 1s linear infinite;
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 </style>

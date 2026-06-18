@@ -1,10 +1,15 @@
 <template>
-  <div class="tax-report-container">
+  <div class="tax-report-container" v-loading="loading">
     <el-card shadow="never">
       <template #header>
-        <span style="font-weight:600;">增值税报表</span>
+        <div class="card-header">
+          <span class="page-title">增值税报表</span>
+          <el-tag v-if="taxReport" :type="taxReport.taxpayer_type === 'small_scale' ? 'info' : 'primary'" size="large">
+            {{ taxReport.taxpayer_type === 'small_scale' ? '小规模纳税人' : '一般纳税人' }}
+          </el-tag>
+        </div>
       </template>
-    
+
     <!-- 月份/季度切换 -->
     <el-radio-group v-model="reportType" @change="onReportTypeChange" style="margin-bottom: 15px;">
       <el-radio value="quarterly">按季度</el-radio>
@@ -12,7 +17,7 @@
     </el-radio-group>
 
     <!-- 季度选择 -->
-    <el-form v-if="reportType === 'quarterly'" :inline="true" :model="queryForm" class="query-form">
+    <el-form v-if="reportType === 'quarterly'" :inline="true" :model="queryForm" class="filter-bar">
       <el-form-item label="年份">
         <el-select v-model="queryForm.year" placeholder="请选择年份" required>
           <el-option v-for="year in years" :key="year" :label="year" :value="year" />
@@ -32,7 +37,7 @@
     </el-form>
 
     <!-- 月份选择 -->
-    <el-form v-else :inline="true" :model="monthlyForm" class="query-form">
+    <el-form v-else :inline="true" :model="monthlyForm" class="filter-bar">
       <el-form-item label="年份">
         <el-select v-model="monthlyForm.year" placeholder="请选择年份" required>
           <el-option v-for="year in years" :key="year" :label="year" :value="year" />
@@ -49,13 +54,8 @@
     </el-form>
     </el-card>
 
-    <!-- 纳税人身份标签 -->
-    <el-tag v-if="taxReport" :type="taxReport.taxpayer_type === 'small_scale' ? 'info' : 'primary'" size="large" class="taxpayer-tag">
-      {{ taxReport.taxpayer_type === 'small_scale' ? '小规模纳税人' : '一般纳税人' }}
-    </el-tag>
-
     <!-- 报表内容 -->
-    <el-card v-if="taxReport" class="report-card">
+    <el-card v-if="taxReport" v-loading="loading" shadow="never">
       <template #header>
         <div class="card-header">
           <span v-if="reportType === 'quarterly'">{{ queryForm.year }}年第{{ queryForm.quarter }}季度增值税报表</span>
@@ -128,21 +128,12 @@
         </el-collapse-item>
       </el-collapse>
     </el-card>
-
-    <!-- 加载中 -->
-    <div v-if="loading" class="loading-overlay">
-      <el-icon class="loading-icon"><Loading /></el-icon>
-      <span>加载中...</span>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useAccountStore } from '../stores/account'
-const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
 import { formatMoney } from '../api/common'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -275,30 +266,9 @@ useAccountAwareData(fetchData)
   padding: 20px;
 }
 
-.query-form {
-  margin-bottom: 20px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.taxpayer-tag {
-  margin-bottom: 20px;
-}
-
-.report-card {
-  margin-top: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .period {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-regular);
 }
 
 .report-content {
@@ -307,30 +277,5 @@ useAccountAwareData(fetchData)
 
 .invoice-details {
   margin-top: 20px;
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.loading-icon {
-  font-size: 48px;
-  color: #fff;
-  animation: rotate 1s linear infinite;
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 </style>

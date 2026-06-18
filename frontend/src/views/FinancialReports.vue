@@ -1,19 +1,23 @@
 <template>
   <div class="financial-reports-container">
-    <h2>财务报表</h2>
-    
-    <!-- 报表类型选择 -->
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane label="资产负债表" name="balance-sheet">
-        <BalanceSheet :date="reportDate" />
-      </el-tab-pane>
-      <el-tab-pane label="利润表" name="income-statement">
-        <IncomeStatement :start-date="startDate" :end-date="endDate" />
-      </el-tab-pane>
-      <el-tab-pane label="财务汇总" name="summary">
-        <FinancialSummary :date="reportDate" />
-      </el-tab-pane>
-    </el-tabs>
+    <el-card shadow="never">
+      <template #header>
+        <span class="page-title">财务报表</span>
+      </template>
+
+      <!-- 报表类型选择 -->
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+        <el-tab-pane label="资产负债表" name="balance-sheet">
+          <BalanceSheet :date="reportDate" />
+        </el-tab-pane>
+        <el-tab-pane label="利润表" name="income-statement">
+          <IncomeStatement :start-date="startDate" :end-date="endDate" />
+        </el-tab-pane>
+        <el-tab-pane label="财务汇总" name="summary">
+          <FinancialSummary :date="reportDate" />
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
   </div>
 </template>
 
