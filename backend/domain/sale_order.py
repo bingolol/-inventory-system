@@ -25,7 +25,7 @@ class SaleOrderLine:
     """销售单行项（值对象），对应 ORM SaleItem。"""
     product_id: int
     quantity: int
-    unit_price: Money
+    unit_price: Decimal
     tax_rate: Decimal
     total_price: Money
 
@@ -91,7 +91,7 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
                 violations.append(
                     f"商品ID={item.product_id} 数量必须>0，当前={item.quantity}"
                 )
-            if item.unit_price.amount < 0:
+            if item.unit_price < 0:
                 violations.append(
                     f"商品ID={item.product_id} 单价不能为负"
                 )
@@ -108,7 +108,7 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
             SaleOrderLine(
                 product_id=item.product_id,
                 quantity=item.quantity,
-                unit_price=Money(item.unit_price),
+                unit_price=Decimal(str(item.unit_price)) if item.unit_price else Decimal("0"),
                 tax_rate=Decimal(str(item.tax_rate)) if item.tax_rate else Decimal("0"),
                 total_price=Money(item.total_price),
             )

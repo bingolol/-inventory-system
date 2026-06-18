@@ -71,7 +71,7 @@ class TestSaleOrderValidate:
         """行项数量为0 → 违规"""
         items = [SaleOrderLine(
             product_id=1, quantity=0,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("0.00"),
         )]
         d = SaleOrderDomain(items=items)
@@ -82,7 +82,7 @@ class TestSaleOrderValidate:
         """行项单价为负 → 违规"""
         items = [SaleOrderLine(
             product_id=1, quantity=1,
-            unit_price=Money("-5.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("-5.00"), tax_rate=Decimal("0.13"),
             total_price=Money("-5.00"),
         )]
         d = SaleOrderDomain(items=items)
@@ -93,7 +93,7 @@ class TestSaleOrderValidate:
         """行项小计为负 → 违规"""
         items = [SaleOrderLine(
             product_id=1, quantity=1,
-            unit_price=Money("5.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("5.00"), tax_rate=Decimal("0.13"),
             total_price=Money("-5.00"),
         )]
         d = SaleOrderDomain(items=items)
@@ -104,7 +104,7 @@ class TestSaleOrderValidate:
         """合法订单 → 无违规"""
         items = [SaleOrderLine(
             product_id=1, quantity=2,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("20.00"),
         )]
         d = SaleOrderDomain(items=items)

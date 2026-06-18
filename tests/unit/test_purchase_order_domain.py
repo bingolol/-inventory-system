@@ -71,7 +71,7 @@ class TestPurchaseOrderValidate:
         """金额不一致 → 违规"""
         items = [PurchaseOrderLine(
             product_id=1, quantity=2,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("20.00"),
         )]
         d = PurchaseOrderDomain(
@@ -86,7 +86,7 @@ class TestPurchaseOrderValidate:
         """金额一致 → 合法"""
         items = [PurchaseOrderLine(
             product_id=1, quantity=2,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("20.00"),
         )]
         d = PurchaseOrderDomain(
@@ -100,7 +100,7 @@ class TestPurchaseOrderValidate:
         """行项数量为0 → 违规"""
         items = [PurchaseOrderLine(
             product_id=1, quantity=0,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("0.00"),
         )]
         d = PurchaseOrderDomain(items=items)
@@ -123,7 +123,7 @@ class TestPurchaseOrderValidate:
         """合法采购单 → 无违规"""
         items = [PurchaseOrderLine(
             product_id=1, quantity=5,
-            unit_price=Money("10.00"), tax_rate=Decimal("0.13"),
+            unit_price=Decimal("10.00"), tax_rate=Decimal("0.13"),
             total_price=Money("50.00"),
         )]
         d = PurchaseOrderDomain(

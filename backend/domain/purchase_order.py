@@ -33,7 +33,7 @@ class PurchaseOrderLine:
 
     product_id: int
     quantity: int
-    unit_price: Money
+    unit_price: Decimal
     tax_rate: Decimal
     total_price: Money
 
@@ -138,7 +138,7 @@ class PurchaseOrderDomain(DomainModel):
             PurchaseOrderLine(
                 product_id=item.product_id,
                 quantity=item.quantity,
-                unit_price=Money(item.unit_price),
+                unit_price=Decimal(str(item.unit_price)) if item.unit_price else Decimal("0"),
                 tax_rate=Decimal(str(item.tax_rate)) if item.tax_rate else Decimal("0"),
                 total_price=Money(item.total_price),
             )

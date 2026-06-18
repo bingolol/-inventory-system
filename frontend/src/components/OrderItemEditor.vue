@@ -16,7 +16,7 @@
       </el-table-column>
       <el-table-column label="单价" width="120">
         <template #default="{ row }">
-          <el-input-number v-model="row.unit_price" :min="0" :precision="2" size="small" style="width:110px" />
+          <el-input-number v-model="row.unit_price" :min="0" :precision="6" size="small" style="width:110px" />
         </template>
       </el-table-column>
       <el-table-column label="小计" width="100">

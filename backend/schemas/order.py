@@ -9,7 +9,7 @@ from decimal import Decimal
 class PurchaseItemCreate(BaseModel):
     product_id: int
     quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
     tax_rate: Decimal = Field(default=Decimal('0.13'), ge=0, le=1, max_digits=12, decimal_places=2)
 
 
@@ -71,7 +71,7 @@ class PurchaseOrderOut(BaseModel):
 class SaleItemCreate(BaseModel):
     product_id: int
     quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
     tax_rate: Decimal = Field(default=Decimal('0.01'), ge=0, le=1, max_digits=12, decimal_places=2)
 
 
