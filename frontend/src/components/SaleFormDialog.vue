@@ -2,7 +2,8 @@
   <el-dialog :model-value="visible" @update:model-value="$emit('update:visible', $event)" :title="isEdit?'编辑销售单':'新建销售单'" width="680px" destroy-on-close>
     <el-form label-width="80px">
       <el-form-item label="客户"><el-select v-model="form.customer_name" filterable allow-create default-first-option clearable placeholder="选择或输入客户名(可空=散客)" style="width:100%"><el-option v-for="c in customers" :key="c.id" :label="c.name" :value="c.name" /></el-select></el-form-item>
-<el-form-item v-if="!isEdit" label="税率"><el-select v-model="form.tax_rate" style="width:100%"><el-option label="0%" :value="0" /><el-option label="3%" :value="0.03" /><el-option label="6%" :value="0.06" /><el-option label="9%" :value="0.09" /><el-option label="13%" :value="0.13" /></el-select></el-form-item>
+      <el-form-item v-if="!isEdit" label="销售日期"><el-date-picker v-model="form.sale_date" type="date" placeholder="选择日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+      <el-form-item v-if="!isEdit" label="税率"><el-select v-model="form.tax_rate" style="width:100%"><el-option label="0%" :value="0" /><el-option label="3%" :value="0.03" /><el-option label="6%" :value="0.06" /><el-option label="9%" :value="0.09" /><el-option label="13%" :value="0.13" /></el-select></el-form-item>
       <el-form-item label="是否开票"><el-switch v-model="form.has_invoice" /></el-form-item>
       <el-form-item label="支付状态">
         <el-select v-model="form.payment_status" style="width:100%">

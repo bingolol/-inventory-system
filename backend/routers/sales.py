@@ -71,6 +71,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
                 notes=data.notes,
                 image_url=data.image_url or "",
                 total_price=data.total_price,
+                sale_date=data.sale_date,
                 items=[item.model_dump() for item in data.items],
             )
             order = dispatch(cmd, db)

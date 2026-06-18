@@ -95,6 +95,7 @@ class SaleOrderCreate(BaseModel):
     image_url: Optional[str] = ""
     notes: str = ""
     total_price: Optional[Decimal] = None
+    sale_date: datetime
     items: List[SaleItemCreate]
 
 

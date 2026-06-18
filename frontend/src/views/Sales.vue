@@ -136,7 +136,7 @@ const orderForm = useOrderForm({
   autoFillPrice: false
 })
 
-const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null }
+const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null, sale_date: new Date().toISOString().slice(0, 10) }
 
 async function loadOptions() {
   try {
@@ -179,6 +179,7 @@ async function handleSave() {
       customer_id: await resolveCustomerId(f.customer_name),
       has_invoice: f.has_invoice, payment_status: f.payment_status, notes: f.notes,
       total_price: f.total_price ?? undefined,
+      sale_date: f.sale_date,
       items: validItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
     })
     

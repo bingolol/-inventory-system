@@ -7,6 +7,7 @@ v7 改造后：移除项目模块
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, List, Optional
 
@@ -38,6 +39,7 @@ class CreateSaleOrder(Command):
     notes: str = ""
     image_url: str = ""
     total_price: Optional[Decimal] = None
+    sale_date: Optional[datetime] = None
     items: List[dict] = field(default_factory=list)
 
 
@@ -67,6 +69,7 @@ class CreateSaleOrderHandler(CommandHandler):
             notes=cmd.notes,
             image_url=cmd.image_url,
             total_price=0,
+            sale_date=cmd.sale_date or datetime.now(),
         )
         db.add(order)
         db.flush()
