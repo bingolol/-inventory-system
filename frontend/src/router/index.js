@@ -15,6 +15,7 @@ const routes = [
   { path: '/cash-flows', name: 'CashFlow', component: () => import('../views/CashFlow.vue'), meta: { title: '现金流量表' } },
   { path: '/financial-reports', name: 'FinancialReports', component: () => import('../views/FinancialReports.vue'), meta: { title: '财务报表' } },
   { path: '/expenses', name: 'Expenses', component: () => import('../views/Expenses.vue'), meta: { title: '费用管理' } },
+  { path: '/fixed-assets', name: 'FixedAssets', component: () => import('../views/FixedAssets.vue'), meta: { title: '固定资产' } },
   { path: '/logs', name: 'Logs', component: () => import('../views/Logs.vue'), meta: { title: '操作日志' } },
   { path: '/personal', name: 'Personal', component: () => import('../views/Personal.vue'), meta: { title: '个人流水账' } },
   { path: '/opening-balance', name: 'OpeningBalance', component: () => import('../views/OpeningBalance.vue'), meta: { title: '期初余额' } },

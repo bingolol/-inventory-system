@@ -88,6 +88,10 @@
             <el-icon><Money /></el-icon>
             <span>费用管理</span>
           </el-menu-item>
+          <el-menu-item index="/fixed-assets">
+            <el-icon><Box /></el-icon>
+            <span>固定资产</span>
+          </el-menu-item>
           <el-menu-item index="/logs">
             <el-icon><Document /></el-icon>
             <span>操作日志</span>

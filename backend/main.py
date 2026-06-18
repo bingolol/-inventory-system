@@ -18,7 +18,7 @@ from database import get_db, init_db
 import models, schemas, crud
 from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, generate_filename, save_image_file, delete_old_image
 from enums import ALL_ENUMS, ENUM_LABELS
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,6 +114,7 @@ app.include_router(invoices.router, prefix="/api/invoices", tags=["发票管理"
 app.include_router(tax.router, prefix="/api/tax-report", tags=["增值税报表"])
 app.include_router(income_tax.router, prefix="/api/income-tax-report", tags=["企业所得税报表"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["费用管理"])
+app.include_router(fixed_assets.router, prefix="/api/fixed-assets", tags=["固定资产管理"])
 app.include_router(products.router, prefix="/api/products", tags=["商品管理"])
 app.include_router(suppliers.router, prefix="/api/suppliers", tags=["供应商管理"])
 app.include_router(customers.router, prefix="/api/customers", tags=["客户管理"])
