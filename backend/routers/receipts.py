@@ -62,6 +62,7 @@ def create_receipt(
                 balance_after=new_balance,
                 transaction_date=data.receipt_date,
                 description=f"收款: {data.description}",
+                flow_category="operating",
                 related_entity_type="receipt",
                 related_entity_id=receipt.id
             )

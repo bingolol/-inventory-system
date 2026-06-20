@@ -41,7 +41,6 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
         order_no: str = "",
         customer_id: Optional[int] = None,
         total_price: Optional[Money] = None,
-        has_invoice: bool = False,
         payment_status: str = "unpaid",
         status: str = OrderStatus.PENDING,
         notes: str = "",
@@ -52,7 +51,6 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
         self.order_no = order_no
         self.customer_id = customer_id
         self.total_price = total_price or Money.zero()
-        self.has_invoice = has_invoice
         self.payment_status = payment_status
         self.status = status
         self.notes = notes
@@ -118,7 +116,6 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
             order_no=orm_obj.order_no or "",
             customer_id=orm_obj.customer_id,
             total_price=Money(orm_obj.total_price),
-            has_invoice=bool(orm_obj.has_invoice),
             payment_status=orm_obj.payment_status or "unpaid",
             status=orm_obj.status or OrderStatus.PENDING,
             notes=orm_obj.notes or "",

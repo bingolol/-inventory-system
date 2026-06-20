@@ -18,6 +18,7 @@ from .crud_compat import (
     _d, _generate_order_no, _log,
     get_or_create_inventory, get_product, get_purchase_order,
 )
+from crud.reversal import reverse_payments
 from errors import BusinessError, ErrorCode
 from utils import Q2
 
@@ -29,7 +30,6 @@ from utils import Q2
 @dataclass
 class CreatePurchaseOrder(Command):
     supplier_id: Optional[int] = None
-    has_invoice: bool = False
     payment_method: str = "company"
     notes: str = ""
     image_url: str = ""
@@ -56,7 +56,6 @@ class CreatePurchaseOrderHandler(CommandHandler):
             order_no=order_no,
             supplier_id=cmd.supplier_id,
             order_type=OrderType.RETAIL,
-            has_invoice=cmd.has_invoice,
             payment_method=cmd.payment_method,
             status=OrderStatus.COMPLETED,
             notes=cmd.notes,
@@ -130,6 +129,9 @@ class CancelPurchaseOrderHandler(CommandHandler):
                     inv = get_or_create_inventory(db, cmd.account_id, item.product_id)
                     inv.quantity -= item.quantity
 
+        # 冲销付款记录 + 银行流水
+        reverse_payments(db, cmd.account_id, cmd.order_id)
+
         emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
 
         _log(db, cmd.account_id, "update", "purchase_order", cmd.order_id,
@@ -162,6 +164,9 @@ class DeletePurchaseOrderHandler(CommandHandler):
                     inv = get_or_create_inventory(db, cmd.account_id, item.product_id)
                     inv.quantity -= item.quantity
 
+        # 冲销付款记录 + 银行流水
+        reverse_payments(db, cmd.account_id, cmd.order_id)
+
         _log(db, cmd.account_id, "delete", "purchase_order", cmd.order_id,
              f"删除采购单 {order.order_no}: 状态={order.status}", operator=cmd.operator)
 
@@ -181,7 +186,6 @@ class UpdatePurchaseOrderItems(Command):
     order_id: int = 0
     items: List[dict] = field(default_factory=list)
     supplier_id: Optional[int] = None
-    has_invoice: Optional[bool] = None
     payment_method: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
@@ -226,7 +230,6 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
         # 更新普通字段
         field_map = {
             'supplier_id': cmd.supplier_id,
-            'has_invoice': cmd.has_invoice,
             'payment_method': cmd.payment_method,
             'notes': cmd.notes,
             'status': cmd.status,
@@ -275,7 +278,6 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
 class UpdatePurchaseOrderFields(Command):
     order_id: int = 0
     supplier_id: Optional[int] = None
-    has_invoice: Optional[bool] = None
     payment_method: Optional[str] = None
     payment_status: Optional[str] = None
     notes: Optional[str] = None
@@ -294,7 +296,6 @@ class UpdatePurchaseOrderFieldsHandler(CommandHandler):
 
         field_map = {
             'supplier_id': cmd.supplier_id,
-            'has_invoice': cmd.has_invoice,
             'payment_method': cmd.payment_method,
             'payment_status': cmd.payment_status,
             'notes': cmd.notes,

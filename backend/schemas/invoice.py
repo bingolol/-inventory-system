@@ -21,7 +21,7 @@ class InvoiceBase(BaseModel):
     certification_status: str = "n_a"
     certification_date: Optional[datetime] = None
     related_order_id: Optional[int] = None
-    related_order_type: Optional[str] = None
+    related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
     notes: str = ""
 
 

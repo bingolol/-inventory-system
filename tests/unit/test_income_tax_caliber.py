@@ -1,0 +1,145 @@
+"""所得税引擎测试 — caliber 参数切换口径
+
+测试 routers/income_tax.py 的 caliber 参数：
+- caliber=tax: 税务口径（发票说话）
+- caliber=operating: 经营口径（订单说话）
+"""
+import pytest
+from decimal import Decimal
+from datetime import datetime
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from database import Base
+import models
+from crud.finance import generate_income_tax_prepayment
+
+
+@pytest.fixture
+def db():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def seed_data(db):
+    """创建测试基础数据"""
+    account = models.Account(
+        id=1, name="测试账本", type="company", code="test",
+        taxpayer_type="small_scale"
+    )
+    db.add(account)
+
+    # 销售单（经营口径用）
+    sale = models.SaleOrder(
+        id=100, account_id=1, order_no="SO-001",
+        total_price=Decimal("11300"),  # 含税
+        status="completed",
+        sale_date=datetime(2026, 1, 15)
+    )
+    db.add(sale)
+
+    # 销售明细
+    sale_item = models.SaleItem(
+        order_id=100, product_id=1, quantity=10,
+        unit_price=Decimal("1130"), tax_rate=Decimal("0.13"),
+        total_price=Decimal("11300")
+    )
+    db.add(sale_item)
+
+    # 商品（进价用于计算成本）
+    product = models.Product(
+        id=1, account_id=1, name="测试商品",
+        purchase_price=Decimal("500"), sale_price=Decimal("1000")
+    )
+    db.add(product)
+
+    # 发票（税务口径用）
+    invoice_out = models.Invoice(
+        account_id=1, invoice_no="INV-OUT-001", direction="out",
+        invoice_type="ordinary", tax_rate=Decimal("0.13"),
+        amount_without_tax=Decimal("10000"),  # 不含税
+        tax_amount=Decimal("1300"),
+        amount_with_tax=Decimal("11300"),
+        counterparty_name="客户A", issue_date=datetime(2026, 1, 15),
+        related_order_type="sale_order", related_order_id=100,
+    )
+    db.add(invoice_out)
+
+    # 费用（有票）
+    expense = models.Expense(
+        id=200, account_id=1, category="房租",
+        amount=Decimal("2000"), expense_date=datetime(2026, 2, 1)
+    )
+    db.add(expense)
+
+    # 费用发票
+    expense_invoice = models.Invoice(
+        account_id=1, invoice_no="INV-EXP-001", direction="in",
+        invoice_type="ordinary", tax_rate=Decimal("0.06"),
+        amount_without_tax=Decimal("1886.79"),
+        tax_amount=Decimal("113.21"),
+        amount_with_tax=Decimal("2000"),
+        counterparty_name="房东", issue_date=datetime(2026, 2, 1),
+        related_order_type="expense", related_order_id=200,
+    )
+    db.add(expense_invoice)
+
+    # 无票费用
+    expense_no_invoice = models.Expense(
+        id=201, account_id=1, category="办公用品",
+        amount=Decimal("500"), expense_date=datetime(2026, 2, 15)
+    )
+    db.add(expense_no_invoice)
+
+    db.flush()
+    return {"account_id": 1, "sale_id": 100, "expense_id": 200}
+
+
+class TestIncomeTaxCaliber:
+    def test_tax_caliber_uses_invoices(self, db, seed_data):
+        """税务口径：收入取发票不含税金额"""
+        from routers.income_tax import get_income_tax_report
+        import asyncio
+
+        report = asyncio.run(get_income_tax_report(
+            year=2026, quarter=None, caliber="tax", db=db, account_id=1
+        ))
+        # 收入 = 销项发票不含税 = 10000
+        assert report.total_revenue == Decimal("10000.00")
+        # 成本 = 进项发票不含税 = 1886.79（费用发票 direction=in 被计入）
+        assert report.total_cost == Decimal("1886.79")
+
+    def test_operating_caliber_uses_orders(self, db, seed_data):
+        """经营口径：收入取订单金额（含税）"""
+        result = generate_income_tax_prepayment(db, 1, 2026, 1)
+        # 营业收入 = SaleOrder.total_price = 11300
+        assert result["operating_revenue"] == Decimal("11300.00")
+        # 营业成本 = quantity * purchase_price = 10 * 500 = 5000
+        assert result["operating_cost"] == Decimal("5000.00")
+
+    def test_tax_caliber_expenses_only_invoiced(self, db, seed_data):
+        """税务口径：费用仅有票费用可税前扣除"""
+        from routers.income_tax import get_income_tax_report
+        import asyncio
+
+        report = asyncio.run(get_income_tax_report(
+            year=2026, quarter=None, caliber="tax", db=db, account_id=1
+        ))
+        # 有票费用 = 2000
+        assert report.invoiced_expenses == Decimal("2000.00")
+        # 无票费用 = 500
+        assert report.non_invoice_expenses == Decimal("500.00")
+        # operating_expenses = 有票费用 = 2000
+        assert report.operating_expenses == Decimal("2000.00")
+
+    def test_operating_caliber_all_expenses(self, db, seed_data):
+        """经营口径：所有费用都计入"""
+        result = generate_income_tax_prepayment(db, 1, 2026, 1)
+        # 营业费用 = 所有费用 = 2000 + 500 = 2500
+        assert result["operating_expenses"] == Decimal("2500.00")

@@ -11,6 +11,7 @@ from account_dep import get_account_id, get_operator
 from image_utils import delete_old_image
 from enums import EXPENSE_CATEGORIES
 import crud
+from crud.invoice_linkage import bulk_has_invoice, has_invoice as linkage_has_invoice
 from uow import unit_of_work
 from operation_result import OperationResult, EntityType, OperationType
 
@@ -39,24 +40,26 @@ async def get_expenses(
     total = query.count()
     expenses = query.offset(skip).limit(limit).all()
     
+    # 批量派生查询:哪些费用有发票关联(单一真相源,取代 ORM has_invoice 列)
+    invoiced_ids = bulk_has_invoice(db, account_id, "expense", [e.id for e in expenses])
+
     # 转换为响应模型
     expense_outs = []
     for expense in expenses:
-        expense_out = ExpenseOut(
-            id=expense.id,
-            account_id=expense.account_id,
-            category=expense.category,
-            functional_category=expense.functional_category,
-            amount=expense.amount,
-            expense_date=expense.expense_date,
-            has_invoice=expense.has_invoice,
-            payment_method=expense.payment_method,
-            payment_status=expense.payment_status,
-            description=expense.description,
-            image_url=expense.image_url or "",
-            created_at=expense.created_at
-        )
-        expense_outs.append(expense_out)
+        expense_outs.append({
+            "id": expense.id,
+            "account_id": expense.account_id,
+            "category": expense.category,
+            "functional_category": expense.functional_category,
+            "amount": float(expense.amount),
+            "expense_date": expense.expense_date.isoformat() if expense.expense_date else None,
+            "has_invoice": (expense.id in invoiced_ids),
+            "payment_method": expense.payment_method,
+            "payment_status": expense.payment_status,
+            "description": expense.description,
+            "image_url": expense.image_url or "",
+            "created_at": expense.created_at.isoformat() if expense.created_at else None,
+        })
     
     return PaginatedResponse(total=total, items=expense_outs)
 
@@ -79,7 +82,6 @@ async def create_expense(
         functional_category=expense.functional_category or "管理费用",
         amount=expense.amount,
         expense_date=expense.expense_date,
-        has_invoice=expense.has_invoice,
         payment_method=expense.payment_method,
         payment_status="unpaid",  # 权责发生制：费用发生时未付款
         description=expense.description,
@@ -107,7 +109,7 @@ async def create_expense(
             "functional_category": db_expense.functional_category,
             "amount": float(db_expense.amount),
             "expense_date": db_expense.expense_date.isoformat() if db_expense.expense_date else None,
-            "has_invoice": db_expense.has_invoice,
+            "has_invoice": linkage_has_invoice(db, account_id, "expense", db_expense.id),
             "payment_method": db_expense.payment_method,
             "payment_status": db_expense.payment_status,
             "description": db_expense.description,

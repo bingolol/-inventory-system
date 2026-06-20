@@ -57,7 +57,6 @@ class PurchaseOrderDomain(DomainModel):
     status: str = OrderStatus.PENDING
     payment_status: str = PaymentStatus.UNPAID
     payment_method: str = PaymentMethod.COMPANY
-    has_invoice: bool = False
     purchase_date: str = ""
     notes: str = ""
     order_type: str = OrderType.RETAIL
@@ -149,7 +148,6 @@ class PurchaseOrderDomain(DomainModel):
             status=orm_obj.status or OrderStatus.PENDING,
             payment_status=orm_obj.payment_status or PaymentStatus.UNPAID,
             payment_method=orm_obj.payment_method or PaymentMethod.COMPANY,
-            has_invoice=bool(orm_obj.has_invoice),
             purchase_date=str(orm_obj.purchase_date) if orm_obj.purchase_date else "",
             notes=orm_obj.notes or "",
             order_type=getattr(orm_obj, 'order_type', None) or OrderType.RETAIL,

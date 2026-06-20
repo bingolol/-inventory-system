@@ -24,7 +24,6 @@ class TestSaleDateCustom:
             order = dispatch(CreateSaleOrder(
                 account_id=account_id,
                 deduct_inventory=False,
-                has_invoice=False,
                 payment_status="unpaid",
                 notes="自定义日期测试",
                 sale_date=custom_date,
@@ -47,7 +46,6 @@ class TestSaleDateCustom:
 
         data = SaleOrderCreate(
             customer_id=None,
-            has_invoice=False,
             payment_status="unpaid",
             notes="schema测试",
             sale_date=datetime(2025, 6, 1),

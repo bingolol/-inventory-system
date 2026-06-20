@@ -536,7 +536,7 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
             elif tx.flow_category == FlowCategory.FINANCING:
                 financing_outflows += _d(tx.amount)
 
-    # 从银行流水表读取经营活动数据（权责发生制）
+    # 从银行流水表读取数据（按 flow_category 分类）
     bank_transactions = db.query(models.BankTransaction).filter(
         models.BankTransaction.account_id == account_id,
         models.BankTransaction.transaction_date >= start_dt,
@@ -544,10 +544,21 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
     ).all()
 
     for tx in bank_transactions:
+        amount = _d(tx.amount)
         if tx.transaction_type == "inflow":
-            operating_inflows += _d(tx.amount)
+            if tx.flow_category == FlowCategory.INVESTING:
+                investing_inflows += amount
+            elif tx.flow_category == FlowCategory.FINANCING:
+                financing_inflows += amount
+            else:
+                operating_inflows += amount
         else:
-            operating_outflows += _d(tx.amount)
+            if tx.flow_category == FlowCategory.INVESTING:
+                investing_outflows += amount
+            elif tx.flow_category == FlowCategory.FINANCING:
+                financing_outflows += amount
+            else:
+                operating_outflows += amount
 
     net_operating = operating_inflows - operating_outflows
     net_investing = investing_inflows - investing_outflows

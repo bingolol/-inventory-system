@@ -349,6 +349,110 @@ def _migrate_expense_functional_category(engine):
             logger.info("迁移: expenses 表添加 functional_category 列")
 
 
+def _migrate_drop_has_invoice(engine):
+    """删除 sale_orders/purchase_orders/expenses 的 has_invoice 列(单一真相源迁移)
+
+    方案1:has_invoice 改为从 Invoice 表派生查询,删除冗余列。
+    SQLite 不支持 ALTER TABLE DROP COLUMN,需重建表。
+    """
+    insp = inspect(engine)
+    tables_to_migrate = ["sale_orders", "purchase_orders", "expenses"]
+
+    # 幂等检查:如果任一表仍有 has_invoice 列,执行迁移
+    need_migrate = False
+    for table in tables_to_migrate:
+        if table not in insp.get_table_names():
+            continue
+        cols = [c["name"] for c in insp.get_columns(table)]
+        if "has_invoice" in cols:
+            need_migrate = True
+            break
+
+    if not need_migrate:
+        logger.info("has_invoice 迁移:已完成,跳过")
+        return
+
+    # 备份数据库
+    backup_path = DB_PATH + ".pre_drop_has_invoice"
+    if not os.path.exists(backup_path):
+        shutil.copy2(DB_PATH, backup_path)
+        logger.info(f"has_invoice 迁移前备份: {backup_path}")
+
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.commit()
+
+        for table in tables_to_migrate:
+            if table not in insp.get_table_names():
+                continue
+            cols = [c["name"] for c in insp.get_columns(table)]
+            if "has_invoice" not in cols:
+                continue
+
+            old_table = f"{table}__old_has_invoice"
+
+            # 1. RENAME 旧表
+            conn.execute(text(f"ALTER TABLE [{table}] RENAME TO [{old_table}]"))
+            conn.commit()
+
+            # 2. 清理旧表自定义索引
+            old_indexes = conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t AND name NOT LIKE 'sqlite_autoindex_%'"
+            ), {"t": old_table}).fetchall()
+            for (idx_name,) in old_indexes:
+                conn.execute(text(f"DROP INDEX IF EXISTS [{idx_name}]"))
+            conn.commit()
+
+            # 3. 用新 models 创建新表(无 has_invoice 列)
+            metadata_table = Base.metadata.tables.get(table)
+            if metadata_table is not None:
+                metadata_table.create(bind=engine)
+
+            # 4. INSERT 迁移数据(只插入共有列)
+            old_cols = [c["name"] for c in inspect(engine).get_columns(old_table)]
+            new_cols = [c["name"] for c in inspect(engine).get_columns(table)]
+            common_cols = [c for c in new_cols if c in old_cols]
+            cols_str = ", ".join(f"[{c}]" for c in common_cols)
+
+            conn.execute(text(
+                f"INSERT INTO [{table}] ({cols_str}) SELECT {cols_str} FROM [{old_table}]"
+            ))
+            conn.commit()
+
+            # 5. 行数校验
+            old_count = conn.execute(text(f"SELECT COUNT(*) FROM [{old_table}]")).scalar()
+            new_count = conn.execute(text(f"SELECT COUNT(*) FROM [{table}]")).scalar()
+            if old_count != new_count:
+                raise RuntimeError(
+                    f"has_invoice 迁移行数不一致: {table} 旧表 {old_count} 行,新表 {new_count} 行"
+                )
+
+            # 6. DROP 旧表
+            conn.execute(text(f"DROP TABLE [{old_table}]"))
+            conn.commit()
+            logger.info(f"has_invoice 迁移: 表 [{table}] 完成(删除 has_invoice 列)")
+
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.commit()
+
+    logger.info("has_invoice 迁移: 全部完成")
+
+
+def _migrate_bank_transaction_flow_category(engine):
+    """为 bank_transactions 表添加 flow_category 字段"""
+    insp = inspect(engine)
+    if "bank_transactions" not in insp.get_table_names():
+        return
+
+    columns = [col["name"] for col in insp.get_columns("bank_transactions")]
+
+    if "flow_category" not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE bank_transactions ADD COLUMN flow_category VARCHAR(20) NOT NULL DEFAULT 'operating'"))
+            conn.commit()
+            logger.info("迁移: bank_transactions 表添加 flow_category 列")
+
+
 def init_db():
     import models
     Base.metadata.create_all(bind=engine)
@@ -359,6 +463,8 @@ def init_db():
     _migrate_numeric_fields(engine)
     _migrate_opening_balance_fields(engine)
     _migrate_expense_functional_category(engine)
+    _migrate_drop_has_invoice(engine)
+    _migrate_bank_transaction_flow_category(engine)
     # _migrate_v4_order_type 已删除：所有字段已在 models.py 中定义，create_all 自动创建
     _ensure_default_accounts()
     # 旧迁移的第6步"清空数据"无幂等保护，导致每次重启都会丢失所有数据

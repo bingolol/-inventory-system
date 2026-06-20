@@ -15,11 +15,12 @@ from commands.purchase_commands import (
 )
 from enums import OrderStatus, OrderType
 from operation_result import OperationResult, EntityType, OperationType
+from crud.invoice_linkage import has_invoice as linkage_has_invoice, bulk_has_invoice
 
 router = APIRouter()
 
 
-def _build_purchase_out(order):
+def _build_purchase_out(order, invoiced: bool = False):
     items = []
     for item in order.items:
         items.append(schemas.PurchaseItemOut(
@@ -39,7 +40,6 @@ def _build_purchase_out(order):
         supplier_name=order.supplier.name if order.supplier else None,
         order_type=order.order_type if order.order_type is not None else OrderType.RETAIL,
         total_price=order.total_price,
-        has_invoice=order.has_invoice,
         payment_method=order.payment_method,
         payment_status=order.payment_status,
         status=order.status,
@@ -55,9 +55,11 @@ def _build_purchase_out(order):
 def list_purchases(page: int = 1, page_size: int = 20, start_date: str = None, end_date: str = None, status: str = None, keyword: str = None, order_type: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     skip = (page - 1) * page_size
     total, orders = crud.list_purchase_orders(db, account_id, skip=skip, limit=page_size, start_date=start_date, end_date=end_date, status=status, keyword=keyword, order_type=order_type)
+    # 批量派生查询:哪些采购单有发票关联(单一真相源)
+    invoiced_ids = bulk_has_invoice(db, account_id, "purchase_order", [o.id for o in orders])
     result = []
     for order in orders:
-        result.append(_build_purchase_out(order))
+        result.append(_build_purchase_out(order, invoiced=(order.id in invoiced_ids)))
     return {"total": total, "items": result}
 
 
@@ -69,7 +71,6 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
                 account_id=account_id,
                 operator=operator,
                 supplier_id=data.supplier_id,
-                has_invoice=data.has_invoice,
                 payment_method=data.payment_method,
                 notes=data.notes,
                 image_url=data.image_url or "",
@@ -97,7 +98,7 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
         entity_id=order.id,
         summary=f"采购单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
         ai_hint="采购单已创建，库存已增加。如需付款，请调用 POST /api/payments。",
-        data=_build_purchase_out(order).model_dump(),
+        data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
         changes={
             "inventory": inventory_changes,
             "payable": {"amount": f"+{order.total_price}"}
@@ -111,7 +112,7 @@ def get_purchase(purchase_id: int, account_id: int = Depends(get_account_id), db
     order = crud.get_purchase_order(db, account_id, purchase_id)
     if not order:
         raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
-    return _build_purchase_out(order)
+    return _build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id))
 
 
 @router.put("/{purchase_id}")
@@ -130,7 +131,6 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
                     order_id=purchase_id,
                     items=items_dicts,
                     supplier_id=data.supplier_id,
-                    has_invoice=data.has_invoice,
                     payment_method=data.payment_method,
                     notes=data.notes,
                     status=data.status,
@@ -150,7 +150,7 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
 
             # 3) 普通字段 → UpdatePurchaseOrderFields
             field_kwargs = {}
-            for k in ('supplier_id', 'has_invoice', 'payment_method', 'payment_status', 'notes', 'image_url'):
+            for k in ('supplier_id', 'payment_method', 'payment_status', 'notes', 'image_url'):
                 v = getattr(data, k, None)
                 if v is not None:
                     field_kwargs[k] = v
@@ -182,7 +182,7 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
         entity_id=order.id,
         summary=f"采购单 {order.order_no} 更新成功",
         ai_hint="采购单已更新。",
-        data=_build_purchase_out(order).model_dump()
+        data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump()
     )
     return result.to_dict()
 

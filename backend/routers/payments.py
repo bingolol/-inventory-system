@@ -62,6 +62,7 @@ def create_payment(
                 balance_after=new_balance,
                 transaction_date=data.payment_date,
                 description=f"付款: {data.description}",
+                flow_category="operating",
                 related_entity_type="payment",
                 related_entity_id=payment.id
             )
@@ -105,7 +106,11 @@ def create_payment(
         changes["payable"] = {"amount": f"-{data.amount}"}
     elif data.related_entity_type == "purchase_order":
         changes["payable"] = {"amount": f"-{data.amount}"}
-    
+    elif data.related_entity_type == "tax_payable":
+        # 缴税:清偿应交税费负债,不碰利润表(增值税属价外税/负债)
+        changes["tax_payable"] = {"amount": f"-{data.amount}"}
+        changes["note"] = "缴税:借应交税费,贷银行存款,清负债不碰利润表"
+
     # 返回 OperationResult 格式
     result = OperationResult(
         operation=OperationType.CREATE,

@@ -17,6 +17,7 @@ from errors import BusinessError, ErrorCode
 from .base import Command, CommandHandler, register
 from .crud_compat import _log, delete_old_image
 from accounting_engine import AccountingEngine
+from crud.invoice_linkage import validate_link_target
 
 # 全局 AccountingEngine 实例
 _engine = AccountingEngine()
@@ -60,7 +61,10 @@ class CreateInvoiceHandler(CommandHandler):
                 data={"invoice_number": cmd.invoice_no}
             )
 
-        # 2. 解析 issue_date
+        # 2. 校验关联目标存在(防孤儿引用)
+        validate_link_target(db, cmd.account_id, cmd.related_order_type, cmd.related_order_id)
+
+        # 3. 解析 issue_date
         issue_date = cmd.issue_date
         if isinstance(issue_date, str):
             try:

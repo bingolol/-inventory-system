@@ -28,7 +28,6 @@ class PurchaseItemOut(BaseModel):
 
 class PurchaseOrderCreate(BaseModel):
     supplier_id: Optional[int] = None
-    has_invoice: bool = False
     payment_method: str = "company"
     image_url: Optional[str] = ""
     notes: str = ""
@@ -37,7 +36,6 @@ class PurchaseOrderCreate(BaseModel):
 
 class PurchaseOrderUpdate(BaseModel):
     supplier_id: Optional[int] = None
-    has_invoice: Optional[bool] = None
     payment_method: Optional[str] = None
     payment_status: Optional[str] = None
     status: Optional[str] = None
@@ -53,7 +51,6 @@ class PurchaseOrderOut(BaseModel):
     supplier_name: Optional[str] = None
     order_type: str = "retail"
     total_price: Decimal
-    has_invoice: bool
     payment_method: str
     payment_status: str
     status: str
@@ -91,7 +88,6 @@ class SaleItemOut(BaseModel):
 class SaleOrderCreate(BaseModel):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
-    has_invoice: bool = False
     payment_status: str = "unpaid"
     image_url: Optional[str] = ""
     notes: str = ""
@@ -102,7 +98,6 @@ class SaleOrderCreate(BaseModel):
 
 class SaleOrderUpdate(BaseModel):
     customer_id: Optional[int] = None
-    has_invoice: Optional[bool] = None
     payment_status: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
@@ -118,7 +113,6 @@ class SaleOrderOut(BaseModel):
     customer_name: Optional[str] = None
     order_type: str = "retail"
     total_price: Decimal
-    has_invoice: bool
     payment_status: str
     status: str
     notes: str

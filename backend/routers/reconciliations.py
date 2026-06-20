@@ -12,6 +12,7 @@ from account_dep import get_account_id
 from enums import OrderStatus, PaymentStatus, InvoiceDirection
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
+from crud.invoice_linkage import has_invoice as linkage_has_invoice
 
 router = APIRouter()
 
@@ -212,7 +213,7 @@ def get_reconciliation_detail(
                 "description": f"采购单 {o.order_no}",
                 "amount": o.total_price,
                 "payment_status": o.payment_status,
-                "has_invoice": o.has_invoice,
+                "has_invoice": linkage_has_invoice(db, account_id, "purchase_order", o.id),
                 "notes": o.notes or ""
             })
 
@@ -257,7 +258,7 @@ def get_reconciliation_detail(
                 "description": f"销售单 {o.order_no}",
                 "amount": o.total_price,
                 "payment_status": o.payment_status,
-                "has_invoice": o.has_invoice,
+                "has_invoice": linkage_has_invoice(db, account_id, "sale_order", o.id),
                 "notes": o.notes or ""
             })
 

@@ -22,6 +22,7 @@ from .crud_compat import (
     _d, _distribute_total_price, _generate_order_no, _log,
     get_or_create_inventory, get_product, get_sale_order,
 )
+from crud.reversal import reverse_receipts
 from errors import BusinessError, ErrorCode
 from crud.inventory_ops import sale_deduct, sale_restore
 from utils import Q2
@@ -35,7 +36,6 @@ from utils import Q2
 class CreateSaleOrder(Command):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
-    has_invoice: bool = False
     payment_status: str = PaymentStatus.UNPAID
     notes: str = ""
     image_url: str = ""
@@ -64,7 +64,6 @@ class CreateSaleOrderHandler(CommandHandler):
             order_no=order_no,
             customer_id=cmd.customer_id,
             order_type=OrderType.RETAIL,
-            has_invoice=cmd.has_invoice,
             payment_status=cmd.payment_status,
             status=OrderStatus.PENDING,
             notes=cmd.notes,
@@ -164,6 +163,9 @@ class CancelSaleOrderHandler(CommandHandler):
         # 显式联动：回补库存
         sale_restore(db, cmd.account_id, order, operator=cmd.operator)
 
+        # 显式联动：冲销收款记录 + 银行流水
+        reverse_receipts(db, cmd.account_id, cmd.order_id)
+
         # 事件（仅日志）
         emit("sale_order.cancelled", db=db, account_id=cmd.account_id, order=order,
              operator=cmd.operator, old_status=old_status)
@@ -242,6 +244,9 @@ class DeleteSaleOrderHandler(CommandHandler):
         # 显式联动：回补库存
         if order.status == OrderStatus.COMPLETED:
             sale_restore(db, cmd.account_id, order, operator=cmd.operator)
+
+        # 显式联动：冲销收款记录 + 银行流水
+        reverse_receipts(db, cmd.account_id, cmd.order_id)
 
         # 事件（仅日志）
         emit("sale_order.deleted", db=db, account_id=cmd.account_id, order=order,
@@ -376,7 +381,6 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
 class UpdateSaleOrderFields(Command):
     order_id: int = 0
     customer_id: Optional[int] = None
-    has_invoice: Optional[bool] = None
     payment_status: Optional[str] = None
     notes: Optional[str] = None
     image_url: Optional[str] = None
@@ -392,7 +396,6 @@ class UpdateSaleOrderFieldsHandler(CommandHandler):
 
         field_map = {
             'customer_id': cmd.customer_id,
-            'has_invoice': cmd.has_invoice,
             'payment_status': cmd.payment_status,
             'notes': cmd.notes,
             'image_url': cmd.image_url,

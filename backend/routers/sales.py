@@ -13,13 +13,14 @@ from commands.sale_commands import (
     DeleteSaleOrder, UpdateSaleOrderItems,
     UpdateSaleOrderFields,
 )
+from crud.invoice_linkage import has_invoice as linkage_has_invoice, bulk_has_invoice
 from enums import OrderStatus, OrderType
 from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
 
 
-def _build_sale_out(order):
+def _build_sale_out(order, invoiced: bool = False):
     items = []
     for item in order.items:
         items.append(schemas.SaleItemOut(
@@ -39,7 +40,7 @@ def _build_sale_out(order):
         customer_name=order.customer.name if order.customer else "散客",
         order_type=order.order_type if order.order_type is not None else OrderType.RETAIL,
         total_price=order.total_price,
-        has_invoice=order.has_invoice,
+        has_invoice=invoiced,
         payment_status=order.payment_status,
         status=order.status,
         notes=order.notes,
@@ -54,9 +55,11 @@ def _build_sale_out(order):
 def list_sales(page: int = 1, page_size: int = 20, start_date: str = None, end_date: str = None, status: str = None, order_type: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     skip = (page - 1) * page_size
     total, orders = crud.list_sale_orders(db, account_id, skip=skip, limit=page_size, start_date=start_date, end_date=end_date, status=status, order_type=order_type)
+    # 批量派生查询:哪些销售单有发票关联(单一真相源)
+    invoiced_ids = bulk_has_invoice(db, account_id, "sale_order", [o.id for o in orders])
     result = []
     for order in orders:
-        result.append(_build_sale_out(order))
+        result.append(_build_sale_out(order, invoiced=(order.id in invoiced_ids)))
     return {"total": total, "items": result}
 
 
@@ -69,7 +72,6 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
                 operator=operator,
                 customer_id=data.customer_id,
                 deduct_inventory=data.deduct_inventory,
-                has_invoice=data.has_invoice,
                 payment_status=data.payment_status,
                 notes=data.notes,
                 image_url=data.image_url or "",
@@ -99,7 +101,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
         entity_id=order.id,
         summary=f"销售单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
         ai_hint="销售单已创建，库存已扣减。如需收款，请调用 POST /api/receipts。",
-        data=_build_sale_out(order).model_dump(),
+        data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
         changes={
             "inventory": inventory_changes,
             "receivable": {"amount": f"+{order.total_price}"}
@@ -113,7 +115,7 @@ def get_sale(sale_id: int, account_id: int = Depends(get_account_id), db: Sessio
     order = crud.get_sale_order(db, account_id, sale_id)
     if not order:
         raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
-    return _build_sale_out(order)
+    return _build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id))
 
 
 @router.put("/{sale_id}")
@@ -151,7 +153,7 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
                         # 4) 普通字段 → UpdateSaleOrderFields
             #    有 items 时 status 也作为普通字段设置（只 setattr，不做库存联动）
             field_kwargs = {}
-            for k in ('customer_id', 'has_invoice', 'payment_status', 'notes', 'image_url'):
+            for k in ('customer_id', 'payment_status', 'notes', 'image_url'):
                 v = getattr(data, k, None)
                 if v is not None:
                     field_kwargs[k] = v
@@ -181,7 +183,7 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
         entity_id=order.id,
         summary=f"销售单 {order.order_no} 更新成功",
         ai_hint="销售单已更新。",
-        data=_build_sale_out(order).model_dump()
+        data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump()
     )
     return result.to_dict()
 

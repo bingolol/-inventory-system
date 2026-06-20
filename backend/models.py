@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, Date, and_
+from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, CheckConstraint, Date, and_
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 from datetime import datetime
@@ -159,7 +159,6 @@ class PurchaseOrder(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), comment="供应商ID")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail/purchase_labor")
     total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
-    has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="付款状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
@@ -202,7 +201,6 @@ class SaleOrder(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="客户ID(可为空=散客)")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail")
     total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
-    has_invoice = Column(Boolean, nullable=False, default=False, comment="是否已开票")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="支付状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
@@ -301,12 +299,17 @@ class Invoice(Base):
     certification_status = Column(String(20), nullable=False, default=CertificationStatus.N_A, comment="认证状态: pending / certified / n_a")
     certification_date = Column(DateTime, nullable=True, comment="认证日期")
     related_order_id = Column(Integer, nullable=True, comment="关联订单ID")
-    related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale / purchase")
+    related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale_order/purchase_order/expense/fixed_asset")
     notes = Column(Text, default="", comment="备注")
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
         UniqueConstraint('account_id', 'invoice_no', name='uix_account_invoice_no'),
+        # DB 层兜底:防止 agent 越过 handler 直接写非法 related_order_type
+        CheckConstraint(
+            "related_order_type IS NULL OR related_order_type IN ('sale_order','purchase_order','expense','fixed_asset')",
+            name='ck_invoice_related_order_type'
+        ),
     )
 
 
@@ -321,7 +324,6 @@ class Expense(Base):
     functional_category = Column(String(20), nullable=False, default="管理费用", comment="功能分类: 销售费用/管理费用/财务费用")
     amount = Column(Numeric(12, 2), nullable=False, comment="金额")
     expense_date = Column(DateTime, nullable=False, comment="支出日期")
-    has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default="unpaid", comment="付款状态: unpaid/paid")
     payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True, comment="付款记录ID")
@@ -381,6 +383,7 @@ class BankTransaction(Base):
     transaction_date = Column(DateTime, nullable=False, comment="交易日期")
     description = Column(String(500), default="", comment="描述")
     reference_no = Column(String(100), default="", comment="银行流水号")
+    flow_category = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="现金流量分类: operating/investing/financing")
     related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: payment/receipt")
     related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
@@ -395,7 +398,7 @@ class Payment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    payment_type = Column(String(20), nullable=False, comment="付款类型: expense/purchase/salary")
+    payment_type = Column(String(20), nullable=False, comment="付款类型: expense/purchase/salary/tax(缴税清负债)")
     related_entity_type = Column(String(20), nullable=False, comment="关联实体类型: expense/purchase_order")
     related_entity_id = Column(Integer, nullable=False, comment="关联实体ID")
     amount = Column(Numeric(12, 2), nullable=False, comment="付款金额")
