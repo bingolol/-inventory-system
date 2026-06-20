@@ -1,6 +1,6 @@
 # AI Agent 记账操作手册
 
-> 本手册供 AI Agent 加载为 skill，快速执行进销存系统记账操作。完整 API 参考见 `docs/AI_AGENT_GUIDE_FULL.md`。
+> 本手册供 AI Agent 加载为 skill，快速执行进销存系统记账操作。
 
 ---
 
@@ -329,8 +329,6 @@ curl -X POST http://localhost:8000/api/personal \
 ---
 
 ## 8. 完整参考
-
-详细 API 文档（含请求/响应示例）：`docs/AI_AGENT_GUIDE_FULL.md`
 
 健康检查：`GET /api/health` → `{"status":"ok"}`
 

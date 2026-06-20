@@ -103,10 +103,7 @@ cat CONTEXT.md
 ### 对于开发者
 
 ```bash
-# 1. 读取贡献指南
-cat CONTRIBUTING.md
-
-# 2. 读取开发速查表
+# 1. 读取开发速查表
 cat docs/开发速查表.md
 ```
 

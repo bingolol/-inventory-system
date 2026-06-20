@@ -249,7 +249,7 @@ pytest
 ## 贡献与许可
 
 - 欢迎 Issue 与 PR：Fork → 新分支 → 添加/更新测试 → PR
-- 本仓库使用本地 markdown 跟踪 issue（`.scratch/<feature>/`），详见 [`AGENTS.md`](./AGENTS.md)
+- Issue 追踪：GitHub Issues (gh CLI)，详见 [`AGENTS.md`](./AGENTS.md)
 - 仓库当前未包含 LICENSE 文件，发布前建议补充合适的许可证（如 MIT）
 
 ---
