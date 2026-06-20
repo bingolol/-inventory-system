@@ -24,7 +24,7 @@
           <el-option v-for="opt in enumsStore.orderStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </div>
-      <el-table :data="list" stripe style="width:100%" v-loading="loading">
+      <el-table :data="list" stripe style="width:100%" v-loading="loading" show-summary :summary-method="getSummaries">
         <template #empty>
           <el-empty description="暂无销售记录" />
         </template>
@@ -215,6 +215,27 @@ async function handleEditSave() {
     ElMessage.success(validItems.length === 0 ? '销售单已删除（商品行数归零）' : '销售单修改成功')
     orderForm.editDialogVisible.value = false; loadData()
   } catch (e) { ElMessage.error('修改失败: ' + (e.response?.data?.detail || e.message)) }
+}
+
+// 表格合计方法
+function getSummaries(param) {
+  const { columns, data } = param
+  const sums = []
+  columns.forEach((column, index) => {
+    if (index === 0) {
+      sums[index] = '合计'
+      return
+    }
+    // 总价列（第6列，索引5）进行合计
+    if (index === 5) {
+      const values = data.map(item => Number(item.total_price) || 0)
+      const total = values.reduce((prev, curr) => prev + curr, 0)
+      sums[index] = `¥${formatMoney(total)}`
+    } else {
+      sums[index] = ''
+    }
+  })
+  return sums
 }
 
 useAccountAwareData(loadData)

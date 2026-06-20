@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
@@ -18,7 +19,7 @@ def get_balance_sheet(
         balance_sheet = crud.generate_balance_sheet(db, account_id, date)
         return balance_sheet
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成资产负债表失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"生成资产负债表失败: {str(e)}")
 
 
 @router.get("/income-statement")
@@ -33,7 +34,7 @@ def get_income_statement(
         income_statement = crud.generate_income_statement(db, account_id, start_date, end_date)
         return income_statement
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成利润表失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"生成利润表失败: {str(e)}")
 
 
 @router.get("/financial-summary")
@@ -56,4 +57,4 @@ def get_financial_summary(
             "opening_balance_date": opening_balance.date.isoformat() if opening_balance else None
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取财务汇总失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"获取财务汇总失败: {str(e)}")

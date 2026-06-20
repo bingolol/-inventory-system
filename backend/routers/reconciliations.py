@@ -1,7 +1,7 @@
 # ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
 # 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
@@ -11,6 +11,7 @@ from models import PurchaseOrder, SaleOrder, Invoice, Supplier, Customer
 from account_dep import get_account_id
 from enums import OrderStatus, PaymentStatus, InvoiceDirection
 from utils import _d, Q2
+from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -122,7 +123,7 @@ def get_all_reconciliations(
         datetime.strptime(start_date, "%Y-%m-%d")
         datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
-        raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+        raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": f"{start_date} ~ {end_date}"})
 
     # 获取所有合作伙伴
     if party_type == "supplier":
@@ -177,14 +178,14 @@ def get_reconciliation_detail(
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     except ValueError:
-        raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+        raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": f"{start_date} ~ {end_date}"})
 
     if party_type == "supplier":
         partner = db.query(Supplier).filter(
             Supplier.id == partner_id, Supplier.account_id == account_id
         ).first()
         if not partner:
-            raise HTTPException(status_code=404, detail="供应商不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "供应商", "order_id": partner_id})
 
         # 期初
         opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price), 0)).filter(
@@ -229,7 +230,7 @@ def get_reconciliation_detail(
             Customer.id == partner_id, Customer.account_id == account_id
         ).first()
         if not partner:
-            raise HTTPException(status_code=404, detail="客户不存在")
+            raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": partner_id})
 
         # 期初
         opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price), 0)).filter(

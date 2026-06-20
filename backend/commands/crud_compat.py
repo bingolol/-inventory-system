@@ -16,9 +16,6 @@ from crud.orders import get_purchase_order, get_sale_order, _d, _distribute_tota
 # image_utils
 from image_utils import delete_old_image
 
-# crud/finance.py
-from crud.finance import create_opening_balance, update_opening_balance, create_cash_flow_transaction
-
 # crud/partners.py
 from crud.partners import (
     list_suppliers, get_supplier,
@@ -47,7 +44,6 @@ __all__ = [
     "sale_deduct", "sale_restore",
     "sale_deduct_inventory", "sale_restore_inventory",
     "delete_old_image",
-    "create_opening_balance", "update_opening_balance", "create_cash_flow_transaction",
     "list_suppliers", "get_supplier", "list_customers", "get_customer",
     "list_personal_transactions", "get_personal_category_summary",
     "get_personal_monthly_summary", "get_personal_summary",

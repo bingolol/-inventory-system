@@ -9,6 +9,7 @@ from typing import Optional
 from domain.base import DomainModel
 from domain.money import Money
 from enums import OrderStatus, OrderType
+from errors import BusinessError, ErrorCode
 
 # ── 状态转换表 ──────────────────────────────────────────────
 
@@ -68,9 +69,7 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
     def transition_to(self, target: str) -> None:
         """执行状态转换，非法转换抛 ValueError。"""
         if not self.can_transition_to(target):
-            raise ValueError(
-                f"非法状态转换: {self.status} → {target}"
-            )
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": self.status, "action": target})
         self.status = target
 
     # ── 业务规则 ───────────────────────────────────────────

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
@@ -11,6 +12,7 @@ from image_utils import delete_old_image
 from enums import EXPENSE_CATEGORIES
 import crud
 from uow import unit_of_work
+from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
 
@@ -44,10 +46,12 @@ async def get_expenses(
             id=expense.id,
             account_id=expense.account_id,
             category=expense.category,
+            functional_category=expense.functional_category,
             amount=expense.amount,
             expense_date=expense.expense_date,
             has_invoice=expense.has_invoice,
             payment_method=expense.payment_method,
+            payment_status=expense.payment_status,
             description=expense.description,
             image_url=expense.image_url or "",
             created_at=expense.created_at
@@ -57,7 +61,7 @@ async def get_expenses(
     return PaginatedResponse(total=total, items=expense_outs)
 
 
-@router.post("", response_model=ExpenseOut)
+@router.post("")
 async def create_expense(
     expense: ExpenseCreate,
     db: Session = Depends(get_db),
@@ -67,15 +71,17 @@ async def create_expense(
     """创建费用"""
     # 校验费用类别
     if expense.category not in EXPENSE_CATEGORIES:
-        raise HTTPException(status_code=422, detail=f"category '{expense.category}' not in {EXPENSE_CATEGORIES}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"category '{expense.category}' not in {EXPENSE_CATEGORIES}")
     # 创建费用
     db_expense = Expense(
         account_id=account_id,
         category=expense.category,
+        functional_category=expense.functional_category or "管理费用",
         amount=expense.amount,
         expense_date=expense.expense_date,
         has_invoice=expense.has_invoice,
         payment_method=expense.payment_method,
+        payment_status="unpaid",  # 权责发生制：费用发生时未付款
         description=expense.description,
         image_url=expense.image_url or ""
     )
@@ -87,22 +93,35 @@ async def create_expense(
                   f"创建费用:{db_expense.category} {db_expense.amount}", operator=operator)
     db.refresh(db_expense)
     
-    # 转换为响应模型
-    return ExpenseOut(
-        id=db_expense.id,
-        account_id=db_expense.account_id,
-        category=db_expense.category,
-        amount=db_expense.amount,
-        expense_date=db_expense.expense_date,
-        has_invoice=db_expense.has_invoice,
-        payment_method=db_expense.payment_method,
-        description=db_expense.description,
-        image_url=db_expense.image_url or "",
-        created_at=db_expense.created_at
+    # 返回 OperationResult 格式
+    result = OperationResult(
+        operation=OperationType.CREATE,
+        entity_type=EntityType.EXPENSE,
+        entity_id=db_expense.id,
+        summary=f"费用创建成功，类别：{db_expense.category}，金额 {db_expense.amount}",
+        ai_hint="费用已创建，状态为未付款。如需付款，请调用 POST /api/payments。",
+        data={
+            "id": db_expense.id,
+            "account_id": db_expense.account_id,
+            "category": db_expense.category,
+            "functional_category": db_expense.functional_category,
+            "amount": float(db_expense.amount),
+            "expense_date": db_expense.expense_date.isoformat() if db_expense.expense_date else None,
+            "has_invoice": db_expense.has_invoice,
+            "payment_method": db_expense.payment_method,
+            "payment_status": db_expense.payment_status,
+            "description": db_expense.description,
+            "image_url": db_expense.image_url or "",
+            "created_at": db_expense.created_at.isoformat() if db_expense.created_at else None,
+        },
+        changes={
+            "payable": {"amount": f"+{db_expense.amount}"}
+        }
     )
+    return result.to_dict()
 
 
-@router.put("/{expense_id}", response_model=ExpenseOut)
+@router.put("/{expense_id}")
 async def update_expense(
     expense_id: int,
     expense_update: ExpenseUpdate,
@@ -110,39 +129,43 @@ async def update_expense(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """更新费用"""
+    """更新费用（已付款费用禁止修改）"""
     expense = db.query(Expense).filter(
         Expense.id == expense_id,
         Expense.account_id == account_id
     ).first()
     
     if not expense:
-        raise HTTPException(status_code=404, detail="费用不存在")
+        raise BusinessError(code=ErrorCode.EXPENSE_NOT_FOUND, data={"expense_id": expense_id})
+    
+    # 检查是否已付款
+    if expense.payment_status == "paid":
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="已付款费用禁止修改",
+            ai_instruction="STOP_RETRYING. 该费用已付款，禁止修改。如需调整，请创建新的费用记录。"
+        )
     
     # 更新费用
     update_data = expense_update.model_dump(exclude_unset=True)
-    # 校验费用类别（仅当修改了 category 时）
     if expense_update.category is not None and expense_update.category not in EXPENSE_CATEGORIES:
-        raise HTTPException(status_code=422, detail=f"category '{expense_update.category}' not in {EXPENSE_CATEGORIES}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"category '{expense_update.category}' not in {EXPENSE_CATEGORIES}")
     with unit_of_work(db):
         for field, value in update_data.items():
             setattr(expense, field, value)
-        # 记录操作日志
         crud._log(db, account_id, "update", "expense", expense.id,
                   f"更新费用:{expense.category} {expense.amount}", operator=operator)
     db.refresh(expense)
-    return ExpenseOut(
-        id=expense.id,
-        account_id=expense.account_id,
-        category=expense.category,
-        amount=expense.amount,
-        expense_date=expense.expense_date,
-        has_invoice=expense.has_invoice,
-        payment_method=expense.payment_method,
-        description=expense.description,
-        image_url=expense.image_url or "",
-        created_at=expense.created_at
+    
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.EXPENSE,
+        entity_id=expense.id,
+        summary=f"费用更新成功，类别：{expense.category}，金额 {expense.amount}",
+        ai_hint="费用已更新。",
+        data={"id": expense.id, "category": expense.category, "amount": float(expense.amount)}
     )
+    return result.to_dict()
 
 
 @router.delete("/{expense_id}")
@@ -159,7 +182,7 @@ async def delete_expense(
     ).first()
     
     if not expense:
-        raise HTTPException(status_code=404, detail="费用不存在")
+        raise BusinessError(code=ErrorCode.EXPENSE_NOT_FOUND, data={"expense_id": expense_id})
     
     # 删除关联图片文件
     if expense.image_url:
@@ -168,8 +191,15 @@ async def delete_expense(
     # 删除费用
     with unit_of_work(db):
         db.delete(expense)
-        # 记录操作日志（与业务数据同一事务）
         crud._log(db, account_id, "delete", "expense", expense.id,
                   f"删除费用:{expense.category} {expense.amount}", operator=operator)
     
-    return {"message": "费用删除成功"}
+    result = OperationResult(
+        operation=OperationType.DELETE,
+        entity_type=EntityType.EXPENSE,
+        entity_id=expense_id,
+        summary=f"费用删除成功，类别：{expense.category}，金额 {expense.amount}",
+        ai_hint="费用已删除。",
+        data={"expense_id": expense_id, "category": expense.category}
+    )
+    return result.to_dict()

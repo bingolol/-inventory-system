@@ -8,10 +8,12 @@ from decimal import Decimal
 
 class ExpenseBase(BaseModel):
     category: str
-    amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    functional_category: str = "管理费用"
+    amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2)
     expense_date: datetime
     has_invoice: bool = False
     payment_method: str = "company"
+    payment_status: str = "unpaid"
     description: str = ""
     image_url: str = ""
 

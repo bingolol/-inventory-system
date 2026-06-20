@@ -17,6 +17,7 @@ from typing import Optional
 from domain.base import DomainModel
 from domain.money import Money
 from enums import OrderStatus, OrderType, PaymentStatus, PaymentMethod
+from errors import BusinessError, ErrorCode
 
 
 # ── 状态机：合法转换表 ──────────────────────────────────
@@ -70,11 +71,7 @@ class PurchaseOrderDomain(DomainModel):
 
     def transition_to(self, new_status: str) -> None:
         if not self.can_transition_to(new_status):
-            allowed = VALID_TRANSITIONS.get(self.status, set())
-            raise ValueError(
-                f"非法状态转换: {self.status} → {new_status}，"
-                f"合法目标: {allowed}"
-            )
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": self.status, "action": new_status})
         self.status = new_status
 
     # ── 业务规则 ────────────────────────────────────────────

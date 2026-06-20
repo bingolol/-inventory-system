@@ -19,38 +19,103 @@
       </template>
       
       <div v-if="balanceSheet" class="report-content">
-        <div class="report-title">资产负债表</div>
-        <div class="report-date">日期: {{ formatDate(reportDate) }}</div>
+        <div class="report-title-section">
+          <el-icon class="title-icon" :size="28"><DataLine /></el-icon>
+          <h2 class="report-title">资产负债表</h2>
+          <span class="report-date">截至 {{ formatDate(reportDate) }}</span>
+        </div>
         
-        <el-table :data="assetData" style="width: 100%" :show-header="false">
-          <el-table-column prop="item" label="项目" width="300" />
-          <el-table-column prop="amount" label="金额" width="200" align="right">
-            <template #default="scope">
-              <strong v-if="scope.row.isTotal">{{ formatMoney(scope.row.amount) }}</strong>
-              <span v-else>{{ formatMoney(scope.row.amount) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <!-- 双列布局：资产 vs 负债和所有者权益 -->
+        <el-row :gutter="20" class="dual-column-layout">
+          <!-- 资产部分 -->
+          <el-col :xs="24" :sm="24" :md="12" :lg="12">
+            <div class="statement-section assets-section">
+              <div class="section-header">
+                <el-icon><TrendCharts /></el-icon>
+                <span>资 产</span>
+              </div>
+              
+              <el-table 
+                :data="assetData" 
+                class="statement-table"
+                :show-header="false"
+                stripe
+                highlight-current-row
+                max-height="600"
+              >
+                <el-table-column prop="item" label="项目" min-width="180">
+                  <template #default="scope">
+                    <div :class="['item-cell', {
+                      'main-header': scope.row.isHeader,
+                      'sub-header': scope.row.isSubHeader,
+                      'total-row': scope.row.isTotal
+                    }]">
+                      {{ scope.row.item }}
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="amount" label="金额" width="150" align="right">
+                  <template #default="scope">
+                    <span :class="['amount-cell', {
+                      'total-amount': scope.row.isTotal
+                    }]">
+                      {{ formatMoney(scope.row.amount) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-col>
+          
+          <!-- 负债和所有者权益部分 -->
+          <el-col :xs="24" :sm="24" :md="12" :lg="12">
+            <div class="statement-section liabilities-section">
+              <div class="section-header">
+                <el-icon><PieChart /></el-icon>
+                <span>负债和所有者权益</span>
+              </div>
+              
+              <el-table 
+                :data="liabilityEquityData" 
+                class="statement-table"
+                :show-header="false"
+                stripe
+                highlight-current-row
+                max-height="600"
+              >
+                <el-table-column prop="item" label="项目" min-width="180">
+                  <template #default="scope">
+                    <div :class="['item-cell', {
+                      'main-header': scope.row.isHeader,
+                      'sub-header': scope.row.isSubHeader,
+                      'total-row': scope.row.isTotal
+                    }]">
+                      {{ scope.row.item }}
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="amount" label="金额" width="150" align="right">
+                  <template #default="scope">
+                    <span :class="['amount-cell', {
+                      'total-amount': scope.row.isTotal
+                    }]">
+                      {{ formatMoney(scope.row.amount) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-col>
+        </el-row>
         
-        <el-divider />
-        
-        <el-table :data="liabilityEquityData" style="width: 100%" :show-header="false">
-          <el-table-column prop="item" label="项目" width="300" />
-          <el-table-column prop="amount" label="金额" width="200" align="right">
-            <template #default="scope">
-              <strong v-if="scope.row.isTotal">{{ formatMoney(scope.row.amount) }}</strong>
-              <span v-else>{{ formatMoney(scope.row.amount) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-        
-        <el-divider />
-        
+        <!-- 平衡检查 -->
         <div class="balance-check">
           <el-alert
             :title="balanceCheckMessage"
             :type="isBalanced ? 'success' : 'error'"
             show-icon
+            :closable="false"
+            class="balance-alert"
           />
         </div>
       </div>
@@ -65,6 +130,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { DataLine, TrendCharts, PieChart } from '@element-plus/icons-vue'
 import financeApi from '../api/finance'
 import { formatMoney } from '../api/common'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -172,33 +238,167 @@ useAccountAwareData(loadBalanceSheet)
 
 <style scoped>
 .balance-sheet-container {
-  padding: 20px;
+  padding: 0;
 }
 
+/* ========== 报表内容区 ========== */
 .report-content {
-  padding: 20px;
+  padding: 24px;
+}
+
+/* ========== 标题区域 ========== */
+.report-title-section {
+  text-align: center;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--el-border-color-lighter);
+}
+
+.title-icon {
+  color: var(--el-color-primary);
+  margin-bottom: 8px;
 }
 
 .report-title {
-  text-align: center;
-  font-size: 24px;
-  font-weight: bold;
-  margin-bottom: 10px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  margin: 0 0 8px 0;
+  letter-spacing: 2px;
 }
 
 .report-date {
-  text-align: center;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+}
+
+/* ========== 报表分区 ========== */
+.dual-column-layout {
+  margin-bottom: 24px;
+}
+
+.statement-section {
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+  transition: box-shadow 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.statement-section:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.assets-section {
+  border-color: var(--el-color-success-light-7);
+}
+
+.liabilities-section {
+  border-color: var(--el-color-warning-light-7);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
   font-size: 16px;
-  color: var(--text-regular);
-  margin-bottom: 30px;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
 }
 
+.assets-section .section-header {
+  background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3));
+}
+
+.liabilities-section .section-header {
+  background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3));
+}
+
+.section-header :deep(.el-icon) {
+  font-size: 20px;
+}
+
+/* ========== 表格样式 ========== */
+.statement-table {
+  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  flex: 1;
+}
+
+.statement-table :deep(.el-table__row) {
+  transition: background-color 0.2s ease;
+}
+
+.item-cell {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.main-header {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color);
+  padding: 10px 12px;
+  margin: 2px -12px;
+  border-radius: 4px;
+}
+
+.sub-header {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  padding-left: 20px;
+  background: var(--el-fill-color-light);
+  margin: 2px -12px;
+  padding: 8px 12px 8px 20px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.total-row {
+  font-weight: 700;
+  color: var(--el-color-primary);
+  font-size: 14px;
+  border-top: 1px dashed var(--el-border-color);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.amount-cell {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  padding-right: 12px;
+}
+
+.total-amount {
+  font-weight: 700;
+  color: var(--el-color-primary);
+  font-size: 14px;
+}
+
+/* ========== 平衡检查 ========== */
 .balance-check {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 
+.balance-alert {
+  border-radius: 8px;
+}
+
+.balance-alert :deep(.el-alert__title) {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ========== 无数据状态 ========== */
 .no-data {
   text-align: center;
-  padding: 40px;
+  padding: 60px 20px;
 }
 </style>

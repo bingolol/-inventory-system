@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Type
 
+from errors import BusinessError, ErrorCode
+
 # 全局注册表：Command 类型 → Handler 类型
 _registry: Dict[Type["Command"], Type["CommandHandler"]] = {}
 
@@ -45,9 +47,9 @@ def register(cmd_type: Type[Command]):
 
     def decorator(handler_cls: Type[CommandHandler]) -> Type[CommandHandler]:
         if cmd_type in _registry:
-            raise ValueError(
-                f"Command {cmd_type.__name__} already registered "
-                f"to {_registry[cmd_type].__name__}"
+            raise BusinessError(
+                code=ErrorCode.DUPLICATE_ENTRY,
+                data={"details": f"Command {cmd_type.__name__} already registered to {_registry[cmd_type].__name__}"}
             )
         _registry[cmd_type] = handler_cls
         return handler_cls
@@ -64,6 +66,16 @@ def dispatch(cmd: Command, db: Any) -> Any:
             f"No handler registered for command type: {cmd_type.__name__}"
         )
     return handler_cls().handle(cmd, db)
+
+
+def register_alias(alias_type: Type[Command], handler_cls: Type[CommandHandler]) -> None:
+    """手动注册命令别名到已有的 handler（用于向后兼容）
+
+    用法::
+
+        register_alias(CreateSupplier, CreatePartnerHandler)
+    """
+    _registry[alias_type] = handler_cls
 
 
 def get_registered_commands() -> Dict[Type[Command], Type[CommandHandler]]:

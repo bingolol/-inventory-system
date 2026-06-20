@@ -323,9 +323,13 @@ class Expense(Base):
     expense_date = Column(DateTime, nullable=False, comment="支出日期")
     has_invoice = Column(Boolean, nullable=False, default=False, comment="是否有发票")
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
+    payment_status = Column(String(20), nullable=False, default="unpaid", comment="付款状态: unpaid/paid")
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True, comment="付款记录ID")
     description = Column(String(500), default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    payment = relationship("Payment", backref="expense", foreign_keys=[payment_id])
 
 
 class CashFlowTransaction(Base):
@@ -343,3 +347,87 @@ class CashFlowTransaction(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     account = relationship("Account", backref="cash_flow_transactions")
+
+
+# ═══════════════════════════════════════════════════════════
+# 权责发生制新增表
+# ═══════════════════════════════════════════════════════════
+
+class BankAccount(Base):
+    """银行账户"""
+    __tablename__ = "bank_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    bank_name = Column(String(100), nullable=False, comment="银行名称")
+    account_number = Column(String(50), nullable=False, comment="银行账号")
+    balance = Column(Numeric(12, 2), nullable=False, default=Decimal('0'), comment="当前余额")
+    description = Column(String(500), default="", comment="描述")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    account = relationship("Account", backref="bank_accounts")
+
+
+class BankTransaction(Base):
+    """银行流水"""
+    __tablename__ = "bank_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False, index=True, comment="银行账户")
+    transaction_type = Column(String(10), nullable=False, comment="类型: inflow/outflow")
+    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
+    balance_after = Column(Numeric(12, 2), nullable=False, comment="交易后余额")
+    transaction_date = Column(DateTime, nullable=False, comment="交易日期")
+    description = Column(String(500), default="", comment="描述")
+    reference_no = Column(String(100), default="", comment="银行流水号")
+    related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: payment/receipt")
+    related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    account = relationship("Account", backref="bank_transactions")
+    bank_account = relationship("BankAccount", backref="transactions")
+
+
+class Payment(Base):
+    """付款记录"""
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    payment_type = Column(String(20), nullable=False, comment="付款类型: expense/purchase/salary")
+    related_entity_type = Column(String(20), nullable=False, comment="关联实体类型: expense/purchase_order")
+    related_entity_id = Column(Integer, nullable=False, comment="关联实体ID")
+    amount = Column(Numeric(12, 2), nullable=False, comment="付款金额")
+    payment_method = Column(String(20), nullable=False, default="company", comment="付款方式: company/private_advance")
+    payment_date = Column(DateTime, nullable=False, comment="付款日期")
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
+    bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
+    description = Column(String(500), default="", comment="描述")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    account = relationship("Account", backref="payments")
+    bank_account = relationship("BankAccount", backref="payments")
+    bank_transaction = relationship("BankTransaction", backref="payment")
+
+
+class Receipt(Base):
+    """收款记录"""
+    __tablename__ = "receipts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    receipt_type = Column(String(20), nullable=False, comment="收款类型: sale")
+    related_entity_type = Column(String(20), nullable=False, comment="关联实体类型: sale_order")
+    related_entity_id = Column(Integer, nullable=False, comment="关联实体ID")
+    amount = Column(Numeric(12, 2), nullable=False, comment="收款金额")
+    receipt_method = Column(String(20), nullable=False, default="company", comment="收款方式: company/private_advance")
+    receipt_date = Column(DateTime, nullable=False, comment="收款日期")
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
+    bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
+    description = Column(String(500), default="", comment="描述")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    account = relationship("Account", backref="receipts")
+    bank_account = relationship("BankAccount", backref="receipts")
+    bank_transaction = relationship("BankTransaction", backref="receipt")

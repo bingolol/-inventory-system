@@ -1,6 +1,6 @@
 # 进销存管理系统（Inventory System）
 
-> 面向中小企业的全栈业务管理平台 —— 库存 · 采购销售 · 项目归集 · 财务税务报表 · 个人流水，一站式记账。
+> 面向中小企业的全栈业务管理平台 —— 库存 · 采购销售 · 财务税务报表 · 个人流水，一站式记账。
 
 ![Vue](https://img.shields.io/badge/Vue-3.4-42b883) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688) ![SQLite](https://img.shields.io/badge/SQLite-sqlalchemy2-003b57) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
@@ -24,7 +24,6 @@
 ## 核心功能
 
 - **进销存**：商品/库存管理、采购入库、销售出库，库存自动联动扣减/回补
-- **项目归集**：按项目归集采购/销售单与人工/材料成本，自动结算项目利润（合同金额口径）
 - **财务报表**：资产负债表、利润表（经营口径）、现金流量表、财务汇总
 - **税务双口径**：增值税季度/月度报表（发票口径）、企业所得税报表（销项/进项发票口径）
 - **发票管理**：进项/销项发票、专票认证、PDF 上传、AI 快捷录入接口
@@ -147,13 +146,12 @@ inventory-system/
 ├── build.py                 # 一键构建脚本
 ├── installer.py             # tkinter 安装向导
 ├── CONTEXT.md               # 项目上下文 / 领域语言
-├── AGENTS.md                # Agent 工作约定
-└── UPDATE_LOG.md            # 变更日志
+└── AGENTS.md                # Agent 工作约定
 ```
 
 **架构分层**：`Routers → Commands → CRUD / Domain → Events → EventBus`
 
-> Command Handler 显式编排库存联动、项目收入、汇总重算，三大不变量（库存一致性 / 项目收入唯一性 / 项目汇总一致性）全程保障。详见 [`CONTEXT.md`](./CONTEXT.md) 与 [`docs/架构参考_正式版.md`](./docs/架构参考_正式版.md)。
+> Command Handler 显式编排库存联动，保障库存一致性。详见 [`CONTEXT.md`](./CONTEXT.md)。
 
 ---
 
@@ -190,11 +188,10 @@ curl -X POST http://localhost:8000/api/sales \
 
 | 文档 | 内容 | 适用场景 |
 |------|------|----------|
-| 📖 **[docs/SKILL.md](./docs/SKILL.md)** | 操作铁律 + 查询/录入 API 速查表 + 5 大记账场景 | AI 加载为 skill，快速记账 |
-| 📘 **[docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md)** | 24 个模块完整 API 参考 + curl 示例 + 业务规则 + 错误码 | 查询任意端点细节 |
+| 📖 **[docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md)** | 操作铁律 + API 速查表 + 记账场景 + 字段速查 | **AI 加载为 skill，快速记账** |
 | 🗂️ **[AGENTS.md](./AGENTS.md)** | Issue tracker / triage labels / domain 文档约定 | Agent 协作开发本仓库代码时 |
 
-**操作铁律**（详见 [`docs/SKILL.md`](./docs/SKILL.md)）：
+**操作铁律**（详见 [`docs/AI_AGENT_GUIDE.md`](./docs/AI_AGENT_GUIDE.md)）：
 
 1. 必须调用 API 获取真实数据，禁止假设/编造
 2. 所有记账走本系统 API，禁止用文本/表格替代
@@ -244,15 +241,10 @@ pytest
 
 | 文档 | 内容 |
 |------|------|
-| [CONTEXT.md](./CONTEXT.md) | 项目上下文、技术栈、架构分层、领域语言 |
-| [docs/SKILL.md](./docs/SKILL.md) | AI Agent 操作 skill（精简版手册） |
-| [docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md) | AI Agent 完整 API 参考（1033 行） |
-| [docs/架构参考_正式版.md](./docs/架构参考_正式版.md) | 系统架构、ER 图、数据流、打包部署 |
-| [docs/功能模块说明.md](./docs/功能模块说明.md) | 功能模块详解 |
-| [docs/开发速查表.md](./docs/开发速查表.md) | 开发速查（含反模式红线 AP-1~AP-13） |
-| [docs/文件索引.md](./docs/文件索引.md) | 全仓库文件分类索引 |
-| [UPDATE_LOG.md](./UPDATE_LOG.md) | 完整变更日志 |
-| [AGENTS.md](./AGENTS.md) | Agent 协作约定（issue tracker / triage / domain） |
+| [CONTEXT.md](./CONTEXT.md) | 项目上下文、技术栈、架构分层 |
+| [AGENTS.md](./AGENTS.md) | Agent 工作流、5 条规则 |
+| [docs/INDEX.md](./docs/INDEX.md) | 完整文档索引 |
+| [docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md) | AI Agent 操作手册 |
 
 ## 贡献与许可
 

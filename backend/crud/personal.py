@@ -1,6 +1,9 @@
-"""个人流水账 CRUD（含事务包裹和金额精度）"""
+"""个人流水账 查询 + 统计 CRUD
 
-import logging
+写操作已迁移至 commands 层（CreatePersonalTransaction/UpdatePersonalTransaction/DeletePersonalTransaction）。
+本模块保留 list 查询和统计报表函数，供 routers 直接调用。
+"""
+
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
@@ -8,8 +11,6 @@ from sqlalchemy import func as sqlfunc
 import models, schemas
 
 from utils import _d, Q2
-
-logger = logging.getLogger("inventory")
 
 
 def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limit: int = 100, type: str = None, category: str = None, start_date: str = None, end_date: str = None):
@@ -29,48 +30,6 @@ def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limi
     sum_expense = sum_expense if sum_expense is not None else 0
     items = q.order_by(models.PersonalTransaction.date.desc()).offset(skip).limit(limit).all()
     return total, items, _d(sum_income).quantize(Q2), _d(sum_expense).quantize(Q2)
-
-
-def create_personal_transaction(db: Session, account_id: int, data: schemas.PersonalTransactionCreate):
-    tx = models.PersonalTransaction(
-        account_id=account_id,
-        type=data.type,
-        amount=data.amount,
-        category=data.category,
-        description=data.description,
-        image_url=data.image_url or "",
-        date=datetime.strptime(data.date, "%Y-%m-%d") if data.date else datetime.now()
-    )
-    db.add(tx)
-    db.flush()
-    return tx
-
-
-def update_personal_transaction(db: Session, account_id: int, tx_id: int, data: schemas.PersonalTransactionUpdate):
-    tx = db.query(models.PersonalTransaction).filter(
-        models.PersonalTransaction.account_id == account_id,
-        models.PersonalTransaction.id == tx_id
-    ).first()
-    if not tx:
-        return None
-    for k, v in data.model_dump(exclude_unset=True).items():
-        if k == "date" and v:
-            v = datetime.strptime(v, "%Y-%m-%d")
-        setattr(tx, k, v)
-    db.flush()
-    return tx
-
-
-def delete_personal_transaction(db: Session, account_id: int, tx_id: int):
-    tx = db.query(models.PersonalTransaction).filter(
-        models.PersonalTransaction.account_id == account_id,
-        models.PersonalTransaction.id == tx_id
-    ).first()
-    if not tx:
-        return False
-    db.delete(tx)
-    db.flush()
-    return True
 
 
 def get_personal_category_summary(db: Session, account_id: int, type: str = None, start_date: str = None, end_date: str = None):

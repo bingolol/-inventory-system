@@ -1,4 +1,8 @@
-"""发票 + 税务报表 CRUD（含事务包裹和金额精度）"""
+"""发票 + 税务报表 CRUD
+
+写操作已迁移至 commands 层（CreateInvoice/UpdateInvoice/DeleteInvoice）。
+本模块仅保留 list/get 查询函数和 get_tax_report 报表，供 routers 直接调用。
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -7,7 +11,6 @@ from sqlalchemy.orm import Session
 import models, schemas
 
 from enums import InvoiceDirection
-from .base import _log
 from utils import _d, Q2
 
 logger = logging.getLogger("inventory")
@@ -38,40 +41,11 @@ def get_invoice(db: Session, account_id: int, invoice_id: int):
     ).first()
 
 
-def create_invoice(db: Session, account_id: int, data: schemas.InvoiceCreate, operator: str = "user"):
-    invoice = models.Invoice(
-        account_id=account_id,
-        **data.model_dump()
-    )
-    db.add(invoice)
-    db.flush()
-    _log(db, account_id, "create", "invoice", invoice.id, f"创建发票: {invoice.invoice_no} ({invoice.direction}/{invoice.invoice_type})", operator=operator)
-    return invoice
-
-
-def update_invoice(db: Session, account_id: int, invoice_id: int, data: schemas.InvoiceUpdate, operator: str = "user"):
-    invoice = get_invoice(db, account_id, invoice_id)
-    if not invoice:
-        return None
-    changes = data.model_dump(exclude_unset=True)
-    for k, v in changes.items():
-        setattr(invoice, k, v)
-    db.flush()
-    _log(db, account_id, "update", "invoice", invoice_id, f"更新发票: {invoice.invoice_no}", operator=operator)
-    return invoice
-
-
-def delete_invoice(db: Session, account_id: int, invoice_id: int, operator: str = "user"):
-    invoice = get_invoice(db, account_id, invoice_id)
-    if not invoice:
-        return False
-    _log(db, account_id, "delete", "invoice", invoice_id, f"删除发票: {invoice.invoice_no}", operator=operator)
-    db.delete(invoice)
-    db.flush()
-    return True
-
-
 def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
+    """获取税务报表"""
+    # 获取账本的纳税人类型
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    taxpayer_type = account.taxpayer_type if account else "small_scale"
     quarter_start_str = f"{year}-{(quarter - 1) * 3 + 1:02d}-01"
     if quarter == 4:
         quarter_end_str = f"{year + 1}-01-01"
@@ -95,7 +69,14 @@ def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
     output_total = sum(_d(inv.amount_without_tax) for inv in out_invoices)
     output_tax = sum(_d(inv.tax_amount) for inv in out_invoices)
     input_total = sum(_d(inv.amount_without_tax) for inv in in_invoices)
-    input_tax = sum(_d(inv.tax_amount) for inv in in_invoices)
+    
+    # 进项税额：一般纳税人只计算已认证的专票
+    if taxpayer_type == "general":
+        input_tax = sum(_d(inv.tax_amount) for inv in in_invoices 
+                       if inv.certification_status == "certified" and inv.invoice_type == "special")
+    else:
+        input_tax = sum(_d(inv.tax_amount) for inv in in_invoices)
+    
     tax_payable = max(output_tax - input_tax, Decimal('0'))
 
     invoice_list = []
@@ -125,7 +106,7 @@ def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
         quarter=quarter,
         period_start=quarter_start_str,
         period_end=(datetime.strptime(quarter_end_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d") if quarter_end_str else quarter_start_str,
-        taxpayer_type="small_scale",
+        taxpayer_type=taxpayer_type,
         output_total=output_total,
         output_tax=output_tax,
         input_total=input_total,

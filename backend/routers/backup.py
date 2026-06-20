@@ -5,6 +5,7 @@ import zipfile
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from errors import BusinessError, ErrorCode, ActionType
 from pathlib import Path
 
 import workspace
@@ -54,7 +55,7 @@ def hot_backup():
         # 2. 验证完整性
         if not _verify_db(db_backup):
             shutil.rmtree(backup_dir, ignore_errors=True)
-            raise HTTPException(status_code=500, detail="备份验证失败，数据库完整性检查未通过")
+            raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message="备份验证失败，数据库完整性检查未通过")
 
         # 3. 复制图片
         if os.path.exists(UPLOADS_DIR):
@@ -93,7 +94,7 @@ def hot_backup():
         raise
     except Exception as e:
         shutil.rmtree(backup_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=f"热备份失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"热备份失败: {str(e)}")
 
 
 @router.get("/list")
@@ -116,8 +117,8 @@ def download_backup(filename: str):
     """下载指定备份文件"""
     file_path = os.path.join(BACKUP_ROOT, filename)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="备份文件不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "备份文件", "order_id": filename})
     # 防路径穿越
     if not os.path.realpath(file_path).startswith(os.path.realpath(BACKUP_ROOT)):
-        raise HTTPException(status_code=403, detail="非法路径")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="非法路径")
     return FileResponse(file_path, filename=filename, media_type="application/zip")

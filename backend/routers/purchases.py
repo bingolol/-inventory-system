@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import PurchaseOrder
+from errors import BusinessError, ErrorCode
 from account_dep import get_account_id, get_operator
 from image_utils import delete_old_image
 import schemas, crud
@@ -13,6 +14,7 @@ from commands.purchase_commands import (
     UpdatePurchaseOrderFields,
 )
 from enums import OrderStatus, OrderType
+from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
 
@@ -59,7 +61,7 @@ def list_purchases(page: int = 1, page_size: int = 20, start_date: str = None, e
     return {"total": total, "items": result}
 
 
-@router.post("", response_model=schemas.PurchaseOrderOut)
+@router.post("")
 def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
@@ -75,20 +77,44 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
             )
             order = dispatch(cmd, db)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
     db.refresh(order)
-    return _build_purchase_out(order)
+    
+    # 构建库存变化信息
+    inventory_changes = []
+    for item in order.items:
+        product = crud.get_product(db, account_id, item.product_id)
+        inventory_changes.append({
+            "product_id": item.product_id,
+            "product_name": product.name if product else f"商品{item.product_id}",
+            "quantity": f"+{item.quantity}"
+        })
+    
+    # 返回 OperationResult 格式
+    result = OperationResult(
+        operation=OperationType.CREATE,
+        entity_type=EntityType.PURCHASE_ORDER,
+        entity_id=order.id,
+        summary=f"采购单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
+        ai_hint="采购单已创建，库存已增加。如需付款，请调用 POST /api/payments。",
+        data=_build_purchase_out(order).model_dump(),
+        changes={
+            "inventory": inventory_changes,
+            "payable": {"amount": f"+{order.total_price}"}
+        }
+    )
+    return result.to_dict()
 
 
 @router.get("/{purchase_id}", response_model=schemas.PurchaseOrderOut)
 def get_purchase(purchase_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     order = crud.get_purchase_order(db, account_id, purchase_id)
     if not order:
-        raise HTTPException(status_code=404, detail="采购单不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
     return _build_purchase_out(order)
 
 
-@router.put("/{purchase_id}", response_model=schemas.PurchaseOrderOut)
+@router.put("/{purchase_id}")
 def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
@@ -112,13 +138,13 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
                 order = dispatch(cmd, db)
                 if order is None:
                     # items 为空 → 自动删除
-                    raise ValueError("采购单不存在")
+                    raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单"})
 
             # 2) 无 items 时的状态切换 → Cancel
             if not has_items and data.status is not None:
                 current = crud.get_purchase_order(db, account_id, purchase_id)
                 if not current:
-                    raise ValueError("采购单不存在")
+                    raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单"})
                 if data.status == OrderStatus.CANCELLED and current.status != OrderStatus.CANCELLED:
                     dispatch(CancelPurchaseOrder(account_id=account_id, operator=operator, order_id=purchase_id), db)
 
@@ -144,29 +170,42 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
             if order is None:
                 order = crud.get_purchase_order(db, account_id, purchase_id)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
 
     if not order:
-        raise HTTPException(status_code=404, detail="采购单不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
     db.refresh(order)
-    return _build_purchase_out(order)
+    
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.PURCHASE_ORDER,
+        entity_id=order.id,
+        summary=f"采购单 {order.order_no} 更新成功",
+        ai_hint="采购单已更新。",
+        data=_build_purchase_out(order).model_dump()
+    )
+    return result.to_dict()
 
 
 @router.delete("/{purchase_id}")
 def delete_purchase(purchase_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
-    # 先查记录获取image_url
     order = db.query(PurchaseOrder).filter(
         PurchaseOrder.id == purchase_id,
         PurchaseOrder.account_id == account_id
     ).first()
     if not order:
-        raise HTTPException(status_code=404, detail="采购单不存在")
-    # 删除关联图片文件
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
     if order.image_url:
         delete_old_image(order.image_url)
     with unit_of_work(db):
-        try:
-            dispatch(DeletePurchaseOrder(account_id=account_id, operator=operator, order_id=purchase_id), db)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    return {"result": "采购单已删除"}
+        dispatch(DeletePurchaseOrder(account_id=account_id, operator=operator, order_id=purchase_id), db)
+    
+    result = OperationResult(
+        operation=OperationType.DELETE,
+        entity_type=EntityType.PURCHASE_ORDER,
+        entity_id=purchase_id,
+        summary=f"采购单 {order.order_no} 删除成功",
+        ai_hint="采购单已删除。",
+        data={"purchase_id": purchase_id, "order_no": order.order_no}
+    )
+    return result.to_dict()

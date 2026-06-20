@@ -99,6 +99,18 @@ class FixedAssetUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class FixedAssetWithInvoiceUpdate(BaseModel):
+    """固定资产更新（联动发票）"""
+    original_value: Optional[Decimal] = Field(None, gt=0, max_digits=12, decimal_places=2)
+    name: Optional[str] = None
+    category: Optional[str] = None
+    salvage_rate: Optional[Decimal] = None
+    useful_life: Optional[int] = None
+    depreciation_method: Optional[str] = None
+    start_date: Optional[str] = None
+    status: Optional[str] = None
+
+
 class FixedAssetOut(FixedAssetBase):
     id: int
     account_id: int

@@ -60,3 +60,15 @@ build/
 project/
 project1/
 *.pre_numeric_backup
+
+# Agent skills lock (local)
+skills-lock.json
+
+# Repomix single-file output
+repomix-output.xml
+
+# Windows reserved-name artifact (NUL device, cannot be tracked)
+nul
+
+# Backend legacy test dir (use root tests/ instead)
+backend/tests/

@@ -1,7 +1,7 @@
 # ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
 # 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
@@ -14,6 +14,7 @@ from schemas import TaxReport, TaxReportMonth, InvoiceOut
 from account_dep import get_account_id
 from enums import InvoiceDirection, InvoiceType, CertificationStatus, TaxpayerType
 from utils import _d, Q2
+from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ router = APIRouter()
 def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_date: datetime):
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
-        raise HTTPException(status_code=404, detail="账本不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本", "order_id": account_id})
 
     out_invoices = db.query(Invoice).filter(
         Invoice.account_id == account_id,
@@ -104,7 +105,7 @@ async def get_tax_report(
 ):
     """获取增值税季度报表"""
     if quarter < 1 or quarter > 4:
-        raise HTTPException(status_code=400, detail="季度必须在 1-4 之间")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="季度必须在 1-4 之间")
 
     start_month = (quarter - 1) * 3 + 1
     start_date = datetime(year, start_month, 1)
@@ -139,7 +140,7 @@ async def get_tax_report_monthly(
 ):
     """获取增值税月度报表"""
     if month < 1 or month > 12:
-        raise HTTPException(status_code=400, detail="月份必须在 1-12 之间")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="月份必须在 1-12 之间")
 
     start_date = datetime(year, month, 1)
     if month == 12:

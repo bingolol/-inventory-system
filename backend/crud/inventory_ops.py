@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 import models
 from domain.inventory import InventoryDomain
 from .base import _log, get_or_create_inventory
-from fastapi import HTTPException
+from errors import BusinessError, ErrorCode
 
 
 def deduct_stock(db: Session, account_id: int, product_id: int, quantity: int, operator: str = "user"):
@@ -28,18 +28,15 @@ def deduct_stock(db: Session, account_id: int, product_id: int, quantity: int, o
         models.Product.account_id == account_id,
     ).first()
     if not product:
-        raise HTTPException(status_code=404, detail=f"商品不存在: ID={product_id}")
+        raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})
     if not product.track_inventory:
         return
     inv = get_or_create_inventory(db, account_id, product_id)
     violations = InventoryDomain.from_orm(inv).validate()
     if violations:
-        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": '; '.join(violations)})
     if inv.quantity < quantity:
-        raise HTTPException(
-            status_code=400,
-            detail=f"库存不足: {product.name} 当前库存{inv.quantity}, 需要出库{quantity}"
-        )
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存不足: {product.name} 当前库存{inv.quantity}, 需要出库{quantity}"})
     inv.quantity -= quantity
     _log(db, account_id, "adjust", "inventory", inv.id,
          f"项目领料扣库存: {product.name} -{quantity}", operator=operator)
@@ -64,7 +61,7 @@ def restore_stock(db: Session, account_id: int, product_id: int, quantity: int, 
     inv = get_or_create_inventory(db, account_id, product_id)
     violations = InventoryDomain.from_orm(inv).validate()
     if violations:
-        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": '; '.join(violations)})
     inv.quantity += quantity
     _log(db, account_id, "adjust", "inventory", inv.id,
          f"删除项目成本回补库存: +{quantity}", operator=operator)
@@ -78,16 +75,13 @@ def sale_deduct(db: Session, account_id: int, order: models.SaleOrder, operator:
             models.Product.account_id == account_id,
         ).first()
         if not product:
-            raise HTTPException(status_code=404, detail=f"商品不存在: ID={item.product_id}")
+            raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": item.product_id})
         inv = get_or_create_inventory(db, account_id, item.product_id)
         violations = InventoryDomain.from_orm(inv).validate()
         if violations:
-            raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": '; '.join(violations)})
         if inv.quantity < item.quantity:
-            raise HTTPException(
-                status_code=400,
-                detail=f"库存不足: {product.name} 当前库存{inv.quantity}, 需要出库{item.quantity}"
-            )
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存不足: {product.name} 当前库存{inv.quantity}, 需要出库{item.quantity}"})
         inv.quantity -= item.quantity
         _log(db, account_id, "adjust", "inventory", inv.id,
              f"销售扣库存: {product.name} -{item.quantity}（{order.order_no}）", operator=operator)
@@ -99,7 +93,7 @@ def sale_restore(db: Session, account_id: int, order: models.SaleOrder, operator
         inv = get_or_create_inventory(db, account_id, item.product_id)
         violations = InventoryDomain.from_orm(inv).validate()
         if violations:
-            raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": '; '.join(violations)})
         inv.quantity += item.quantity
         _log(db, account_id, "adjust", "inventory", inv.id,
              f"销售回补库存: +{item.quantity}（{order.order_no}）", operator=operator)

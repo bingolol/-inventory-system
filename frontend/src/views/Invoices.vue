@@ -140,6 +140,16 @@
         </template>
       </el-table-column>
     </el-table>
+    
+    <!-- 筛选合计 -->
+    <div style="margin-top:12px;padding:10px 16px;background:var(--fill-light);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;gap:24px;font-size:14px;">
+        <span>筛选合计：</span>
+        <span style="font-weight:600;">不含税 ¥{{ formatMoney(totalAmountWithoutTax) }}</span>
+        <span style="font-weight:600;">税额 ¥{{ formatMoney(totalTaxAmount) }}</span>
+        <span style="color:var(--primary);font-weight:600;">价税合计 ¥{{ formatMoney(totalAmountWithTax) }}</span>
+      </div>
+    </div>
     </el-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -255,6 +265,20 @@ const enumsStore = useEnumsStore()
 // 发票列表
 const invoices = ref([])
 const loading = ref(false)
+
+// 计算当前列表的金额总和
+const totalAmountWithoutTax = computed(() => {
+  return invoices.value.reduce((sum, item) => sum + (Number(item.amount_without_tax) || 0), 0)
+})
+
+const totalTaxAmount = computed(() => {
+  return invoices.value.reduce((sum, item) => sum + (Number(item.tax_amount) || 0), 0)
+})
+
+const totalAmountWithTax = computed(() => {
+  return invoices.value.reduce((sum, item) => sum + (Number(item.amount_with_tax) || 0), 0)
+})
+
 // 筛选表单
 const filterForm = ref({
   direction: '',

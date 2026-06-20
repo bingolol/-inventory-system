@@ -90,6 +90,7 @@ class SaleItemOut(BaseModel):
 
 class SaleOrderCreate(BaseModel):
     customer_id: Optional[int] = None
+    deduct_inventory: bool = True
     has_invoice: bool = False
     payment_status: str = "unpaid"
     image_url: Optional[str] = ""

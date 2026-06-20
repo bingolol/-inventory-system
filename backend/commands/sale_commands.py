@@ -22,6 +22,7 @@ from .crud_compat import (
     _d, _distribute_total_price, _generate_order_no, _log,
     get_or_create_inventory, get_product, get_sale_order,
 )
+from errors import BusinessError, ErrorCode
 from crud.inventory_ops import sale_deduct, sale_restore
 from utils import Q2
 
@@ -48,11 +49,11 @@ class CreateSaleOrderHandler(CommandHandler):
     def handle(self, cmd: CreateSaleOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
-            raise ValueError("销售单至少包含1个商品")
+            raise BusinessError(code=ErrorCode.ORDER_EMPTY_ITEMS, data={"order_type": "销售单"})
         product_ids = [it['product_id'] for it in cmd.items]
         dup_pids = [pid for pid, cnt in Counter(product_ids).items() if cnt > 1]
         if dup_pids:
-            raise ValueError(f"同一商品不可重复添加，重复商品ID: {dup_pids}，请合并到一行")
+            raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         # 2. 生成订单号
         order_no = _generate_order_no(db, "SO")
@@ -80,7 +81,7 @@ class CreateSaleOrderHandler(CommandHandler):
         for it in cmd.items:
             product = get_product(db, cmd.account_id, it['product_id'])
             if not product:
-                raise ValueError(f"商品不存在: ID={it['product_id']}")
+                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
             line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
             items_data.append({
                 'product_id': it['product_id'],
@@ -115,7 +116,7 @@ class CreateSaleOrderHandler(CommandHandler):
         domain = SaleOrderDomain.from_orm(order)
         violations = domain.validate()
         if violations:
-            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"销售单校验失败: {'; '.join(violations)}"})
         domain.transition_to(OrderStatus.COMPLETED)
         order.status = domain.status
         db.flush()
@@ -148,7 +149,7 @@ class CancelSaleOrderHandler(CommandHandler):
     def handle(self, cmd: CancelSaleOrder, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"销售单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
 
         old_status = order.status
 
@@ -156,7 +157,7 @@ class CancelSaleOrderHandler(CommandHandler):
         domain = SaleOrderDomain.from_orm(order)
         violations = domain.validate()
         if violations:
-            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"销售单校验失败: {'; '.join(violations)}"})
         domain.transition_to(OrderStatus.CANCELLED)
         order.status = domain.status
 
@@ -188,10 +189,10 @@ class RestoreSaleOrderHandler(CommandHandler):
     def handle(self, cmd: RestoreSaleOrder, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"销售单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
 
         if order.status != OrderStatus.CANCELLED:
-            raise ValueError("只能恢复已取消的销售单")
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": order.status, "action": "恢复"})
 
         old_status = order.status
 
@@ -199,7 +200,7 @@ class RestoreSaleOrderHandler(CommandHandler):
         domain = SaleOrderDomain.from_orm(order)
         violations = domain.validate()
         if violations:
-            raise ValueError(f"销售单校验失败: {'; '.join(violations)}")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"销售单校验失败: {'; '.join(violations)}"})
         domain.transition_to(OrderStatus.COMPLETED)
         order.status = domain.status
 
@@ -231,12 +232,12 @@ class DeleteSaleOrderHandler(CommandHandler):
     def handle(self, cmd: DeleteSaleOrder, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"销售单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
 
         # Domain 校验是否可删除
         domain = SaleOrderDomain.from_orm(order)
         if not domain.can_delete():
-            raise ValueError(f"当前状态 {order.status} 不允许删除")
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": order.status, "action": "删除"})
 
         # 显式联动：回补库存
         if order.status == OrderStatus.COMPLETED:
@@ -272,14 +273,14 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
     def handle(self, cmd: UpdateSaleOrderItems, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"销售单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
 
         # 商品重复校验
         if cmd.items:
             product_ids = [it['product_id'] for it in cmd.items]
             dup_pids = [pid for pid, cnt in Counter(product_ids).items() if cnt > 1]
             if dup_pids:
-                raise ValueError(f"同一商品不可重复添加，重复商品ID: {dup_pids}，请合并到一行")
+                raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         old_status = order.status
 
@@ -301,7 +302,7 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
                     inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
                     violations = InventoryDomain.from_orm(inv).validate()
                     if violations:
-                        raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+                        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存数据校验失败: {'; '.join(violations)}"})
                     inv.quantity += item_data['quantity']
             _log(db, cmd.account_id, "delete", "sale_order", cmd.order_id,
                  f"删除销售单 {order.order_no}（商品行数归零自动删除）", operator=cmd.operator)
@@ -315,7 +316,7 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
         for it in cmd.items:
             product = get_product(db, cmd.account_id, it['product_id'])
             if not product:
-                raise ValueError(f"商品不存在: ID={it['product_id']}")
+                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
             line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
             items_data.append({
                 'product_id': it['product_id'],
@@ -351,7 +352,7 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
                 inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
                 violations = InventoryDomain.from_orm(inv).validate()
                 if violations:
-                    raise ValueError(f"库存数据校验失败: {'; '.join(violations)}")
+                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存数据校验失败: {'; '.join(violations)}"})
                 inv.quantity += item_data['quantity']
         if order.status == OrderStatus.COMPLETED:
             sale_deduct(db, cmd.account_id, order, operator=cmd.operator)
@@ -387,7 +388,7 @@ class UpdateSaleOrderFieldsHandler(CommandHandler):
     def handle(self, cmd: UpdateSaleOrderFields, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"销售单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
 
         field_map = {
             'customer_id': cmd.customer_id,

@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
 import schemas, crud
 from commands import dispatch, CreateCustomer, UpdateCustomer, DeleteCustomer
 from uow import unit_of_work
+from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
 
@@ -16,7 +18,7 @@ def list_customers(page: int = 1, page_size: int = 20, search: str = None, accou
     return {"total": total, "items": items}
 
 
-@router.post("", response_model=schemas.CustomerOut)
+@router.post("")
 def create_customer(data: schemas.CustomerCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         c = dispatch(CreateCustomer(
@@ -29,18 +31,27 @@ def create_customer(data: schemas.CustomerCreate, account_id: int = Depends(get_
             notes=data.notes,
         ), db)
     db.refresh(c)
-    return c
+    
+    result = OperationResult(
+        operation=OperationType.CREATE,
+        entity_type=EntityType.CUSTOMER,
+        entity_id=c.id,
+        summary=f"客户 {c.name} 创建成功",
+        ai_hint="客户已创建。如需创建销售单，请调用 POST /api/sales。",
+        data={"id": c.id, "name": c.name, "contact": c.contact, "phone": c.phone}
+    )
+    return result.to_dict()
 
 
 @router.get("/{customer_id}", response_model=schemas.CustomerOut)
 def get_customer(customer_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     c = crud.get_customer(db, account_id, customer_id)
     if not c:
-        raise HTTPException(status_code=404, detail="客户不存在")
+        raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
     return c
 
 
-@router.put("/{customer_id}", response_model=schemas.CustomerOut)
+@router.put("/{customer_id}")
 def update_customer(customer_id: int, data: schemas.CustomerUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         c = dispatch(UpdateCustomer(
@@ -54,21 +65,41 @@ def update_customer(customer_id: int, data: schemas.CustomerUpdate, account_id: 
             notes=data.notes,
         ), db)
     if not c:
-        raise HTTPException(status_code=404, detail="客户不存在")
+        raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
     db.refresh(c)
-    return c
+    
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.CUSTOMER,
+        entity_id=c.id,
+        summary=f"客户 {c.name} 更新成功",
+        ai_hint="客户已更新。",
+        data={"id": c.id, "name": c.name, "contact": c.contact, "phone": c.phone}
+    )
+    return result.to_dict()
 
 
 @router.delete("/{customer_id}")
 def delete_customer(customer_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
+    # 先获取客户信息用于返回
+    customer = crud.get_customer(db, account_id, customer_id)
+    if not customer:
+        raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
+    
     with unit_of_work(db):
-        try:
-            if not dispatch(DeleteCustomer(
-                account_id=account_id,
-                operator=operator,
-                customer_id=customer_id,
-            ), db):
-                raise HTTPException(status_code=404, detail="客户不存在")
-        except ValueError as e:
-            raise HTTPException(status_code=409, detail=str(e))
-    return {"message": "已删除"}
+        if not dispatch(DeleteCustomer(
+            account_id=account_id,
+            operator=operator,
+            customer_id=customer_id,
+        ), db):
+            raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
+    
+    result = OperationResult(
+        operation=OperationType.DELETE,
+        entity_type=EntityType.CUSTOMER,
+        entity_id=customer_id,
+        summary=f"客户 {customer.name} 删除成功",
+        ai_hint="客户已删除。",
+        data={"customer_id": customer_id, "name": customer.name}
+    )
+    return result.to_dict()

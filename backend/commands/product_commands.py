@@ -12,6 +12,7 @@ from sqlalchemy import or_
 
 from .base import Command, CommandHandler, register
 from .crud_compat import _log, get_or_create_inventory
+from errors import BusinessError, ErrorCode
 
 
 # ═══════════════════════════════════════════════════════════
@@ -144,9 +145,7 @@ class DeleteProductHandler(CommandHandler):
             models.SaleItem.product_id == cmd.product_id,
         ).count()
         if purchase_count > 0 or sale_count > 0:
-            raise ValueError(
-                f"该商品存在 {purchase_count} 条采购记录和 {sale_count} 条销售记录，无法删除"
-            )
+            raise BusinessError(code=ErrorCode.PRODUCT_HAS_TRANSACTIONS, data={"purchase_count": purchase_count, "sale_count": sale_count})
 
         # 3. 删除关联库存
         db.query(models.Inventory).filter(
@@ -175,14 +174,22 @@ class AdjustInventory(Command):
 @register(AdjustInventory)
 class AdjustInventoryHandler(CommandHandler):
     def handle(self, cmd: AdjustInventory, db: Any) -> Any:
-        # 1. 获取或创建库存记录
+        # 1. 校验：库存数量不能为负
+        if cmd.quantity < 0:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"库存数量不能为负: {cmd.quantity}",
+                ai_instruction="STOP_RETRYING. 库存数量不能为负，请检查输入。"
+            )
+
+        # 2. 获取或创建库存记录
         inv = get_or_create_inventory(db, cmd.account_id, cmd.product_id)
         old_qty = inv.quantity
 
-        # 2. 更新数量
+        # 3. 更新数量
         inv.quantity = cmd.quantity
 
-        # 3. 日志（记录新旧数量对比）
+        # 4. 日志（记录新旧数量对比）
         _log(db, cmd.account_id, "adjust", "inventory", cmd.product_id,
              f"库存盘点: {old_qty}->{cmd.quantity}", operator=cmd.operator)
         db.flush()

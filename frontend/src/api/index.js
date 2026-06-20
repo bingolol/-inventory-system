@@ -54,7 +54,13 @@ api.interceptors.response.use(
     return res.data
   },
   err => {
-    console.error('API Error:', err.response?.data || err.message)
+    // 统一错误日志（结构化）
+    const errData = err.response?.data
+    if (errData?.error) {
+      console.error(`[API Error] ${errData.error.code}: ${errData.error.message}`, errData.error)
+    } else {
+      console.error('API Error:', errData || err.message)
+    }
     return Promise.reject(err)
   }
 )

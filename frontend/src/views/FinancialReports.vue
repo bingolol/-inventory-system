@@ -16,6 +16,12 @@
         <el-tab-pane label="财务汇总" name="summary">
           <FinancialSummary :date="reportDate" />
         </el-tab-pane>
+        <el-tab-pane label="期初余额" name="opening-balance">
+          <OpeningBalanceTab />
+        </el-tab-pane>
+        <el-tab-pane label="固定资产" name="fixed-assets">
+          <FixedAssetsTab />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
   </div>
@@ -26,6 +32,8 @@ import { ref } from 'vue'
 import BalanceSheet from '../components/BalanceSheet.vue'
 import IncomeStatement from '../components/IncomeStatement.vue'
 import FinancialSummary from '../components/FinancialSummary.vue'
+import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
+import FixedAssetsTab from '../components/FixedAssetsTab.vue'
 
 const activeTab = ref('balance-sheet')
 const reportDate = ref(new Date().toISOString().split('T')[0])
@@ -39,6 +47,6 @@ const handleTabChange = (tab) => {
 
 <style scoped>
 .financial-reports-container {
-  padding: 20px;
+  padding: 0;
 }
 </style>

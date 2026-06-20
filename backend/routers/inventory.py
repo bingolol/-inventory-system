@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
 import schemas, crud
 from commands import dispatch, AdjustInventory
 from uow import unit_of_work
+from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -62,7 +63,7 @@ def adjust_inventory(product_id: int, data: schemas.InventoryAdjust, account_id:
             quantity=data.quantity,
         ), db)
     if not inv:
-        raise HTTPException(status_code=404, detail="商品库存不存在")
+        raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})
     db.refresh(inv)
     p = inv.product
     return schemas.InventoryOut(

@@ -18,7 +18,9 @@ from database import get_db, init_db
 import models, schemas, crud
 from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, generate_filename, save_image_file, delete_old_image
 from enums import ALL_ENUMS, ENUM_LABELS
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets
+from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
+from accounting_engine import AccountingError
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,10 +49,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── AI危险操作确认中间件 ──
-# 拦截 AI 发出的 DELETE 和特定 PUT，返回 202 等待用户确认
+# ── AI 中间件栈（执行顺序 = 从外到内）──
+# Starlette 中"后添加的中间件在外层、先执行"，故按期望执行顺序倒序添加：
+#   1. AIGatewayMiddleware（最外层，最先执行）：白名单校验入口合法性 → 非规范写接口直接 403
+#   2. ConfirmMiddleware（内层，后执行）：对已放行的危险写操作做二次确认（202 + token）
+# 逻辑：先校验"能不能调这个端点"，再校验"这个操作危不危险"。
 from confirm_middleware import ConfirmMiddleware
+from ai_gateway import AIGatewayMiddleware
 app.add_middleware(ConfirmMiddleware)
+app.add_middleware(AIGatewayMiddleware)
 
 # ── 422 校验错误处理器：枚举值写错时返回字段名+非法值+合法值列表 ──
 # 字段名 → ALL_ENUMS key 的映射，ENUM_MAP 从 ALL_ENUMS 动态生成，避免重复定义
@@ -66,6 +73,24 @@ FIELD_ENUM_MAP = {
 }
 ENUM_MAP = {field: ALL_ENUMS[key] for field, key in FIELD_ENUM_MAP.items()}
 
+
+@app.exception_handler(BusinessError)
+async def business_error_handler(request: Request, exc: BusinessError):
+    """业务逻辑错误 → 4xx + 结构化响应"""
+    status_code = ERROR_STATUS_MAP.get(exc.code, 422)
+    return JSONResponse(status_code=status_code, content=exc.to_dict())
+
+
+@app.exception_handler(AccountingError)
+async def accounting_error_handler(request: Request, exc: AccountingError):
+    """会计计算错误 → 422 + 结构化响应(保留法规依据 + 计算明细 + AI 引导)
+
+    避免 AccountingError 落到 generic handler 被吞成 500 + INTERNAL_ERROR,
+    让 AI Agent 能拿到 accounting_rule / calculation_detail 据此修正输入。
+    """
+    return JSONResponse(status_code=exc.http_status, content=exc.to_dict())
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -80,7 +105,16 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
                 details.append(f"字段 '{field}' 的值 '{value}' 不合法，合法值: {allowed}")
                 continue
         details.append(f"字段 '{field}': {msg} (当前值: {value})")
-    return JSONResponse(status_code=422, content={"detail": "; ".join(details)})
+    return JSONResponse(status_code=422, content={
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "; ".join(details),
+            "action": "user_input",
+            "action_data": {},
+            "data": {},
+            "ai_instruction": "STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"
+        }
+    })
 
 
 @app.exception_handler(IntegrityError)
@@ -88,20 +122,56 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     msg = str(exc.orig) if hasattr(exc, 'orig') else str(exc)
     logger.warning(f"数据完整性冲突: {msg}")
     if "sku" in msg.lower() or "unique" in msg.lower():
-        return JSONResponse(status_code=409, content={"detail": "商品编码已存在"})
-    return JSONResponse(status_code=409, content={"detail": "数据冲突，请检查输入"})
+        return JSONResponse(status_code=409, content={
+            "error": {
+                "code": "DUPLICATE_ENTRY",
+                "message": "商品编码已存在",
+                "action": "user_input",
+                "action_data": {},
+                "data": {},
+                "ai_instruction": "STOP_RETRYING. 数据重复，请检查输入是否与已有数据冲突。"
+            }
+        })
+    return JSONResponse(status_code=409, content={
+        "error": {
+            "code": "DUPLICATE_ENTRY",
+            "message": "数据冲突，请检查输入",
+            "action": "user_input",
+            "action_data": {},
+            "data": {},
+            "ai_instruction": "STOP_RETRYING. 数据重复，请检查输入是否与已有数据冲突。"
+        }
+    })
 
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
     logger.error(f"数据库错误: {exc}")
-    return JSONResponse(status_code=500, content={"detail": "数据库操作失败"})
+    return JSONResponse(status_code=500, content={
+        "error": {
+            "code": "INTERNAL_ERROR",
+            "message": "数据库操作失败",
+            "action": "contact_admin",
+            "action_data": {},
+            "data": {},
+            "ai_instruction": "STOP_RETRYING. 数据库错误，请联系管理员。"
+        }
+    })
 
 
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
     logger.error(f"未处理异常: {exc}", exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": "服务器内部错误"})
+    return JSONResponse(status_code=500, content={
+        "error": {
+            "code": "INTERNAL_ERROR",
+            "message": "服务器内部错误",
+            "action": "contact_admin",
+            "action_data": {},
+            "data": {},
+            "ai_instruction": "STOP_RETRYING. 系统异常，请稍后重试或联系管理员。"
+        }
+    })
 
 
 app.include_router(invoices.router, prefix="/api/invoices", tags=["发票管理"])
@@ -125,6 +195,14 @@ app.include_router(cash_flows.router, prefix="/api/cash-flows", tags=["现金流
 app.include_router(backup.router, prefix="/api/backup", tags=["热备份"])
 app.include_router(reconciliations.router, prefix="/api/reconciliations", tags=["对账管理"])
 app.include_router(confirm.router, prefix="/api/confirm", tags=["操作确认"])
+app.include_router(bank_accounts.router, prefix="/api/bank-accounts", tags=["银行账户"])
+app.include_router(bank_transactions.router, prefix="/api/bank-transactions", tags=["银行流水"])
+app.include_router(payments.router, prefix="/api/payments", tags=["付款管理"])
+app.include_router(receipts.router, prefix="/api/receipts", tags=["收款管理"])
+app.include_router(check.router, prefix="/api/check", tags=["前置条件检查"])
+app.include_router(accounting_check.router, prefix="/api/accounting", tags=["会计准则约束检查"])
+# AI 能力发现接口（/api/_ai 前缀已在 AIGatewayMiddleware._SKIP_PREFIXES 放行）
+app.include_router(ai_capabilities.router, prefix="/api/_ai", tags=["AI 能力发现"])
 
 
 @app.on_event("startup")
@@ -141,7 +219,7 @@ def startup():
 
 # ── 图片上传API ──
 
-from fastapi import UploadFile, File, HTTPException
+from fastapi import UploadFile, File
 
 @app.post("/api/upload/image")
 async def upload_image(
@@ -151,13 +229,13 @@ async def upload_image(
 ):
     """上传图片，文件名: {business_type}_{record_id}_{6位随机码}.{ext}"""
     if business_type not in BUSINESS_TYPES:
-        raise HTTPException(status_code=400, detail=f"业务类型只能是: {', '.join(BUSINESS_TYPES)}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"业务类型只能是: {', '.join(BUSINESS_TYPES)}")
     if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail="只支持 JPG/PNG/GIF/WEBP 格式图片")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="只支持 JPG/PNG/GIF/WEBP 格式图片")
     
     content = await file.read()
     if len(content) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="图片大小不能超过5MB")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="图片大小不能超过5MB")
     
     ext = ALLOWED_TYPES[file.content_type]
     filename = generate_filename(business_type, record_id, ext)
@@ -183,7 +261,7 @@ async def replace_image(
 async def delete_image(image_url: str = ""):
     """删图：只删文件，不碰订单记录"""
     if not image_url:
-        raise HTTPException(status_code=400, detail="缺少 image_url 参数")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="缺少 image_url 参数")
     delete_old_image(image_url)
     return {"message": "图片已删除"}
 
@@ -202,14 +280,14 @@ def create_account(body: schemas.AccountCreate, db: Session = Depends(get_db)):
         return account
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="账本代码已存在，请使用不同的代码")
+        raise BusinessError(code=ErrorCode.DUPLICATE_ENTRY, message="账本代码已存在，请使用不同的代码")
 
 
 @app.put("/api/accounts/{account_id}", response_model=schemas.AccountOut)
 def update_account(account_id: int, body: schemas.AccountUpdate, db: Session = Depends(get_db)):
     account = crud.update_account(db, account_id, body.name)
     if not account:
-        raise HTTPException(status_code=404, detail="账本不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本"})
     db.commit()
     db.refresh(account)
     return account
@@ -219,11 +297,11 @@ def update_account(account_id: int, body: schemas.AccountUpdate, db: Session = D
 def delete_account(account_id: int, db: Session = Depends(get_db)):
     try:
         if not crud.delete_account(db, account_id):
-            raise HTTPException(status_code=404, detail="账本不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本"})
         db.commit()
         return {"message": "账本已删除"}
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
 
 
 @app.get("/api/health")

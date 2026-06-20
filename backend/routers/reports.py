@@ -1,13 +1,14 @@
 # ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
 # 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from database import get_db
 from account_dep import get_account_id
 import schemas, crud
 from utils import _d, Q2
+from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -78,7 +79,7 @@ def get_trend(days: int = 7, account_id: int = Depends(get_account_id), db: Sess
 @router.get("/tax-report", response_model=schemas.TaxReport)
 def get_tax_report(year: int, quarter: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     if quarter < 1 or quarter > 4:
-        raise HTTPException(status_code=400, detail="季度必须在 1-4 之间")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="季度必须在 1-4 之间")
     return crud.get_tax_report(db, account_id, year, quarter)
 
 

@@ -18,6 +18,7 @@ from .crud_compat import (
     _d, _generate_order_no, _log,
     get_or_create_inventory, get_product, get_purchase_order,
 )
+from errors import BusinessError, ErrorCode
 from utils import Q2
 
 
@@ -40,11 +41,11 @@ class CreatePurchaseOrderHandler(CommandHandler):
     def handle(self, cmd: CreatePurchaseOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
-            raise ValueError("采购单至少包含1个商品")
+            raise BusinessError(code=ErrorCode.ORDER_EMPTY_ITEMS, data={"order_type": "采购单"})
         product_ids = [it['product_id'] for it in cmd.items]
         dup_pids = [pid for pid, cnt in Counter(product_ids).items() if cnt > 1]
         if dup_pids:
-            raise ValueError(f"同一商品不可重复添加，重复商品ID: {dup_pids}，请合并到一行")
+            raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         # 2. 生成订单号
         order_no = _generate_order_no(db, "PO")
@@ -70,7 +71,7 @@ class CreatePurchaseOrderHandler(CommandHandler):
         for it in cmd.items:
             product = get_product(db, cmd.account_id, it['product_id'])
             if not product:
-                raise ValueError(f"商品不存在: ID={it['product_id']}")
+                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
             line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
             item = models.PurchaseItem(
                 order_id=order.id,
@@ -112,9 +113,9 @@ class CancelPurchaseOrderHandler(CommandHandler):
     def handle(self, cmd: CancelPurchaseOrder, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"采购单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": cmd.order_id})
         if order.status == OrderStatus.CANCELLED:
-            raise ValueError("采购单已是取消状态")
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": order.status, "action": "取消"})
 
         old_status = order.status
 
@@ -151,7 +152,7 @@ class DeletePurchaseOrderHandler(CommandHandler):
     def handle(self, cmd: DeletePurchaseOrder, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"采购单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": cmd.order_id})
 
         # 已完成状态：库存回补
         if order.status == OrderStatus.COMPLETED:
@@ -191,13 +192,13 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
     def handle(self, cmd: UpdatePurchaseOrderItems, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"采购单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": cmd.order_id})
 
         if cmd.items:
             product_ids = [it['product_id'] for it in cmd.items]
             dup_pids = [pid for pid, cnt in Counter(product_ids).items() if cnt > 1]
             if dup_pids:
-                raise ValueError(f"同一商品不可重复添加，重复商品ID: {dup_pids}，请合并到一行")
+                raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         old_status = order.status
 
@@ -240,7 +241,7 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
         for it in cmd.items:
             product = get_product(db, cmd.account_id, it['product_id'])
             if not product:
-                raise ValueError(f"商品不存在: ID={it['product_id']}")
+                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
             line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
             new_item = models.PurchaseItem(
                 order_id=order.id,
@@ -287,7 +288,7 @@ class UpdatePurchaseOrderFieldsHandler(CommandHandler):
     def handle(self, cmd: UpdatePurchaseOrderFields, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise ValueError(f"采购单不存在: ID={cmd.order_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": cmd.order_id})
 
         old_status = order.status
 

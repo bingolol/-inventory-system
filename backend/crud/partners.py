@@ -1,13 +1,11 @@
-"""供应商 + 客户 CRUD（含事务包裹 + 关联检查）"""
+"""供应商 + 客户 读取 CRUD
 
-import logging
+写操作已迁移至 commands 层（CreateSupplier/UpdateSupplier/DeleteSupplier 等）。
+本模块仅保留 list/get 查询函数，供 routers 直接调用。
+"""
+
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
-import models, schemas
-
-from .base import _log
-
-logger = logging.getLogger("inventory")
+import models
 
 
 # ── 供应商 ──
@@ -28,42 +26,6 @@ def get_supplier(db: Session, account_id: int, supplier_id: int):
     ).first()
 
 
-def create_supplier(db: Session, account_id: int, data: schemas.SupplierCreate, operator: str = "user"):
-    supplier = models.Supplier(account_id=account_id, **data.model_dump())
-    db.add(supplier)
-    db.flush()
-    _log(db, account_id, "create", "supplier", supplier.id, f"创建供应商: {supplier.name}", operator=operator)
-    return supplier
-
-
-def update_supplier(db: Session, account_id: int, supplier_id: int, data: schemas.SupplierUpdate, operator: str = "user"):
-    supplier = get_supplier(db, account_id, supplier_id)
-    if not supplier:
-        return None
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(supplier, k, v)
-    _log(db, account_id, "update", "supplier", supplier_id, f"更新供应商: {supplier.name}", operator=operator)
-    db.flush()
-    return supplier
-
-
-def delete_supplier(db: Session, account_id: int, supplier_id: int, operator: str = "user"):
-    supplier = get_supplier(db, account_id, supplier_id)
-    if not supplier:
-        return False
-    # 关联检查：存在采购记录则拒绝删除
-    po_count = db.query(models.PurchaseOrder).filter(
-        models.PurchaseOrder.supplier_id == supplier_id,
-        models.PurchaseOrder.account_id == account_id
-    ).count()
-    if po_count > 0:
-        raise ValueError(f"该供应商存在 {po_count} 条采购记录，无法删除")
-    _log(db, account_id, "delete", "supplier", supplier_id, f"删除供应商: {supplier.name}", operator=operator)
-    db.delete(supplier)
-    db.flush()
-    return True
-
-
 # ── 客户 ──
 
 def list_customers(db: Session, account_id: int, skip: int = 0, limit: int = 100, search: str = None):
@@ -80,39 +42,3 @@ def get_customer(db: Session, account_id: int, customer_id: int):
         models.Customer.account_id == account_id,
         models.Customer.id == customer_id
     ).first()
-
-
-def create_customer(db: Session, account_id: int, data: schemas.CustomerCreate, operator: str = "user"):
-    customer = models.Customer(account_id=account_id, **data.model_dump())
-    db.add(customer)
-    db.flush()
-    _log(db, account_id, "create", "customer", customer.id, f"创建客户: {customer.name}", operator=operator)
-    return customer
-
-
-def update_customer(db: Session, account_id: int, customer_id: int, data: schemas.CustomerUpdate, operator: str = "user"):
-    customer = get_customer(db, account_id, customer_id)
-    if not customer:
-        return None
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(customer, k, v)
-    _log(db, account_id, "update", "customer", customer_id, f"更新客户: {customer.name}", operator=operator)
-    db.flush()
-    return customer
-
-
-def delete_customer(db: Session, account_id: int, customer_id: int, operator: str = "user"):
-    customer = get_customer(db, account_id, customer_id)
-    if not customer:
-        return False
-    # 关联检查：存在销售记录则拒绝
-    so_count = db.query(models.SaleOrder).filter(
-        models.SaleOrder.customer_id == customer_id,
-        models.SaleOrder.account_id == account_id
-    ).count()
-    if so_count > 0:
-        raise ValueError(f"该客户存在 {so_count} 条销售记录，无法删除")
-    _log(db, account_id, "delete", "customer", customer_id, f"删除客户: {customer.name}", operator=operator)
-    db.delete(customer)
-    db.flush()
-    return True

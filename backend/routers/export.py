@@ -3,6 +3,7 @@ import csv
 from urllib.parse import quote
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
@@ -164,11 +165,9 @@ def export_products_batch(
     try:
         ids = [int(x.strip()) for x in product_ids.split(",") if x.strip()]
     except ValueError:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="product_ids 必须是逗号分隔的整数列表")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="product_ids 必须是逗号分隔的整数列表")
     if not ids:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="product_ids 不能为空")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="product_ids 不能为空")
 
     products = db.query(models.Product).filter(
         models.Product.account_id == account_id,

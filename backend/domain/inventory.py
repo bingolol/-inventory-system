@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from domain.base import DomainModel
+from errors import BusinessError, ErrorCode
 
 
 @dataclass
@@ -45,9 +46,9 @@ class InventoryDomain(DomainModel["Inventory"]):
     def deduct(self, amount: int) -> None:
         """扣减库存，不足时抛出 ValueError"""
         if amount < 0:
-            raise ValueError(f"扣减数量不能为负: {amount}")
+            raise BusinessError(code=ErrorCode.INVENTORY_NEGATIVE_AMOUNT, data={"amount": amount})
         if not self.can_deduct(amount):
-            raise ValueError(f"库存不足: 需要 {amount}, 当前 {self.quantity}")
+            raise BusinessError(code=ErrorCode.INVENTORY_INSUFFICIENT, data={"required": amount, "current": self.quantity})
         self.quantity -= amount
 
     # ── 不变量校验 ──────────────────────────────────────────

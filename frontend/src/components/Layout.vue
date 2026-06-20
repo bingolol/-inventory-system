@@ -52,45 +52,41 @@
             <span>库存管理</span>
             <el-badge v-if="alertCount > 0" :value="alertCount" class="alert-badge" />
           </el-menu-item>
-          <el-menu-item index="/opening-balance">
-            <el-icon><Money /></el-icon>
-            <span>期初余额</span>
-          </el-menu-item>
-          <el-menu-item index="/reports">
-            <el-icon><TrendCharts /></el-icon>
-            <span>报表统计</span>
-          </el-menu-item>
-          <el-menu-item index="/financial-reports">
-            <el-icon><Document /></el-icon>
-            <span>财务报表</span>
-          </el-menu-item>
-          <el-menu-item index="/invoices">
-            <el-icon><DocumentChecked /></el-icon>
-            <span>发票管理</span>
-          </el-menu-item>
-          <el-menu-item index="/tax-report">
-            <el-icon><DataLine /></el-icon>
-            <span>税务报表</span>
-          </el-menu-item>
-          <el-menu-item index="/income-tax-report">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>企业所得税</span>
-          </el-menu-item>
-          <el-menu-item index="/cash-flows">
-            <el-icon><Money /></el-icon>
-            <span>现金流量表</span>
-          </el-menu-item>
+          <el-sub-menu index="finance">
+            <template #title>
+              <el-icon><Document /></el-icon>
+              <span>财务方向</span>
+            </template>
+            <el-menu-item index="/financial-reports">
+              <el-icon><TrendCharts /></el-icon>
+              <span>财务报表</span>
+            </el-menu-item>
+            <el-menu-item index="/cash-flows">
+              <el-icon><Wallet /></el-icon>
+              <span>现金流量表</span>
+            </el-menu-item>
+            <el-menu-item index="/expenses">
+              <el-icon><Ticket /></el-icon>
+              <span>费用管理</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-sub-menu index="tax">
+            <template #title>
+              <el-icon><DataLine /></el-icon>
+              <span>税务方向</span>
+            </template>
+            <el-menu-item index="/tax-report">
+              <el-icon><Calculator /></el-icon>
+              <span>税务报表</span>
+            </el-menu-item>
+            <el-menu-item index="/invoices">
+              <el-icon><DocumentChecked /></el-icon>
+              <span>发票管理</span>
+            </el-menu-item>
+          </el-sub-menu>
           <el-menu-item index="/reconciliations">
-            <el-icon><DocumentChecked /></el-icon>
+            <el-icon><Files /></el-icon>
             <span>对账管理</span>
-          </el-menu-item>
-          <el-menu-item index="/expenses">
-            <el-icon><Money /></el-icon>
-            <span>费用管理</span>
-          </el-menu-item>
-          <el-menu-item index="/fixed-assets">
-            <el-icon><Box /></el-icon>
-            <span>固定资产</span>
           </el-menu-item>
           <el-menu-item index="/logs">
             <el-icon><Document /></el-icon>
@@ -368,72 +364,161 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* ═══ 侧边栏增强 ═══ */
 .app-aside {
-  background: var(--el-bg-color);
-  border-right: 1px solid var(--border-color);
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  border-right: 1px solid var(--border-lighter);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
 }
 
+/* Logo 区域：更强的品牌感 */
 .app-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 20px 20px 16px;
-  font-size: 18px;
+  gap: 12px;
+  padding: 24px 20px 20px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--primary);
+  letter-spacing: -0.5px;
+  border-bottom: 1px solid var(--border-lighter);
+  background: linear-gradient(135deg, var(--primary-lighter) 0%, transparent 100%);
 }
 
+.app-logo .el-icon {
+  filter: drop-shadow(0 2px 4px rgba(64, 158, 255, 0.3));
+}
+
+/* 菜单项增强：更现代的交互反馈 */
 .app-menu {
   border-right: none;
-  padding: 0 8px;
+  padding: 12px 12px;
+  background: transparent;
 }
 
 .app-menu .el-menu-item {
-  border-radius: 8px;
-  margin: 4px 0;
-  height: 44px;
-  line-height: 44px;
+  border-radius: var(--radius-md);
+  margin: 6px 0;
+  height: 48px;
+  line-height: 48px;
+  transition: all var(--transition-base);
+  font-weight: var(--font-weight-medium);
+  position: relative;
+  overflow: hidden;
+}
+
+.app-menu .el-menu-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--primary);
+  transform: scaleY(0);
+  transition: transform var(--transition-base);
+}
+
+.app-menu .el-menu-item:hover {
+  background: var(--bg-hover) !important;
+  transform: translateX(4px);
 }
 
 .app-menu .el-menu-item.is-active {
   background: var(--primary-light) !important;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  color: var(--primary) !important;
 }
 
+.app-menu .el-menu-item.is-active::before {
+  transform: scaleY(1);
+}
+
+.app-menu .el-menu-item .el-icon {
+  margin-right: 12px;
+  transition: transform var(--transition-fast);
+}
+
+.app-menu .el-menu-item:hover .el-icon {
+  transform: scale(1.1);
+}
+
+/* 主内容区增强 */
 .app-main {
   background: var(--bg-page);
+  position: relative;
 }
 
+/* 头部增强：更专业的顶部导航 */
 .app-header {
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
+  border-bottom: 1px solid var(--border-lighter);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  height: 56px !important;
+  padding: 0 32px;
+  height: 64px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
 }
 
 .app-header h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
 .header-date {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-lighter);
 }
 
+/* 内容区优化 */
 .app-content {
-  padding: 20px;
+  padding: 24px;
   overflow-y: auto;
+  background: linear-gradient(180deg, var(--bg-page) 0%, #f8f9fa 100%);
 }
 
 .alert-badge {
-  margin-left: 4px;
+  margin-left: 8px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* 滚动条美化 */
+.app-aside::-webkit-scrollbar,
+.app-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-aside::-webkit-scrollbar-thumb,
+.app-content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+}
+
+.app-aside::-webkit-scrollbar-thumb:hover,
+.app-content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
 }
 </style>

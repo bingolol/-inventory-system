@@ -7,7 +7,7 @@
 # 费用 = 有票费用(Expense.has_invoice=True)
 # 与利润报表（经营口径）的关键区别：只认发票，不认订单
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
@@ -20,8 +20,11 @@ from schemas import IncomeTaxReport
 from account_dep import get_account_id
 from enums import InvoiceDirection
 from utils import _d, Q2
+from errors import BusinessError, ErrorCode
+from accounting_engine import AccountingEngine
 
 router = APIRouter()
+_engine = AccountingEngine()
 
 
 @router.get("", response_model=IncomeTaxReport)
@@ -42,7 +45,7 @@ async def get_income_tax_report(
     # 获取账本信息
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
-        raise HTTPException(status_code=404, detail="账本不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本", "order_id": account_id})
 
     # 计算起止日期
     if quarter and 1 <= quarter <= 4:
@@ -96,12 +99,11 @@ async def get_income_tax_report(
     if taxable_income < 0:
         taxable_income = Decimal('0')
 
-    # 小微企业税率简化
-    # 实际实现：先统一用 5%（tax_rate = 0.05），后续用户可配置
-    tax_rate = Decimal('0.05')
-
-    # 计算应纳企业所得税
-    tax_amount = (taxable_income * tax_rate).quantize(Q2)
+    # 使用 AccountingEngine 计算所得税（根据账本的纳税人类型）
+    taxpayer_type = account.taxpayer_type if account.taxpayer_type else "small_micro"
+    tax_result = _engine.calculate_income_tax(profit=taxable_income, taxpayer_type=taxpayer_type)
+    tax_rate = tax_result.tax_rate
+    tax_amount = tax_result.tax_payable
 
     # 构建报表
     report = IncomeTaxReport(

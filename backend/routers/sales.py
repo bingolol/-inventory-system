@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import SaleOrder
+from errors import BusinessError, ErrorCode
 from account_dep import get_account_id, get_operator
 from image_utils import delete_old_image
 import schemas, crud
@@ -13,6 +14,7 @@ from commands.sale_commands import (
     UpdateSaleOrderFields,
 )
 from enums import OrderStatus, OrderType
+from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
 
@@ -58,7 +60,7 @@ def list_sales(page: int = 1, page_size: int = 20, start_date: str = None, end_d
     return {"total": total, "items": result}
 
 
-@router.post("", response_model=schemas.SaleOrderOut)
+@router.post("")
 def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
@@ -66,6 +68,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
                 account_id=account_id,
                 operator=operator,
                 customer_id=data.customer_id,
+                deduct_inventory=data.deduct_inventory,
                 has_invoice=data.has_invoice,
                 payment_status=data.payment_status,
                 notes=data.notes,
@@ -76,20 +79,44 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
             )
             order = dispatch(cmd, db)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
     db.refresh(order)
-    return _build_sale_out(order)
+    
+    # 构建库存变化信息
+    inventory_changes = []
+    for item in order.items:
+        product = crud.get_product(db, account_id, item.product_id)
+        inventory_changes.append({
+            "product_id": item.product_id,
+            "product_name": product.name if product else f"商品{item.product_id}",
+            "quantity": f"-{item.quantity}"
+        })
+    
+    # 返回 OperationResult 格式
+    result = OperationResult(
+        operation=OperationType.CREATE,
+        entity_type=EntityType.SALE_ORDER,
+        entity_id=order.id,
+        summary=f"销售单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
+        ai_hint="销售单已创建，库存已扣减。如需收款，请调用 POST /api/receipts。",
+        data=_build_sale_out(order).model_dump(),
+        changes={
+            "inventory": inventory_changes,
+            "receivable": {"amount": f"+{order.total_price}"}
+        }
+    )
+    return result.to_dict()
 
 
 @router.get("/{sale_id}", response_model=schemas.SaleOrderOut)
 def get_sale(sale_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     order = crud.get_sale_order(db, account_id, sale_id)
     if not order:
-        raise HTTPException(status_code=404, detail="销售单不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
     return _build_sale_out(order)
 
 
-@router.put("/{sale_id}", response_model=schemas.SaleOrderOut)
+@router.put("/{sale_id}")
 def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
@@ -109,13 +136,13 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
                 order = dispatch(cmd, db)
                 if order is None:
                     # items 为空 → 自动删除，与原逻辑一致返回 404
-                    raise ValueError("销售单不存在")
+                    raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单"})
 
             # 2) 无 items 时的状态切换 → Cancel / Restore
             if not has_items and data.status is not None:
                 current = crud.get_sale_order(db, account_id, sale_id)
                 if not current:
-                    raise ValueError("销售单不存在")
+                    raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单"})
                 if data.status == OrderStatus.CANCELLED and current.status != OrderStatus.CANCELLED:
                     dispatch(CancelSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
                 elif data.status == OrderStatus.COMPLETED and current.status == OrderStatus.CANCELLED:
@@ -142,30 +169,42 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
             if order is None:
                 order = crud.get_sale_order(db, account_id, sale_id)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
 
     if not order:
-        raise HTTPException(status_code=404, detail="销售单不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
     db.refresh(order)
-    return _build_sale_out(order)
+    
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.SALE_ORDER,
+        entity_id=order.id,
+        summary=f"销售单 {order.order_no} 更新成功",
+        ai_hint="销售单已更新。",
+        data=_build_sale_out(order).model_dump()
+    )
+    return result.to_dict()
 
 
 @router.delete("/{sale_id}")
 def delete_sale(sale_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
-    # 先查记录获取 image_url
     order = db.query(SaleOrder).filter(
         SaleOrder.id == sale_id,
         SaleOrder.account_id == account_id
     ).first()
     if not order:
-        raise HTTPException(status_code=404, detail="销售单不存在")
-    # 删除关联图片文件
-    image_url = order.image_url
-    if image_url:
-        delete_old_image(image_url)
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
+    if order.image_url:
+        delete_old_image(order.image_url)
     with unit_of_work(db):
-        try:
-            dispatch(DeleteSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    return {"result": "销售单已删除"}
+        dispatch(DeleteSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
+    
+    result = OperationResult(
+        operation=OperationType.DELETE,
+        entity_type=EntityType.SALE_ORDER,
+        entity_id=sale_id,
+        summary=f"销售单 {order.order_no} 删除成功",
+        ai_hint="销售单已删除。",
+        data={"sale_id": sale_id, "order_no": order.order_no}
+    )
+    return result.to_dict()

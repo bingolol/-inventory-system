@@ -10,8 +10,9 @@
 
 import json
 import logging
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from confirm_middleware import confirm_store
+from errors import BusinessError, ErrorCode
 
 logger = logging.getLogger("inventory")
 router = APIRouter()
@@ -45,7 +46,7 @@ def cancel_confirm(token: str):
     """取消待确认请求（用户拒绝执行）"""
     entry = confirm_store.get(token)
     if entry is None:
-        raise HTTPException(status_code=404, detail="确认令牌不存在或已过期")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "确认令牌", "order_id": 0})
 
     summary = entry.get("summary", "")
     confirm_store.remove(token)
@@ -61,7 +62,7 @@ async def confirm_execute(token: str, request: Request):
     """
     entry = confirm_store.get(token)
     if entry is None:
-        raise HTTPException(status_code=404, detail="确认令牌不存在或已过期")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "确认令牌", "order_id": 0})
 
     # 先从存储中移除，防止重复确认
     summary = entry.get("summary", "")
@@ -118,7 +119,7 @@ async def confirm_execute(token: str, request: Request):
 
     except ImportError:
         logger.error("[Confirm] httpx 未安装，无法重放请求")
-        raise HTTPException(status_code=500, detail="服务器缺少 httpx 依赖，无法执行确认操作")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message="服务器缺少 httpx 依赖，无法执行确认操作")
     except Exception as e:
         logger.error("[Confirm] 重放请求失败: %s", e)
-        raise HTTPException(status_code=500, detail=f"执行确认操作失败: {e}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"执行确认操作失败: {e}")

@@ -13,6 +13,7 @@ import models
 
 from .base import Command, CommandHandler, register
 from .crud_compat import _log
+from errors import BusinessError, ErrorCode
 from utils import _d
 
 
@@ -27,8 +28,14 @@ class CreateOpeningBalance(Command):
     bank_balance: Any = None                # Decimal
     accounts_receivable: Any = None         # Decimal
     inventory_value: Any = None             # Decimal
+    fixed_assets_original: Any = None       # Decimal (非流动资产)
+    accumulated_depreciation: Any = None    # Decimal (累计折旧)
+    intangible_assets_original: Any = None  # Decimal (无形资产原值)
+    accumulated_amortization: Any = None    # Decimal (累计摊销)
     accounts_payable: Any = None            # Decimal
     tax_payable: Any = None                 # Decimal
+    long_term_borrowings: Any = None        # Decimal (非流动负债)
+    paid_in_capital: Any = None             # Decimal
     retained_earnings: Any = None           # Decimal
 
 
@@ -42,15 +49,19 @@ class CreateOpeningBalanceHandler(CommandHandler):
             models.OpeningBalance.date == ob_date,
         ).first()
         if existing:
-            raise ValueError(f"该日期已存在期初余额: {cmd.date}")
+            raise BusinessError(code=ErrorCode.BALANCE_ALREADY_EXISTS, data={"date": cmd.date})
 
-        # 2. 校验：资产 = 负债 + 权益
-        total_assets = _d(cmd.cash_balance) + _d(cmd.bank_balance) + _d(cmd.accounts_receivable) + _d(cmd.inventory_value)
-        total_liabilities = _d(cmd.accounts_payable) + _d(cmd.tax_payable)
-        total_equity = _d(cmd.retained_earnings)
+        # 2. 校验：资产 = 负债 + 权益（含非流动资产/负债）
+        total_assets = (_d(cmd.cash_balance) + _d(cmd.bank_balance)
+                        + _d(cmd.accounts_receivable) + _d(cmd.inventory_value)
+                        + _d(cmd.fixed_assets_original) - _d(cmd.accumulated_depreciation)
+                        + _d(cmd.intangible_assets_original) - _d(cmd.accumulated_amortization))
+        total_liabilities = _d(cmd.accounts_payable) + _d(cmd.tax_payable) + _d(cmd.long_term_borrowings)
+        total_equity = _d(cmd.paid_in_capital) + _d(cmd.retained_earnings)
         if total_assets != total_liabilities + total_equity:
-            raise ValueError(
-                f"资产负债表不平衡: 资产={total_assets}, 负债+权益={total_liabilities + total_equity}"
+            raise BusinessError(
+                code=ErrorCode.BALANCE_SHEET_UNBALANCED,
+                data={"assets": total_assets, "liabilities": total_liabilities + total_equity}
             )
 
         # 3. 创建 ORM 对象
@@ -61,8 +72,14 @@ class CreateOpeningBalanceHandler(CommandHandler):
             bank_balance=cmd.bank_balance,
             accounts_receivable=cmd.accounts_receivable,
             inventory_value=cmd.inventory_value,
+            fixed_assets_original=cmd.fixed_assets_original,
+            accumulated_depreciation=cmd.accumulated_depreciation,
+            intangible_assets_original=cmd.intangible_assets_original,
+            accumulated_amortization=cmd.accumulated_amortization,
             accounts_payable=cmd.accounts_payable,
             tax_payable=cmd.tax_payable,
+            long_term_borrowings=cmd.long_term_borrowings,
+            paid_in_capital=cmd.paid_in_capital,
             retained_earnings=cmd.retained_earnings,
         )
         db.add(opening_balance)
@@ -87,8 +104,14 @@ class UpdateOpeningBalance(Command):
     bank_balance: Any = None                # Optional[Decimal]
     accounts_receivable: Any = None         # Optional[Decimal]
     inventory_value: Any = None             # Optional[Decimal]
+    fixed_assets_original: Any = None       # Optional[Decimal]
+    accumulated_depreciation: Any = None    # Optional[Decimal]
+    intangible_assets_original: Any = None  # Optional[Decimal]
+    accumulated_amortization: Any = None    # Optional[Decimal]
     accounts_payable: Any = None            # Optional[Decimal]
     tax_payable: Any = None                 # Optional[Decimal]
+    long_term_borrowings: Any = None        # Optional[Decimal]
+    paid_in_capital: Any = None             # Optional[Decimal]
     retained_earnings: Any = None           # Optional[Decimal]
 
 
@@ -101,7 +124,7 @@ class UpdateOpeningBalanceHandler(CommandHandler):
             models.OpeningBalance.account_id == cmd.account_id,
         ).first()
         if not opening_balance:
-            raise ValueError("期初余额不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "期初余额", "order_id": cmd.opening_balance_id})
 
         # 2. 更新字段
         if cmd.date is not None:
@@ -114,21 +137,37 @@ class UpdateOpeningBalanceHandler(CommandHandler):
             opening_balance.accounts_receivable = cmd.accounts_receivable
         if cmd.inventory_value is not None:
             opening_balance.inventory_value = cmd.inventory_value
+        if cmd.fixed_assets_original is not None:
+            opening_balance.fixed_assets_original = cmd.fixed_assets_original
+        if cmd.accumulated_depreciation is not None:
+            opening_balance.accumulated_depreciation = cmd.accumulated_depreciation
+        if cmd.intangible_assets_original is not None:
+            opening_balance.intangible_assets_original = cmd.intangible_assets_original
+        if cmd.accumulated_amortization is not None:
+            opening_balance.accumulated_amortization = cmd.accumulated_amortization
         if cmd.accounts_payable is not None:
             opening_balance.accounts_payable = cmd.accounts_payable
         if cmd.tax_payable is not None:
             opening_balance.tax_payable = cmd.tax_payable
+        if cmd.long_term_borrowings is not None:
+            opening_balance.long_term_borrowings = cmd.long_term_borrowings
+        if cmd.paid_in_capital is not None:
+            opening_balance.paid_in_capital = cmd.paid_in_capital
         if cmd.retained_earnings is not None:
             opening_balance.retained_earnings = cmd.retained_earnings
 
-        # 3. 校验：更新后资产 = 负债 + 权益
+        # 3. 校验：更新后资产 = 负债 + 权益（含非流动资产/负债）
         total_assets = (_d(opening_balance.cash_balance) + _d(opening_balance.bank_balance)
-                        + _d(opening_balance.accounts_receivable) + _d(opening_balance.inventory_value))
-        total_liabilities = _d(opening_balance.accounts_payable) + _d(opening_balance.tax_payable)
-        total_equity = _d(opening_balance.retained_earnings)
+                        + _d(opening_balance.accounts_receivable) + _d(opening_balance.inventory_value)
+                        + _d(opening_balance.fixed_assets_original) - _d(opening_balance.accumulated_depreciation)
+                        + _d(opening_balance.intangible_assets_original) - _d(opening_balance.accumulated_amortization))
+        total_liabilities = (_d(opening_balance.accounts_payable) + _d(opening_balance.tax_payable)
+                             + _d(opening_balance.long_term_borrowings))
+        total_equity = _d(opening_balance.paid_in_capital) + _d(opening_balance.retained_earnings)
         if total_assets != total_liabilities + total_equity:
-            raise ValueError(
-                f"资产负债表不平衡: 资产={total_assets}, 负债+权益={total_liabilities + total_equity}"
+            raise BusinessError(
+                code=ErrorCode.BALANCE_SHEET_UNBALANCED,
+                data={"assets": total_assets, "liabilities": total_liabilities + total_equity}
             )
 
         # 4. 日志
@@ -203,7 +242,7 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
             models.CashFlowTransaction.account_id == cmd.account_id,
         ).first()
         if not transaction:
-            raise ValueError("现金流水不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "现金流水", "order_id": cmd.transaction_id})
 
         # 2. 更新字段
         if cmd.type is not None:
@@ -218,7 +257,7 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
             try:
                 transaction.transaction_date = datetime.strptime(cmd.transaction_date, "%Y-%m-%d")
             except ValueError:
-                raise ValueError(f"日期格式无效: {cmd.transaction_date}，应为 YYYY-MM-DD")
+                raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": cmd.transaction_date})
         if cmd.related_entity_type is not None:
             transaction.related_entity_type = cmd.related_entity_type
         if cmd.related_entity_id is not None:
@@ -249,7 +288,7 @@ class DeleteCashFlowTransactionHandler(CommandHandler):
             models.CashFlowTransaction.account_id == cmd.account_id,
         ).first()
         if not transaction:
-            raise ValueError("现金流水不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "现金流水", "order_id": cmd.transaction_id})
 
         # 2. 日志 + 删除
         _log(db, cmd.account_id, "delete", "cash_flow", cmd.transaction_id,

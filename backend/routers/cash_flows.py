@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
@@ -22,7 +23,7 @@ def get_cash_flow_statement(
     try:
         return crud.generate_cash_flow_statement(db, account_id, start_date, end_date)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成现金流量表失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"生成现金流量表失败: {str(e)}")
 
 
 @router.post("/transactions", response_model=schemas.CashFlowTransactionOut)
@@ -47,9 +48,9 @@ def create_cash_transaction(
             )
             tx = dispatch(cmd, db)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"创建现金流水失败: {str(e)}")
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"创建现金流水失败: {str(e)}")
     db.refresh(tx)
     return tx
 
@@ -93,8 +94,8 @@ def update_cash_transaction(
             transaction = dispatch(cmd, db)
     except ValueError as e:
         if "不存在" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
     db.refresh(transaction)
     return transaction
 
@@ -114,6 +115,6 @@ def delete_cash_transaction(
             ), db)
     except ValueError as e:
         if "不存在" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
+            raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
     return {"result": "现金流水已删除"}

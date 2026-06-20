@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from database import get_db
@@ -10,6 +10,7 @@ import schemas, crud
 from commands import dispatch, CreatePersonalTransaction, UpdatePersonalTransaction, DeletePersonalTransaction
 from uow import unit_of_work
 from utils import _d, Q2
+from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -20,10 +21,7 @@ def _validate_personal_category(type: str, category: str):
         return
     allowed = PERSONAL_INCOME_CATEGORIES if type == "income" else PERSONAL_EXPENSE_CATEGORIES
     if category not in allowed:
-        raise HTTPException(
-            status_code=422,
-            detail=f"category '{category}' 不合法，'{type}' 的合法值: {allowed}"
-        )
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"category '{category}' 不合法，'{type}' 的合法值: {allowed}")
 
 
 @router.get("/category_summary")
@@ -88,7 +86,7 @@ def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, acco
         PersonalTransaction.account_id == account_id
     ).first()
     if not tx:
-        raise HTTPException(status_code=404, detail="记录不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
 
     # 确定最终 type（若传了新 type 则用新的，否则保持原 type）
     final_type = data.type if data.type is not None else tx.type
@@ -109,7 +107,7 @@ def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, acco
             date=data.date,
         ), db)
     if not tx:
-        raise HTTPException(status_code=404, detail="记录不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
     db.refresh(tx)
     return tx
 
@@ -122,7 +120,7 @@ def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), op
         PersonalTransaction.account_id == account_id
     ).first()
     if not tx:
-        raise HTTPException(status_code=404, detail="记录不存在")
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
     # 删除关联图片文件
     if tx.image_url:
         delete_old_image(tx.image_url)
@@ -132,5 +130,5 @@ def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), op
             operator=operator,
             tx_id=tx_id,
         ), db):
-            raise HTTPException(status_code=404, detail="记录不存在")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
     return {"message": "已删除"}

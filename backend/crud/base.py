@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 import models
+from errors import BusinessError, ErrorCode
 
 logger = logging.getLogger("inventory")
 
@@ -102,12 +103,18 @@ def delete_account(db: Session, account_id: int) -> bool:
         (models.Inventory, "库存"),
         (models.OperationLog, "操作日志"),
         (models.CashFlowTransaction, "现金流"),
+        (models.BankAccount, "银行账户"),
+        (models.BankTransaction, "银行流水"),
+        (models.Payment, "付款记录"),
+        (models.Receipt, "收款记录"),
+        (models.FixedAsset, "固定资产"),
+        (models.IntangibleAsset, "无形资产"),
     ]
     for model, label in checks:
         if hasattr(model, 'account_id'):
             count = db.query(model).filter(model.account_id == account_id).count()
             if count > 0:
-                raise ValueError(f"该账本下存在 {count} 条{label}记录，无法删除。请先清空所有业务数据。")
+                raise BusinessError(code=ErrorCode.PRODUCT_HAS_TRANSACTIONS, data={"count": count, "label": label})
 
     db.delete(account)
     db.flush()

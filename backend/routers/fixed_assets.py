@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from database import get_db
-from schemas import FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, PaginatedResponse
+from schemas import FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, FixedAssetWithInvoiceUpdate, PaginatedResponse
 from account_dep import get_account_id, get_operator
 import crud
 from uow import unit_of_work
+from commands.base import dispatch
 
 router = APIRouter()
 
@@ -71,7 +73,7 @@ def update_fixed_asset(
     with unit_of_work(db):
         asset = crud.update_fixed_asset(db, account_id, asset_id, data, operator=operator)
         if not asset:
-            raise HTTPException(status_code=404, detail="固定资产不存在")
+            raise BusinessError(code=ErrorCode.FIXED_ASSET_NOT_FOUND, data={"asset_id": asset_id})
     db.refresh(asset)
     return _to_out(asset)
 
@@ -87,5 +89,54 @@ def delete_fixed_asset(
     with unit_of_work(db):
         ok = crud.delete_fixed_asset(db, account_id, asset_id, operator=operator)
         if not ok:
-            raise HTTPException(status_code=404, detail="固定资产不存在")
+            raise BusinessError(code=ErrorCode.FIXED_ASSET_NOT_FOUND, data={"asset_id": asset_id})
     return {"message": "固定资产已删除"}
+
+
+@router.put("/{asset_id}/with-invoice")
+def update_asset_with_invoice(
+    asset_id: int,
+    data: FixedAssetWithInvoiceUpdate,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """更新固定资产（联动发票）"""
+    from commands.invoice_commands import UpdateAssetWithInvoice
+
+    try:
+        with unit_of_work(db):
+            cmd = UpdateAssetWithInvoice(
+                account_id=account_id,
+                operator=operator,
+                asset_id=asset_id,
+                original_value=data.original_value,
+                name=data.name,
+                category=data.category,
+                salvage_rate=data.salvage_rate,
+                useful_life=data.useful_life,
+                depreciation_method=data.depreciation_method,
+                start_date=data.start_date,
+                status=data.status,
+            )
+            result = dispatch(cmd, db)
+    except ValueError as e:
+        raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, message=str(e))
+
+    asset = result["asset"]
+    invoice = result["invoice"]
+    db.refresh(asset)
+    if invoice:
+        db.refresh(invoice)
+
+    return {
+        "message": "固定资产更新成功",
+        "asset": _to_out(asset).model_dump(),
+        "invoice": {
+            "id": invoice.id,
+            "invoice_no": invoice.invoice_no,
+            "amount_without_tax": float(invoice.amount_without_tax),
+            "tax_amount": float(invoice.tax_amount),
+            "amount_with_tax": float(invoice.amount_with_tax),
+        } if invoice else None
+    }
