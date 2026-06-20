@@ -26,6 +26,7 @@
 | 了解功能模块 | [功能模块说明.md](./功能模块说明.md) |
 | 查看枚举值 | [AI_AGENT_GUIDE.md §5](./AI_AGENT_GUIDE.md#5-关键字段速查) |
 | 排查错误 | [AI_AGENT_GUIDE.md §7](./AI_AGENT_GUIDE.md#7-错误码) |
+| 查会计公式 | [小企业会计准则.md](./小企业会计准则.md) |
 | 选 AI 技能 | [agent_skills.md](./agent_skills.md) |
 | 提交 Issue | [agents/issue-tracker.md](./agents/issue-tracker.md) |
 
@@ -71,7 +72,7 @@
 ```
 README.md (项目入口)
     │
-    ├──→ CONTEXT.md (项目上下文)
+    ├──→ CONTEXT.md (项目上下文 + 业务规则)
     │        │
     │        └──→ docs/架构参考.md (架构详解)
     │
@@ -81,7 +82,8 @@ README.md (项目入口)
     │        ├──→ docs/架构参考.md (架构详解)
     │        ├──→ docs/开发速查表.md (开发规范)
     │        ├──→ docs/文件索引.md (文件分类)
-    │        └──→ docs/功能模块说明.md (模块详解)
+    │        ├──→ docs/功能模块说明.md (模块详解)
+    │        └──→ docs/小企业会计准则.md (会计公式 + 法规依据)
     │
     └──→ AGENTS.md (Agent 配置)
              │

@@ -165,7 +165,7 @@ class AccountingEngine:
         - 不含税金额 = 含税金额 / (1 + 税率)
         - 税额 = 含税金额 - 不含税金额
 
-        符合《小企业会计准则》第十五条：收入应当按照从购买方已收或应收的合同或协议价款确定。
+        依据：《小企业会计准则》§二/2.1 发票金额计算
         """
         amount_with_tax = _d(amount_with_tax)
         tax_rate = _d(tax_rate)
@@ -190,7 +190,7 @@ class AccountingEngine:
     ) -> None:
         """校验发票金额等式：不含税 + 税额 == 价税合计
 
-        符合《小企业会计准则》第十五条：收入应当按照从购买方已收或应收的合同或协议价款确定。
+        依据：《小企业会计准则》§二/2.1 发票金额计算
         """
         amount_without_tax = _d(amount_without_tax)
         tax_amount = _d(tax_amount)
@@ -202,7 +202,7 @@ class AccountingEngine:
                 code=AccountingErrorCode.INVOICE_AMOUNTS_NOT_BALANCED,
                 message=f"发票金额不平衡：不含税 {amount_without_tax} + 税额 {tax_amount} ≠ 价税合计 {amount_with_tax}（差额 {diff}）",
                 ai_instruction="STOP_RETRYING. 发票金额计算错误，请检查：1) 不含税金额 = 含税金额 / (1 + 税率)；2) 税额 = 含税金额 - 不含税金额",
-                accounting_rule="《小企业会计准则》第十五条",
+                accounting_rule="《小企业会计准则》§二/2.1 发票金额计算",
                 calculation_detail={
                     "amount_without_tax": float(amount_without_tax),
                     "tax_amount": float(tax_amount),
@@ -225,7 +225,7 @@ class AccountingEngine:
         """年限平均法（直线法）折旧
 
         公式：月折旧 = 原值 × (1 - 残值率) / 使用寿命(月)
-        符合《小企业会计准则》第三十条：固定资产折旧采用年限平均法。
+        依据：《小企业会计准则》§二/2.2 固定资产折旧
         """
         original_value = _d(original_value)
         salvage_rate = _d(salvage_rate)
@@ -235,7 +235,7 @@ class AccountingEngine:
                 code=AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO,
                 message="固定资产使用寿命必须大于0",
                 ai_instruction="STOP_RETRYING. 使用寿命必须是正整数（单位：月）",
-                accounting_rule="《小企业会计准则》第三十条"
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
             )
 
         # 计算月折旧
@@ -265,7 +265,7 @@ class AccountingEngine:
 
         公式：月折旧率 = 2 / 使用寿命(月)
               月折旧 = 期初净值 × 月折旧率
-        符合《小企业会计准则》第三十条：固定资产折旧可以采用双倍余额递减法。
+        依据：《小企业会计准则》§二/2.2 固定资产折旧
         """
         original_value = _d(original_value)
 
@@ -274,7 +274,7 @@ class AccountingEngine:
                 code=AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO,
                 message="固定资产使用寿命必须大于0",
                 ai_instruction="STOP_RETRYING. 使用寿命必须是正整数（单位：月）",
-                accounting_rule="《小企业会计准则》第三十条"
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
             )
 
         # 计算月折旧率
@@ -312,7 +312,7 @@ class AccountingEngine:
 
         公式：年数总和 = n × (n + 1) / 2
               年折旧 = (原值 - 残值) × (剩余年限 / 年数总和)
-        符合《小企业会计准则》第三十条：固定资产折旧可以采用年数总和法。
+        依据：《小企业会计准则》§二/2.2 固定资产折旧
         """
         original_value = _d(original_value)
         salvage_rate = _d(salvage_rate)
@@ -372,7 +372,7 @@ class AccountingEngine:
     ) -> VATResult:
         """计算增值税
 
-        符合《中华人民共和国增值税暂行条例》。
+        依据：《小企业会计准则》§二/2.4 增值税 + 增值税暂行条例
         一般纳税人：应纳税额 = 销项税额 - 进项税额
         小规模纳税人：征收率3%，2023-2027年减按1%征收。
         """
@@ -450,11 +450,11 @@ class AccountingEngine:
     ) -> IncomeTaxResult:
         """计算企业所得税
 
-        符合《中华人民共和国企业所得税法》和小型微利企业优惠：
+        依据：《小企业会计准则》§二/2.5 企业所得税
         - 年应纳税所得额 ≤ 300万：减按25%计入，按20%税率缴纳，实际税负5%
         - 年应纳税所得额 > 300万：法定税率25%
 
-        法规依据：《财政部 税务总局关于小微企业和个体工商户所得税优惠政策的公告》(2023年第6号)
+        法规依据：《财政部 税务总局关于小微企业和个体工商户所得税优惠政策的公告》(2023年第12号)
         """
         profit = _d(profit)
 
@@ -463,7 +463,7 @@ class AccountingEngine:
                 code=AccountingErrorCode.INCOME_TAX_PROFIT_NEGATIVE,
                 message=f"利润不能为负：{profit}",
                 ai_instruction="STOP_RETRYING. 利润为负表示亏损，不需要缴纳企业所得税",
-                accounting_rule="《中华人民共和国企业所得税法》第五条"
+                accounting_rule="《小企业会计准则》§二/2.5 企业所得税"
             )
 
         # 法定税率25%
