@@ -37,6 +37,8 @@ class ErrorCode(str, Enum):
     # 财务 (4xxx)
     BALANCE_ALREADY_EXISTS = "BALANCE_ALREADY_EXISTS"
     BALANCE_SHEET_UNBALANCED = "BALANCE_SHEET_UNBALANCED"
+    INCOME_STATEMENT_INVALID = "INCOME_STATEMENT_INVALID"
+    CASH_FLOW_STATEMENT_INVALID = "CASH_FLOW_STATEMENT_INVALID"
 
     # 商品 (5xxx)
     PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
@@ -126,6 +128,16 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         422, ActionType.USER_CONFIRM,
         "资产负债表不平衡: 资产={assets}, 负债+权益={liabilities}",
         "STOP_RETRYING. 资产负债表不平衡，请向用户确认是否强制保存，或检查数据是否有误。"
+    ),
+    ErrorCode.INCOME_STATEMENT_INVALID: (
+        422, ActionType.USER_CONFIRM,
+        "利润表公式错误: {message}",
+        "STOP_RETRYING. 利润表数据不一致，请检查各项金额计算是否正确。"
+    ),
+    ErrorCode.CASH_FLOW_STATEMENT_INVALID: (
+        422, ActionType.USER_CONFIRM,
+        "现金流量表公式错误: {message}",
+        "STOP_RETRYING. 现金流量表数据不一致，请检查各项金额计算是否正确。"
     ),
 
     # 商品

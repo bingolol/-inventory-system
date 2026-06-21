@@ -464,6 +464,43 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     # ── 净利润 ──
     net_profit = gross_profit_total - income_tax_expense
 
+    # ── 公式交叉校验 ──
+    # 校验1：营业毛利 = 营业收入 - 营业成本
+    expected_gross_profit = revenue - cost_of_goods_sold
+    if abs(gross_profit - expected_gross_profit) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.INCOME_STATEMENT_INVALID,
+            message=f"利润表公式错误：营业毛利 {gross_profit} ≠ 营业收入 {revenue} - 营业成本 {cost_of_goods_sold}",
+            data={"gross_profit": float(gross_profit), "revenue": float(revenue), "cost_of_goods_sold": float(cost_of_goods_sold)}
+        )
+
+    # 校验2：营业利润 = 营业毛利 - 营业费用
+    expected_operating_profit = gross_profit - total_operating_expenses
+    if abs(operating_profit - expected_operating_profit) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.INCOME_STATEMENT_INVALID,
+            message=f"利润表公式错误：营业利润 {operating_profit} ≠ 营业毛利 {gross_profit} - 营业费用 {total_operating_expenses}",
+            data={"operating_profit": float(operating_profit), "gross_profit": float(gross_profit), "total_operating_expenses": float(total_operating_expenses)}
+        )
+
+    # 校验3：利润总额 = 营业利润 + 营业外收入 - 营业外支出
+    expected_gross_profit_total = operating_profit + non_operating_income - non_operating_expense
+    if abs(gross_profit_total - expected_gross_profit_total) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.INCOME_STATEMENT_INVALID,
+            message=f"利润表公式错误：利润总额 {gross_profit_total} ≠ 营业利润 {operating_profit} + 营业外收入 {non_operating_income} - 营业外支出 {non_operating_expense}",
+            data={"gross_profit_total": float(gross_profit_total), "operating_profit": float(operating_profit), "non_operating_income": float(non_operating_income), "non_operating_expense": float(non_operating_expense)}
+        )
+
+    # 校验4：净利润 = 利润总额 - 所得税费用
+    expected_net_profit = gross_profit_total - income_tax_expense
+    if abs(net_profit - expected_net_profit) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.INCOME_STATEMENT_INVALID,
+            message=f"利润表公式错误：净利润 {net_profit} ≠ 利润总额 {gross_profit_total} - 所得税费用 {income_tax_expense}",
+            data={"net_profit": float(net_profit), "gross_profit_total": float(gross_profit_total), "income_tax_expense": float(income_tax_expense)}
+        )
+
     return {
         "period": f"{start_date} 至 {end_date}",
         "revenue": revenue.quantize(Q2),
@@ -565,6 +602,25 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
     net_financing = financing_inflows - financing_outflows
     net_cash_flow = net_operating + net_investing + net_financing
     ending_cash_balance = beginning_cash_balance + net_cash_flow
+
+    # ── 余额校验 ──
+    # 校验：期末余额 = 期初余额 + 净现金流量
+    expected_ending_balance = beginning_cash_balance + net_cash_flow
+    if abs(ending_cash_balance - expected_ending_balance) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.CASH_FLOW_STATEMENT_INVALID,
+            message=f"现金流量表公式错误：期末余额 {ending_cash_balance} ≠ 期初余额 {beginning_cash_balance} + 净现金流量 {net_cash_flow}",
+            data={"ending_cash_balance": float(ending_cash_balance), "beginning_cash_balance": float(beginning_cash_balance), "net_cash_flow": float(net_cash_flow)}
+        )
+
+    # 校验：净现金流量 = 经营活动净额 + 投资活动净额 + 筹资活动净额
+    expected_net_cash_flow = net_operating + net_investing + net_financing
+    if abs(net_cash_flow - expected_net_cash_flow) > Decimal('0.01'):
+        raise BusinessError(
+            code=ErrorCode.CASH_FLOW_STATEMENT_INVALID,
+            message=f"现金流量表公式错误：净现金流量 {net_cash_flow} ≠ 经营活动净额 {net_operating} + 投资活动净额 {net_investing} + 筹资活动净额 {net_financing}",
+            data={"net_cash_flow": float(net_cash_flow), "net_operating": float(net_operating), "net_investing": float(net_investing), "net_financing": float(net_financing)}
+        )
 
     return {
         "period": f"{start_date} 至 {end_date}",

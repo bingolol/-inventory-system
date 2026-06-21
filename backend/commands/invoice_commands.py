@@ -64,7 +64,14 @@ class CreateInvoiceHandler(CommandHandler):
         # 2. 校验关联目标存在(防孤儿引用)
         validate_link_target(db, cmd.account_id, cmd.related_order_type, cmd.related_order_id)
 
-        # 3. 解析 issue_date
+        # 3. 校验发票金额等式
+        _engine.validate_invoice_amounts(
+            amount_without_tax=cmd.amount_without_tax,
+            tax_amount=cmd.tax_amount,
+            amount_with_tax=cmd.amount_with_tax
+        )
+
+        # 4. 解析 issue_date
         issue_date = cmd.issue_date
         if isinstance(issue_date, str):
             try:
@@ -75,7 +82,7 @@ class CreateInvoiceHandler(CommandHandler):
                     data={"date": issue_date}
                 )
 
-        # 3. 创建 ORM 对象
+        # 5. 创建 ORM 对象
         db_invoice = models.Invoice(
             account_id=cmd.account_id,
             invoice_no=cmd.invoice_no,
@@ -98,7 +105,7 @@ class CreateInvoiceHandler(CommandHandler):
         db.add(db_invoice)
         db.flush()
 
-        # 4. 日志
+        # 6. 日志
         _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
              f"创建发票: {db_invoice.invoice_no} ({db_invoice.direction}/{db_invoice.invoice_type})",
              operator=cmd.operator)

@@ -15,8 +15,12 @@ from account_dep import get_account_id
 from enums import InvoiceDirection, InvoiceType, CertificationStatus, TaxpayerType
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
+from accounting_engine import AccountingEngine
 
 router = APIRouter()
+
+# 全局 AccountingEngine 实例
+_engine = AccountingEngine()
 
 
 def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_date: datetime):
@@ -56,9 +60,13 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
         input_total = Decimal('0')
         input_tax = Decimal('0')
 
-    tax_payable = output_tax - input_tax
-    if tax_payable < 0:
-        tax_payable = Decimal('0')
+    # 使用 AccountingEngine 计算增值税
+    vat_result = _engine.calculate_vat(
+        total_revenue=output_total,
+        taxpayer_type=account.taxpayer_type,
+        input_tax=input_tax
+    )
+    tax_payable = vat_result.tax_payable
 
     invoice_outs = []
     for invoice in out_invoices + in_invoices:

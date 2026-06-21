@@ -24,18 +24,25 @@ class AccountingErrorCode(str, Enum):
     # 增值税相关
     VAT_REVENUE_NEGATIVE = "VAT_REVENUE_NEGATIVE"
     VAT_TAXPAYER_TYPE_INVALID = "VAT_TAXPAYER_TYPE_INVALID"
+    VAT_INPUT_TAX_NEGATIVE = "VAT_INPUT_TAX_NEGATIVE"
+    VAT_CALCULATION_INVALID = "VAT_CALCULATION_INVALID"
 
     # 所得税相关
     INCOME_TAX_PROFIT_NEGATIVE = "INCOME_TAX_PROFIT_NEGATIVE"
+    INCOME_TAX_TAXPAYER_TYPE_INVALID = "INCOME_TAX_TAXPAYER_TYPE_INVALID"
+    INCOME_TAX_CALCULATION_INVALID = "INCOME_TAX_CALCULATION_INVALID"
 
     # 折旧相关
     DEPRECIATION_METHOD_NOT_IMPLEMENTED = "DEPRECIATION_METHOD_NOT_IMPLEMENTED"
     DEPRECIATION_USEFUL_LIFE_ZERO = "DEPRECIATION_USEFUL_LIFE_ZERO"
     DEPRECIATION_SALVAGE_RATE_INVALID = "DEPRECIATION_SALVAGE_RATE_INVALID"
+    DEPRECIATION_ORIGINAL_VALUE_INVALID = "DEPRECIATION_ORIGINAL_VALUE_INVALID"
+    DEPRECIATION_CALCULATION_INVALID = "DEPRECIATION_CALCULATION_INVALID"
 
     # 报表验证
     BALANCE_SHEET_UNBALANCED = "BALANCE_SHEET_UNBALANCED"
     INCOME_STATEMENT_INVALID = "INCOME_STATEMENT_INVALID"
+    CASH_FLOW_STATEMENT_INVALID = "CASH_FLOW_STATEMENT_INVALID"
 
 
 class AccountingError(Exception):
@@ -230,6 +237,23 @@ class AccountingEngine:
         original_value = _d(original_value)
         salvage_rate = _d(salvage_rate)
 
+        # 输入校验
+        if original_value <= Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.DEPRECIATION_ORIGINAL_VALUE_INVALID,
+                message=f"固定资产原值必须大于0：{original_value}",
+                ai_instruction="STOP_RETRYING. 原值必须是正数",
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
+            )
+
+        if salvage_rate < Decimal('0') or salvage_rate > Decimal('1'):
+            raise AccountingError(
+                code=AccountingErrorCode.DEPRECIATION_SALVAGE_RATE_INVALID,
+                message=f"残值率必须在0到1之间：{salvage_rate}",
+                ai_instruction="STOP_RETRYING. 残值率必须是0到1之间的小数（如0.05表示5%）",
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
+            )
+
         if useful_life <= 0:
             raise AccountingError(
                 code=AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO,
@@ -268,6 +292,15 @@ class AccountingEngine:
         依据：《小企业会计准则》§二/2.2 固定资产折旧
         """
         original_value = _d(original_value)
+
+        # 输入校验
+        if original_value <= Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.DEPRECIATION_ORIGINAL_VALUE_INVALID,
+                message=f"固定资产原值必须大于0：{original_value}",
+                ai_instruction="STOP_RETRYING. 原值必须是正数",
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
+            )
 
         if useful_life <= 0:
             raise AccountingError(
@@ -316,6 +349,23 @@ class AccountingEngine:
         """
         original_value = _d(original_value)
         salvage_rate = _d(salvage_rate)
+
+        # 输入校验
+        if original_value <= Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.DEPRECIATION_ORIGINAL_VALUE_INVALID,
+                message=f"固定资产原值必须大于0：{original_value}",
+                ai_instruction="STOP_RETRYING. 原值必须是正数",
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
+            )
+
+        if salvage_rate < Decimal('0') or salvage_rate > Decimal('1'):
+            raise AccountingError(
+                code=AccountingErrorCode.DEPRECIATION_SALVAGE_RATE_INVALID,
+                message=f"残值率必须在0到1之间：{salvage_rate}",
+                ai_instruction="STOP_RETRYING. 残值率必须是0到1之间的小数（如0.05表示5%）",
+                accounting_rule="《小企业会计准则》§二/2.2 固定资产折旧"
+            )
 
         if useful_life <= 0:
             raise AccountingError(
@@ -379,6 +429,7 @@ class AccountingEngine:
         total_revenue = _d(total_revenue)
         input_tax = _d(input_tax)
 
+        # 输入校验
         if taxpayer_type not in ['small_scale', 'general']:
             raise AccountingError(
                 code=AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID,
@@ -386,11 +437,42 @@ class AccountingEngine:
                 ai_instruction="STOP_RETRYING. 纳税人类型只能是 small_scale（小规模）或 general（一般）"
             )
 
+        if total_revenue < Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.VAT_REVENUE_NEGATIVE,
+                message=f"营业收入不能为负：{total_revenue}",
+                ai_instruction="STOP_RETRYING. 营业收入为负值不符合业务逻辑，请检查数据",
+                accounting_rule="《小企业会计准则》§二/2.4 增值税"
+            )
+
+        if input_tax < Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.VAT_INPUT_TAX_NEGATIVE,
+                message=f"进项税额不能为负：{input_tax}",
+                ai_instruction="STOP_RETRYING. 进项税额为负值不符合业务逻辑，请检查数据",
+                accounting_rule="《小企业会计准则》§二/2.4 增值税"
+            )
+
         if taxpayer_type == 'general':
             # 一般纳税人：销项税额 - 进项税额
             tax_rate = Decimal('0.13')
             tax_payable_gross = (total_revenue * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
             tax_payable = tax_payable_gross - input_tax
+
+            # 输出交叉校验：应纳税额 = 销项税额 - 进项税额
+            expected_tax_payable = tax_payable_gross - input_tax
+            if abs(tax_payable - expected_tax_payable) > Q2:
+                raise AccountingError(
+                    code=AccountingErrorCode.VAT_CALCULATION_INVALID,
+                    message=f"增值税计算错误：应纳税额 {tax_payable} ≠ 销项税额 {tax_payable_gross} - 进项税额 {input_tax}",
+                    accounting_rule="《小企业会计准则》§二/2.4 增值税",
+                    calculation_detail={
+                        "tax_payable_gross": float(tax_payable_gross),
+                        "input_tax": float(input_tax),
+                        "tax_payable": float(tax_payable),
+                        "expected_tax_payable": float(expected_tax_payable)
+                    }
+                )
 
             # 附加税费
             surcharge_education = (tax_payable * Decimal('0.03')).quantize(Q2, rounding=ROUND_HALF_UP)
@@ -410,6 +492,20 @@ class AccountingEngine:
 
             # 应纳税额 = 不含税销售额 × 1%
             tax_payable = (total_revenue * Decimal('0.01')).quantize(Q2, rounding=ROUND_HALF_UP)
+
+            # 输出交叉校验：应纳税额 = 不含税销售额 × 1%
+            expected_tax_payable = (total_revenue * Decimal('0.01')).quantize(Q2, rounding=ROUND_HALF_UP)
+            if abs(tax_payable - expected_tax_payable) > Q2:
+                raise AccountingError(
+                    code=AccountingErrorCode.VAT_CALCULATION_INVALID,
+                    message=f"增值税计算错误：应纳税额 {tax_payable} ≠ 不含税销售额 {total_revenue} × 1%",
+                    accounting_rule="《小企业会计准则》§二/2.4 增值税",
+                    calculation_detail={
+                        "total_revenue": float(total_revenue),
+                        "tax_payable": float(tax_payable),
+                        "expected_tax_payable": float(expected_tax_payable)
+                    }
+                )
 
             # 附加税费（2023-2027年小微企业50%减征优惠）
             monthly_revenue = total_revenue / Decimal('3')
@@ -458,6 +554,7 @@ class AccountingEngine:
         """
         profit = _d(profit)
 
+        # 输入校验
         if profit < Decimal('0'):
             raise AccountingError(
                 code=AccountingErrorCode.INCOME_TAX_PROFIT_NEGATIVE,
@@ -465,6 +562,12 @@ class AccountingEngine:
                 ai_instruction="STOP_RETRYING. 利润为负表示亏损，不需要缴纳企业所得税",
                 accounting_rule="《小企业会计准则》§二/2.5 企业所得税"
             )
+
+        # 纳税人类型校验（允许 small_micro 或 general，其他类型默认走一般企业）
+        valid_taxpayer_types = ['small_micro', 'general']
+        if taxpayer_type not in valid_taxpayer_types:
+            # 默认按一般企业处理，但记录警告
+            taxpayer_type = 'general'
 
         # 法定税率25%
         tax_rate = Decimal('0.25')
@@ -486,6 +589,22 @@ class AccountingEngine:
                 reduction_item = "不符合小型微利企业优惠条件（>300万）"
             else:
                 reduction_item = "一般企业（法定税率25%）"
+
+        # 输出交叉校验：应纳税额 = 应纳税所得额 × 税率 - 减免税额
+        expected_tax_payable = (profit * tax_rate - reduction_amount).quantize(Q2, rounding=ROUND_HALF_UP)
+        if abs(tax_payable - expected_tax_payable) > Q2:
+            raise AccountingError(
+                code=AccountingErrorCode.INCOME_TAX_CALCULATION_INVALID,
+                message=f"企业所得税计算错误：应纳税额 {tax_payable} ≠ 应纳税所得额 {profit} × 税率 {tax_rate} - 减免税额 {reduction_amount}",
+                accounting_rule="《小企业会计准则》§二/2.5 企业所得税",
+                calculation_detail={
+                    "profit": float(profit),
+                    "tax_rate": float(tax_rate),
+                    "reduction_amount": float(reduction_amount),
+                    "tax_payable": float(tax_payable),
+                    "expected_tax_payable": float(expected_tax_payable)
+                }
+            )
 
         return IncomeTaxResult(
             profit=profit,
