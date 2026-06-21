@@ -253,9 +253,8 @@ import { Plus } from '@element-plus/icons-vue'
 import { useAccountStore } from '../stores/account'
 const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
-import commonApi from '../api/common'
-import { resolveImageUrl } from '../api/index'
-import { formatMoney } from '../api/common'
+import { resolveImageUrl, handleError } from '../api/index'
+import { formatMoney } from '../utils/format'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -369,7 +368,7 @@ const getInvoices = async () => {
       await fetchTaxStats()
     }
   } catch (error) {
-    console.error('获取发票列表失败:', error)
+    handleError(error, { defaultMsg: '获取发票列表失败', feedback: 'silent' })
     invoices.value = []
   } finally {
     loading.value = false
@@ -416,8 +415,7 @@ const saveInvoice = async () => {
     dialogVisible.value = false
     getInvoices()
   } catch (error) {
-    console.error('保存发票失败:', error)
-    ElMessage.error(error.response?.data?.detail || '保存发票失败')
+    handleError(error, { defaultMsg: '保存发票失败' })
   }
 }
 
@@ -439,8 +437,7 @@ const deleteInvoice = async (id) => {
     await invoicesApi.deleteInvoice(id)
     getInvoices()
   } catch (error) {
-    console.error('删除发票失败:', error)
-    ElMessage.error(error.response?.data?.detail || '删除发票失败')
+    handleError(error, { defaultMsg: '删除发票失败' })
   }
 }
 
@@ -450,8 +447,7 @@ const certifyInvoice = async (id) => {
     await invoicesApi.certifyInvoice(id)
     getInvoices()
   } catch (error) {
-    console.error('认证发票失败:', error)
-    ElMessage.error(error.response?.data?.detail || '认证发票失败')
+    handleError(error, { defaultMsg: '认证发票失败' })
   }
 }
 

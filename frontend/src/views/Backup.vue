@@ -51,7 +51,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import commonApi from '../api/common'
+import backupApi from '../api/backup'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { formatDateTime } from '../utils/format'
 
@@ -63,7 +63,7 @@ const lastResult = ref(null)
 const loadBackups = async () => {
   listLoading.value = true
   try {
-    backups.value = await commonApi.listBackups()
+    backups.value = await backupApi.listBackups()
   } catch (e) {
     console.error('获取备份列表失败:', e)
   } finally {
@@ -75,7 +75,7 @@ const doBackup = async () => {
   backupLoading.value = true
   lastResult.value = null
   try {
-    const data = await commonApi.hotBackup()
+    const data = await backupApi.hotBackup()
     lastResult.value = data
     await loadBackups()
   } catch (e) {
@@ -89,7 +89,7 @@ const doBackup = async () => {
 }
 
 const downloadBackup = (filename) => {
-  const url = commonApi.getBackupDownloadUrl(filename)
+  const url = backupApi.getBackupDownloadUrl(filename)
   window.open(url, '_blank')
 }
 

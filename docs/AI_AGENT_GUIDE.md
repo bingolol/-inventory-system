@@ -96,6 +96,7 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 |--------|------|----------|
 | 发票金额三件套 | `GET /api/accounting/invoice-amounts` | `amount_with_tax`, `tax_rate` |
 | 固定资产折旧 | `GET /api/accounting/depreciation` | `method`(直线法/双倍余额递减法/年数总和法), `original_value`, `useful_life`, `months_used` |
+| 无形资产摊销 | `GET /api/accounting/amortization` | `original_value`, `useful_life`, `months_used` |
 | 增值税 | `GET /api/accounting/vat` | `total_revenue`, `taxpayer_type`(small_scale/general) |
 | 企业所得税 | `GET /api/accounting/income-tax` | `profit`, `taxpayer_type`(small_micro/general) |
 | 资产负债表平衡 | `GET /api/accounting/balance-sheet` | `date` |
@@ -317,6 +318,8 @@ curl -X POST http://localhost:8000/api/personal \
 
 ## 7. 错误码
 
+### 7.1 通用 HTTP 错误码
+
 | HTTP | 含义 | 处理 |
 |------|------|------|
 | 400 | 业务校验失败 | 检查响应 message，修正数据 |
@@ -326,6 +329,53 @@ curl -X POST http://localhost:8000/api/personal \
 | 409 | 数据冲突 | 唯一约束冲突（如商品编码重复） |
 | 422 | 参数校验失败 / 会计计算错误 | 响应中会提示合法值列表；会计错误另含 `accounting_rule`(法规依据) + `calculation_detail`(数值明细),按 `ai_instruction` 修正 |
 
+### 7.2 业务错误码（BusinessError）
+
+| 错误码 | 含义 | 说明 |
+|--------|------|------|
+| `INVENTORY_INSUFFICIENT` | 库存不足 | 需要确认是否强制出库 |
+| `ORDER_NOT_FOUND` | 订单不存在 | 检查 ID |
+| `ORDER_INVALID_STATE` | 订单状态不允许操作 | 查看当前状态 |
+| `ORDER_EMPTY_ITEMS` | 订单无商品行 | 至少 1 个商品 |
+| `ORDER_DUPLICATE_PRODUCT` | 订单有重复商品 | 合并或移除 |
+| `INVOICE_NOT_FOUND` | 发票不存在 | 检查 ID |
+| `INVOICE_DUPLICATE_NUMBER` | 发票号码重复 | 修改号码 |
+| `INVOICE_INVALID_DATE` | 日期格式无效 | 格式 YYYY-MM-DD |
+| `BALANCE_ALREADY_EXISTS` | 期初余额已存在 | 该日期已有余额 |
+| `BALANCE_SHEET_UNBALANCED` | 资产负债表不平衡 | 资产 ≠ 负债+权益 |
+| `INCOME_STATEMENT_INVALID` | 利润表公式错误 | 检查各项金额计算 |
+| `CASH_FLOW_STATEMENT_INVALID` | 现金流量表公式错误 | 检查余额/净额计算 |
+| `PRODUCT_NOT_FOUND` | 商品不存在 | 检查 ID |
+| `PRODUCT_HAS_TRANSACTIONS` | 商品有业务记录 | 不能删除，考虑停用 |
+| `SUPPLIER_HAS_ORDERS` | 供应商有采购记录 | 不能删除 |
+| `CUSTOMER_HAS_ORDERS` | 客户有销售记录 | 不能删除 |
+| `CUSTOMER_NOT_FOUND` | 客户不存在 | 检查 ID |
+| `CASH_FLOW_NOT_FOUND` | 现金流水不存在 | 检查 ID |
+| `EXPENSE_NOT_FOUND` | 费用不存在 | 检查 ID |
+| `FIXED_ASSET_NOT_FOUND` | 固定资产不存在 | 检查 ID |
+| `VALIDATION_ERROR` | 字段验证失败 | 检查输入数据 |
+
+### 7.3 会计计算错误码（AccountingError）
+
+| 错误码 | 含义 | 说明 |
+|--------|------|------|
+| `INVOICE_AMOUNTS_NOT_BALANCED` | 发票金额不平衡 | 不含税+税额≠价税合计 |
+| `INVOICE_TAX_RATE_INVALID` | 发票税率无效 | 检查税率值 |
+| `VAT_REVENUE_NEGATIVE` | 增值税营业收入为负 | 检查数据 |
+| `VAT_TAXPAYER_TYPE_INVALID` | 增值税纳税人类型无效 | 只能 small_scale/general |
+| `VAT_INPUT_TAX_NEGATIVE` | 进项税额为负 | 检查数据 |
+| `VAT_CALCULATION_INVALID` | 增值税计算错误 | 应纳税额校验失败 |
+| `INCOME_TAX_PROFIT_NEGATIVE` | 所得税利润为负 | 亏损不缴税 |
+| `INCOME_TAX_TAXPAYER_TYPE_INVALID` | 所得税纳税人类型无效 | 检查类型 |
+| `INCOME_TAX_CALCULATION_INVALID` | 所得税计算错误 | 应纳税额校验失败 |
+| `DEPRECIATION_ORIGINAL_VALUE_INVALID` | 固定资产原值无效 | 必须 > 0 |
+| `DEPRECIATION_SALVAGE_RATE_INVALID` | 残值率无效 | 必须在 [0,1] |
+| `DEPRECIATION_USEFUL_LIFE_ZERO` | 使用寿命为 0 | 必须 > 0（月） |
+| `DEPRECIATION_CALCULATION_INVALID` | 折旧计算错误 | 校验失败 |
+| `AMORTIZATION_ORIGINAL_VALUE_INVALID` | 无形资产原值无效 | 必须 > 0 |
+| `AMORTIZATION_USEFUL_LIFE_ZERO` | 无形资产使用寿命为 0 | 必须 > 0（月） |
+| `AMORTIZATION_CALCULATION_INVALID` | 摊销计算错误 | 校验失败 |
+
 ---
 
 ## 8. 完整参考
@@ -334,4 +384,4 @@ curl -X POST http://localhost:8000/api/personal \
 
 ---
 
-*AI Agent 操作手册 v2.0 | 2026-06-20 — 新增白名单机制 + 完整参数说明*
+*AI Agent 操作手册 v2.1 | 2026-06-21 — 新增会计计算错误码完整清单*

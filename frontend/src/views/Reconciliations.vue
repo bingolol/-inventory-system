@@ -124,7 +124,9 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import commonApi, { formatMoney } from '../api/common'
+import commonApi from '../api/common'
+import { formatMoney } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const loading = ref(false)
@@ -163,7 +165,7 @@ const loadReconciliations = async () => {
     })
     Object.assign(result, data)
   } catch (err) {
-    ElMessage.error(err.response?.data?.detail || '查询失败')
+    handleError(err, { defaultMsg: '查询失败' })
   } finally {
     loading.value = false
   }
@@ -185,7 +187,7 @@ const showDetail = async (row) => {
     Object.assign(detailResult, data)
     drawerVisible.value = true
   } catch (err) {
-    ElMessage.error(err.response?.data?.detail || '查询明细失败')
+    handleError(err, { defaultMsg: '查询明细失败' })
   } finally {
     loading.value = false
   }

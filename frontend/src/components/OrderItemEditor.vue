@@ -47,7 +47,7 @@
 
 <script setup>
 import { Delete, Plus } from '@element-plus/icons-vue'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
 
 const props = defineProps({
   /** 明细行数组（引用类型，直接操作） */

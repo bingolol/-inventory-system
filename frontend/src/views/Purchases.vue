@@ -112,8 +112,8 @@ import { ElMessage } from 'element-plus'
 import ordersApi from '../api/orders'
 import partnersApi from '../api/partners'
 import productsApi from '../api/products'
-import commonApi, { formatMoney } from '../api/common'
-import { formatDate, splitOrderNo } from '../utils/format'
+import { formatMoney, formatDate, splitOrderNo } from '../utils/format'
+import { handleError } from '../api/index'
 import StatusTag from '../components/StatusTag.vue'
 import PurchaseFormDialog from '../components/PurchaseFormDialog.vue'
 import { useEnumsStore } from '../stores/enums'
@@ -130,7 +130,7 @@ const orderList = useOrderList({
   exportType: 'purchases'
 })
 
-const { list, loading, keyword, dateRange, statusFilter, pagination, loadData, exportData } = orderList
+const { list, loading, keyword, dateRange, statusFilter, pagination, loadData, exportData, getSummaries } = orderList
 
 const orderForm = useOrderForm({
   orderType: 'purchase',
@@ -189,9 +189,7 @@ async function handleSave() {
     orderForm.operationFeedback.value = feedback
     orderForm.dialogVisible.value = false
     loadData()
-  } catch (e) { 
-    ElMessage.error('采购失败: ' + (e.response?.data?.detail || e.message)) 
-  }
+  } catch (e) { handleError(e, { defaultMsg: '采购失败' }) } 
 }
 
 async function handleEditSave() {
@@ -205,28 +203,7 @@ async function handleEditSave() {
     })
     ElMessage.success(validItems.length === 0 ? '采购单已删除（商品行数归零）' : '采购单修改成功，库存已自动调整')
     orderForm.editDialogVisible.value = false; loadData()
-  } catch (e) { ElMessage.error('修改失败: ' + (e.response?.data?.detail || e.message)) }
-}
-
-// 表格合计方法
-function getSummaries(param) {
-  const { columns, data } = param
-  const sums = []
-  columns.forEach((column, index) => {
-    if (index === 0) {
-      sums[index] = '合计'
-      return
-    }
-    // 总价列（第6列，索引5）进行合计
-    if (index === 5) {
-      const values = data.map(item => Number(item.total_price) || 0)
-      const total = values.reduce((prev, curr) => prev + curr, 0)
-      sums[index] = `¥${formatMoney(total)}`
-    } else {
-      sums[index] = ''
-    }
-  })
-  return sums
+  } catch (e) { handleError(e, { defaultMsg: '修改失败' }) }
 }
 
 useAccountAwareData(loadData)

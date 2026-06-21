@@ -113,6 +113,54 @@ def check_depreciation(
     }
 
 
+@router.get("/amortization")
+def check_amortization(
+    original_value: Decimal = Query(..., description="无形资产原值"),
+    useful_life: int = Query(..., gt=0, description="使用寿命(月)"),
+    months_used: int = Query(..., ge=0, description="已使用月数"),
+    account_id: int = Depends(get_account_id),
+):
+    """检查无形资产摊销计算是否正确
+
+    依据：《小企业会计准则》§二/2.3 无形资产摊销 + 第四十一条
+    公式：月摊销额 = 原值 ÷ 使用寿命(月)；累计摊销 = 月摊销额 × min(已用月数, 使用寿命)
+    """
+    violations = []
+
+    if useful_life <= 0:
+        violations.append("使用寿命必须大于0")
+
+    if original_value <= 0:
+        violations.append("原值必须大于0")
+
+    if violations:
+        return {
+            "valid": False,
+            "violations": violations,
+            "ai_instruction": "STOP_RETRYING. 参数校验失败，请检查原值、使用寿命是否正确。",
+            "accounting_rule": "《小企业会计准则》第四十一条：无形资产应当在其使用寿命内采用年限平均法进行摊销"
+        }
+
+    result = _engine.calculate_intangible_amortization(original_value, useful_life, months_used)
+
+    return {
+        "valid": True,
+        "result": {
+            "monthly_amortization": float(result.monthly_amortization),
+            "accumulated_amortization": float(result.accumulated_amortization),
+            "net_value": float(result.net_value),
+        },
+        "rules": [
+            f"原值：{original_value}，使用寿命：{useful_life}个月",
+            f"已使用：{months_used}个月",
+            f"月摊销：{result.monthly_amortization}",
+            f"累计摊销：{result.accumulated_amortization}",
+            f"净值：{result.net_value}"
+        ],
+        "ai_instruction": "摊销计算正确，可以继续。"
+    }
+
+
 @router.get("/balance-sheet")
 def check_balance_sheet(
     date: str = Query(..., description="报表日期 (YYYY-MM-DD)"),

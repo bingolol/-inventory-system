@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import { usePagination } from './usePagination'
-import commonApi from '../api/common'
+import exportApi from '../api/export'
 import { handleError } from '../api/index'
+import { formatMoney } from '../utils/format'
 
 /**
  * 订单列表 composable
@@ -61,7 +62,7 @@ export function useOrderList(config) {
         params.end_date = dateRange.value[1] 
       }
       if (statusFilter.value) params.status = statusFilter.value
-      await commonApi.exportFile(exportType, format, params)
+      await exportApi.exportFile(exportType, format, params)
     } catch (e) { 
       handleError(e, { defaultMsg: '导出失败' })
     }
@@ -73,6 +74,25 @@ export function useOrderList(config) {
     statusFilter.value = ''
     loadData()
   }
+
+  /**
+   * 表格合计方法 - 对 total_price 列求和
+   * @param {number} totalColumnIndex - 总价列索引（默认5）
+   */
+  function getSummaries(param, totalColumnIndex = 5) {
+    const { columns, data } = param
+    const sums = []
+    columns.forEach((column, index) => {
+      if (index === 0) { sums[index] = '合计'; return }
+      if (index === totalColumnIndex) {
+        const total = data.reduce((prev, item) => prev + (Number(item.total_price) || 0), 0)
+        sums[index] = `¥${formatMoney(total)}`
+      } else {
+        sums[index] = ''
+      }
+    })
+    return sums
+  }
   
   return {
     list,
@@ -83,6 +103,7 @@ export function useOrderList(config) {
     pagination,
     loadData,
     exportData,
-    resetFilters
+    resetFilters,
+    getSummaries
   }
 }

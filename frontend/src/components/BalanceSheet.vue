@@ -132,9 +132,8 @@ import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DataLine, TrendCharts, PieChart } from '@element-plus/icons-vue'
 import financeApi from '../api/finance'
-import { formatMoney } from '../api/common'
+import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
-import { formatDate } from '../utils/format'
 
 const props = defineProps({
   date: {

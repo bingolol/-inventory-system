@@ -75,7 +75,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { TrendCharts } from '@element-plus/icons-vue'
 import invoicesApi from '../api/invoices'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 // 获取当前季度

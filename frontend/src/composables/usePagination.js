@@ -19,7 +19,7 @@ export function usePagination(options = {}) {
 
   const totalPages = () => Math.ceil(total.value / pageSize.value) || 1
 
-  const onPageChange2 = () => {
+  const onCurrentChange = () => {
     onPageChange?.()
   }
 
@@ -41,7 +41,7 @@ export function usePagination(options = {}) {
     pageSize,
     total,
     totalPages,
-    onPageChange: onPageChange2,
+    onCurrentChange,
     onSizeChange,
     resetPage,
     setTotal

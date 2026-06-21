@@ -62,7 +62,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import fixedAssetsApi from '../api/fixedAssets'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const list = ref([])

@@ -192,12 +192,15 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     
     for asset in intangible_assets:
         if asset.start_date and asset.start_date <= query_date:
-            # 计算累计摊销
+            # 计算累计摊销（使用 AccountingEngine，符合 AP-7.1）
             months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
             if months > 0:
-                monthly_amortization = _d(asset.original_value) / asset.useful_life
-                asset_amortization = monthly_amortization * min(months, asset.useful_life)
-                accumulated_amortization += asset_amortization
+                result = _engine.calculate_intangible_amortization(
+                    original_value=_d(asset.original_value),
+                    useful_life=asset.useful_life,
+                    months_used=months
+                )
+                accumulated_amortization += result.accumulated_amortization
     
     intangible_assets_net = intangible_assets_original - accumulated_amortization
     
@@ -329,14 +332,18 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
                 )
                 depreciation_expense += result.accumulated_depreciation
 
-    # 计算摊销费用
+    # 计算摊销费用（使用 AccountingEngine，符合 AP-7.1）
     amortization_expense = Decimal('0')
     for asset in intangible_assets:
         if asset.start_date and asset.start_date <= query_date:
             months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
             if 0 < months <= asset.useful_life:
-                monthly_amortization = _d(asset.original_value) / asset.useful_life
-                amortization_expense += monthly_amortization
+                result = _engine.calculate_intangible_amortization(
+                    original_value=_d(asset.original_value),
+                    useful_life=asset.useful_life,
+                    months_used=months
+                )
+                amortization_expense += result.monthly_amortization
 
     period_profit = period_revenue - period_cogs - period_expenses - depreciation_expense - amortization_expense
     paid_in_capital = opening_paid_in_capital

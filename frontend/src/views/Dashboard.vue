@@ -111,7 +111,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { ElMessage } from 'element-plus'
 import productsApi from '../api/products'
 import financeApi from '../api/finance'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 // ECharts 颜色常量（Canvas 不支持 CSS 变量，须用 JS 常量）
@@ -158,7 +159,7 @@ const loadTrend = async () => {
   try {
     trendData.value = await financeApi.getTrend({ days: trendDays.value })
   } catch (e) {
-    console.error(e)
+    handleError(e, { feedback: 'silent' })
   }
 }
 
@@ -167,13 +168,12 @@ const loadData = async () => {
   try {
     overview.value = await financeApi.getOverview()
   } catch (e) {
-    console.error('加载总览数据失败:', e)
-    ElMessage.error('加载总览数据失败，请检查后端服务')
+    handleError(e, { defaultMsg: '加载总览数据失败' })
   }
   try {
     alerts.value = await productsApi.getAlerts()
   } catch (e) {
-    console.error('加载库存预警失败:', e)
+    handleError(e, { feedback: 'silent' })
   }
   finally { loading.value = false }
 }

@@ -60,6 +60,7 @@ import { ElMessage } from 'element-plus'
 import commonApi from '../api/common'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { formatDateTime } from '../utils/format'
+import { handleError } from '../api/index'
 
 const list = ref([])
 const loading = ref(false)
@@ -84,7 +85,7 @@ const loadData = async () => {
     const res = await commonApi.getLogs(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { ElMessage.error('加载失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
   finally { loading.value = false }
 }
 

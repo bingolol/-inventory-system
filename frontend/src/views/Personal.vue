@@ -166,13 +166,15 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import personalApi from '../api/personal'
-import commonApi from '../api/common'
-import { formatMoney } from '../api/common'
-import { resolveImageUrl } from '../api/index'
+import { formatMoney } from '../utils/format'
+import { resolveImageUrl, handleError } from '../api/index'
 import ImageUpload from '../components/ImageUpload.vue'
+import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+
+const enumsStore = useEnumsStore()
 
 const list = ref([])
 const total = ref(0)
@@ -225,9 +227,9 @@ const monthlyChartOption = computed(() => {
 })
 const form = ref({ type: 'expense', amount: 0, category: '', date: '', description: '', image_url: '' })
 
-// 分类选项（从API获取，根据收入/支出动态切换）
-const expenseCategories = ref([])
-const incomeCategories = ref([])
+// 分类选项（从 enumsStore 获取，根据收入/支出动态切换）
+const expenseCategories = computed(() => enumsStore.getValues('personal_expense_categories'))
+const incomeCategories = computed(() => enumsStore.getValues('personal_income_categories'))
 const categoryOptions = computed(() => form.value.type === 'income' ? incomeCategories.value : expenseCategories.value)
 
 // 筛选栏分类选项：根据类型筛选动态切换，未选类型时显示全部
@@ -243,14 +245,6 @@ const onTypeChange = () => {
   loadData()
 }
 
-const loadEnums = async () => {
-  try {
-    const enums = await commonApi.getEnums()
-    expenseCategories.value = enums.values.personal_expense_categories
-    incomeCategories.value = enums.values.personal_income_categories
-  } catch (e) { /* 降级：保留空列表 */ }
-}
-
 const loadData = async () => {
   try {
     const params = { page: page.value, page_size: pageSize.value }
@@ -261,13 +255,13 @@ const loadData = async () => {
     total.value = res.total
     list.value = res.items
     filterSummary.value = { sum_income: res.sum_income || 0, sum_expense: res.sum_expense || 0, sum_balance: res.sum_balance || 0 }
-  } catch (e) { ElMessage.error('加载失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
 }
 
 const loadSummary = async () => {
   try {
     summary.value = await personalApi.getPersonalSummary()
-  } catch (e) { /* ignore */ }
+  } catch (e) { handleError(e, { feedback: 'silent' }) }
 }
 
 const loadCategorySummary = async () => {
@@ -275,7 +269,7 @@ const loadCategorySummary = async () => {
     const params = { type: categoryChartType.value }
     if (dateRange.value) { params.start_date = dateRange.value[0]; params.end_date = dateRange.value[1] }
     categorySummaryData.value = await personalApi.getPersonalCategorySummary(params)
-  } catch (e) { console.error(e) }
+  } catch (e) { handleError(e, { feedback: 'silent' }) }
 }
 
 const loadMonthlySummary = async () => {
@@ -283,7 +277,7 @@ const loadMonthlySummary = async () => {
     const params = {}
     if (monthlyChartType.value !== 'all') params.type = monthlyChartType.value
     monthlySummaryData.value = await personalApi.getPersonalMonthlySummary(params)
-  } catch (e) { console.error(e) }
+  } catch (e) { handleError(e, { feedback: 'silent' }) }
 }
 
 const showDialog = (row) => {
@@ -321,7 +315,7 @@ const handleSave = async () => {
     loadSummary()
     loadCategorySummary()
     loadMonthlySummary()
-  } catch (e) { ElMessage.error('保存失败') }
+  } catch (e) { handleError(e, { defaultMsg: '保存失败' }) }
 }
 
 const handleDelete = async (id) => {
@@ -332,9 +326,9 @@ const handleDelete = async (id) => {
     loadSummary()
     loadCategorySummary()
     loadMonthlySummary()
-  } catch (e) { ElMessage.error('删除失败') }
+  } catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
 }
 
 useAccountAwareData(loadData, loadSummary, loadCategorySummary, loadMonthlySummary)
-loadEnums()
+enumsStore.fetchEnums()
 </script>

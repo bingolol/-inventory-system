@@ -1,5 +1,5 @@
 <template>
-  <div class="expenses-container">
+  <div>
     <el-card shadow="never">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -135,11 +135,9 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { useAccountStore } from '../stores/account'
-const accountStore = useAccountStore()
 import expensesApi from '../api/expenses'
-import commonApi, { formatMoney } from '../api/common'
-import { resolveImageUrl } from '../api/index'
+import { formatMoney } from '../utils/format'
+import { resolveImageUrl, handleError } from '../api/index'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -202,7 +200,7 @@ const getExpenses = async () => {
     const response = await expensesApi.getExpenses(params)
     expenses.value = response?.items || []
   } catch (error) {
-    console.error('获取费用列表失败:', error)
+    handleError(error, { defaultMsg: '获取费用列表失败' })
     expenses.value = []
   } finally {
     loading.value = false
@@ -231,8 +229,7 @@ const saveExpense = async () => {
     dialogVisible.value = false
     getExpenses()
   } catch (error) {
-    console.error('保存费用失败:', error)
-    ElMessage.error(error.response?.data?.detail || '保存费用失败')
+    handleError(error, { defaultMsg: '保存费用失败' })
   }
 }
 
@@ -253,55 +250,25 @@ const deleteExpense = async (id) => {
     ElMessage.success('费用已删除')
     getExpenses()
   } catch (error) {
-    console.error('删除费用失败:', error)
-    ElMessage.error('删除费用失败')
+    handleError(error, { defaultMsg: '删除费用失败' })
   }
 }
 
-// 获取类别类型
-const getCategoryType = (category) => {
-  switch (category) {
-    case '房租':
-      return 'primary'
-    case '水电':
-      return 'info'
-    case '工资':
-      return 'success'
-    case '材料':
-      return 'warning'
-    case '办公用品':
-      return ''
-    case '运费':
-      return 'primary'
-    case '维修':
-      return 'warning'
-    case '其他':
-      return 'danger'
-    default:
-      return 'default'
-  }
+// 获取类别类型（Map 映射替代 switch-case）
+const CATEGORY_TYPE_MAP = {
+  '房租': 'primary',
+  '水电': 'info',
+  '工资': 'success',
+  '材料': 'warning',
+  '办公用品': '',
+  '运费': 'primary',
+  '维修': 'warning',
+  '其他': 'danger'
 }
+const getCategoryType = (category) => CATEGORY_TYPE_MAP[category] || 'default'
 
 generateYears()
 useAccountAwareData(getExpenses)
 enumsStore.fetchEnums()
 </script>
 
-<style scoped>
-.expenses-container {
-  padding: 20px;
-}
-
-.filter-form {
-  margin-bottom: 20px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-</style>

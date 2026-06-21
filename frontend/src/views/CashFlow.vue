@@ -209,7 +209,8 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const queryForm = ref({
@@ -235,8 +236,7 @@ const getCashFlowStatement = async () => {
   try {
     cashFlowStatement.value = await financeApi.getCashFlowStatement(queryForm.value.startDate, queryForm.value.endDate)
   } catch (error) {
-    console.error('获取现金流量表失败:', error)
-    ElMessage.error('获取现金流量表失败')
+    handleError(error, { defaultMsg: '获取现金流量表失败' })
   } finally {
     loading.value = false
   }
@@ -251,7 +251,7 @@ const loadTransactions = async () => {
     })
     cashFlowTransactions.value = res.items || []
   } catch (error) {
-    console.error('获取现金流水失败:', error)
+    handleError(error, { defaultMsg: '获取现金流水失败', feedback: 'silent' })
   }
 }
 
@@ -285,7 +285,7 @@ const handleDeleteTransaction = async (id) => {
     ElMessage.success('已删除')
     getCashFlowStatement()
     loadTransactions()
-  } catch (e) { ElMessage.error('删除失败') }
+  } catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
 }
 
 const saveTransaction = async () => {
@@ -309,8 +309,7 @@ const saveTransaction = async () => {
     getCashFlowStatement()
     loadTransactions()
   } catch (error) {
-    console.error('保存现金流水失败:', error)
-    ElMessage.error(editingTransactionId.value ? '更新失败' : '创建失败')
+    handleError(error, { defaultMsg: editingTransactionId.value ? '更新失败' : '创建失败' })
   }
 }
 

@@ -192,7 +192,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import invoicesApi from '../api/invoices'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 // 报告类型: quarterly / monthly

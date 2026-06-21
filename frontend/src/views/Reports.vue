@@ -151,8 +151,9 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
-import commonApi, { formatMoney } from '../api/common'
-import { formatDate, splitOrderNo } from '../utils/format'
+import exportApi from '../api/export'
+import { formatMoney, formatDate, splitOrderNo } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const activeTab = ref('overview')
@@ -171,7 +172,7 @@ const _initProfitDateRange = () => {
 const profitDateRange = ref(_initProfitDateRange())
 
 const loadOverview = async () => {
-  try { overview.value = await financeApi.getOverview() } catch (e) { console.error('加载总览数据失败:', e); ElMessage.error('加载总览数据失败，请检查后端服务') }
+  try { overview.value = await financeApi.getOverview() } catch (e) { handleError(e, { defaultMsg: '加载总览数据失败' }) }
 }
 
 const loadPurchaseReport = async () => {
@@ -179,7 +180,7 @@ const loadPurchaseReport = async () => {
     const params = {}
     if (purchaseDateRange.value) { params.start_date = purchaseDateRange.value[0]; params.end_date = purchaseDateRange.value[1] }
     purchaseReport.value = await financeApi.getPurchaseReport(params)
-  } catch (e) { console.error('加载采购报表失败:', e); ElMessage.error('加载采购报表失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载采购报表失败' }) }
 }
 
 const loadSaleReport = async () => {
@@ -187,7 +188,7 @@ const loadSaleReport = async () => {
     const params = {}
     if (saleDateRange.value) { params.start_date = saleDateRange.value[0]; params.end_date = saleDateRange.value[1] }
     saleReport.value = await financeApi.getSaleReport(params)
-  } catch (e) { console.error('加载销售报表失败:', e); ElMessage.error('加载销售报表失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载销售报表失败' }) }
 }
 
 const loadProfitReport = async () => {
@@ -200,7 +201,7 @@ const loadProfitReport = async () => {
       params.end_date = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
     }
     profitReport.value = await financeApi.getProfitReport(params)
-  } catch (e) { console.error('加载利润分析失败:', e); ElMessage.error('加载利润分析失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载利润分析失败' }) }
 }
 
 const exportReport = async (format) => {
@@ -210,8 +211,8 @@ const exportReport = async (format) => {
     const params = {}
     const dr = dateMap[activeTab.value]
     if (dr && dr.value) { params.start_date = dr.value[0]; params.end_date = dr.value[1] }
-    await commonApi.exportFile(typeMap[activeTab.value] || 'profit', format, params)
-  } catch (e) { ElMessage.error('导出失败') }
+    await exportApi.exportFile(typeMap[activeTab.value] || 'profit', format, params)
+  } catch (e) { handleError(e, { defaultMsg: '导出失败' }) }
 }
 
 useAccountAwareData(loadOverview, loadPurchaseReport, loadSaleReport, loadProfitReport)

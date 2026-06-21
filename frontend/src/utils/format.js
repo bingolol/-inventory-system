@@ -1,4 +1,16 @@
 /**
+ * 格式化金额（千分位 + 2位小数）
+ * @param {number|string|null|undefined} value - 金额值
+ * @returns {string} 如 "1,234.56"
+ */
+export const formatMoney = (value) => {
+  if (value === null || value === undefined || value === '') return '0.00'
+  const num = Number(value)
+  if (isNaN(num)) return '0.00'
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/**
  * 日期时间格式化工具
  *
  * 后端返回的 datetime 字符串无时区后缀（如 2026-05-07T13:24:04），

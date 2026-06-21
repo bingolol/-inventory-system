@@ -22,93 +22,21 @@
         </div>
       </div>
       <el-menu :default-active="currentRoute" @select="handleMenuSelect" class="app-menu" background-color="transparent" :active-text-color="'var(--primary)'">
-        <template v-if="currentAccount?.type === 'company'">
-          <el-menu-item index="/">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>仪表盘</span>
-          </el-menu-item>
-          <el-menu-item index="/products">
-            <el-icon><Goods /></el-icon>
-            <span>商品管理</span>
-          </el-menu-item>
-          <el-menu-item index="/suppliers">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>供应商管理</span>
-          </el-menu-item>
-          <el-menu-item index="/customers">
-            <el-icon><User /></el-icon>
-            <span>客户管理</span>
-          </el-menu-item>
-          <el-menu-item index="/purchases">
-            <el-icon><ShoppingCart /></el-icon>
-            <span>采购管理</span>
-          </el-menu-item>
-          <el-menu-item index="/sales">
-            <el-icon><Sell /></el-icon>
-            <span>销售管理</span>
-          </el-menu-item>
-          <el-menu-item index="/inventory">
-            <el-icon><Box /></el-icon>
-            <span>库存管理</span>
-            <el-badge v-if="alertCount > 0" :value="alertCount" class="alert-badge" />
-          </el-menu-item>
-          <el-sub-menu index="finance">
+        <template v-for="item in menuItems" :key="item.index">
+          <el-sub-menu v-if="item.children" :index="item.index">
             <template #title>
-              <el-icon><Document /></el-icon>
-              <span>财务方向</span>
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
             </template>
-            <el-menu-item index="/financial-reports">
-              <el-icon><TrendCharts /></el-icon>
-              <span>财务报表</span>
-            </el-menu-item>
-            <el-menu-item index="/cash-flows">
-              <el-icon><Wallet /></el-icon>
-              <span>现金流量表</span>
-            </el-menu-item>
-            <el-menu-item index="/expenses">
-              <el-icon><Ticket /></el-icon>
-              <span>费用管理</span>
+            <el-menu-item v-for="child in item.children" :key="child.index" :index="child.index">
+              <el-icon><component :is="child.icon" /></el-icon>
+              <span>{{ child.label }}</span>
             </el-menu-item>
           </el-sub-menu>
-          <el-sub-menu index="tax">
-            <template #title>
-              <el-icon><DataLine /></el-icon>
-              <span>税务方向</span>
-            </template>
-            <el-menu-item index="/tax-report">
-              <el-icon><Calculator /></el-icon>
-              <span>税务报表</span>
-            </el-menu-item>
-            <el-menu-item index="/invoices">
-              <el-icon><DocumentChecked /></el-icon>
-              <span>发票管理</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-menu-item index="/reconciliations">
-            <el-icon><Files /></el-icon>
-            <span>对账管理</span>
-          </el-menu-item>
-          <el-menu-item index="/logs">
-            <el-icon><Document /></el-icon>
-            <span>操作日志</span>
-          </el-menu-item>
-          <el-menu-item index="/backup">
-            <el-icon><FolderChecked /></el-icon>
-            <span>数据备份</span>
-          </el-menu-item>
-        </template>
-        <template v-else>
-          <el-menu-item index="/personal">
-            <el-icon><Wallet /></el-icon>
-            <span>流水账</span>
-          </el-menu-item>
-          <el-menu-item index="/logs">
-            <el-icon><Document /></el-icon>
-            <span>操作日志</span>
-          </el-menu-item>
-          <el-menu-item index="/backup">
-            <el-icon><FolderChecked /></el-icon>
-            <span>数据备份</span>
+          <el-menu-item v-else :index="item.index">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ item.label }}</span>
+            <el-badge v-if="item.badge === 'alertCount' && alertCount > 0" :value="alertCount" class="alert-badge" />
           </el-menu-item>
         </template>
       </el-menu>
@@ -169,11 +97,13 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Edit, Plus, Delete } from '@element-plus/icons-vue'
-import commonApi from '../api/common'
+import accountsApi from '../api/accounts'
 import productsApi from '../api/products'
 import { useAccountStore } from '../stores/account'
+import { companyMenuItems, personalMenuItems } from '../composables/useMenuConfig'
+import { useAccountManagement } from '../composables/useAccountManagement'
 import ConfirmDialog from './ConfirmDialog.vue'
 const accountStore = useAccountStore()
 const confirmDialogRef = ref(null)
@@ -192,6 +122,11 @@ const currentAccountId = computed({
 
 const currentAccount = computed(() => accountStore.currentAccount)
 
+// 菜单配置：根据账本类型动态切换
+const menuItems = computed(() =>
+  currentAccount.value?.type === 'company' ? companyMenuItems : personalMenuItems
+)
+
 const updateDate = () => {
   const now = new Date()
   currentDate.value = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
@@ -199,7 +134,7 @@ const updateDate = () => {
 
 const loadAccounts = async () => {
   try {
-    accounts.value = await commonApi.getAccounts()
+    accounts.value = await accountsApi.getAccounts()
     accountStore.setAccounts(accounts.value)
     if (!accountStore.currentAccountId && accounts.value.length > 0) {
       accountStore.setCurrentAccount(accounts.value[0].id)
@@ -223,119 +158,20 @@ const handleMenuSelect = (index) => {
 
 const onAccountChange = (id) => {
   accountStore.setCurrentAccount(id)
-  // 如果切换到个人账本但当前在公司页面，或个人账本但当前在个人页面，需要跳转
   const acc = accounts.value.find(a => a.id === id)
   if (acc?.type === 'personal' && !route.path.startsWith('/personal') && route.path !== '/logs') {
     router.push('/personal')
   } else if (acc?.type === 'company' && (route.path === '/personal')) {
     router.push('/')
   }
-  // 不再需要 router.go(0)，Pinia 响应式 + watch 会自动刷新各页面数据
 }
 
-// 账本重命名
-const renameDialogVisible = ref(false)
-const renameForm = ref({ name: '' })
-const renameLoading = ref(false)
-
-const openRenameDialog = () => {
-  const acc = accounts.value.find(a => a.id === Number(accountStore.currentAccountId))
-  if (!acc) {
-    ElMessage.warning('请先选择一个账本')
-    return
-  }
-  renameForm.value.name = acc.name
-  renameDialogVisible.value = true
-}
-
-const handleRename = async () => {
-  const name = renameForm.value.name.trim()
-  if (!name) {
-    ElMessage.warning('账本名称不能为空')
-    return
-  }
-  renameLoading.value = true
-  try {
-    await commonApi.updateAccount(Number(accountStore.currentAccountId), { name })
-    ElMessage.success('账本名称已更新')
-    renameDialogVisible.value = false
-    await loadAccounts()
-  } catch (e) {
-    ElMessage.error('修改失败：' + (e.response?.data?.detail ?? e.message))
-  } finally {
-    renameLoading.value = false
-  }
-}
-
-// 新建账本
-const createDialogVisible = ref(false)
-const createForm = ref({ name: '', type: 'company', taxpayer_type: 'small_scale' })
-const createLoading = ref(false)
-
-const openCreateDialog = () => {
-  createForm.value = { name: '', type: 'company', taxpayer_type: 'small_scale' }
-  createDialogVisible.value = true
-}
-
-const handleCreate = async () => {
-  const name = createForm.value.name.trim()
-  if (!name) {
-    ElMessage.warning('账本名称不能为空')
-    return
-  }
-  createLoading.value = true
-  try {
-    const newAccount = await commonApi.createAccount({
-      name,
-      type: createForm.value.type,
-      taxpayer_type: createForm.value.taxpayer_type
-    })
-    ElMessage.success('账本已创建')
-    createDialogVisible.value = false
-    await loadAccounts()
-    // 自动切换到新账本
-    accountStore.setCurrentAccount(newAccount.id)
-  } catch (e) {
-    ElMessage.error('创建失败：' + (e.response?.data?.detail ?? e.message))
-  } finally {
-    createLoading.value = false
-  }
-}
-
-// 删除账本
-const openDeleteConfirm = () => {
-  const acc = accounts.value.find(a => a.id === Number(accountStore.currentAccountId))
-  if (!acc) {
-    ElMessage.warning('请先选择一个账本')
-    return
-  }
-  ElMessageBox.confirm(
-    `确定要删除账本「${acc.name}」吗？该操作不可撤销，删除前请确保账本下无业务数据。`,
-    '删除账本',
-    {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-      confirmButtonClass: 'el-button--danger',
-    }
-  ).then(async () => {
-    try {
-      await commonApi.deleteAccount(acc.id)
-      ElMessage.success('账本已删除')
-      await loadAccounts()
-      // 切换到剩余的第一个账本
-      if (accounts.value.length > 0) {
-        accountStore.setCurrentAccount(accounts.value[0].id)
-      } else {
-        accountStore.setCurrentAccount('')
-      }
-    } catch (e) {
-      ElMessage.error('删除失败：' + (e.response?.data?.detail ?? e.message))
-    }
-  }).catch(() => {
-    // 用户取消，不做任何操作
-  })
-}
+// 账本管理（重建/重命名/删除）
+const {
+  renameDialogVisible, renameForm, renameLoading, openRenameDialog, handleRename,
+  createDialogVisible, createForm, createLoading, openCreateDialog, handleCreate,
+  openDeleteConfirm
+} = useAccountManagement({ accounts, accountStore, onAccountsChanged: loadAccounts })
 
 watch(() => route.path, () => {
   loadAlertCount()

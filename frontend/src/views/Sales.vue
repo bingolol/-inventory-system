@@ -108,9 +108,8 @@ import { ElMessage } from 'element-plus'
 import ordersApi from '../api/orders'
 import partnersApi from '../api/partners'
 import productsApi from '../api/products'
-import commonApi, { formatMoney } from '../api/common'
-import { formatDate, splitOrderNo } from '../utils/format'
-import { resolveImageUrl } from '../api/index'
+import { formatMoney, formatDate, splitOrderNo } from '../utils/format'
+import { resolveImageUrl, handleError } from '../api/index'
 import StatusTag from '../components/StatusTag.vue'
 import SaleFormDialog from '../components/SaleFormDialog.vue'
 import { useEnumsStore } from '../stores/enums'
@@ -127,7 +126,7 @@ const orderList = useOrderList({
   exportType: 'sales'
 })
 
-const { list, loading, dateRange, statusFilter, pagination, loadData, exportData } = orderList
+const { list, loading, dateRange, statusFilter, pagination, loadData, exportData, getSummaries } = orderList
 
 const orderForm = useOrderForm({
   orderType: 'sale',
@@ -146,7 +145,7 @@ async function loadOptions() {
     ])
     orderForm.products.value = pRes.items || pRes
     customers.value = cRes.items || cRes
-  } catch (e) { console.error('加载选项数据失败:', e) }
+  } catch (e) { handleError(e, { defaultMsg: '加载选项数据失败', feedback: 'silent' }) }
 }
 
 function showCreate() {
@@ -198,7 +197,7 @@ async function handleSave() {
     orderForm.dialogVisible.value = false
     loadData()
   } catch (e) { 
-    ElMessage.error('销售失败: ' + (e.response?.data?.detail || e.message)) 
+    handleError(e, { defaultMsg: '销售失败' }) 
   }
 }
 
@@ -214,28 +213,7 @@ async function handleEditSave() {
     })
     ElMessage.success(validItems.length === 0 ? '销售单已删除（商品行数归零）' : '销售单修改成功')
     orderForm.editDialogVisible.value = false; loadData()
-  } catch (e) { ElMessage.error('修改失败: ' + (e.response?.data?.detail || e.message)) }
-}
-
-// 表格合计方法
-function getSummaries(param) {
-  const { columns, data } = param
-  const sums = []
-  columns.forEach((column, index) => {
-    if (index === 0) {
-      sums[index] = '合计'
-      return
-    }
-    // 总价列（第6列，索引5）进行合计
-    if (index === 5) {
-      const values = data.map(item => Number(item.total_price) || 0)
-      const total = values.reduce((prev, curr) => prev + curr, 0)
-      sums[index] = `¥${formatMoney(total)}`
-    } else {
-      sums[index] = ''
-    }
-  })
-  return sums
+  } catch (e) { handleError(e, { defaultMsg: '修改失败' }) }
 }
 
 useAccountAwareData(loadData)

@@ -39,6 +39,11 @@ class AccountingErrorCode(str, Enum):
     DEPRECIATION_ORIGINAL_VALUE_INVALID = "DEPRECIATION_ORIGINAL_VALUE_INVALID"
     DEPRECIATION_CALCULATION_INVALID = "DEPRECIATION_CALCULATION_INVALID"
 
+    # 无形资产摊销相关
+    AMORTIZATION_ORIGINAL_VALUE_INVALID = "AMORTIZATION_ORIGINAL_VALUE_INVALID"
+    AMORTIZATION_USEFUL_LIFE_ZERO = "AMORTIZATION_USEFUL_LIFE_ZERO"
+    AMORTIZATION_CALCULATION_INVALID = "AMORTIZATION_CALCULATION_INVALID"
+
     # 报表验证
     BALANCE_SHEET_UNBALANCED = "BALANCE_SHEET_UNBALANCED"
     INCOME_STATEMENT_INVALID = "INCOME_STATEMENT_INVALID"
@@ -124,6 +129,14 @@ class DepreciationResult:
     """折旧计算结果"""
     monthly_depreciation: Decimal
     accumulated_depreciation: Decimal
+    net_value: Decimal
+
+
+@dataclass
+class AmortizationResult:
+    """无形资产摊销计算结果"""
+    monthly_amortization: Decimal
+    accumulated_amortization: Decimal
     net_value: Decimal
 
 
@@ -408,6 +421,63 @@ class AccountingEngine:
             monthly_depreciation=monthly_depreciation,
             accumulated_depreciation=total_depreciation,
             net_value=current_value
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # 无形资产摊销
+    # ═══════════════════════════════════════════════════════════
+
+    def calculate_intangible_amortization(
+        self,
+        original_value: Decimal,
+        useful_life: int,
+        months_used: int
+    ) -> AmortizationResult:
+        """无形资产年限平均法摊销
+
+        公式：
+        - 月摊销额 = 原值 ÷ 使用寿命(月)
+        - 累计摊销 = 月摊销额 × min(已用月数, 使用寿命)
+        - 净值 = 原值 - 累计摊销
+
+        依据：《小企业会计准则》§二/2.3 无形资产摊销 + 第四十一条
+        > 无形资产应当在其使用寿命内采用年限平均法进行摊销。
+        > 小企业不能可靠估计无形资产使用寿命的，摊销期不得低于 10 年。
+        """
+        original_value = _d(original_value)
+
+        # 输入校验：原值必须大于 0
+        if original_value <= Decimal('0'):
+            raise AccountingError(
+                code=AccountingErrorCode.AMORTIZATION_ORIGINAL_VALUE_INVALID,
+                message=f"无形资产原值必须大于0：{original_value}",
+                ai_instruction="STOP_RETRYING. 原值必须是正数",
+                accounting_rule="《小企业会计准则》§二/2.3 无形资产摊销"
+            )
+
+        # 输入校验：使用寿命必须大于 0（单位：月）
+        if useful_life <= 0:
+            raise AccountingError(
+                code=AccountingErrorCode.AMORTIZATION_USEFUL_LIFE_ZERO,
+                message="无形资产使用寿命必须大于0",
+                ai_instruction="STOP_RETRYING. 使用寿命必须是正整数（单位：月）",
+                accounting_rule="《小企业会计准则》§二/2.3 无形资产摊销"
+            )
+
+        # 月摊销额 = 原值 ÷ 使用寿命(月)（Q2 量化，符合 AP-7 金额精度规范）
+        monthly_amortization = (original_value / Decimal(str(useful_life))).quantize(Q2, rounding=ROUND_HALF_UP)
+
+        # 累计摊销：已用月数不超过使用寿命，超出部分不再摊销
+        actual_months = min(months_used, useful_life)
+        accumulated_amortization = (monthly_amortization * Decimal(str(actual_months))).quantize(Q2, rounding=ROUND_HALF_UP)
+
+        # 净值 = 原值 - 累计摊销
+        net_value = original_value - accumulated_amortization
+
+        return AmortizationResult(
+            monthly_amortization=monthly_amortization,
+            accumulated_amortization=accumulated_amortization,
+            net_value=net_value
         )
 
     # ═══════════════════════════════════════════════════════════

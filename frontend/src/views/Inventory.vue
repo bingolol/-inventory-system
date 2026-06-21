@@ -92,7 +92,9 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import productsApi from '../api/products'
-import commonApi, { formatMoney } from '../api/common'
+import exportApi from '../api/export'
+import { formatMoney } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const list = ref([])
@@ -114,7 +116,7 @@ const loadData = async () => {
     const res = await productsApi.getInventory(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { ElMessage.error('加载失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
 }
 
 const showAdjust = (row) => {
@@ -133,7 +135,7 @@ const handleAdjust = async () => {
     ElMessage.success('库存已调整')
     adjustVisible.value = false
     loadData()
-  } catch (e) { ElMessage.error('调整失败') }
+  } catch (e) { handleError(e, { defaultMsg: '调整失败' }) }
 }
 
 const loadCategories = async () => {
@@ -145,8 +147,8 @@ const exportData = async (format) => {
     const params = { alert_only: alertOnly.value }
     if (searchKeyword.value) params.search = searchKeyword.value
     if (categoryFilter.value) params.category = categoryFilter.value
-    await commonApi.exportFile('inventory', format, params)
-  } catch (e) { ElMessage.error('导出失败') }
+    await exportApi.exportFile('inventory', format, params)
+  } catch (e) { handleError(e, { defaultMsg: '导出失败' }) }
 }
 
 useAccountAwareData(loadData)

@@ -53,61 +53,37 @@ export function useOrderForm(config) {
     editForm.value.items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
   )
 
-  // ── 明细行操作（新建表单） ──
-  const addItem = () => {
-    form.value.items.push({ product_id: null, quantity: 1, unit_price: 0 })
-  }
-
-  const removeItem = (idx) => {
-    form.value.items.splice(idx, 1)
-  }
-
-  const onItemProductChange = (idx) => {
-    const currentProductId = form.value.items[idx].product_id
-    if (!currentProductId) return
-
-    // 自动填充单价（采购单取采购价）
-    if (autoFillPrice) {
-      const p = products.value.find(x => x.id === currentProductId)
-      if (p) form.value.items[idx].unit_price = p.purchase_price
+  // ── 明细行操作工厂 ──
+  const createItemActions = (formRef) => {
+    const addItem = () => {
+      formRef.value.items.push({ product_id: null, quantity: 1, unit_price: 0 })
     }
-
-    // 防重检查
-    const dupIdx = form.value.items.findIndex((item, i) => i !== idx && item.product_id === currentProductId)
-    if (dupIdx !== -1) {
-      const prodName = products.value.find(p => p.id === currentProductId)?.name || `ID=${currentProductId}`
-      ElMessage.warning(`商品"${prodName}"已在第${dupIdx + 1}行，请直接修改数量`)
-      form.value.items[idx].product_id = null
+    const removeItem = (idx) => {
+      formRef.value.items.splice(idx, 1)
     }
-  }
+    const onItemProductChange = (idx) => {
+      const currentProductId = formRef.value.items[idx].product_id
+      if (!currentProductId) return
 
-  // ── 明细行操作（编辑表单） ──
-  const addEditItem = () => {
-    editForm.value.items.push({ product_id: null, quantity: 1, unit_price: 0 })
-  }
+      // 自动填充单价（采购单取采购价）
+      if (autoFillPrice) {
+        const p = products.value.find(x => x.id === currentProductId)
+        if (p) formRef.value.items[idx].unit_price = p.purchase_price
+      }
 
-  const removeEditItem = (idx) => {
-    editForm.value.items.splice(idx, 1)
-  }
-
-  const onEditItemProductChange = (idx) => {
-    const currentProductId = editForm.value.items[idx].product_id
-    if (!currentProductId) return
-
-    // 自动填充单价
-    if (autoFillPrice) {
-      const p = products.value.find(x => x.id === currentProductId)
-      if (p) editForm.value.items[idx].unit_price = p.purchase_price
+      // 防重检查
+      const dupIdx = formRef.value.items.findIndex((item, i) => i !== idx && item.product_id === currentProductId)
+      if (dupIdx !== -1) {
+        const prodName = products.value.find(p => p.id === currentProductId)?.name || `ID=${currentProductId}`
+        ElMessage.warning(`商品"${prodName}"已在第${dupIdx + 1}行，请直接修改数量`)
+        formRef.value.items[idx].product_id = null
+      }
     }
-
-    // 防重检查
-    const dupIdx = editForm.value.items.findIndex((item, i) => i !== idx && item.product_id === currentProductId)
-    if (dupIdx !== -1) {
-      const prodName = products.value.find(p => p.id === currentProductId)?.name || `ID=${currentProductId}`
-      ElMessage.warning(`商品"${prodName}"已在第${dupIdx + 1}行，请直接修改数量`)
-      editForm.value.items[idx].product_id = null
-    }
+    return { addItem, removeItem, onItemProductChange }
   }
+
+  const { addItem, removeItem, onItemProductChange } = createItemActions(form)
+  const { addItem: addEditItem, removeItem: removeEditItem, onItemProductChange: onEditItemProductChange } = createItemActions(editForm)
 
   // ── 状态变更 ──
   const changeStatus = async (id, status) => {

@@ -114,7 +114,9 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import productsApi from '../api/products'
-import commonApi, { formatMoney } from '../api/common'
+import exportApi from '../api/export'
+import { formatMoney } from '../utils/format'
+import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const list = ref([])
@@ -146,7 +148,7 @@ const loadData = async () => {
     const res = await productsApi.getProducts(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { ElMessage.error('加载失败') }
+  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
   finally { loading.value = false }
 }
 
@@ -185,12 +187,12 @@ const handleSave = async () => {
     }
     dialogVisible.value = false
     loadData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') }
+  } catch (e) { handleError(e, { defaultMsg: '保存失败' }) }
 }
 
 const handleDelete = async (id) => {
   try { await productsApi.deleteProduct(id); ElMessage.success('已删除'); loadData() }
-  catch (e) { ElMessage.error('删除失败') }
+  catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
 }
 
 const handleSelectionChange = (rows) => {
@@ -205,12 +207,10 @@ const exportBatch = async (format) => {
   try {
     const ids = selectedRows.value.map(r => r.id)
     console.log('[exportBatch] 准备导出:', ids, format)
-    await commonApi.exportProductsBatch(ids, format)
+    await exportApi.exportProductsBatch(ids, format)
     ElMessage.success('导出成功')
   } catch (e) {
-    console.error('[exportBatch] 导出失败:', e)
-    const detail = e.response?.data?.detail || e.message || '未知错误'
-    ElMessage.error('导出失败: ' + detail)
+    handleError(e, { defaultMsg: '导出失败' })
   }
 }
 

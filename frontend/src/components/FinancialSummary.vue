@@ -142,8 +142,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
-import { formatMoney } from '../api/common'
-import { formatDate } from '../utils/format'
+import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const props = defineProps({

@@ -31,7 +31,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import commonApi from '../api/common'
+import uploadApi from '../api/upload'
 import { resolveImageUrl } from '../api/index'
 
 const props = defineProps({
@@ -64,10 +64,10 @@ const handleUpload = async ({ file }) => {
     let res
     if (imageUrl.value) {
       // 换图
-      res = await commonApi.replaceImage(formData, props.businessType, props.recordId, imageUrl.value)
+      res = await uploadApi.replaceImage(formData, props.businessType, props.recordId, imageUrl.value)
     } else {
       // 新上传
-      res = await commonApi.uploadImage(formData, props.businessType, props.recordId)
+      res = await uploadApi.uploadImage(formData, props.businessType, props.recordId)
     }
     imageUrl.value = res.image_url
     emit('update:modelValue', res.image_url)
@@ -92,7 +92,7 @@ const handleUpload = async ({ file }) => {
 const handleRemove = async () => {
   try {
     if (imageUrl.value) {
-      await commonApi.deleteImage(resolveImageUrl(imageUrl.value))
+      await uploadApi.deleteImage(resolveImageUrl(imageUrl.value))
     }
   } catch (e) { /* 即使删文件失败也清空URL */ }
   const oldUrl = imageUrl.value

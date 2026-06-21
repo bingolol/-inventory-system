@@ -172,7 +172,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
-import { formatMoney } from '../api/common'
+import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 
 const formRef = ref(null)
