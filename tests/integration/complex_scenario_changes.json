@@ -1,0 +1,138 @@
+[
+  {
+    "module": "期初余额",
+    "operation": "验证期初余额",
+    "before": "无",
+    "after": "记录数=1",
+    "calculation": "期初余额是资产负债表的基础",
+    "timestamp": "2026-06-21T11:59:55.745728"
+  },
+  {
+    "module": "基础数据",
+    "operation": "验证基础数据",
+    "before": "无",
+    "after": "供应商=2, 客户=3, 商品=5",
+    "calculation": "基础数据是业务操作的前提",
+    "timestamp": "2026-06-21T11:59:55.827481"
+  },
+  {
+    "module": "采购",
+    "operation": "1月采购",
+    "before": "无",
+    "after": "iPhone=20, MacBook=10, AirPods=50",
+    "calculation": "供应商1采购(已付)+供应商2采购(赊账)",
+    "timestamp": "2026-06-21T11:59:56.289090"
+  },
+  {
+    "module": "销售",
+    "operation": "1月混合销售",
+    "before": "无",
+    "after": "iPhone=15, AirPods=25",
+    "calculation": "有票销售+无票销售+服务销售",
+    "timestamp": "2026-06-21T11:59:56.654029"
+  },
+  {
+    "module": "费用",
+    "operation": "1月费用",
+    "before": "无",
+    "after": "总费用=23500.0",
+    "calculation": "房租5000+工资15000+办公用品2000+运费1500=23500",
+    "timestamp": "2026-06-21T11:59:56.723453"
+  },
+  {
+    "module": "采购",
+    "operation": "2月补货",
+    "before": "iPhone库存=15",
+    "after": "iPhone库存=25",
+    "calculation": "iPhone×10=70000",
+    "timestamp": "2026-06-21T11:59:57.038059"
+  },
+  {
+    "module": "销售",
+    "operation": "2月赊账销售",
+    "before": "无",
+    "after": "iPhone=22, MacBook=8, 金额=46995",
+    "calculation": "iPhone×3=26997, MacBook×2=19998, 合计=46995",
+    "timestamp": "2026-06-21T11:59:57.347160"
+  },
+  {
+    "module": "销售",
+    "operation": "2月退货",
+    "before": "销售单金额=46995.00, MacBook库存=8",
+    "after": "MacBook库存=10",
+    "calculation": "退货后库存回补",
+    "timestamp": "2026-06-21T11:59:57.656985"
+  },
+  {
+    "module": "发票",
+    "operation": "2月进项发票",
+    "before": "无",
+    "after": "进项专票11300, 已认证",
+    "calculation": "不含税10000, 税额1300",
+    "timestamp": "2026-06-21T11:59:57.675541"
+  },
+  {
+    "module": "固定资产",
+    "operation": "3月固定资产购置",
+    "before": "无",
+    "after": "办公电脑50000",
+    "calculation": "月折旧额=(50000-2500)/36=1319.44",
+    "timestamp": "2026-06-21T11:59:57.685550"
+  },
+  {
+    "module": "销售",
+    "operation": "3月销售",
+    "before": "无",
+    "after": "iPhone=20, 金额=44995",
+    "calculation": "iPhone x 5 = 44995",
+    "timestamp": "2026-06-21T11:59:57.861651"
+  },
+  {
+    "module": "费用",
+    "operation": "3月费用",
+    "before": "无",
+    "after": "总费用=20500.0",
+    "calculation": "房租5000+工资15000+税金500=20500",
+    "timestamp": "2026-06-21T11:59:57.887705"
+  },
+  {
+    "module": "库存",
+    "operation": "库存一致性验证",
+    "before": "操作前",
+    "after": "所有商品库存非负",
+    "calculation": "库存=采购总量-销售总量+退货量",
+    "timestamp": "2026-06-21T11:59:58.039718"
+  },
+  {
+    "module": "税务",
+    "operation": "Q1增值税报表",
+    "before": "无",
+    "after": "销项税额=17127.98, 进项税额=0.00, 应纳税额=17127.97",
+    "calculation": "应纳税额=销项税额-进项税额",
+    "timestamp": "2026-06-21T11:59:58.055289"
+  },
+  {
+    "module": "税务",
+    "operation": "Q1所得税报表",
+    "before": "经营口径: 收入=2947265.00, 利润=0.00",
+    "after": "税务口径: 收入=1712797.02, 利润=1459797.02",
+    "calculation": "收入差异=1234467.98, 利润差异=1459797.02",
+    "timestamp": "2026-06-21T11:59:58.187818"
+  },
+  {
+    "module": "业务规则",
+    "operation": "BR-4验证",
+    "before": "无票销售26985",
+    "after": "发票数量=90",
+    "calculation": "无票销售不进入增值税销项",
+    "timestamp": "2026-06-21T11:59:58.196845"
+  },
+  {
+    "module": "业务规则",
+    "operation": "BR-2验证",
+    "before": "经营口径=2947265.00",
+    "after": "税务口径=1712797.02",
+    "calculation": "差异=1234467.98",
+    "timestamp": "2026-06-21T11:59:58.328308"
+  }
+]

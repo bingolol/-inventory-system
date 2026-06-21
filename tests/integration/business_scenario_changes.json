@@ -1,0 +1,130 @@
+[
+  {
+    "module": "期初余额",
+    "operation": "设置2026年期初余额",
+    "before": "无",
+    "after": "现金=0.0, 银行=500000.0, 实收资本=100000.0",
+    "calculation": "资产(210000) = 负债(0) + 权益(210000)",
+    "timestamp": "2026-06-21T11:59:51.923818"
+  },
+  {
+    "module": "基础数据",
+    "operation": "创建供应商",
+    "before": "无",
+    "after": "创建3个供应商",
+    "calculation": "供应商: 深圳华强电子、广州天河电子、东莞长安电子",
+    "timestamp": "2026-06-21T11:59:51.948214"
+  },
+  {
+    "module": "基础数据",
+    "operation": "创建客户",
+    "before": "无",
+    "after": "创建4个客户",
+    "calculation": "客户: 北京中关村科技、上海浦东贸易、深圳南山电子、杭州西湖数码",
+    "timestamp": "2026-06-21T11:59:51.981768"
+  },
+  {
+    "module": "基础数据",
+    "operation": "创建商品",
+    "before": "无",
+    "after": "创建5个商品",
+    "calculation": "商品: iPhone 15 Pro、MacBook Air M2、AirPods Pro、Apple Watch Series 9、电脑维修服务",
+    "timestamp": "2026-06-21T11:59:52.026056"
+  },
+  {
+    "module": "采购",
+    "operation": "1月开业采购",
+    "before": "预期金额=159000.0",
+    "after": "实际金额=159000.0",
+    "calculation": "iPhone×10=70000, MacBook×5=40000, AirPods×20=24000, Watch×10=25000, 合计=159000.0",
+    "timestamp": "2026-06-21T11:59:52.047163"
+  },
+  {
+    "module": "销售",
+    "operation": "1月开业销售",
+    "before": "预期金额=55990.0",
+    "after": "实际金额=55990.0",
+    "calculation": "iPhone×3=26997, MacBook×2=19998, AirPods×5=8995, 合计=55990.0",
+    "timestamp": "2026-06-21T11:59:52.070273"
+  },
+  {
+    "module": "费用",
+    "operation": "1月开业费用",
+    "before": "无",
+    "after": "总费用=22000.0",
+    "calculation": "房租5000 + 工资15000 + 办公用品2000 = 22000",
+    "timestamp": "2026-06-21T11:59:52.095894"
+  },
+  {
+    "module": "采购",
+    "operation": "2月春节后补货",
+    "before": "预期金额=92000.0",
+    "after": "实际金额=92000.0",
+    "calculation": "iPhone×8=56000, AirPods×30=36000, 合计=92000.0",
+    "timestamp": "2026-06-21T11:59:52.112973"
+  },
+  {
+    "module": "销售",
+    "operation": "2月春节后销售",
+    "before": "预期金额=72882.0",
+    "after": "实际金额=72882.0",
+    "calculation": "iPhone×5=44995, AirPods×10=17990, Watch×3=9897, 合计=72882.0",
+    "timestamp": "2026-06-21T11:59:52.135486"
+  },
+  {
+    "module": "费用",
+    "operation": "2月费用",
+    "before": "无",
+    "after": "总费用=20800.0",
+    "calculation": "房租5000 + 工资15000 + 水电800 = 20800",
+    "timestamp": "2026-06-21T11:59:52.161559"
+  },
+  {
+    "module": "采购",
+    "operation": "3月采购",
+    "before": "预期金额=160500.0",
+    "after": "实际金额=160500.0",
+    "calculation": "iPhone×12=84000, MacBook×8=64000, Watch×5=12500, 合计=160500.0",
+    "timestamp": "2026-06-21T11:59:52.180156"
+  },
+  {
+    "module": "销售",
+    "operation": "3月销售",
+    "before": "预期金额=155468.0",
+    "after": "实际金额=155468.0",
+    "calculation": "iPhone×8=71992, MacBook×4=39996, AirPods×15=26985, Watch×5=16495, 合计=155468.0",
+    "timestamp": "2026-06-21T11:59:52.204940"
+  },
+  {
+    "module": "发票",
+    "operation": "3月销项发票",
+    "before": "含税金额=100000.00",
+    "after": "不含税金额=99009.9, 税额=990.1",
+    "calculation": "不含税金额 = 100000 ÷ 1.01 = 99009.90",
+    "timestamp": "2026-06-21T11:59:52.214972"
+  },
+  {
+    "module": "库存",
+    "operation": "库存验证",
+    "before": "操作前",
+    "after": "商品数量=363",
+    "calculation": "所有商品库存非负",
+    "timestamp": "2026-06-21T11:59:52.349883"
+  },
+  {
+    "module": "税务",
+    "operation": "Q1增值税报表",
+    "before": "销项税额=15898.87, 进项税额=0.00",
+    "after": "应纳税额=15898.86",
+    "calculation": "应纳税额 = 销项税额(15898.87) - 进项税额(0.00)",
+    "timestamp": "2026-06-21T11:59:52.365406"
+  },
+  {
+    "module": "税务",
+    "operation": "Q1所得税报表",
+    "before": "收入=1589886.13, 成本=234000.00",
+    "after": "利润=1355886.13, 应纳税额=338971.53",
+    "calculation": "利润 = 收入(1589886.13) - 成本(234000.00)",
+    "timestamp": "2026-06-21T11:59:52.399170"
+  }
+]
