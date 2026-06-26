@@ -8,22 +8,8 @@ import pytest
 from decimal import Decimal
 from datetime import datetime
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from database import Base
 import models
 from crud.finance import generate_income_tax_prepayment
-
-
-@pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
 
 
 @pytest.fixture
@@ -97,6 +83,9 @@ def seed_data(db):
     )
     db.add(expense_no_invoice)
 
+    db.flush()
+    # 设置销售成本（实际由 InventoryEngine.outbound 写入，此处用进价模拟）
+    sale_item.set_calculated_cost(product.purchase_price)
     db.flush()
     return {"account_id": 1, "sale_id": 100, "expense_id": 200}
 

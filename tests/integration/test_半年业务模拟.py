@@ -15,30 +15,14 @@
   - I-税务准确性: 增值税报表数据与发票数据一致
 """
 
-import os
-import sys
 import time
 import pytest
 from datetime import datetime, timedelta
 from decimal import Decimal
-from fastapi.testclient import TestClient
-
-# 确保 backend 在 sys.path 中
-BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-BACKEND_DIR = os.path.abspath(BACKEND_DIR)
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
-
-# 在导入 main 之前，初始化数据库和工作区
-import workspace
-workspace.ensure_workspace()
-
-from database import init_db, SessionLocal
-init_db()
-
-from main import app
+from database import SessionLocal
 from models import Account
 from test_helpers import ensure_test_product
+from helpers import get_entity_id
 
 # ── 获取测试用 account_id ──
 _db = SessionLocal()
@@ -55,14 +39,7 @@ START_DATE = datetime(2026, 1, 1)
 END_DATE = datetime(2026, 6, 30)
 
 
-@pytest.fixture(scope="session")
-def client():
-    """全 session 共享的 TestClient"""
-    with TestClient(app) as c:
-        yield c
-
-
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def created_data(client):
     """Session 级共享数据：创建基础数据，返回各 ID"""
     data = {}
@@ -72,14 +49,14 @@ def created_data(client):
         "name": f"模拟客户-{UNIQUE}", "contact": "财务部", "phone": f"13800000001{UNIQUE}"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建客户失败: {resp.text}"
-    data["customer_id"] = _get_entity_id(resp.json())
+    data["customer_id"] = get_entity_id(resp.json())
 
     # 创建供应商
     resp = client.post("/api/suppliers", json={
         "name": f"模拟供应商-{UNIQUE}", "contact": "销售部", "phone": f"13800000002{UNIQUE}"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建供应商失败: {resp.text}"
-    data["supplier_id"] = _get_entity_id(resp.json())
+    data["supplier_id"] = get_entity_id(resp.json())
 
     # 创建可追踪库存商品
     resp = client.post("/api/products", json={
@@ -88,7 +65,7 @@ def created_data(client):
         "track_inventory": True, "category": "测试"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建可追踪商品失败: {resp.text}"
-    data["product_track_id"] = _get_entity_id(resp.json())
+    data["product_track_id"] = get_entity_id(resp.json())
 
     # 创建不追踪库存商品（服务类）
     resp = client.post("/api/products", json={
@@ -97,7 +74,7 @@ def created_data(client):
         "track_inventory": False, "category": "服务"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建不追踪商品失败: {resp.text}"
-    data["product_svc_id"] = _get_entity_id(resp.json())
+    data["product_svc_id"] = get_entity_id(resp.json())
 
     # 创建固定资产
     resp = client.post("/api/fixed-assets", json={
@@ -107,20 +84,9 @@ def created_data(client):
         "start_date": "2026-01-01", "depreciation_method": "年限平均法"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建固定资产失败: {resp.text}"
-    data["fixed_asset_id"] = _get_entity_id(resp.json())
+    data["fixed_asset_id"] = get_entity_id(resp.json())
 
     return data
-
-
-def _get_entity_id(resp_json):
-    """从 API 响应中提取实体 ID"""
-    if "id" in resp_json:
-        return resp_json["id"]
-    if "data" in resp_json and "id" in resp_json["data"]:
-        return resp_json["data"]["id"]
-    if "entity_id" in resp_json:
-        return resp_json["entity_id"]
-    return None
 
 
 def _get_inventory_qty(client, product_id):
@@ -219,7 +185,7 @@ class TestMonthlyBusinessCycle:
             ]
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月采购失败: {resp.text}"
-        created_data["jan_purchase_id"] = _get_entity_id(resp.json())
+        created_data["jan_purchase_id"] = get_entity_id(resp.json())
 
         # 验证库存增加
         qty = _get_inventory_qty(client, pid)
@@ -237,7 +203,7 @@ class TestMonthlyBusinessCycle:
             ]
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销售失败: {resp.text}"
-        created_data["jan_sale_id"] = _get_entity_id(resp.json())
+        created_data["jan_sale_id"] = get_entity_id(resp.json())
 
         # 验证库存减少
         qty_after = _get_inventory_qty(client, pid)
@@ -275,6 +241,8 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销项发票失败: {resp.text}"
+        data = resp.json().get("data", resp.json())
+        assert data["related_order_type"] == "sale_order", "1月销项发票应生成销售单"
 
     def test_february_business(self, client, created_data):
         """2月业务: 春节后复工，增加采购和销售"""
@@ -383,6 +351,8 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销项发票失败: {resp.text}"
+        data = resp.json().get("data", resp.json())
+        assert data["related_order_type"] == "sale_order", "3月销项发票应生成销售单"
 
     def test_april_business(self, client, created_data):
         """4月业务: Q2开始，正常业务"""
@@ -534,6 +504,8 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销项发票失败: {resp.text}"
+        data = resp.json().get("data", resp.json())
+        assert data["related_order_type"] == "sale_order", "6月销项发票应生成销售单"
 
 
 # ═══════════════════════════════════════════════════════════════

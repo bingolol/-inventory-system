@@ -8,46 +8,30 @@
   5. 缺 items / seller_name / buyer_name → 拒绝创建(422)
   6. 进项发票(direction='in')创建 → 不生成销售单
 """
+import uuid
 import pytest
 from datetime import datetime
 from decimal import Decimal
-from fastapi.testclient import TestClient
-from main import app
-from database import SessionLocal, init_db
-from models import Invoice, SaleOrder, Account, Product, Inventory
+from database import SessionLocal
+from models import Invoice, SaleOrder
 from test_helpers import ensure_test_product
+from helpers import get_account_id
 
 
-@pytest.fixture(scope="module")
-def client():
-    init_db()
-    with TestClient(app) as c:
-        yield c
+_INV_COUNTER = 0
 
-
-def _account_id():
-    db = SessionLocal()
-    try:
-        acc = db.query(Account).first()
-        return acc.id if acc else 1
-    finally:
-        db.close()
-
-
-def _uniq(prefix):
-    return f"{prefix}-{datetime.now().strftime('%H%M%S%f')}"
-
-
-def _get_product_id():
-    """获取测试商品ID（委托给 conftest.ensure_test_product）"""
-    return ensure_test_product()
+def _next_inv_no():
+    """生成唯一发票号（进程内计数器 + uuid，避免共享 DB 冲突）"""
+    global _INV_COUNTER
+    _INV_COUNTER += 1
+    return f"INV-OUT-{uuid.uuid4().hex[:8]}-{_INV_COUNTER}"
 
 
 def _base_out_invoice_payload():
     """销项发票基础payload（带items、销方、买方）"""
-    pid = _get_product_id()
+    pid = ensure_test_product()
     return {
-        "invoice_no": _uniq("INV-OUT"),
+        "invoice_no": _next_inv_no(),
         "direction": "out",
         "invoice_type": "ordinary",
         "amount_with_tax": "1030.00",
@@ -74,7 +58,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_creates_sale_order(self, client):
         """Behavior 1: 销项发票带items创建 → 自动生成销售单，双向关联"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         r = client.post("/api/invoices/quick", json=payload,
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
@@ -97,7 +81,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_sale_order_amounts_match(self, client):
         """Behavior 2+3: 销售单total_price=发票价税合计，tax_amount=发票税额"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         r = client.post("/api/invoices/quick", json=payload,
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
@@ -116,7 +100,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_items_synced_to_sale_order(self, client):
         """Behavior 4: 发票items同步到销售单SaleItem"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         r = client.post("/api/invoices/quick", json=payload,
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
@@ -139,7 +123,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_missing_items_rejected(self, client):
         """Behavior 5a: 缺items → 拒绝创建(422)"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         del payload["items"]
         r = client.post("/api/invoices/quick", json=payload,
@@ -148,7 +132,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_missing_seller_name_rejected(self, client):
         """Behavior 5b: 缺seller_name → 拒绝创建(422)"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         del payload["seller_name"]
         r = client.post("/api/invoices/quick", json=payload,
@@ -157,7 +141,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_missing_buyer_name_rejected(self, client):
         """Behavior 5c: 缺buyer_name → 拒绝创建(422)"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         del payload["buyer_name"]
         r = client.post("/api/invoices/quick", json=payload,
@@ -166,11 +150,11 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_in_invoice_no_sale_order(self, client):
         """Behavior 6: 进项发票创建 → 自动生成采购单（不生成销售单）"""
-        aid = _account_id()
-        pid = _get_product_id()
+        aid = get_account_id()
+        pid = ensure_test_product()
         payload = _base_out_invoice_payload()
         payload["direction"] = "in"
-        payload["invoice_no"] = _uniq("INV-IN")
+        payload["invoice_no"] = _next_inv_no().replace("OUT", "IN")
         payload["seller_name"] = "测试供应商"
         payload["buyer_name"] = "本公司"
         payload["purchase_order_action"] = "auto_create"
@@ -185,8 +169,8 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_link_existing_no_new_sale_order(self, client):
         """Behavior 7: 销项发票 sale_order_action=link_existing + related_order_id → 关联已有销售单，不生成新销售单"""
-        aid = _account_id()
-        pid = _get_product_id()
+        aid = get_account_id()
+        pid = ensure_test_product()
         # 先手动建一个销售单
         r_sale = client.post("/api/sales", json={
             "customer_id": None,
@@ -213,7 +197,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_missing_sale_order_action_rejected(self, client):
         """Behavior 8: 销项发票缺sale_order_action → 拒绝创建(422)"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         del payload["sale_order_action"]
         r = client.post("/api/invoices/quick", json=payload,
@@ -222,7 +206,7 @@ class TestInvoiceAutoGenerateSaleOrder:
 
     def test_out_invoice_link_existing_missing_related_order_id_rejected(self, client):
         """Behavior 9: sale_order_action=link_existing 但缺related_order_id → 拒绝(422)"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_out_invoice_payload()
         payload["sale_order_action"] = "link_existing"
         # 不传 related_order_id

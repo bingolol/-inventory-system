@@ -11,31 +11,10 @@
 import pytest
 from datetime import datetime
 from decimal import Decimal
-from fastapi.testclient import TestClient
-from main import app
-from database import SessionLocal, init_db
+from database import SessionLocal
 from models import Account, Invoice
 from test_helpers import ensure_test_product
-
-
-@pytest.fixture(scope="module")
-def client():
-    init_db()
-    with TestClient(app) as c:
-        yield c
-
-
-def _uniq(prefix):
-    return f"{prefix}-{datetime.now().strftime('%H%M%S%f')}"
-
-
-def _account_id():
-    db = SessionLocal()
-    try:
-        acc = db.query(Account).first()
-        return acc.id if acc else 1
-    finally:
-        db.close()
+from helpers import get_account_id, uniq
 
 
 def _account_taxpayer_type(aid):
@@ -53,10 +32,10 @@ class TestFullTaxScenario:
 
     def test_01_create_input_special_invoice(self, client):
         """采购环节:录入进项专票(13%)→ 待认证"""
-        aid = _account_id()
+        aid = get_account_id()
         pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
-            "invoice_no": _uniq("IN-SPEC"), "direction": "in", "invoice_type": "special",
+            "invoice_no": uniq("IN-SPEC"), "direction": "in", "invoice_type": "special",
             "amount_with_tax": "11300.00", "tax_rate": "0.13",
             "counterparty_name": "供应商甲", "seller_name": "供应商甲", "buyer_name": "本公司",
             "issue_date": "2026-04-15",
@@ -71,7 +50,7 @@ class TestFullTaxScenario:
 
     def test_02_certify_input_invoice(self, client):
         """认证进项专票 → 可抵扣"""
-        aid = _account_id()
+        aid = get_account_id()
         db = SessionLocal()
         try:
             inv = db.query(Invoice).filter(
@@ -88,10 +67,10 @@ class TestFullTaxScenario:
 
     def test_03_create_output_invoice(self, client):
         """销售环节:开销项发票(1%征收率)→ 销项税额"""
-        aid = _account_id()
+        aid = get_account_id()
         pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
-            "invoice_no": _uniq("OUT-ORD"), "direction": "out", "invoice_type": "ordinary",
+            "invoice_no": uniq("OUT-ORD"), "direction": "out", "invoice_type": "ordinary",
             "amount_with_tax": "10100.00", "tax_rate": "0.01",
             "counterparty_name": "客户乙", "seller_name": "本公司", "buyer_name": "客户乙",
             "issue_date": "2026-05-20",
@@ -100,12 +79,14 @@ class TestFullTaxScenario:
         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
         data = r.json()["data"]
+        assert data["related_order_type"] == "sale_order", "销项发票应自动生成销售单"
+        assert data["related_order_id"] is not None
         assert float(data["amount_without_tax"]) == 10000.00
         assert float(data["tax_amount"]) == 100.00
 
     def test_04_quarterly_vat_report(self, client):
         """季度增值税申报 → 销项税额正确汇总"""
-        aid = _account_id()
+        aid = get_account_id()
         r = client.get("/api/tax-report?year=2026&quarter=2",
                        headers={"X-Account-ID": str(aid)})
         assert r.status_code == 200, r.text
@@ -120,7 +101,7 @@ class TestFullTaxScenario:
     def test_05_vat_check_endpoint_consistent(self, client):
         """会计预检查:增值税计算与引擎一致"""
         r = client.get("/api/accounting/vat?total_revenue=10000&taxpayer_type=small_scale",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is True
@@ -130,7 +111,7 @@ class TestFullTaxScenario:
     def test_06_income_tax_small_micro(self, client):
         """所得税:小微优惠(利润≤300万,实际税负5%)"""
         r = client.get("/api/accounting/income-tax?profit=100000&taxpayer_type=small_micro",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is True
@@ -141,7 +122,7 @@ class TestFullTaxScenario:
     def test_07_income_tax_over_3m_no_reduction(self, client):
         """所得税:利润>300万 → 法定税率25%,无小微优惠"""
         r = client.get("/api/accounting/income-tax?profit=4000000&taxpayer_type=small_micro",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         # 4000000 * 25% = 1000000
@@ -151,7 +132,7 @@ class TestFullTaxScenario:
     def test_08_invoice_amounts_check_closed_loop(self, client):
         """会计预检查:发票金额三件套闭环(校验通过)"""
         r = client.get("/api/accounting/invoice-amounts?amount_with_tax=113&tax_rate=0.13",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is True
@@ -162,7 +143,7 @@ class TestFullTaxScenario:
         """会计预检查:直线法折旧(原值10000,残值5%,60月)"""
         r = client.get("/api/accounting/depreciation?method=直线法&original_value=10000"
                        "&salvage_rate=0.05&useful_life=60&months_used=12",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is True
@@ -174,7 +155,7 @@ class TestFullTaxScenario:
     def test_10_balance_sheet_check(self, client):
         """会计预检查:资产负债表平衡校验接口可达"""
         r = client.get("/api/accounting/balance-sheet?date=2026-06-30",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert "valid" in data
@@ -182,7 +163,7 @@ class TestFullTaxScenario:
     def test_11_income_tax_report_reachable(self, client):
         """所得税季度报表接口可达"""
         r = client.get("/api/income-tax-report?year=2026&quarter=2",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         report = r.json()
         assert report["year"] == 2026
@@ -196,7 +177,7 @@ class TestAccountingErrorGuidance:
     def test_invalid_tax_rate_guided(self, client):
         """非法纳税人类型 → 422 + 法规依据 + 计算明细"""
         r = client.get("/api/accounting/vat?total_revenue=100&taxpayer_type=invalid",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 422
         err = r.json()["error"]
         assert err["code"] == "VAT_TAXPAYER_TYPE_INVALID"
@@ -207,7 +188,7 @@ class TestAccountingErrorGuidance:
     def test_negative_profit_guided(self, client):
         """利润为负 → 422 + 引导(不需缴税)"""
         r = client.get("/api/accounting/income-tax?profit=-500&taxpayer_type=small_micro",
-                       headers={"X-Account-ID": str(_account_id())})
+                       headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 422
         err = r.json()["error"]
         assert err["code"] == "INCOME_TAX_PROFIT_NEGATIVE"

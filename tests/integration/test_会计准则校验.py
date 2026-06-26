@@ -16,26 +16,10 @@
   - 应纳增值税 = 销项税额 - 进项税额
 """
 
-import os
-import sys
 import pytest
+import time
 from decimal import Decimal
-from fastapi.testclient import TestClient
-
-# 确保 backend 在 sys.path 中
-BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-BACKEND_DIR = os.path.abspath(BACKEND_DIR)
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
-
-# 在导入 main 之前，初始化数据库和工作区
-import workspace
-workspace.ensure_workspace()
-
-from database import init_db, SessionLocal
-init_db()
-
-from main import app
+from database import SessionLocal
 from models import Account
 from test_helpers import ensure_test_product
 
@@ -50,11 +34,82 @@ _db.close()
 HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "accounting_test"}
 
 
-@pytest.fixture(scope="module")
-def client():
-    """全 module 共享的 TestClient"""
-    with TestClient(app) as c:
-        yield c
+@pytest.fixture(scope="module", autouse=True)
+def seed_opening_balance():
+    """模块级前置：清理预存数据 + 创建期初余额 + 库存 + 银行账户"""
+    from datetime import date, datetime
+    from decimal import Decimal
+    from database import engine, SessionLocal
+    from models import OpeningBalance, BankAccount, Product, Inventory
+
+    # 使用原始 sqlite3 连接清理业务数据（不删 opening_balances，仅更新）
+    raw = engine.raw_connection()
+    raw.execute("PRAGMA foreign_keys=OFF")
+    for tname in ["account_move_lines", "account_moves", "stock_moves",
+                   "receipts", "payments", "invoices", "fixed_assets",
+                   "sale_items", "sale_orders", "purchase_items",
+                   "purchase_orders", "expenses"]:
+        raw.execute(f"DELETE FROM {tname}")
+    raw.execute(f"DELETE FROM inventory WHERE account_id={ACCOUNT_ID}")
+    raw.execute(f"DELETE FROM bank_accounts WHERE account_id={ACCOUNT_ID}")
+    raw.execute("PRAGMA foreign_keys=ON")
+    raw.commit()
+    raw.close()
+
+    db = SessionLocal()
+    try:
+        ob = db.query(OpeningBalance).filter(
+            OpeningBalance.account_id == ACCOUNT_ID
+        ).first()
+        if not ob:
+            ob = OpeningBalance(account_id=ACCOUNT_ID)
+        ob.date = date(2026, 1, 1)
+        ob.cash_balance = Decimal('10000.00')
+        ob.bank_balance = Decimal('50000.00')
+        ob.accounts_receivable = Decimal('5000.00')
+        ob.inventory_value = Decimal('20000.00')
+        ob.fixed_assets_original = Decimal('0')
+        ob.accumulated_depreciation = Decimal('0')
+        ob.intangible_assets_original = Decimal('0')
+        ob.accumulated_amortization = Decimal('0')
+        ob.accounts_payable = Decimal('0')
+        ob.tax_payable = Decimal('0')
+        ob.long_term_borrowings = Decimal('0')
+        ob.paid_in_capital = Decimal('50000.00')
+        ob.retained_earnings = Decimal('35000.00')
+        if not ob.id:
+            db.add(ob)
+
+        product = Product(
+            account_id=ACCOUNT_ID,
+            name=f"测试产品-{int(datetime.now().timestamp())}",
+            sku=f"OB-{int(datetime.now().timestamp())}",
+            unit="个",
+            purchase_price=Decimal('50.00'),
+            sale_price=Decimal('100.00'),
+            track_inventory=True,
+            category="测试",
+        )
+        db.add(product)
+        db.flush()
+        inv = Inventory(
+            account_id=ACCOUNT_ID,
+            product_id=product.id,
+            quantity=200,
+            average_cost=Decimal('100.00'),
+            total_value=Decimal('20000.00'),
+        )
+        db.add(inv)
+        bank = BankAccount(
+            account_id=ACCOUNT_ID,
+            bank_name="测试银行",
+            account_number="6222021234567890",
+            balance=Decimal('60000.00'),
+        )
+        db.add(bank)
+        db.commit()
+    finally:
+        db.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -112,6 +167,71 @@ class TestBalanceSheetEquation:
             assert "total_assets" in data, "资产负债表缺少资产总计"
             assert "total_liabilities" in data, "资产负债表缺少负债总计"
             assert "total_equity" in data, "资产负债表缺少权益总计"
+
+    def test_balance_sheet_no_double_count_fixed_assets(self, client):
+        """应付账款不含固定资产双重计算（单一真相源：应付账款=采购单未付款+费用未付款）"""
+        from database import SessionLocal
+        import models
+        from sqlalchemy import func as sqlfunc
+
+        resp = client.get("/api/financial-reports/balance-sheet",
+                         params={"date": "2026-12-31"},
+                         headers=HEADERS)
+        assert resp.status_code == 200, f"资产负债表接口返回 {resp.status_code}: {resp.text}"
+        data = resp.json()
+        accounts_payable = Decimal(str(data["accounts_payable"]))
+
+        # 手工算单一真相源的应付账款：采购单未付款 + 费用未付款
+        db = SessionLocal()
+        try:
+            po_payable = db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
+                models.PurchaseOrder.account_id == ACCOUNT_ID,
+                models.PurchaseOrder.status == "completed",
+                models.PurchaseOrder.payment_status == "unpaid"
+            ).scalar() or Decimal('0')
+            expense_payable = db.query(sqlfunc.sum(models.Expense.amount)).filter(
+                models.Expense.account_id == ACCOUNT_ID,
+                models.Expense.payment_status == "unpaid"
+            ).scalar() or Decimal('0')
+            db.close()
+        finally:
+            pass
+
+        expected_payable = Decimal(str(po_payable)) + Decimal(str(expense_payable))
+        # 容差 0.01
+        assert abs(accounts_payable - expected_payable) <= Decimal('0.01'), \
+            f"应付账款双重计算: 报表={accounts_payable}, 单一真相源(采购+费用)={expected_payable}, " \
+            f"差额={accounts_payable - expected_payable}（可能含固定资产或存货的重复计算）"
+
+    def test_balance_sheet_opening_receivable_inventory(self, client):
+        """期初应收账款和存货加到期末值（不丢失期初资产）"""
+        from database import SessionLocal
+        import models
+
+        db = SessionLocal()
+        try:
+            ob = db.query(models.OpeningBalance).filter(
+                models.OpeningBalance.account_id == ACCOUNT_ID
+            ).order_by(models.OpeningBalance.date.desc()).first()
+            assert ob is not None, "seed_opening_balance fixture should have created data"
+            opening_ar = Decimal(str(ob.accounts_receivable or 0))
+            opening_inv = Decimal(str(ob.inventory_value or 0))
+        finally:
+            db.close()
+
+        assert opening_ar > 0 or opening_inv > 0, "seed_opening_balance fixture should have AR/inventory > 0"
+
+        resp = client.get("/api/financial-reports/balance-sheet",
+                         params={"date": "2026-12-31"},
+                         headers=HEADERS)
+        assert resp.status_code == 200, f"资产负债表接口返回 {resp.status_code}: {resp.text}"
+        data = resp.json()
+        # 期末应收 ≥ 期初应收（至少包含期初部分）
+        assert Decimal(str(data["accounts_receivable"])) >= opening_ar - Decimal('0.01'), \
+            f"期末应收{data['accounts_receivable']} < 期初应收{opening_ar}，期初应收丢失"
+        # 期末存货 ≥ 期初存货
+        assert Decimal(str(data["inventory"])) >= opening_inv - Decimal('0.01'), \
+            f"期末存货{data['inventory']} < 期初存货{opening_inv}，期初存货丢失"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -254,11 +374,12 @@ class TestIncomeTaxCalculation:
 # ═══════════════════════════════════════════════════════════════
 class TestInvoiceAmountCalculation:
     """发票金额计算: 不含税金额 = 含税金额 ÷ (1 + 税率)"""
+    _inv_counter = 0
 
     def test_invoice_amount_calculation_13_percent(self, client):
         """13%税率发票金额计算"""
-        import time
-        unique_no = f"TEST-INV-13PCT-{int(time.time())}"
+        TestInvoiceAmountCalculation._inv_counter += 1
+        unique_no = f"TEST-INV-13PCT-{int(time.time())}-{TestInvoiceAmountCalculation._inv_counter}"
         pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
@@ -290,8 +411,8 @@ class TestInvoiceAmountCalculation:
 
     def test_invoice_amount_calculation_1_percent(self, client):
         """1%征收率发票金额计算"""
-        import time
-        unique_no = f"TEST-INV-1PCT-{int(time.time())}"
+        TestInvoiceAmountCalculation._inv_counter += 1
+        unique_no = f"TEST-INV-1PCT-{int(time.time())}-{TestInvoiceAmountCalculation._inv_counter}"
         pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
@@ -308,6 +429,7 @@ class TestInvoiceAmountCalculation:
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
         data = resp.json().get("data", resp.json())
+        assert data.get("related_order_type") == "sale_order", "销项发票应生成销售单"
         
         # 验证计算: 不含税金额 = 10100 ÷ 1.01 = 10000
         amount_without_tax = Decimal(str(data.get("amount_without_tax", 0)))
@@ -360,7 +482,7 @@ class TestFixedAssetDepreciation:
         
         # 验证折旧计算
         # 月折旧额 = (10000 - 10000×5%) ÷ 36 = 9500 ÷ 36 = 263.89
-        # 6个月累计折旧 = 263.89 × 6 = 1583.33
+        # 6个月累计折旧 = 263.89 × 6 = 1583.34
         
         resp = client.get("/api/fixed-assets", headers=HEADERS)
         assert resp.status_code == 200, f"查询固定资产失败: {resp.text}"

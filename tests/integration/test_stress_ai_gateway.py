@@ -12,18 +12,8 @@
 import time
 import uuid
 import pytest
-from fastapi.testclient import TestClient
-from main import app
-from database import SessionLocal, init_db
 from ai_gateway import _match, AI_CAPABILITIES
 from test_helpers import ensure_test_product
-
-
-@pytest.fixture(scope="module")
-def client():
-    init_db()
-    with TestClient(app) as c:
-        yield c
 
 
 def _uniq(prefix, i):
@@ -110,6 +100,7 @@ class TestMiddlewareStackMixedLoad:
         """30 次混合请求(GET/AI写/user写/规范写)全部正确分流"""
         ai_h = {"X-Account-ID": "1", "X-Operator": "ai"}
         user_h = {"X-Account-ID": "1", "X-Operator": "user"}
+        pid = ensure_test_product(1)
         results = {"get": 0, "ai_block": 0, "user_pass": 0, "ai_pass": 0}
         for i in range(30):
             # GET 全放行
@@ -127,8 +118,11 @@ class TestMiddlewareStackMixedLoad:
             # AI 规范写 /quick → 放行(进入业务层)
             r = client.post("/api/invoices/quick", json={
                 "invoice_no": _uniq("MX-INV", i), "direction": "out",
-                "invoice_type": "ordinary", "amount_with_tax": "10",
-                "tax_rate": "0.01", "counterparty_name": "x", "issue_date": "2026-06-20",
+                "invoice_type": "ordinary", "amount_with_tax": "113.00",
+                "tax_rate": "0.13", "counterparty_name": "x", "seller_name": "本公司",
+                "buyer_name": "x", "issue_date": "2026-06-20",
+                "sale_order_action": "auto_create",
+                "items": [{"product_id": pid, "quantity": 1, "unit_price": "100.00", "tax_rate": "0.13"}],
             }, headers=ai_h)
             assert r.status_code != 403
             results["ai_pass"] += 1

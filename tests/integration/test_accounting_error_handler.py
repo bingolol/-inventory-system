@@ -8,14 +8,6 @@ AccountingError 冒泡到 app 时返回结构化 4xx(而非 500 丢引导字段)
   - 修复缺口1后,main.py 的 handler 捕获并转结构化响应
 """
 import pytest
-from fastapi.testclient import TestClient
-from main import app
-
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as c:
-        yield c
 
 
 @pytest.mark.integration

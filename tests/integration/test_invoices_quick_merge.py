@@ -7,37 +7,16 @@
 """
 import pytest
 from datetime import datetime
-from fastapi.testclient import TestClient
-from main import app
-from database import SessionLocal, init_db
+from database import SessionLocal
 from models import Invoice, FixedAsset
 from test_helpers import ensure_test_product
-
-
-@pytest.fixture(scope="module")
-def client():
-    init_db()
-    with TestClient(app) as c:
-        yield c
-
-
-def _account_id():
-    db = SessionLocal()
-    try:
-        acc = db.query(__import__("models").Account).first()
-        return acc.id if acc else 1
-    finally:
-        db.close()
-
-
-def _uniq(prefix):
-    return f"{prefix}-{datetime.now().strftime('%H%M%S%f')}"
+from helpers import get_account_id, uniq
 
 
 def _base_invoice_payload():
     pid = ensure_test_product()
     return {
-        "invoice_no": _uniq("INV-QUICK"),
+        "invoice_no": uniq("INV-QUICK"),
         "direction": "in",
         "invoice_type": "special",
         "amount_with_tax": "11300.00",
@@ -60,8 +39,8 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_with_fixed_asset_creates_both(self, client):
         """带 fixed_asset → 发票+资产原子创建，related_order_type==fixed_asset"""
-        aid = _account_id()
-        asset_code = _uniq("FA-QUICK")
+        aid = get_account_id()
+        asset_code = uniq("FA-QUICK")
         payload = _base_invoice_payload()
         payload["fixed_asset"] = {
             "asset_code": asset_code,
@@ -89,9 +68,9 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_with_fixed_asset_persisted(self, client):
         """DB 中发票与资产记录关联一致"""
-        aid = _account_id()
-        asset_code = _uniq("FA-PERSIST")
-        inv_no = _uniq("INV-PERSIST")
+        aid = get_account_id()
+        asset_code = uniq("FA-PERSIST")
+        inv_no = uniq("INV-PERSIST")
         payload = _base_invoice_payload()
         payload["invoice_no"] = inv_no
         payload["fixed_asset"] = {
@@ -120,7 +99,7 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_without_fixed_asset_creates_invoice_only(self, client):
         """不带 fixed_asset → 仅创建发票（回归：合并未破坏基础路径）"""
-        aid = _account_id()
+        aid = get_account_id()
         payload = _base_invoice_payload()
         r = client.post("/api/invoices/quick", json=payload,
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
@@ -132,8 +111,8 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_image_url_passthrough(self, client):
         """image_url 透传到 DB（修复原 handler 丢弃 image_url 的 bug）"""
-        aid = _account_id()
-        inv_no = _uniq("INV-IMG")
+        aid = get_account_id()
+        inv_no = uniq("INV-IMG")
         payload = _base_invoice_payload()
         payload["invoice_no"] = inv_no
         payload["image_url"] = "/uploads/invoice/test.png"
@@ -155,13 +134,13 @@ class TestQuickMergeFixedAsset:
         但该路径只注册了 PUT/DELETE，故 POST 返回 405 Method Not Allowed；
         无论 404 还是 405 都证明专用变体端点已不存在（不再返回 200 创建）。
         """
-        aid = _account_id()
+        aid = get_account_id()
         r = client.post("/api/invoices/with-fixed-asset", json={
-            "invoice_no": _uniq("INV-GONE"),
+            "invoice_no": uniq("INV-GONE"),
             "direction": "in", "invoice_type": "ordinary",
             "tax_rate": "0.13", "amount_with_tax": "1000.00",
             "counterparty_name": "x", "issue_date": "2026-06-01",
-            "asset_code": _uniq("FA-GONE"), "asset_name": "x",
+            "asset_code": uniq("FA-GONE"), "asset_name": "x",
             "useful_life": 12, "start_date": "2026-06-01",
         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code in (404, 405)

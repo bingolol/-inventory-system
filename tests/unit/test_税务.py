@@ -6,12 +6,8 @@
   2. 企业所得税预缴计算
   3. 资产折旧明细表
 """
-import sys
-import os
 import pytest
 from decimal import Decimal
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 
 class FakeInvoiceORM:

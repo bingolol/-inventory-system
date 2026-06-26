@@ -19,16 +19,9 @@
 """
 
 import os
-import sys
 import time
 import pytest
 from fastapi.testclient import TestClient
-
-# 确保 backend 在 sys.path 中
-BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-BACKEND_DIR = os.path.abspath(BACKEND_DIR)
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
 
 # 在导入 main 之前，初始化数据库和工作区
 import workspace
@@ -331,10 +324,11 @@ class TestInvoiceAndTax:
                          headers=HEADERS)
         assert resp.status_code == 200, f"企业所得税报表接口失败: {resp.text}"
 
-    def test_delete_invoice(self, client, created_data):
+    def test_reverse_invoice(self, client, created_data):
         invoice_id = created_data["invoice_id"]
-        resp = client.delete(f"/api/invoices/{invoice_id}", headers=HEADERS)
-        assert resp.status_code == 200, f"删除发票失败: {resp.text}"
+        resp = client.post(f"/api/invoices/{invoice_id}/reverse", headers=HEADERS)
+        assert resp.status_code == 200, f"红冲发票失败: {resp.text}"
+        assert resp.json()["data"]["is_reversed"] is True
 
 
 # ═══════════════════════════════════════════════════════════════

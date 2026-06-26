@@ -8,16 +8,8 @@
 
 不依赖数据库 / app，只测 AccountingEngine 纯计算逻辑。
 """
-import sys
-import os
 import pytest
 from decimal import Decimal
-
-# 将 backend 加入 sys.path（与 tests/conftest.py 一致）
-BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-BACKEND_DIR = os.path.abspath(BACKEND_DIR)
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
 
 from accounting_engine import AccountingEngine, AccountingError, AccountingErrorCode
 

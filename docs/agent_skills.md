@@ -54,7 +54,7 @@
 | **scaffold-exercises** | 课程练习脚手架;本项目非教学仓库 |
 | **setup-pre-commit** | Husky/lint-staged 面向 JS;本项目用 pytest + Python |
 | **git-guardrails-claude-code** | Claude Code hooks;本项目用 OpenCode |
-| **setup-matt-pocock-skills** | 首次配置 issue tracker/triage/domain;本项目已配过(见 AGENTS.md) |
+| **setup-matt-pocock-skills** | 首次配置 issue tracker/triage/domain;本项目已配过(见 CONTEXT.md) |
 
 ---
 
@@ -93,11 +93,11 @@
 
 ---
 
-## 🔗 与 AGENTS.md 工作流的关系
+## 🔗 与 CONTEXT.md 工作流的关系
 
-`AGENTS.md` 定义了本项目的 **5 条必守规则**(Read docs first / Docs before code / Plan before execute / Self-review / Tests first)。技能是这些规则的**落地工具**:
+`CONTEXT.md` 定义了本项目的 **5 条必守规则**(Read docs first / Docs before code / Plan before execute / Self-review / Tests first)。技能是这些规则的**落地工具**:
 
-| AGENTS.md 规则 | 对应技能 |
+| CONTEXT.md 规则 | 对应技能 |
 |----------------|----------|
 | Read docs first | zoom-out(理解上下文) |
 | Docs before code | to-prd / write-a-skill(先出设计文档) |

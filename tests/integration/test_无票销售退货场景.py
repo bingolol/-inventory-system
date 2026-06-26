@@ -13,29 +13,14 @@
 """
 
 import os
-import sys
 import json
 import time
 import pytest
 from decimal import Decimal
 from datetime import datetime
-from fastapi.testclient import TestClient
-
-# 确保 backend 在 sys.path 中
-BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-BACKEND_DIR = os.path.abspath(BACKEND_DIR)
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
-
-# 在导入 main 之前，初始化数据库和工作区
-import workspace
-workspace.ensure_workspace()
-
-from database import init_db, SessionLocal
-init_db()
-
-from main import app
+from database import SessionLocal
 from models import Account
+from helpers import get_entity_id
 
 # ── 获取测试用 account_id ──
 _db = SessionLocal()
@@ -60,24 +45,6 @@ def record_change(module, operation, before, after, calculation=""):
         "calculation": calculation,
         "timestamp": datetime.now().isoformat()
     })
-
-
-def get_entity_id(resp_json):
-    """从API响应中提取实体ID"""
-    if "id" in resp_json:
-        return resp_json["id"]
-    if "data" in resp_json and "id" in resp_json["data"]:
-        return resp_json["data"]["id"]
-    if "entity_id" in resp_json:
-        return resp_json["entity_id"]
-    return None
-
-
-@pytest.fixture(scope="module")
-def client():
-    """全 module 共享的 TestClient"""
-    with TestClient(app) as c:
-        yield c
 
 
 @pytest.fixture(scope="module")

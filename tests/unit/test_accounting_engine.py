@@ -1,0 +1,386 @@
+"""AccountingEngine 测试 - TDD 循环
+
+Behavior 1: 发票金额自动计算（含税→不含税+税额）
+Behavior 2: 发票金额平衡校验
+Behavior 3: 固定资产折旧-年限平均法
+Behavior 4: 固定资产折旧-双倍余额递减法
+Behavior 5: 固定资产折旧-年数总和法
+Behavior 6: 增值税计算（小规模纳税人）
+Behavior 7: 企业所得税计算（小微企业优惠）
+Behavior 8: 资产负债表平衡校验
+Behavior 9: 利润表验证
+"""
+
+import sys
+import os
+import pytest
+from decimal import Decimal
+from datetime import datetime, date
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from accounting_engine import AccountingEngine, InvoiceAmounts, AccountingError, AccountingErrorCode
+
+
+@pytest.fixture
+def engine():
+    return AccountingEngine()
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 1: 发票金额自动计算（Critical）
+# ═══════════════════════════════════════════════════════════
+
+def test_calculate_invoice_amounts_13_percent(engine):
+    """13%税率：含税11300 → 不含税10000 + 税额1300"""
+    result = engine.calculate_invoice_amounts(
+        amount_with_tax=Decimal('11300'),
+        tax_rate=Decimal('0.13')
+    )
+    assert result.amount_without_tax == Decimal('10000.00')
+    assert result.tax_amount == Decimal('1300.00')
+    assert result.amount_with_tax == Decimal('11300')
+
+
+def test_calculate_invoice_amounts_9_percent(engine):
+    """9%税率：含税10900 → 不含税10000 + 税额900"""
+    result = engine.calculate_invoice_amounts(
+        amount_with_tax=Decimal('10900'),
+        tax_rate=Decimal('0.09')
+    )
+    assert result.amount_without_tax == Decimal('10000.00')
+    assert result.tax_amount == Decimal('900.00')
+
+
+def test_calculate_invoice_amounts_1_percent(engine):
+    """1%税率：含税10100 → 不含税10000 + 税额100"""
+    result = engine.calculate_invoice_amounts(
+        amount_with_tax=Decimal('10100'),
+        tax_rate=Decimal('0.01')
+    )
+    assert result.amount_without_tax == Decimal('10000.00')
+    assert result.tax_amount == Decimal('100.00')
+
+
+def test_calculate_invoice_amounts_3_percent(engine):
+    """3%税率：含税10300 → 不含税10000 + 税额300"""
+    result = engine.calculate_invoice_amounts(
+        amount_with_tax=Decimal('10300'),
+        tax_rate=Decimal('0.03')
+    )
+    assert result.amount_without_tax == Decimal('10000.00')
+    assert result.tax_amount == Decimal('300.00')
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 2: 发票金额平衡校验（Critical）
+# ═══════════════════════════════════════════════════════════
+
+def test_validate_invoice_amounts_balanced(engine):
+    """平衡的情况：10000 + 1300 = 11300 → 通过"""
+    # 不应抛出异常
+    engine.validate_invoice_amounts(
+        amount_without_tax=Decimal('10000.00'),
+        tax_amount=Decimal('1300.00'),
+        amount_with_tax=Decimal('11300.00')
+    )
+
+
+def test_validate_invoice_amounts_unbalanced(engine):
+    """不平衡的情况：10000 + 1300 = 11400 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.validate_invoice_amounts(
+            amount_without_tax=Decimal('10000.00'),
+            tax_amount=Decimal('1300.00'),
+            amount_with_tax=Decimal('11400.00')
+        )
+    assert exc_info.value.code == AccountingErrorCode.INVOICE_AMOUNTS_NOT_BALANCED
+    assert "STOP_RETRYING" in exc_info.value.ai_instruction
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 3: 固定资产折旧-年限平均法（High）
+# ═══════════════════════════════════════════════════════════
+
+def test_depreciation_straight_line_basic(engine):
+    """年限平均法：原值10000，残值率5%，寿命60个月，已用12个月"""
+    result = engine.calculate_depreciation_straight_line(
+        original_value=Decimal('10000'),
+        salvage_rate=Decimal('0.05'),
+        useful_life=60,
+        months_used=12
+    )
+    # 月折旧 = 10000 * (1 - 0.05) / 60 = 158.33
+    # 累计折旧 = 158.33 * 12 = 1899.96
+    assert result.monthly_depreciation == Decimal('158.33')
+    assert result.accumulated_depreciation == Decimal('1899.96')
+    assert result.net_value == Decimal('8100.04')
+
+
+def test_depreciation_straight_line_full_life(engine):
+    """年限平均法：已用时间超过使用寿命，折旧到残值"""
+    result = engine.calculate_depreciation_straight_line(
+        original_value=Decimal('10000'),
+        salvage_rate=Decimal('0.05'),
+        useful_life=60,
+        months_used=72  # 超过60个月
+    )
+    # 累计折旧 = 158.33 * 60 = 9499.80
+    assert result.accumulated_depreciation == Decimal('9499.80')
+    assert result.net_value == Decimal('500.20')
+
+
+def test_depreciation_straight_line_zero_life(engine):
+    """年限平均法：使用寿命为0 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.calculate_depreciation_straight_line(
+            original_value=Decimal('10000'),
+            salvage_rate=Decimal('0.05'),
+            useful_life=0,
+            months_used=12
+        )
+    assert exc_info.value.code == AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 4: 固定资产折旧-双倍余额递减法（High）
+# ═══════════════════════════════════════════════════════════
+
+def test_depreciation_double_declining_basic(engine):
+    """双倍余额递减法：原值10000，寿命60个月，已用12个月"""
+    result = engine.calculate_depreciation_double_declining(
+        original_value=Decimal('10000'),
+        useful_life=60,
+        months_used=12
+    )
+    # 月折旧率 = 2 / 60 = 0.0333
+    # 逐月递减，第11个月(0-indexed)折旧 = close to 229.57
+    assert result.monthly_depreciation == Decimal('229.57')
+    assert result.accumulated_depreciation == Decimal('3342.34')
+    assert result.net_value == Decimal('6657.66')
+
+
+def test_depreciation_double_declining_zero_life(engine):
+    """双倍余额递减法：使用寿命为0 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.calculate_depreciation_double_declining(
+            original_value=Decimal('10000'),
+            useful_life=0,
+            months_used=12
+        )
+    assert exc_info.value.code == AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 5: 固定资产折旧-年数总和法（High）
+# ═══════════════════════════════════════════════════════════
+
+def test_depreciation_sum_of_years_basic(engine):
+    """年数总和法：原值10000，残值率5%，寿命5年(60月)，已用12个月"""
+    result = engine.calculate_depreciation_sum_of_years(
+        original_value=Decimal('10000'),
+        salvage_rate=Decimal('0.05'),
+        useful_life=60,
+        months_used=12
+    )
+    # 应计折旧总额 = 10000 * (1 - 0.05) = 9500
+    # 年数总和 = 5 * 6 / 2 = 15（使用年数，非月数）
+    # 第1年(月0~11): 剩余年数 5~4.08, 末月折旧≈215.51
+    assert result.monthly_depreciation == Decimal('215.51')
+    assert result.accumulated_depreciation == Decimal('2876.39')
+    assert result.net_value == Decimal('7123.61')
+
+
+def test_depreciation_sum_of_years_zero_life(engine):
+    """年数总和法：使用寿命为0 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.calculate_depreciation_sum_of_years(
+            original_value=Decimal('10000'),
+            salvage_rate=Decimal('0.05'),
+            useful_life=0,
+            months_used=12
+        )
+    assert exc_info.value.code == AccountingErrorCode.DEPRECIATION_USEFUL_LIFE_ZERO
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 6: 增值税计算（High）
+# ═══════════════════════════════════════════════════════════
+
+def test_calculate_vat_small_scale_basic(engine):
+    """小规模纳税人：不含税销售额100000，征收率3%，减按1%"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='small_scale'
+    )
+    # 应纳税额 = 100000 * 1% = 1000
+    assert result.tax_payable == Decimal('1000.00')
+    assert result.tax_rate == Decimal('0.03')
+    assert result.reduction_amount > Decimal('0')
+
+
+def test_calculate_vat_small_scale_monthly_exemption(engine):
+    """小规模纳税人：月销售额≤10万免征附加税"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('300000'),  # 季度30万，月10万
+        taxpayer_type='small_scale'
+    )
+    # 月销售额 = 300000 / 3 = 100000 ≤ 100000，附加税免征
+    assert result.surcharge_education == Decimal('0')
+    assert result.surcharge_local_education == Decimal('0')
+
+
+def test_calculate_vat_invalid_type(engine):
+    """无效纳税人类型 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.calculate_vat(
+            total_revenue=Decimal('100000'),
+            taxpayer_type='invalid'
+        )
+    assert exc_info.value.code == AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 1: 一般纳税人增值税计算（销项-进项）
+# ═══════════════════════════════════════════════════════════
+
+def test_calculate_vat_general_taxpayer_basic(engine):
+    """一般纳税人：销项税额 - 进项税额 = 应纳税额"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),  # 不含税销售额
+        taxpayer_type='general',
+        input_tax=Decimal('8000')  # 进项税额
+    )
+    # 销项税额 = 100000 * 13% = 13000
+    # 应纳税额 = 13000 - 8000 = 5000
+    assert result.tax_payable_gross == Decimal('13000.00')
+    assert result.tax_payable == Decimal('5000.00')
+    assert result.tax_rate == Decimal('0.13')
+
+
+def test_calculate_vat_general_taxpayer_zero_input(engine):
+    """一般纳税人：无进项税额"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('0')
+    )
+    # 销项税额 = 100000 * 13% = 13000
+    # 应纳税额 = 13000 - 0 = 13000
+    assert result.tax_payable_gross == Decimal('13000.00')
+    assert result.tax_payable == Decimal('13000.00')
+
+
+def test_calculate_vat_general_taxpayer_surcharge(engine):
+    """一般纳税人：附加税计算"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('8000')
+    )
+    # 应纳税额 = 5000
+    # 城市维护建设税 = 5000 * 7% = 350
+    # 教育费附加 = 5000 * 3% = 150
+    # 地方教育附加 = 5000 * 2% = 100
+    assert result.surcharge_stamp == Decimal('350.00')
+    assert result.surcharge_education == Decimal('150.00')
+    assert result.surcharge_local_education == Decimal('100.00')
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 1: 一般纳税人增值税计算（销项-进项）
+# ═══════════════════════════════════════════════════════════
+
+def test_calculate_vat_general_taxpayer_basic(engine):
+    """一般纳税人：销项税额 - 进项税额 = 应纳税额"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),  # 不含税销售额
+        taxpayer_type='general',
+        input_tax=Decimal('8000')  # 进项税额
+    )
+    # 销项税额 = 100000 * 13% = 13000
+    # 应纳税额 = 13000 - 8000 = 5000
+    assert result.tax_payable_gross == Decimal('13000.00')
+    assert result.tax_payable == Decimal('5000.00')
+    assert result.tax_rate == Decimal('0.13')
+
+
+def test_calculate_vat_general_taxpayer_zero_input(engine):
+    """一般纳税人：无进项税额"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('0')
+    )
+    # 销项税额 = 100000 * 13% = 13000
+    # 应纳税额 = 13000 - 0 = 13000
+    assert result.tax_payable_gross == Decimal('13000.00')
+    assert result.tax_payable == Decimal('13000.00')
+
+
+def test_calculate_vat_general_taxpayer_surcharge(engine):
+    """一般纳税人：附加税计算"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('8000')
+    )
+    # 应纳税额 = 5000
+    # 城市维护建设税 = 5000 * 7% = 350
+    # 教育费附加 = 5000 * 3% = 150
+    # 地方教育附加 = 5000 * 2% = 100
+    assert result.surcharge_stamp == Decimal('350.00')
+    assert result.surcharge_education == Decimal('150.00')
+    assert result.surcharge_local_education == Decimal('100.00')
+
+
+# ═══════════════════════════════════════════════════════════
+# Behavior 7: 企业所得税计算（High）
+# ═══════════════════════════════════════════════════════════
+
+def test_calculate_income_tax_small_micro_50w(engine):
+    """小型微利企业：利润50万，实际税率5%"""
+    result = engine.calculate_income_tax(
+        profit=Decimal('500000'),
+        taxpayer_type='small_micro'
+    )
+    # 应纳税所得额 = 500000
+    # 减按25%计入 = 500000 * 25% = 125000
+    # 按20%税率 = 125000 * 20% = 25000
+    # 实际税负 = 25000 / 500000 = 5%
+    assert result.tax_payable == Decimal('25000.00')
+    assert result.tax_rate == Decimal('0.25')  # 法定税率
+
+
+def test_calculate_income_tax_small_micro_200w(engine):
+    """小型微利企业：利润200万，实际税率5%"""
+    result = engine.calculate_income_tax(
+        profit=Decimal('2000000'),
+        taxpayer_type='small_micro'
+    )
+    # 应纳税所得额 = 2000000
+    # 减按25%计入 = 2000000 * 25% = 500000
+    # 按20%税率 = 500000 * 20% = 100000
+    # 实际税负 = 100000 / 2000000 = 5%
+    assert result.tax_payable == Decimal('100000.00')
+
+
+def test_calculate_income_tax_negative_profit(engine):
+    """负利润 → 抛出异常"""
+    with pytest.raises(AccountingError) as exc_info:
+        engine.calculate_income_tax(
+            profit=Decimal('-100000'),
+            taxpayer_type='small_micro'
+        )
+    assert exc_info.value.code == AccountingErrorCode.INCOME_TAX_PROFIT_NEGATIVE
+
+
+def test_calculate_income_tax_general_25pct(engine):
+    """一般企业：利润50万，税率25%"""
+    result = engine.calculate_income_tax(
+        profit=Decimal('500000'),
+        taxpayer_type='general'
+    )
+    # 应纳税额 = 500000 × 25% = 125000
+    assert result.tax_payable == Decimal('125000.00')
+    assert result.tax_rate == Decimal('0.25')

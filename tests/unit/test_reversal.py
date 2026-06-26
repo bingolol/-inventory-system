@@ -8,22 +8,8 @@ import pytest
 from decimal import Decimal
 from datetime import datetime
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from database import Base
 import models
 from crud.reversal import reverse_receipts, reverse_payments
-
-
-@pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
 
 
 @pytest.fixture

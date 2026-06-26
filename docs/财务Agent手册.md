@@ -1,4 +1,4 @@
-# AI Agent 记账操作手册
+# 财务Agent 操作手册
 
 > 本手册供 AI Agent 加载为 skill，快速执行进销存系统记账操作。
 
@@ -10,7 +10,7 @@
 |---|------|------|
 | R1 | **必须调用 API** | 所有记账走本系统 API，禁止用文本/表格/笔记替代 |
 | R2 | **先查后写** | 操作前先查询确认数据存在（商品、供应商、客户），避免重复创建 |
-| R3 | **带齐 Header** | 所有请求必须带 `X-Account-ID`；写操作加 `X-Operator: ai` |
+| R3 | **带齐 Header** | 所有请求必须带 `X-Account-ID`；所有请求加 `X-Operator: ai`（审计中间件自动读取） |
 | R4 | **发票用 quick** | 发票录入优先用 `POST /api/invoices/quick`，只需传价税合计+税率，系统自动算税 |
 | R5 | **更新付款状态** | 采购单/销售单创建后，付款/收款时更新 `payment_status` |
 | R6 | **禁止假设数据** | 必须调用 API 获取真实数据，禁止编造 ID、金额、数量 |
@@ -111,7 +111,7 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
-| 创建商品 | `/api/products` | POST | `name` | `sku`, `unit`, `category`, `purchase_price`, `sale_price`, `min_stock`, `initial_stock` |
+| 创建商品 | `/api/products` | POST | `name` | `sku`, `unit`, `category`, `purchase_price`, `sale_price`, `min_stock` |
 | 更新商品 | `/api/products/{id}` | PUT | — | `name`, `sku`, `unit`, `category`, `purchase_price`, `sale_price`, `min_stock` |
 | 删除商品 | `/api/products/{id}` | DELETE | — | — |
 | 创建供应商 | `/api/suppliers` | POST | `name` | `contact`, `phone`, `address`, `notes` |
@@ -145,7 +145,9 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
-| 调整库存 | `/api/inventory/{product_id}` | PUT | `quantity` | — |
+| 创建库存调整单 | `/api/inventory/adjustments` | POST | `product_id`, `quantity` | `reason(inventory_count/spoilage/exchange/other)`, `notes` |
+
+> 库存只能通过 **采购入库**、**期初余额**、**库存调整单** 三种途径创建。`POST /api/inventory/adjustments` 替代了旧版 `PUT /api/inventory/{id}`。`quantity` 正值=入库，负值=出库。
 
 #### 费用 / 财务
 
@@ -173,6 +175,16 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 |------|------|------|----------|----------|
 | 创建付款 | `/api/payments` | POST | `payment_type`, `related_entity_type`, `related_entity_id`, `amount`, `payment_date` | `payment_method`, `bank_account_id`, `description` |
 | 创建收款 | `/api/receipts` | POST | `receipt_type`, `related_entity_type`, `related_entity_id`, `amount`, `receipt_date` | `receipt_method`, `bank_account_id`, `description` |
+
+#### 会计核算查询 (finance/)
+
+| 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
+|------|------|------|----------|----------|
+| 科目表（含余额） | `/api/finance/accounts/chart` | GET | — | `ledger_id` |
+| 凭证列表 | `/api/finance/journal/moves` | GET | — | `ledger_id`, `move_type`, `start_date`, `end_date`, `page`, `page_size` |
+| 凭证详情 | `/api/finance/journal/moves/{id}` | GET | — | — |
+| 试算平衡表 | `/api/finance/reports/trial-balance` | GET | — | `ledger_id`, `date` |
+| 往来余额+账龄 | `/api/finance/receivable/partner/{id}` | GET | — | `ledger_id`, `partner_type`(customer/supplier) |
 
 #### 备份
 
@@ -318,8 +330,8 @@ curl -X POST http://localhost:8000/api/personal \
 
 | 字段 | 合法值 |
 |------|--------|
-| `category` | `房租`/`水电`/`工资`/`材料`/`办公用品`/`运费`/`维修`/`其他` |
-| `cost_type` | `材料`/`人工`/`差旅`/`外包`/`设备`/`其他` |
+| `category` | `房租`/`水电`/`工资`/`材料`/`办公用品`/`运费`/`维修`/`税金及附加`/`所得税`/`其他` |
+| `functional_category` | `销售费用`/`管理费用`/`财务费用`/`税金及附加` |
 
 ### 个人流水
 
@@ -349,7 +361,7 @@ curl -X POST http://localhost:8000/api/personal \
 |------|------|------|
 | 400 | 业务校验失败 | 检查响应 message，修正数据 |
 | 401 | 缺少 X-Account-ID | 补充请求头 |
-| 403 | AI 调用了非规范写接口 | **STOP_RETRYING**，按 `ai_instruction` / `suggested_endpoint` 改用规范接口（见 R7） |
+| 403 | AI 调用了非规范写接口，或尝试直接修改关键数据 | **STOP_RETRYING**，按 `ai_instruction` / `suggested_endpoint` 改用规范接口（见 R7）。期初余额/发票/固定资产被锁定，必须用替代业务流程 |
 | 404 | 不存在 | 检查 ID 是否正确、是否属于当前账本 |
 | 409 | 数据冲突 | 唯一约束冲突（如商品编码重复） |
 | 422 | 参数校验失败 / 会计计算错误 | 响应中会提示合法值列表；会计错误另含 `accounting_rule`(法规依据) + `calculation_detail`(数值明细),按 `ai_instruction` 修正 |
@@ -409,4 +421,4 @@ curl -X POST http://localhost:8000/api/personal \
 
 ---
 
-*AI Agent 操作手册 v2.2 | 2026-06-22 — 发票商品明细 + 自动生成订单*
+*财务Agent 操作手册 v3.2 | 2026-06-25*
