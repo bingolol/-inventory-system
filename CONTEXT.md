@@ -294,6 +294,19 @@ inventory-system/
 - 创建商品时不再创建 Inventory 记录（不再接受 `initial_stock`），库存必须通过采购单/期初余额/调整单创建
 - 系统实现: `backend/engine_inventory.py`
 
+### BR-8:会计凭证/折旧流水同样是真相源
+
+`FixedAssetDepreciation` 和 `AccountMove` 与 `StockMove` 同等保护：
+- 三张表均加 `before_update` 事件监听器，任何 UPDATE 操作抛出 `BusinessError`
+- `SaleItem.unit_cost` 使用 `@property` + `set_calculated_cost()` 模式，禁止直接赋值
+
+| 表 | 防护方式 | 代码位置 |
+|----|----------|----------|
+| `StockMove` | `before_update` 全拦 | `models.py` |
+| `FixedAssetDepreciation` | `before_update` 全拦 | `models.py` |
+| `AccountMove` | `before_update` 全拦 | `models_finance.py` |
+| `SaleItem.unit_cost` | `@property` 只读 + `set_calculated_cost()` | `models.py` |
+
 ---
 
 ## 产品设计原则
