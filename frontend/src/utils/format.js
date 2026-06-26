@@ -24,7 +24,9 @@ export const formatMoney = (value) => {
  */
 export const formatDateTime = (str) => {
   if (!str) return '-'
-  return new Date(str).toLocaleString('zh-CN', { hour12: false })
+  const d = new Date(str)
+  if (isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN', { hour12: false })
 }
 
 /**
@@ -34,7 +36,9 @@ export const formatDateTime = (str) => {
  */
 export const formatDate = (str) => {
   if (!str) return '-'
-  return new Date(str).toLocaleDateString('zh-CN')
+  const d = new Date(str)
+  if (isNaN(d.getTime())) return '-'
+  return d.toLocaleDateString('zh-CN')
 }
 
 /**

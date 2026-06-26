@@ -92,12 +92,7 @@
         <el-form-item label="预警库存">
           <el-input-number v-model="form.min_stock" :min="0" style="width:100%" />
         </el-form-item>
-        <el-form-item v-if="!editingId" label="初始库存">
-          <el-input-number v-model="form.initial_stock" :min="0" style="width:100%" />
-        </el-form-item>
-        <el-form-item v-if="form.initial_stock > 0 && form.initial_stock < form.min_stock" label="">
-          <el-alert type="warning" :closable="false" show-icon title="初始库存低于预警线" />
-        </el-form-item>
+
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
@@ -164,11 +159,10 @@ const showDialog = (row) => {
       purchase_price: Number(row.purchase_price) || 0,
       sale_price: Number(row.sale_price) || 0,
       min_stock: Number(row.min_stock) || 0,
-      initial_stock: Number(row.initial_stock) || 0
     }
   } else {
     editingId.value = null
-    form.value = { name: '', sku: '', category: '', unit: '个', purchase_price: 0, sale_price: 0, min_stock: 0, initial_stock: 0, description: '' }
+    form.value = { name: '', sku: '', category: '', unit: '个', purchase_price: 0, sale_price: 0, min_stock: 0, description: '' }
   }
   dialogVisible.value = true
 }

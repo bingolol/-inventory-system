@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database import SessionLocal, init_db
 from models import Invoice, FixedAsset
+from test_helpers import ensure_test_product
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +35,7 @@ def _uniq(prefix):
 
 
 def _base_invoice_payload():
+    pid = ensure_test_product()
     return {
         "invoice_no": _uniq("INV-QUICK"),
         "direction": "in",
@@ -41,8 +43,14 @@ def _base_invoice_payload():
         "amount_with_tax": "11300.00",
         "tax_rate": "0.13",
         "counterparty_name": "测试供应商",
+        "seller_name": "测试供应商",
+        "buyer_name": "本公司",
         "issue_date": "2026-06-01",
         "notes": "quick 合并测试",
+        "purchase_order_action": "auto_create",
+        "items": [
+            {"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}
+        ]
     }
 
 
@@ -118,7 +126,8 @@ class TestQuickMergeFixedAsset:
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
         data = r.json()["data"]
-        assert data["related_order_type"] is None
+        # 进项发票自动生成采购单（不再是 None）
+        assert data["related_order_type"] == "purchase_order"
         assert "fixed_asset" not in data
 
     def test_quick_image_url_passthrough(self, client):

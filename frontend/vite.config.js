@@ -13,5 +13,13 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  test: {
+    environment: 'happy-dom',
+    include: ['tests/unit/**/*.test.js', 'tests/unit/**/*.spec.js'],
+    coverage: {
+      reporter: ['text', 'json', 'html'],
+      include: ['src/utils/**/*.js', 'src/composables/**/*.js', 'src/stores/**/*.js']
+    }
   }
 })

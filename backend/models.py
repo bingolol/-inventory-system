@@ -158,7 +158,8 @@ class PurchaseOrder(Base):
     order_no = Column(String(30), index=True, comment="采购单号")
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), comment="供应商ID")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail/purchase_labor")
-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
+    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额（价税合计）")
+    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="增值税额")
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="付款状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
@@ -200,7 +201,8 @@ class SaleOrder(Base):
     order_no = Column(String(30), index=True, comment="销售单号")
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="客户ID(可为空=散客)")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail")
-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额")
+    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额（价税合计）")
+    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="增值税额")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="支付状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
@@ -293,6 +295,8 @@ class Invoice(Base):
     tax_amount = Column(Numeric(12, 2), nullable=False, comment="税额")
     amount_with_tax = Column(Numeric(12, 2), nullable=False, comment="价税合计")
     counterparty_name = Column(String(200), nullable=False, comment="对方名称")
+    seller_name = Column(String(200), nullable=False, default="", comment="销方名称")
+    buyer_name = Column(String(200), nullable=False, default="", comment="买方名称")
     issue_date = Column(DateTime, nullable=False, comment="开票日期")
     pdf_path = Column(String(500), nullable=True, comment="PDF文件路径")
     image_url = Column(String(500), default="", comment="附件图片URL")
@@ -303,6 +307,8 @@ class Invoice(Base):
     notes = Column(Text, default="", comment="备注")
     created_at = Column(DateTime, default=datetime.now)
 
+    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
+
     __table_args__ = (
         UniqueConstraint('account_id', 'invoice_no', name='uix_account_invoice_no'),
         # DB 层兜底:防止 agent 越过 handler 直接写非法 related_order_type
@@ -310,6 +316,25 @@ class Invoice(Base):
             "related_order_type IS NULL OR related_order_type IN ('sale_order','purchase_order','expense','fixed_asset')",
             name='ck_invoice_related_order_type'
         ),
+    )
+
+
+class InvoiceItem(Base):
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, comment="发票ID")
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
+    quantity = Column(Integer, nullable=False, comment="数量")
+    unit_price = Column(Numeric(12, 6), nullable=False, comment="单价")
+    tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="税率")
+    total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+
+    invoice = relationship("Invoice", back_populates="items")
+    product = relationship("Product")
+
+    __table_args__ = (
+        UniqueConstraint('invoice_id', 'product_id', name='uix_invoice_item_product'),
     )
 
 

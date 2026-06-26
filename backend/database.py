@@ -453,6 +453,48 @@ def _migrate_bank_transaction_flow_category(engine):
             logger.info("迁移: bank_transactions 表添加 flow_category 列")
 
 
+def _migrate_invoice_party_names(engine):
+    """为 invoices 表添加 seller_name 和 buyer_name 列"""
+    insp = inspect(engine)
+    if "invoices" not in insp.get_table_names():
+        return
+    columns = [col["name"] for col in insp.get_columns("invoices")]
+    with engine.connect() as conn:
+        if "seller_name" not in columns:
+            conn.execute(text("ALTER TABLE invoices ADD COLUMN seller_name VARCHAR(200) NOT NULL DEFAULT ''"))
+            logger.info("迁移: invoices 表添加 seller_name 列")
+        if "buyer_name" not in columns:
+            conn.execute(text("ALTER TABLE invoices ADD COLUMN buyer_name VARCHAR(200) NOT NULL DEFAULT ''"))
+            logger.info("迁移: invoices 表添加 buyer_name 列")
+        conn.commit()
+
+
+def _migrate_sale_order_tax_amount(engine):
+    """为 sale_orders 表添加 tax_amount 列"""
+    insp = inspect(engine)
+    if "sale_orders" not in insp.get_table_names():
+        return
+    columns = [col["name"] for col in insp.get_columns("sale_orders")]
+    if "tax_amount" not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE sale_orders ADD COLUMN tax_amount NUMERIC(12,2) DEFAULT 0"))
+            conn.commit()
+            logger.info("迁移: sale_orders 表添加 tax_amount 列")
+
+
+def _migrate_purchase_order_tax_amount(engine):
+    """为 purchase_orders 表添加 tax_amount 列"""
+    insp = inspect(engine)
+    if "purchase_orders" not in insp.get_table_names():
+        return
+    columns = [col["name"] for col in insp.get_columns("purchase_orders")]
+    if "tax_amount" not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN tax_amount NUMERIC(12,2) DEFAULT 0"))
+            conn.commit()
+            logger.info("迁移: purchase_orders 表添加 tax_amount 列")
+
+
 def init_db():
     import models
     Base.metadata.create_all(bind=engine)
@@ -465,6 +507,9 @@ def init_db():
     _migrate_expense_functional_category(engine)
     _migrate_drop_has_invoice(engine)
     _migrate_bank_transaction_flow_category(engine)
+    _migrate_invoice_party_names(engine)
+    _migrate_sale_order_tax_amount(engine)
+    _migrate_purchase_order_tax_amount(engine)
     # _migrate_v4_order_type 已删除：所有字段已在 models.py 中定义，create_all 自动创建
     _ensure_default_accounts()
     # 旧迁移的第6步"清空数据"无幂等保护，导致每次重启都会丢失所有数据

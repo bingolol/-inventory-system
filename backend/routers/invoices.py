@@ -186,6 +186,8 @@ async def quick_create_invoice(
                     tax_rate=invoice.tax_rate,
                     amount_with_tax=invoice.amount_with_tax,
                     counterparty_name=invoice.counterparty_name,
+                    seller_name=invoice.seller_name,
+                    buyer_name=invoice.buyer_name,
                     issue_date=invoice.issue_date,
                     notes=invoice.notes,
                     asset_code=fa.asset_code,
@@ -213,9 +215,16 @@ async def quick_create_invoice(
                     tax_amount=amounts.tax_amount,
                     amount_with_tax=amounts.amount_with_tax,
                     counterparty_name=invoice.counterparty_name,
+                    seller_name=invoice.seller_name,
+                    buyer_name=invoice.buyer_name,
                     issue_date=invoice.issue_date,
-                    image_url=invoice.image_url,  # 修复：原 handler 丢弃了 schema 里的 image_url
+                    image_url=invoice.image_url,
                     notes=invoice.notes,
+                    items=[it.model_dump() for it in invoice.items],
+                    sale_order_action=invoice.sale_order_action,
+                    purchase_order_action=invoice.purchase_order_action,
+                    related_order_id=invoice.related_order_id,
+                    related_order_type=invoice.related_order_type,
                 )
                 db_invoice = dispatch(cmd, db)
                 db_asset = None

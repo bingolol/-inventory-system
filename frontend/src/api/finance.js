@@ -27,9 +27,17 @@ export const updateOpeningBalance = (id, data) => api.put(`/opening-balances/${i
 export const deleteOpeningBalance = (id) => api.delete(`/opening-balances/${id}`)
 export const getLatestOpeningBalance = () => api.get('/opening-balances/latest')
 
+// Finance Query (财务查询 API - Phase 3)
+export const getTrialBalance = (params) => api.get('/finance/reports/trial-balance', { params })
+export const getAccountChart = () => api.get('/finance/accounts/chart')
+export const getJournalMoves = (params) => api.get('/finance/journal/moves', { params })
+export const getJournalMove = (id) => api.get(`/finance/journal/moves/${id}`)
+export const getPartnerReceivable = (partnerId, params) => api.get(`/finance/receivable/partner/${partnerId}`, { params })
+
 export default {
   getOverview, getPurchaseReport, getSaleReport, getProfitReport, getTrend,
   getBalanceSheet, getIncomeStatement, getFinancialSummary,
   getCashFlowStatement, getCashFlowTransactions, createCashFlowTransaction, updateCashFlowTransaction, deleteCashFlowTransaction,
-  getOpeningBalances, getOpeningBalance, createOpeningBalance, updateOpeningBalance, deleteOpeningBalance, getLatestOpeningBalance
+  getOpeningBalances, getOpeningBalance, createOpeningBalance, updateOpeningBalance, deleteOpeningBalance, getLatestOpeningBalance,
+  getTrialBalance, getAccountChart, getJournalMoves, getJournalMove, getPartnerReceivable
 }

@@ -125,10 +125,10 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
-| 创建采购单 | `/api/purchases` | POST | `items[]{product_id, quantity, unit_price}` | `supplier_id`, `has_invoice`, `payment_method`, `notes`, `tax_rate` |
+| 创建采购单 | `/api/purchases` | POST | `items[]{product_id, quantity, unit_price}` | `supplier_id`, `payment_method`, `notes`, `tax_rate` |
 | 更新采购单 | `/api/purchases/{id}` | PUT | — | `payment_status`, `status`, `notes` |
 | 删除采购单 | `/api/purchases/{id}` | DELETE | — | — |
-| 创建销售单 | `/api/sales` | POST | `items[]{product_id, quantity, unit_price}`, `sale_date` | `customer_id`, `deduct_inventory`, `has_invoice`, `payment_status`, `total_price`, `notes`, `tax_rate` |
+| 创建销售单 | `/api/sales` | POST | `items[]{product_id, quantity, unit_price}`, `sale_date` | `customer_id`, `deduct_inventory`, `payment_status`, `total_price`, `notes`, `tax_rate` |
 | 更新销售单 | `/api/sales/{id}` | PUT | — | `payment_status`, `status`, `notes` |
 | 删除销售单 | `/api/sales/{id}` | DELETE | — | — |
 
@@ -136,7 +136,7 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
-| AI 快捷录发票 | `/api/invoices/quick` | POST | `invoice_no`, `direction`, `invoice_type`, `amount_with_tax`, `tax_rate`, `counterparty_name`, `issue_date` | `notes`, `image_url`, `fixed_asset{asset_code, asset_name, useful_life, start_date, ...}` |
+| AI 快捷录发票 | `/api/invoices/quick` | POST | `invoice_no`, `direction`, `invoice_type`, `amount_with_tax`, `tax_rate`, `counterparty_name`, `seller_name`, `buyer_name`, `issue_date`, `items[]{product_id, quantity, unit_price}` | `notes`, `image_url`, `sale_order_action(link_existing/auto_create)`, `purchase_order_action(link_existing/auto_create)`, `related_order_id`, `fixed_asset{asset_code, asset_name, useful_life, start_date, ...}` |
 | 更新发票 | `/api/invoices/{id}` | PUT | — | `invoice_no`, `direction`, `invoice_type`, `tax_rate`, `amount_with_tax`, `counterparty_name`, `issue_date`, `notes` |
 | 删除发票 | `/api/invoices/{id}` | DELETE | — | — |
 | 认证进项专票 | `/api/invoices/{id}/certify` | POST | — | — |
@@ -151,8 +151,8 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
-| 创建费用 | `/api/expenses` | POST | `category`, `amount`, `expense_date` | `functional_category`, `has_invoice`, `payment_method`, `description`, `image_url` |
-| 更新费用 | `/api/expenses/{id}` | PUT | — | `category`, `amount`, `expense_date`, `has_invoice`, `payment_method`, `description` |
+| 创建费用 | `/api/expenses` | POST | `category`, `amount`, `expense_date` | `functional_category`, `payment_method`, `description`, `image_url` |
+| 更新费用 | `/api/expenses/{id}` | PUT | — | `category`, `amount`, `expense_date`, `payment_method`, `description` |
 | 删除费用 | `/api/expenses/{id}` | DELETE | — | — |
 | 创建期初余额 | `/api/opening-balances` | POST | `date` | `cash_balance`, `bank_balance`, `accounts_receivable`, `inventory_value`, `fixed_assets_original`, `accumulated_depreciation`, `accounts_payable`, `tax_payable`, `paid_in_capital`, `retained_earnings` |
 | 创建现金流水 | `/api/cash-flows/transactions` | POST | `type`, `amount`, `transaction_date` | `flow_category`, `description`, `related_entity_type`, `related_entity_id` |
@@ -204,7 +204,7 @@ curl -X POST http://localhost:8000/api/products \
 # 3. 创建采购单（自动增加库存）
 curl -X POST http://localhost:8000/api/purchases \
   -H "X-Account-ID: 1" -H "X-Operator: ai" -H "Content-Type: application/json" \
-  -d '{"supplier_id":1,"has_invoice":true,"payment_method":"company",
+   -d '{"supplier_id":1,"payment_method":"company",
        "items":[{"product_id":1,"quantity":50,"unit_price":3500,"tax_rate":0.13}]}'
 ```
 
@@ -243,6 +243,31 @@ curl -X POST http://localhost:8000/api/invoices/quick \
          "depreciation_method":"年限平均法","start_date":"2026-06-01",
          "accumulated_depreciation":0,"asset_status":"在用"}}'
 # 响应 data.related_order_type=="fixed_asset"，data.fixed_asset.id 为关联资产 ID
+```
+
+**发票自动生成订单**（AI 识别商品明细后自动完成业务闭环）：
+```bash
+# 销项发票：自动生成销售单 + 扣库存
+curl -X POST http://localhost:8000/api/invoices/quick \
+  -H "X-Account-ID: 1" -H "X-Operator: ai" -H "Content-Type: application/json" \
+  -d '{"invoice_no":"SO202606-001","direction":"out","invoice_type":"ordinary",
+       "tax_rate":0.01,"amount_with_tax":10100,"counterparty_name":"XX客户",
+       "seller_name":"本公司","buyer_name":"XX客户","issue_date":"2026-06-22",
+       "items":[{"product_id":1,"quantity":5,"unit_price":2000}],
+       "sale_order_action":"auto_create"}'
+# 响应 data.related_order_id 为生成的销售单 ID
+```
+
+```bash
+# 进项发票：自动生成采购单 + 入库
+curl -X POST http://localhost:8000/api/invoices/quick \
+  -H "X-Account-ID: 1" -H "X-Operator: ai" -H "Content-Type: application/json" \
+  -d '{"invoice_no":"PO202606-001","direction":"in","invoice_type":"special",
+       "tax_rate":0.13,"amount_with_tax":11300,"counterparty_name":"XX供应商",
+       "seller_name":"XX供应商","buyer_name":"本公司","issue_date":"2026-06-22",
+       "items":[{"product_id":1,"quantity":10,"unit_price":1000}],
+       "purchase_order_action":"auto_create"}'
+# 响应 data.related_order_id 为生成的采购单 ID
 ```
 
 ### 场景 D：查看税务
@@ -384,4 +409,4 @@ curl -X POST http://localhost:8000/api/personal \
 
 ---
 
-*AI Agent 操作手册 v2.1 | 2026-06-21 — 新增会计计算错误码完整清单*
+*AI Agent 操作手册 v2.2 | 2026-06-22 — 发票商品明细 + 自动生成订单*

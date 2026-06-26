@@ -130,6 +130,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { handleError } from '../api/index'
 import { DataLine, TrendCharts, PieChart } from '@element-plus/icons-vue'
 import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
@@ -157,7 +158,7 @@ const loadBalanceSheet = async () => {
     const response = await financeApi.getBalanceSheet(reportDate.value)
     balanceSheet.value = response
   } catch (error) {
-    ElMessage.error('加载资产负债表失败')
+    handleError(error, { defaultMsg: '加载资产负债表失败' })
     balanceSheet.value = null
   } finally {
     loading.value = false

@@ -32,6 +32,7 @@ from database import init_db
 init_db()
 
 from main import app
+from test_helpers import ensure_test_product
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
 
@@ -251,12 +252,13 @@ def test_invoice(client):
     # 硬编码输入
     AMOUNT_WITH_TAX = 10100.00
     TAX_RATE = 0.01
-    
+    pid = ensure_test_product(1)
+
     # 硬编码计算公式
     WITHOUT_TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) / (1 + Decimal(str(TAX_RATE))))
     TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) - WITHOUT_TAX)
     BALANCE = WITHOUT_TAX + TAX
-    
+
     # 执行
     resp = client.post("/api/invoices/quick", json={
         "invoice_no": f"INV-{int(time.time())}",
@@ -265,7 +267,11 @@ def test_invoice(client):
         "amount_with_tax": str(AMOUNT_WITH_TAX),
         "tax_rate": str(TAX_RATE),
         "counterparty_name": "测试",
+        "seller_name": "本公司",
+        "buyer_name": "测试",
         "issue_date": "2026-03-15",
+        "sale_order_action": "auto_create",
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": str(TAX_RATE)}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)
     

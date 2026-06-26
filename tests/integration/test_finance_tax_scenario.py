@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database import SessionLocal, init_db
 from models import Account, Invoice
+from test_helpers import ensure_test_product
 
 
 @pytest.fixture(scope="module")
@@ -53,10 +54,14 @@ class TestFullTaxScenario:
     def test_01_create_input_special_invoice(self, client):
         """采购环节:录入进项专票(13%)→ 待认证"""
         aid = _account_id()
+        pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
             "invoice_no": _uniq("IN-SPEC"), "direction": "in", "invoice_type": "special",
             "amount_with_tax": "11300.00", "tax_rate": "0.13",
-            "counterparty_name": "供应商甲", "issue_date": "2026-04-15",
+            "counterparty_name": "供应商甲", "seller_name": "供应商甲", "buyer_name": "本公司",
+            "issue_date": "2026-04-15",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
         data = r.json()["data"]
@@ -84,10 +89,14 @@ class TestFullTaxScenario:
     def test_03_create_output_invoice(self, client):
         """销售环节:开销项发票(1%征收率)→ 销项税额"""
         aid = _account_id()
+        pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
             "invoice_no": _uniq("OUT-ORD"), "direction": "out", "invoice_type": "ordinary",
             "amount_with_tax": "10100.00", "tax_rate": "0.01",
-            "counterparty_name": "客户乙", "issue_date": "2026-05-20",
+            "counterparty_name": "客户乙", "seller_name": "本公司", "buyer_name": "客户乙",
+            "issue_date": "2026-05-20",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
         data = r.json()["data"]

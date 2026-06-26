@@ -4,10 +4,10 @@
 每个 Handler 包含：数据校验 → ORM 操作 → 日志记录。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 import models
 from enums import InvoiceDirection, InvoiceType
@@ -37,6 +37,8 @@ class CreateInvoice(Command):
     tax_amount: Any = None              # Decimal
     amount_with_tax: Any = None         # Decimal
     counterparty_name: str = ""
+    seller_name: str = ""
+    buyer_name: str = ""
     issue_date: Any = None              # datetime or str
     pdf_path: Optional[str] = None
     image_url: Optional[str] = None
@@ -45,6 +47,9 @@ class CreateInvoice(Command):
     related_order_id: Optional[int] = None
     related_order_type: Optional[str] = None
     notes: str = ""
+    items: List[dict] = field(default_factory=list)
+    sale_order_action: Optional[str] = None  # link_existing / auto_create (销项)
+    purchase_order_action: Optional[str] = None  # link_existing / auto_create (进项)
 
 
 @register(CreateInvoice)
@@ -93,6 +98,8 @@ class CreateInvoiceHandler(CommandHandler):
             tax_amount=cmd.tax_amount,
             amount_with_tax=cmd.amount_with_tax,
             counterparty_name=cmd.counterparty_name,
+            seller_name=cmd.seller_name,
+            buyer_name=cmd.buyer_name,
             issue_date=issue_date,
             pdf_path=cmd.pdf_path,
             image_url=cmd.image_url,
@@ -103,6 +110,55 @@ class CreateInvoiceHandler(CommandHandler):
             notes=cmd.notes,
         )
         db.add(db_invoice)
+        db.flush()
+
+        # 5.1 保存发票商品明细
+        for it in cmd.items:
+            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+            inv_item = models.InvoiceItem(
+                invoice_id=db_invoice.id,
+                product_id=it['product_id'],
+                quantity=it['quantity'],
+                unit_price=it['unit_price'],
+                tax_rate=it.get('tax_rate', cmd.tax_rate),
+                total_price=line_total,
+            )
+            db.add(inv_item)
+
+        # 5.2 销项发票：根据 sale_order_action 关联或自动生成销售单
+        if cmd.direction == InvoiceDirection.OUT:
+            if cmd.sale_order_action == "link_existing":
+                if not cmd.related_order_id:
+                    raise BusinessError(
+                        code=ErrorCode.VALIDATION_ERROR,
+                        message="sale_order_action=link_existing 时必填 related_order_id"
+                    )
+                db_invoice.related_order_type = "sale_order"
+                db_invoice.related_order_id = cmd.related_order_id
+            elif cmd.sale_order_action == "auto_create":
+                sale_order = _auto_generate_sale_order(
+                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items
+                )
+                db_invoice.related_order_type = "sale_order"
+                db_invoice.related_order_id = sale_order.id
+
+        # 5.3 进项发票：根据 purchase_order_action 关联或自动生成采购单
+        if cmd.direction == InvoiceDirection.IN:
+            if cmd.purchase_order_action == "link_existing":
+                if not cmd.related_order_id:
+                    raise BusinessError(
+                        code=ErrorCode.VALIDATION_ERROR,
+                        message="purchase_order_action=link_existing 时必填 related_order_id"
+                    )
+                db_invoice.related_order_type = "purchase_order"
+                db_invoice.related_order_id = cmd.related_order_id
+            elif cmd.purchase_order_action == "auto_create":
+                purchase_order = _auto_generate_purchase_order(
+                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items
+                )
+                db_invoice.related_order_type = "purchase_order"
+                db_invoice.related_order_id = purchase_order.id
+
         db.flush()
 
         # 6. 日志
@@ -293,6 +349,8 @@ class CreateInvoiceWithFixedAsset(Command):
     tax_rate: Any = None
     amount_with_tax: Any = None
     counterparty_name: str = ""
+    seller_name: str = ""
+    buyer_name: str = ""
     issue_date: Any = None
     notes: str = ""
 
@@ -334,6 +392,8 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             tax_amount=tax_amount,
             amount_with_tax=amount_with_tax,
             counterparty_name=cmd.counterparty_name,
+            seller_name=cmd.seller_name,
+            buyer_name=cmd.buyer_name,
             issue_date=issue_date,
             notes=cmd.notes,
             related_order_type="fixed_asset",
@@ -464,6 +524,101 @@ class UpdateInvoiceWithFixedAssetHandler(CommandHandler):
                  f"联动更新资产: {asset.name}", operator=cmd.operator)
 
         return {"invoice": invoice, "asset": asset}
+
+
+# ═══════════════════════════════════════════════════════════
+# 辅助函数：发票自动生成销售单/采购单
+# ═══════════════════════════════════════════════════════════
+
+def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
+    """销项发票创建后自动生成销售单，金额取发票金额，扣库存。"""
+    from .crud_compat import _generate_order_no, _log
+    from enums import OrderStatus, OrderType, PaymentStatus
+    from crud.inventory_ops import sale_deduct
+
+    order_no = _generate_order_no(db, "SO")
+    order = models.SaleOrder(
+        account_id=account_id,
+        order_no=order_no,
+        order_type=OrderType.RETAIL,
+        payment_status=PaymentStatus.UNPAID,
+        status=OrderStatus.COMPLETED,
+        notes=f"由发票 {invoice.invoice_no} 自动生成",
+        total_price=_d(invoice.amount_with_tax),
+        tax_amount=_d(invoice.tax_amount),
+        sale_date=invoice.issue_date,
+    )
+    db.add(order)
+    db.flush()
+
+    for it in items:
+        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        item = models.SaleItem(
+            order_id=order.id,
+            product_id=it['product_id'],
+            quantity=it['quantity'],
+            unit_price=it['unit_price'],
+            tax_rate=it.get('tax_rate', invoice.tax_rate),
+            total_price=line_total,
+        )
+        db.add(item)
+
+    db.flush()
+    sale_deduct(db, account_id, order, operator=operator)
+
+    _log(db, account_id, "create", "sale_order", order.id,
+         f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",
+         operator=operator)
+    db.flush()
+    return order
+
+
+def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, items: list):
+    """进项发票创建后自动生成采购单，金额取发票金额，入库。"""
+    from .crud_compat import _generate_order_no, _log, get_or_create_inventory, get_product
+    from enums import OrderStatus, OrderType, PaymentMethod
+
+    order_no = _generate_order_no(db, "PO")
+    order = models.PurchaseOrder(
+        account_id=account_id,
+        order_no=order_no,
+        supplier_id=None,
+        order_type=OrderType.RETAIL,
+        payment_method=PaymentMethod.COMPANY,
+        status=OrderStatus.COMPLETED,
+        notes=f"由发票 {invoice.invoice_no} 自动生成",
+        total_price=_d(invoice.amount_with_tax),
+        tax_amount=_d(invoice.tax_amount),
+        purchase_date=invoice.issue_date,
+    )
+    db.add(order)
+    db.flush()
+
+    for it in items:
+        product = get_product(db, account_id, it['product_id'])
+        if not product:
+            raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
+        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        item = models.PurchaseItem(
+            order_id=order.id,
+            product_id=it['product_id'],
+            quantity=it['quantity'],
+            unit_price=it['unit_price'],
+            tax_rate=it.get('tax_rate', invoice.tax_rate),
+            total_price=line_total,
+        )
+        db.add(item)
+        if product.track_inventory:
+            inv = get_or_create_inventory(db, account_id, it['product_id'])
+            inv.quantity += it['quantity']
+
+    db.flush()
+
+    _log(db, account_id, "create", "purchase_order", order.id,
+         f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",
+         operator=operator)
+    db.flush()
+    return order
 
 
 # ═══════════════════════════════════════════════════════════

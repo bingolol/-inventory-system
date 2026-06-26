@@ -81,6 +81,7 @@ import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { handleError } from '../api/index'
 
 const props = defineProps({
   startDate: {
@@ -110,7 +111,7 @@ const loadIncomeStatement = async () => {
     const response = await financeApi.getIncomeStatement(startDate.value, endDate.value)
     incomeStatement.value = response
   } catch (error) {
-    ElMessage.error('加载利润表失败')
+    handleError(error, { defaultMsg: '加载利润表失败' })
     incomeStatement.value = null
   } finally {
     loading.value = false

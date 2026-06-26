@@ -54,6 +54,7 @@ import { ref } from 'vue'
 import backupApi from '../api/backup'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { formatDateTime } from '../utils/format'
+import { handleError } from '../api/index'
 
 const backupLoading = ref(false)
 const listLoading = ref(false)
@@ -65,7 +66,7 @@ const loadBackups = async () => {
   try {
     backups.value = await backupApi.listBackups()
   } catch (e) {
-    console.error('获取备份列表失败:', e)
+    handleError(e, { defaultMsg: '获取备份列表失败', feedback: 'silent' })
   } finally {
     listLoading.value = false
   }

@@ -38,6 +38,7 @@ init_db()
 
 from main import app
 from models import Account
+from test_helpers import ensure_test_product
 
 # ── 获取测试用 account_id ──
 _db = SessionLocal()
@@ -257,7 +258,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JAN-{UNIQUE}", "direction": "in", "invoice_type": "special",
             "amount_with_tax": "5650.00", "tax_rate": "0.13",
-            "counterparty_name": "模拟供应商", "issue_date": "2026-01-20",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-01-20",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月进项发票失败: {resp.text}"
 
@@ -265,7 +269,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JAN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
             "amount_with_tax": "2020.00", "tax_rate": "0.01",
-            "counterparty_name": "模拟客户", "issue_date": "2026-01-25",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-01-25",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销项发票失败: {resp.text}"
 
@@ -359,7 +366,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-MAR-{UNIQUE}", "direction": "in", "invoice_type": "special",
             "amount_with_tax": "4520.00", "tax_rate": "0.13",
-            "counterparty_name": "模拟供应商", "issue_date": "2026-03-20",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-03-20",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月进项发票失败: {resp.text}"
 
@@ -367,7 +377,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-MAR-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
             "amount_with_tax": "4040.00", "tax_rate": "0.01",
-            "counterparty_name": "模拟客户", "issue_date": "2026-03-25",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-03-25",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销项发票失败: {resp.text}"
 
@@ -504,7 +517,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JUN-{UNIQUE}", "direction": "in", "invoice_type": "special",
             "amount_with_tax": "5650.00", "tax_rate": "0.13",
-            "counterparty_name": "模拟供应商", "issue_date": "2026-06-20",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-20",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月进项发票失败: {resp.text}"
 
@@ -512,7 +528,10 @@ class TestMonthlyBusinessCycle:
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JUN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
             "amount_with_tax": "4440.00", "tax_rate": "0.01",
-            "counterparty_name": "模拟客户", "issue_date": "2026-06-25",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-06-25",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销项发票失败: {resp.text}"
 

@@ -18,6 +18,9 @@ const routes = [
   { path: '/personal', name: 'Personal', component: () => import('../views/Personal.vue'), meta: { title: '个人流水账' } },
   { path: '/backup', name: 'Backup', component: () => import('../views/Backup.vue'), meta: { title: '数据备份' } },
   { path: '/reconciliations', name: 'Reconciliations', component: () => import('../views/Reconciliations.vue'), meta: { title: '对账管理' } },
+  { path: '/finance/reports/trial-balance', name: 'TrialBalance', component: () => import('../views/TrialBalance.vue'), meta: { title: '试算平衡表' } },
+  { path: '/finance/journal/moves', name: 'JournalMoves', component: () => import('../views/JournalMoves.vue'), meta: { title: '凭证查询' } },
+  { path: '/finance/receivable/aging', name: 'AgingReport', component: () => import('../views/AgingReport.vue'), meta: { title: '往来账龄' } },
   { path: '/:pathMatch(.*)*', name: 'NotFound', redirect: '/' },
 ]
 

@@ -24,7 +24,7 @@ export const companyMenuItems = [
   {
     index: 'tax', icon: 'DataLine', label: '税务方向',
     children: [
-      { index: '/tax-report', icon: 'Calculator', label: '税务报表' },
+      { index: '/tax-report', icon: 'DataBoard', label: '税务报表' },
       { index: '/invoices', icon: 'DocumentChecked', label: '发票管理' },
     ]
   },

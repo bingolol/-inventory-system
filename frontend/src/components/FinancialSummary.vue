@@ -141,6 +141,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { handleError } from '../api/index'
 import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -167,7 +168,7 @@ const loadFinancialSummary = async () => {
     const response = await financeApi.getFinancialSummary(reportDate.value)
     financialSummary.value = response
   } catch (error) {
-    ElMessage.error('加载财务汇总失败')
+    handleError(error, { defaultMsg: '加载财务汇总失败' })
     financialSummary.value = null
   } finally {
     loading.value = false

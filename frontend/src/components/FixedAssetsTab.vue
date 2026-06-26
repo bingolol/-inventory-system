@@ -31,10 +31,10 @@
         <el-table-column prop="accumulated_depreciation" label="累计折旧" width="120" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(row.accumulated_depreciation) }}</span></template></el-table-column>
         <el-table-column label="净值" width="120" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(Number(row.original_value) - Number(row.accumulated_depreciation)) }}</span></template></el-table-column>
         <el-table-column prop="status" label="状态" width="80" align="center"><template #default="{ row }"><el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="showEdit(row)">编辑</el-button>
-            <el-popconfirm title="确定删除此固定资产？" @confirm="handleDelete(row.id)"><template #reference><el-button size="small" link type="danger" style="margin-left:4px">删除</el-button></template></el-popconfirm>
+            <el-button v-if="row.status !== '报废'" size="small" link type="primary" @click="showEdit(row)">编辑</el-button>
+            <el-popconfirm v-if="row.status !== '报废'" title="确定处置此资产？（将标记为报废）" @confirm="handleDispose(row)"><template #reference><el-button size="small" link type="warning" style="margin-left:4px">处置</el-button></template></el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -64,6 +64,7 @@ import { ElMessage } from 'element-plus'
 import fixedAssetsApi from '../api/fixedAssets'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { handleError } from '../api/index'
 
 const list = ref([])
 const loading = ref(false)
@@ -88,7 +89,7 @@ async function loadData() {
     const res = await fixedAssetsApi.getFixedAssets(params)
     list.value = res.items || res
   } catch (e) {
-    ElMessage.error('加载失败: ' + (e.response?.data?.detail || e.message))
+    handleError(e, { defaultMsg: '加载固定资产列表失败' })
   } finally {
     loading.value = false
   }
@@ -96,6 +97,7 @@ async function loadData() {
 
 function showCreate() {
   isEdit.value = false
+  editingId.value = null
   form.value = defaultForm()
   dialogVisible.value = true
 }
@@ -119,17 +121,17 @@ async function handleSave() {
     dialogVisible.value = false
     loadData()
   } catch (e) {
-    ElMessage.error('保存失败: ' + (e.response?.data?.detail || e.message))
+    handleError(e, { defaultMsg: '保存固定资产失败' })
   }
 }
 
-async function handleDelete(id) {
+async function handleDispose(row) {
   try {
-    await fixedAssetsApi.deleteFixedAsset(id)
-    ElMessage.success('删除成功')
+    await fixedAssetsApi.disposeFixedAsset(row.id, '前端处置')
+    ElMessage.success('资产已处置')
     loadData()
   } catch (e) {
-    ElMessage.error('删除失败: ' + (e.response?.data?.detail || e.message))
+    handleError(e, { defaultMsg: '处置固定资产失败' })
   }
 }
 

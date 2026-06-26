@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -69,6 +69,14 @@ class FixedAssetBlock(BaseModel):
     asset_status: str = Field(default="在用")
 
 
+class InvoiceItemCreate(BaseModel):
+    """发票商品明细行"""
+    product_id: int
+    quantity: int = Field(..., gt=0)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
+    tax_rate: Decimal = Field(default=Decimal('0.01'), ge=0, le=1, max_digits=12, decimal_places=2)
+
+
 class InvoiceQuickCreate(BaseModel):
     invoice_no: str = Field(..., max_length=50)
     direction: str = Field(..., pattern="^(in|out)$")
@@ -76,11 +84,35 @@ class InvoiceQuickCreate(BaseModel):
     amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
     counterparty_name: str = Field(..., max_length=200)
+    seller_name: str = Field(..., max_length=200, description="销方名称")
+    buyer_name: str = Field(..., max_length=200, description="买方名称")
     issue_date: str  # YYYY-MM-DD
+    items: List[InvoiceItemCreate] = Field(..., min_length=1, description="商品明细（至少1行）")
+    sale_order_action: Optional[str] = Field(None, pattern="^(link_existing|auto_create)$",
+        description="销项发票必填：link_existing=关联已有销售单, auto_create=自动生成销售单")
+    purchase_order_action: Optional[str] = Field(None, pattern="^(link_existing|auto_create)$",
+        description="进项发票必填：link_existing=关联已有采购单, auto_create=自动生成采购单")
+    related_order_id: Optional[int] = Field(None, description="关联订单ID（link_existing时必填）")
+    related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
     image_url: Optional[str] = None
     notes: str = ""
     # 可选：发票同时入账固定资产（合并自原 POST /with-fixed-asset）
     fixed_asset: Optional[FixedAssetBlock] = None
+
+    @model_validator(mode="after")
+    def validate_order_action(self):
+        """销项发票必填 sale_order_action；进项发票必填 purchase_order_action；link_existing 时必填 related_order_id"""
+        if self.direction == "out":
+            if not self.sale_order_action:
+                raise ValueError("销项发票必填 sale_order_action（link_existing 或 auto_create）")
+            if self.sale_order_action == "link_existing" and not self.related_order_id:
+                raise ValueError("sale_order_action=link_existing 时必填 related_order_id")
+        elif self.direction == "in":
+            if not self.purchase_order_action:
+                raise ValueError("进项发票必填 purchase_order_action（link_existing 或 auto_create）")
+            if self.purchase_order_action == "link_existing" and not self.related_order_id:
+                raise ValueError("purchase_order_action=link_existing 时必填 related_order_id")
+        return self
 
 
 class InvoiceList(BaseModel):

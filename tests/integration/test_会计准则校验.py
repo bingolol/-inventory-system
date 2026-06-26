@@ -37,6 +37,7 @@ init_db()
 
 from main import app
 from models import Account
+from test_helpers import ensure_test_product
 
 # ── 获取测试用 account_id ──
 _db = SessionLocal()
@@ -258,6 +259,7 @@ class TestInvoiceAmountCalculation:
         """13%税率发票金额计算"""
         import time
         unique_no = f"TEST-INV-13PCT-{int(time.time())}"
+        pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
             "direction": "in",
@@ -265,7 +267,11 @@ class TestInvoiceAmountCalculation:
             "amount_with_tax": "11300.00",
             "tax_rate": "0.13",
             "counterparty_name": "测试供应商",
+            "seller_name": "测试供应商",
+            "buyer_name": "本公司",
             "issue_date": "2026-06-20",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
         data = resp.json().get("data", resp.json())
@@ -286,6 +292,7 @@ class TestInvoiceAmountCalculation:
         """1%征收率发票金额计算"""
         import time
         unique_no = f"TEST-INV-1PCT-{int(time.time())}"
+        pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
             "direction": "out",
@@ -293,7 +300,11 @@ class TestInvoiceAmountCalculation:
             "amount_with_tax": "10100.00",
             "tax_rate": "0.01",
             "counterparty_name": "测试客户",
+            "seller_name": "本公司",
+            "buyer_name": "测试客户",
             "issue_date": "2026-06-20",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
         data = resp.json().get("data", resp.json())

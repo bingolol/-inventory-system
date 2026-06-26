@@ -118,7 +118,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" align="center">
+      <el-table-column label="操作" width="240" align="center">
         <template #default="scope">
           <el-button v-if="scope.row.pdf_path" @click="previewPdf(scope.row.id)" type="info" size="small">
             预览
@@ -129,9 +129,9 @@
           <el-button @click="editInvoice(scope.row)" type="primary" size="small">
             编辑
           </el-button>
-          <el-popconfirm title="确定删除此发票？" @confirm="deleteInvoice(scope.row.id)">
+          <el-popconfirm v-if="!scope.row.is_reversed" title="确定红冲此发票？（关联订单将自动取消）" @confirm="reverseInvoice(scope.row.id)">
             <template #reference>
-              <el-button type="danger" size="small">删除</el-button>
+              <el-button type="warning" size="small">红冲</el-button>
             </template>
           </el-popconfirm>
           <el-button v-if="scope.row.direction === 'in' && scope.row.invoice_type === 'special' && scope.row.certification_status === 'n_a'" @click="certifyInvoice(scope.row.id)" type="success" size="small">
@@ -344,7 +344,7 @@ const fetchTaxStats = async (year, quarter) => {
       inputTax: taxRes.input_tax || 0,
       taxPayable: taxRes.tax_payable || 0
     }
-  } catch (e) { console.error('获取税务统计失败:', e) }
+  } catch (e) { handleError(e, { defaultMsg: '获取税务统计失败', feedback: 'silent' }) }
 }
 
 // 获取发票列表
@@ -438,6 +438,17 @@ const deleteInvoice = async (id) => {
     getInvoices()
   } catch (error) {
     handleError(error, { defaultMsg: '删除发票失败' })
+  }
+}
+
+// 红冲发票
+const reverseInvoice = async (id) => {
+  try {
+    await invoicesApi.reverseInvoice(id, '前端红冲')
+    ElMessage.success('发票已红冲')
+    getInvoices()
+  } catch (error) {
+    handleError(error, { defaultMsg: '红冲发票失败' })
   }
 }
 
@@ -548,12 +559,6 @@ enumsStore.fetchEnums()
   width: 100%;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .stats-content {
   display: flex;
   gap: 40px;
@@ -567,18 +572,18 @@ enumsStore.fetchEnums()
 
 .stat-label {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-secondary);
   margin-bottom: 5px;
 }
 
 .stat-value {
   font-size: 24px;
   font-weight: bold;
-  color: #409eff;
+  color: var(--primary);
 }
 
 .text-red {
-  color: #f56c6c;
+  color: var(--danger);
 }
 
 .dialog-footer {

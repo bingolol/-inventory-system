@@ -14,11 +14,14 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from main import app
+from database import SessionLocal, init_db
 from ai_gateway import _match, AI_CAPABILITIES
+from test_helpers import ensure_test_product
 
 
 @pytest.fixture(scope="module")
 def client():
+    init_db()
     with TestClient(app) as c:
         yield c
 
@@ -59,13 +62,17 @@ class TestQuickBatchCreate:
     def test_batch_50_invoices_all_succeed(self, client):
         """连续创建 50 张发票 → 全部成功,金额三件套一致"""
         h = {"X-Account-ID": "1", "X-Operator": "user"}
+        pid = ensure_test_product(1)
         ids = []
         for i in range(50):
             r = client.post("/api/invoices/quick", json={
                 "invoice_no": _uniq("STRESS-INV", i),
                 "direction": "out", "invoice_type": "ordinary",
                 "amount_with_tax": "113.00", "tax_rate": "0.13",
-                "counterparty_name": "压测客户", "issue_date": "2026-06-20",
+                "counterparty_name": "压测客户", "seller_name": "本公司", "buyer_name": "压测客户",
+                "issue_date": "2026-06-20",
+                "sale_order_action": "auto_create",
+                "items": [{"product_id": pid, "quantity": 1, "unit_price": "100.00", "tax_rate": "0.13"}],
             }, headers=h)
             assert r.status_code == 200, f"第{i}张创建失败: {r.text}"
             data = r.json()["data"]
