@@ -61,6 +61,12 @@ class FixedAssetEngine:
         if asset.status != "在用":
             return None
 
+        # 当月增加下月提（第三十一条）
+        if asset.start_date:
+            dep_year, dep_month = map(int, period.split("-"))
+            if dep_year == asset.start_date.year and dep_month == asset.start_date.month:
+                return None
+
         # 幂等检查
         existing = self.db.query(models.FixedAssetDepreciation).filter(
             models.FixedAssetDepreciation.asset_id == asset_id,

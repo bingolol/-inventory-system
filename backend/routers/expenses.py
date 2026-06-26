@@ -14,6 +14,7 @@ import crud
 from crud.invoice_linkage import bulk_has_invoice, has_invoice as linkage_has_invoice
 from uow import unit_of_work
 from operation_result import OperationResult, EntityType, OperationType
+from finance_integration import post_journal, EXPENSE_ACCOUNT_CODE_MAP
 
 router = APIRouter()
 
@@ -89,8 +90,18 @@ async def create_expense(
     )
     with unit_of_work(db):
         db.add(db_expense)
-        db.flush()  # 确保 db_expense.id 可用于日志
-        # 记录操作日志
+        db.flush()
+
+        # 生成会计凭证：借:5601/5602/5603 贷:1002/2202
+        expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "5602")
+        post_journal(db, account_id, "expense", {
+            "amount": db_expense.amount,
+            "expense_account_code": expense_code,
+            "bank_account_id": None,  # 费用创建时未付款，走应付账款
+            "partner_id": None,
+            "partner_type": None,
+        })
+
         crud._log(db, account_id, "create", "expense", db_expense.id,
                   f"创建费用:{db_expense.category} {db_expense.amount}", operator=operator)
     db.refresh(db_expense)

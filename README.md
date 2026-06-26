@@ -8,11 +8,8 @@
 
 ## 目录
 
-- [核心功能](#核心功能)
-- [技术栈](#技术栈)
 - [快速开始](#快速开始)
 - [一键打包](#一键打包)
-- [目录结构](#目录结构)
 - [🤖 AI Agent 使用手册](#-ai-agent-使用手册)
 - [环境变量](#环境变量)
 - [测试](#测试)
@@ -21,29 +18,7 @@
 
 ---
 
-## 核心功能
-
-- **进销存**：商品/库存管理、采购入库、销售出库，库存自动联动扣减/回补
-- **财务报表**：资产负债表、利润表（经营口径）、现金流量表、财务汇总
-- **税务双口径**：增值税季度/月度报表（发票口径）、企业所得税报表（销项/进项发票口径）
-- **发票管理**：进项/销项发票、专票认证、PDF 上传、AI 快捷录入接口
-- **多账本隔离**：通过 `X-Account-ID` 请求头隔离多套账本（公司账 / 个人账）
-- **对账管理**：按供应商/客户维度实时计算往来账
-- **个人流水**：独立的个人收支记账模块
-- **备份与日志**：数据热备份、操作日志全程可追溯
-
-## 技术栈
-
-| 层次 | 技术 |
-|------|------|
-| 前端框架 | Vue 3 + Vite + Element Plus |
-| 状态管理 | Pinia |
-| 路由 / HTTP | Vue Router 4 + Axios |
-| 图表 | ECharts + vue-echarts |
-| 后端框架 | FastAPI（Python 3.10+） |
-| ORM | SQLAlchemy 2.x |
-| 数据库 | SQLite |
-| 打包 | PyInstaller（生成 exe + 安装器） |
+项目详情（技术栈、架构分层、目录结构、业务规则）参见 [CONTEXT.md](./CONTEXT.md)。
 
 ## 快速开始
 
@@ -117,42 +92,6 @@ python build.py
 
 > 若 PyInstaller 报 `missing module`，在虚拟环境中安装缺失包，或将其加入 `inventory.spec` 的 `hiddenimports`。
 
-## 目录结构
-
-```
-inventory-system/
-├── backend/
-│   ├── main.py              # FastAPI 入口
-│   ├── routers/             # API 路由层
-│   ├── commands/            # 命令模式（写操作编排）
-│   ├── crud/                # 数据访问层
-│   ├── domain/              # 领域模型（业务规则校验）
-│   ├── schemas/             # Pydantic 模式
-│   ├── models.py            # ORM 模型
-│   ├── enums.py             # 枚举单一真相源
-│   ├── events.py / handlers.py  # 事件总线 + 处理器
-│   └── uow.py               # Unit of Work
-├── frontend/
-│   └── src/
-│       ├── views/           # 页面视图
-│       ├── components/      # 组件
-│       ├── composables/     # 组合式逻辑
-│       ├── stores/          # Pinia 状态
-│       ├── api/             # API 请求
-│       └── utils/           # 工具函数（formatMoney 等）
-├── tests/                   # 单元 / 集成 / E2E 测试
-├── docs/                    # 文档（含 AI Agent 手册）
-├── launcher.py              # 启动器（打包入口）
-├── build.py                 # 一键构建脚本
-├── installer.py             # tkinter 安装向导
-├── CONTEXT.md               # 项目上下文 / 领域语言
-└── AGENTS.md                # Agent 工作约定
-```
-
-**架构分层**：`Routers → Commands → CRUD / Domain → Events → EventBus`
-
-> Command Handler 显式编排库存联动，保障库存一致性。详见 [`CONTEXT.md`](./CONTEXT.md)。
-
 ---
 
 ## 🤖 AI Agent 使用手册
@@ -188,10 +127,11 @@ curl -X POST http://localhost:8000/api/sales \
 
 | 文档 | 内容 | 适用场景 |
 |------|------|----------|
-| 📖 **[docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md)** | 操作铁律 + API 速查表 + 记账场景 + 字段速查 | **AI 加载为 skill，快速记账** |
-| 🗂️ **[AGENTS.md](./AGENTS.md)** | Issue tracker / triage labels / domain 文档约定 | Agent 协作开发本仓库代码时 |
+| 📖 **[docs/财务Agent手册.md](./docs/财务Agent手册.md)** | 操作铁律 + API 速查表 + 记账场景 + 字段速查 | **AI 加载为 skill，快速记账** |
+| 📖 **[docs/开发Agent手册.md](./docs/开发Agent手册.md)** | 开发流程 + 编码规范 + 架构导航 | **AI 加载为 skill，开发代码** |
+| 🗂️ **[CONTEXT.md](./CONTEXT.md)** | 项目上下文 + Agent 工作流 + 业务规则 | Agent 协作开发本仓库代码时 |
 
-**操作铁律**（详见 [`docs/AI_AGENT_GUIDE.md`](./docs/AI_AGENT_GUIDE.md)）：
+**操作铁律**（详见 [`docs/财务Agent手册.md`](./docs/财务Agent手册.md)）：
 
 1. 必须调用 API 获取真实数据，禁止假设/编造
 2. 所有记账走本系统 API，禁止用文本/表格替代
@@ -241,15 +181,15 @@ pytest
 
 | 文档 | 内容 |
 |------|------|
-| [CONTEXT.md](./CONTEXT.md) | 项目上下文、技术栈、架构分层 |
-| [AGENTS.md](./AGENTS.md) | Agent 工作流、5 条规则 |
+| [CONTEXT.md](./CONTEXT.md) | 项目上下文、Agent 工作流、技术栈、架构分层、业务规则 |
 | [docs/INDEX.md](./docs/INDEX.md) | 完整文档索引 |
-| [docs/AI_AGENT_GUIDE.md](./docs/AI_AGENT_GUIDE.md) | AI Agent 操作手册 |
+| [docs/财务Agent手册.md](./docs/财务Agent手册.md) | 财务Agent 操作手册 |
+| [docs/开发Agent手册.md](./docs/开发Agent手册.md) | 开发Agent 手册 |
 
 ## 贡献与许可
 
 - 欢迎 Issue 与 PR：Fork → 新分支 → 添加/更新测试 → PR
-- Issue 追踪：GitHub Issues (gh CLI)，详见 [`AGENTS.md`](./AGENTS.md)
+- Issue 追踪：GitHub Issues (gh CLI)，详见 [`CONTEXT.md`](./CONTEXT.md#agent-工作流)
 - 仓库当前未包含 LICENSE 文件，发布前建议补充合适的许可证（如 MIT）
 
 ---

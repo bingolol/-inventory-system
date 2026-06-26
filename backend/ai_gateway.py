@@ -4,9 +4,11 @@
   - 同一业务能力的增/改/删，对 AI 只暴露 1 个规范端点（如发票创建只走 /quick）。
   - 变体端点（已被合并的 /with-fixed-asset 等）对 AI 不再可调用。
 
-拦截规则（仅对 X-Operator: ai 生效，前端 user 请求全部放行）：
+拦截规则：
   - GET / HEAD：查询全部放行
-  - 写操作（POST/PUT/DELETE/PATCH）：命中白名单 → 放行；否则 → 403 + ai_instruction 指明规范替代
+  - 写操作（POST/PUT/DELETE/PATCH）：
+    · user + 有前端 Referer/Origin → 全部放行
+    · 其他（AI / 脚本 / curl 等无前端 Origin 的调用）→ 命中白名单放行；否则 403
 
 白名单 AI_CAPABILITIES 是"唯一真相源"，同时驱动：
   - 本中间件的放行判断
@@ -15,11 +17,13 @@
 设计参考 confirm_middleware.py 的 ASGI 中间件模式。
 """
 
+import os
 import re
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
+import models
 
 logger = logging.getLogger("inventory")
 
@@ -116,6 +120,24 @@ _SKIP_PREFIXES = (
 
 WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
+# HTTP 方法 → 操作类型
+_METHOD_TO_OPERATION = {
+    "POST": "created",
+    "PUT": "updated",
+    "DELETE": "deleted",
+    "PATCH": "updated",
+}
+
+# 前端来源校验：匹配开发环境 localhost 端口 + 生产环境 CORS_ORIGINS
+_ALLOWED_ORIGIN_PATTERN = os.environ.get("CORS_ORIGINS", "")
+_origin_parts = ["^https?://(localhost|127\\.0\\.0\\.1)(:(517\\d|4173|8000))?"]
+if _ALLOWED_ORIGIN_PATTERN:
+    for o in _ALLOWED_ORIGIN_PATTERN.split(","):
+        o = o.strip()
+        if o:
+            _origin_parts.append(re.escape(o))
+_FRONTEND_ORIGIN_RE = re.compile("|".join(_origin_parts))
+
 
 def _match(method: str, path: str) -> Optional[Capability]:
     """在白名单中查找匹配的 Capability，未命中返回 None"""
@@ -155,8 +177,71 @@ def _send_json(send, status: int, payload: dict):
     return _go()
 
 
+def _build_snapshot(inner: dict) -> dict:
+    """解析 OperationResult，查数据库构建当前状态快照"""
+    entity_type = inner.get("entity_type") if isinstance(inner, dict) else None
+    entity_id = inner.get("entity_id")
+    if not entity_type or not entity_id:
+        return {}
+
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        snapshot = {}
+
+        if entity_type in ("sale_order", "purchase_order"):
+            # 查订单详情
+            if entity_type == "sale_order":
+                order = db.query(models.SaleOrder).filter(models.SaleOrder.id == entity_id).first()
+            else:
+                order = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == entity_id).first()
+            if order:
+                snapshot["order"] = {
+                    "id": order.id,
+                    "order_no": getattr(order, "order_no", ""),
+                    "total_price": float(order.total_price) if order.total_price else 0,
+                    "status": order.status,
+                }
+
+            # 查本次操作涉及的库存（从 response data 找 product_id）
+            data = inner.get("data", {}) if isinstance(inner, dict) else {}
+            items = data.get("items", []) if isinstance(data, dict) else []
+            product_ids = []
+            if items and isinstance(items, list):
+                product_ids = [it.get("product_id") for it in items if isinstance(it, dict)]
+            if product_ids:
+                inventory = []
+                for pid in product_ids:
+                    inv = db.query(models.Inventory).filter(
+                        models.Inventory.product_id == pid,
+                    ).first()
+                    product = db.query(models.Product).filter(models.Product.id == pid).first()
+                    if inv is not None:
+                        inventory.append({
+                            "product_id": pid,
+                            "product_name": product.name if product else f"商品{pid}",
+                            "remaining": inv.quantity,
+                        })
+                if inventory:
+                    snapshot["inventory"] = inventory
+
+        elif entity_type == "product":
+            inv = db.query(models.Inventory).filter(
+                models.Inventory.product_id == entity_id,
+            ).first()
+            if inv is not None:
+                snapshot["inventory"] = [{
+                    "product_id": entity_id,
+                    "remaining": inv.quantity,
+                }]
+
+        return snapshot
+    finally:
+        db.close()
+
+
 class AIGatewayMiddleware:
-    """ASGI 中间件：对 X-Operator: ai 的写操作做白名单校验，非规范接口返回 403。
+    """ASGI 中间件：校验写操作 + 白名单端点响应统一包装。
 
     注册（main.py，CORS 之后、ConfirmMiddleware 之前）：
         app.add_middleware(AIGatewayMiddleware)
@@ -183,24 +268,52 @@ class AIGatewayMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # 识别调用者：只有 AI 才走网关校验
+        # 识别调用者身份和来源
         operator = "user"
+        is_from_frontend = False
         for key, val in scope.get("headers", []):
-            if key.decode("latin-1").lower() == "x-operator":
-                operator = val.decode("latin-1")
-                break
+            h = key.decode("latin-1").lower()
+            v = val.decode("latin-1")
+            if h == "x-operator":
+                operator = v
+            elif h in ("origin", "referer"):
+                if _FRONTEND_ORIGIN_RE.match(v):
+                    is_from_frontend = True
 
-        if operator != "ai":
-            await self.app(scope, receive, send)
-            return
-
-        # AI 写操作：校验白名单
+        # 判断是否为白名单端点
         cap = _match(method, path)
-        if cap is not None and cap.canonical:
+        is_whitelisted = cap is not None and cap.canonical
+
+        # user + 前端页面 → 全部放行（不包装）
+        if operator == "user" and is_from_frontend:
             await self.app(scope, receive, send)
             return
 
-        # 命中非规范写接口 → 403
+        # 白名单端点 → 放行 + 响应统一包装
+        if is_whitelisted:
+            captured = {"status": None, "headers": [], "body": bytearray()}
+
+            async def wrapped_send(event):
+                if event["type"] == "http.response.start":
+                    captured["status"] = event["status"]
+                    captured["headers"] = event.get("headers", [])
+                elif event["type"] == "http.response.body":
+                    captured["body"].extend(event.get("body", b""))
+                    if not event.get("more_body", False):
+                        wrapped = self._wrap_ai_response(method, captured)
+                        await send({
+                            "type": "http.response.start",
+                            "status": captured["status"],
+                            "headers": [[b"content-type", b"application/json; charset=utf-8"]],
+                        })
+                        await send({"type": "http.response.body", "body": wrapped})
+                else:
+                    await send(event)
+
+            await self.app(scope, receive, wrapped_send)
+            return
+
+        # 非白名单写接口 → 403
         suggestion = _suggest(method, path)
         ai_instruction = (
             f"STOP_RETRYING. AI 不允许调用 {method} {path}。"
@@ -218,3 +331,38 @@ class AIGatewayMiddleware:
             }
         }
         await _send_json(send, 403, payload)
+
+    @staticmethod
+    def _wrap_ai_response(method: str, captured: dict) -> bytes:
+        """将白名单端点的 200 响应包装为 AI 统一格式"""
+        raw_body = bytes(captured["body"])
+        operation = _METHOD_TO_OPERATION.get(method, "unknown")
+        try:
+            inner = json.loads(raw_body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return raw_body
+
+        if not isinstance(inner, dict):
+            return raw_body
+
+        # handler 可用 _idempotent / _state_after 显式标记
+        idempotent = inner.pop("_idempotent", False)
+        state_after = inner.pop("_state_after", {})
+
+        # OperationResult 格式：提取 changes → state_after（inventory / cash / payable 等）
+        if not state_after and "changes" in inner and isinstance(inner["changes"], dict):
+            state_after = inner.pop("changes")
+
+        # 补充系统真实快照（查数据库）
+        snapshot = _build_snapshot(inner)
+        if snapshot:
+            state_after.update(snapshot)
+
+        wrapped = {
+            "ok": captured["status"] == 200,
+            "entity": inner,
+            "operation": operation,
+            "idempotent": idempotent,
+            "state_after": state_after,
+        }
+        return json.dumps(wrapped, ensure_ascii=False, default=str).encode("utf-8")

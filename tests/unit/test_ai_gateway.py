@@ -51,14 +51,14 @@ class TestAIGatewayAllows:
     """放行场景：前端请求、GET、规范写接口应全部到达内层 app"""
 
     def test_user_write_not_blocked(self, client):
-        """前端(user)写非规范接口 → 放行（中间件只约束 AI）"""
-        r = client.post("/api/invoices", json={"x": 1}, headers=USER)
+        """前端(user)有 Origin 头 → 放行"""
+        r = client.post("/api/invoices", json={"x": 1}, headers={**USER, "Origin": "http://localhost:5173"})
         assert r.status_code == 200
         assert r.json()["reached"] == "inner"
 
-    def test_no_operator_header_treated_as_user(self, client):
-        """无 X-Operator 头 → 视为前端 user，放行"""
-        r = client.post("/api/invoices/with-fixed-asset", json={"x": 1})
+    def test_no_operator_header_frontend_origin_allowed(self, client):
+        """无 X-Operator 头但有 Origin → 视为前端 user，放行"""
+        r = client.post("/api/invoices/with-fixed-asset", json={"x": 1}, headers={"Origin": "http://localhost:5173"})
         assert r.status_code == 200
         assert r.json()["reached"] == "inner"
 
@@ -68,22 +68,76 @@ class TestAIGatewayAllows:
         assert r.status_code == 200
         assert r.json()["reached"] == "inner"
 
-    def test_ai_post_canonical_quick(self, client):
-        """AI POST /api/invoices/quick（规范入口）→ 放行"""
+    def test_ai_post_canonical_quick_wrapped(self, client):
+        """AI POST /api/invoices/quick（规范入口）→ 响应被包装"""
         r = client.post("/api/invoices/quick", json={"x": 1}, headers=AI)
         assert r.status_code == 200
-        assert r.json()["reached"] == "inner"
+        body = r.json()
+        assert body["ok"] is True
+        assert body["entity"] == {"reached": "inner"}
+        assert body["operation"] == "created"
+        assert body["idempotent"] is False
+        assert body["state_after"] == {}
 
-    def test_ai_delete_canonical(self, client):
-        """AI DELETE /api/invoices/{id}（白名单）→ 放行"""
+    def test_ai_delete_canonical_wrapped(self, client):
+        """AI DELETE /api/invoices/{id}（白名单）→ 响应被包装"""
         r = client.delete("/api/invoices/123", headers=AI)
         assert r.status_code == 200
-        assert r.json()["reached"] == "inner"
+        body = r.json()
+        assert body["ok"] is True
+        assert body["entity"] == {"reached": "inner"}
+        assert body["operation"] == "deleted"
 
-    def test_ai_post_products_canonical(self, client):
-        """AI POST /api/products（白名单）→ 放行"""
+    def test_ai_post_products_canonical_wrapped(self, client):
+        """AI POST /api/products（白名单）→ 响应被包装"""
         r = client.post("/api/products", json={"x": 1}, headers=AI)
         assert r.status_code == 200
+        body = r.json()
+        assert body["entity"] == {"reached": "inner"}
+        assert body["operation"] == "created"
+
+
+class TestStateAfterExtraction:
+    """验证中间件从 OperationResult 的 changes 提取 state_after"""
+
+    async def _op_result_app(self, scope, receive, send):
+        """模拟返回 OperationResult 格式的 inner app"""
+        if scope["type"] != "http":
+            return await _ok_app(scope, receive, send)
+        await send({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [[b"content-type", b"application/json"]],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": json.dumps({
+                "success": True,
+                "operation": "create",
+                "entity_type": "sale_order",
+                "entity_id": 5,
+                "summary": "销售单创建成功",
+                "changes": {
+                    "inventory": [{"product_id": 1, "quantity": 95}],
+                    "receivable": {"amount": 11300, "customer_id": 2},
+                },
+                "ai_hint": "下一步：确认收款",
+                "data": {"id": 5, "order_no": "XS2026-0001", "total_price": 11300},
+            }).encode(),
+        })
+
+    @pytest.fixture
+    def op_client(self):
+        with TestClient(AIGatewayMiddleware(self._op_result_app)) as c:
+            yield c
+
+    def test_state_after_from_changes(self, op_client):
+        r = op_client.post("/api/sales", json={"x": 1}, headers=AI)
+        body = r.json()
+        assert body["state_after"]["inventory"] == [{"product_id": 1, "quantity": 95}]
+        assert body["state_after"]["receivable"]["amount"] == 11300
+        assert body["entity"]["data"]["order_no"] == "XS2026-0001"
+        assert "changes" not in body["entity"]
 
     def test_ai_infrastructure_path_skipped(self, client):
         """AI POST /api/accounts（基础设施白名单前缀）→ 放行"""

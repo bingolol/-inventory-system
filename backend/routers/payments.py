@@ -12,6 +12,7 @@ from uow import unit_of_work
 from crud.base import _log
 from utils import _d
 from operation_result import OperationResult, EntityType, OperationType
+from finance_integration import post_journal
 
 router = APIRouter()
 
@@ -93,6 +94,14 @@ def create_payment(
             ).first()
             if purchase_order:
                 purchase_order.payment_status = "paid"
+
+        # 生成会计凭证：借:2202 贷:1002
+        post_journal(db, account_id, "payment", {
+            "amount": _d(data.amount),
+            "partner_id": data.related_entity_id,
+            "partner_type": "supplier",
+            "bank_account_id": data.bank_account_id,
+        })
 
         db.flush()
         _log(db, account_id, "create", "payment", payment.id,

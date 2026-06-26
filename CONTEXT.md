@@ -4,6 +4,104 @@
 
 面向中小企业的全栈业务管理平台，涵盖库存管理、采购/销售、项目归集、财务报表及个人账单等核心模块。
 
+## Agent 快速导航
+
+| 场景 | 手册 |
+|------|------|
+| **记账操作**（查/录/改业务数据） | [docs/财务Agent手册.md](docs/财务Agent手册.md) |
+| **开发代码**（改/增/修功能） | [docs/开发Agent手册.md](docs/开发Agent手册.md) |
+
+> 以下为本体文档，记录架构、业务规则、目录结构等底层事实。
+
+## Agent 工作流
+
+### 📚 知识库入口
+
+| 文档 | 内容 |
+|------|------|
+| [docs/INDEX.md](docs/INDEX.md) | 完整文档索引 |
+| [docs/开发速查表.md](docs/开发速查表.md) | 开发规范 + 反模式红线（**修改代码前必读**） |
+| [docs/架构参考.md](docs/架构参考.md) | 完整架构手册 |
+| [docs/文件索引.md](docs/文件索引.md) | 全仓库文件清单 |
+
+### 必须遵守的 5 条规则
+
+| # | 规则 | 说明 |
+|---|------|------|
+| 1 | **Read docs first** | 先读文档再写代码，理解上下文 |
+| 2 | **Docs before code** | 新模块/重构时先创建设计文档 |
+| 3 | **Plan before execute** | 呈现计划，等待批准后再执行 |
+| 4 | **Self-review** | 完成后自检，确保文档同步更新 |
+| 5 | **Tests first** | 核心业务逻辑使用 TDD |
+
+### 开发流程
+
+```
+1. 理解任务
+   │
+   ├─→ 读取 CONTEXT.md (项目上下文)
+   ├─→ 读取相关模块文档
+   └─→ 如有疑问，先问用户
+   │
+2. 制定计划
+   │
+   ├─→ 列出要修改的文件
+   ├─→ 说明修改原因
+   └─→ 呈现给用户批准
+   │
+3. 执行开发
+   │
+   ├─→ 遵循开发速查表中的规范
+   ├─→ 遵循反模式红线 (AP-1~AP-14)
+   └─→ 核心逻辑先写测试
+   │
+4. 自检完成
+   │
+   ├─→ 运行测试: pytest
+   ├─→ 检查代码风格
+   └─→ 更新相关文档
+```
+
+### 何时询问 vs 何时直接执行
+
+| 询问用户 | 直接执行 |
+|----------|----------|
+| 不确定业务规则时 | 明确的 Bug 修复 |
+| 涉及数据库结构变更时 | 文档更新 |
+| 涉及多个模块的重构时 | 单一文件的小改动 |
+| 可能影响现有功能时 | 测试补充 |
+
+### Agent 技能
+
+技能是规则的落地工具。`docs/agent_skills.md` 按 5 类场景说明 19 个技能的用途。
+
+| 规则 | 对应技能 |
+|------|----------|
+| Tests first | `tdd` |
+| Self-review | `review`、`neat-freak` |
+| Read docs first | `zoom-out` |
+| Plan before execute | `grill-me`、`grill-with-docs` |
+
+| 场景 | 技能 |
+|------|------|
+| **开发核心**（高频） | `tdd`、`diagnose`、`review`、`zoom-out` |
+| **计划设计**（中频） | `to-issues`、`to-prd`、`triage`、`grill-me`、`grill-with-docs`、`prototype`、`improve-codebase-architecture` |
+| **会话交接**（低频） | `handoff`、`neat-freak`、`teach`、`write-a-skill` |
+| **通信模式** | `caveman` |
+| **不适用** | `migrate-to-shoehorn`、`scaffold-exercises`、`setup-pre-commit`、`git-guardrails-claude-code`、`setup-matt-pocock-skills` |
+
+### 文档检查清单
+
+Agent 完成任务后检查：
+
+- [ ] 代码测试通过
+- [ ] 相关文档已更新
+- [ ] 没有引入新的反模式
+- [ ] 遵循命名约定
+- [ ] 错误处理使用 BusinessError
+
+---
+
 ## 技术栈
 
 | 层次 | 技术 |
@@ -18,8 +116,16 @@
 
 ## 架构分层
 
+### 业务操作层 (业务联动)
+
 ```
 Routers → Commands → CRUD / Domain → Events → EventBus
+```
+
+### 会计核算层 (财务引擎)
+
+```
+Routers → (Commands / 直接调用) → FinanceEngines → ORM
 ```
 
 ### 核心模块
@@ -30,6 +136,7 @@ Routers → Commands → CRUD / Domain → Events → EventBus
 - **Domain**: 领域模型，业务规则验证
 - **Events**: 领域事件
 - **EventBus**: 事件总线，负责日志和汇总重算
+- **FinanceEngines**: 会计核算引擎子系统，含总账引擎、凭证引擎、往来账引擎、库存引擎、财务引擎，独立于 Commands 层面直接操作 ORM
 
 ## 关键特性
 
@@ -54,16 +161,18 @@ inventory-system/
 │   │   ├── sale_commands.py
 │   │   ├── invoice_commands.py
 │   │   ├── finance_commands.py
-│   │   └── personal_commands.py
+│   │   ├── personal_commands.py
+│   │   └── account_commands.py
 │   ├── crud/           # 数据访问（仅查询 + 报表）
 │   │   ├── base.py            # 公共函数（_log, _generate_order_no）
 │   │   ├── products.py        # 商品 + 库存查询
 │   │   ├── partners.py        # 伙伴查询（只读）
 │   │   ├── orders.py          # 订单查询（只读）
 │   │   ├── invoices.py        # 发票查询 + 税务报表
+│   │   ├── invoice_linkage.py # 发票与业务关联查询
 │   │   ├── finance.py         # 财务查询 + 报表生成
 │   │   ├── personal.py        # 个人流水查询 + 统计
-│   │   ├── inventory_ops.py   # 库存操作（扣减/恢复）
+│   │   ├── inventory_ops.py   # 库存操作（已废弃，改用 engine_inventory.py）
 │   │   ├── reports.py         # 统计报表
 │   │   └── logs.py            # 操作日志查询
 │   ├── domain/         # 领域模型
@@ -72,9 +181,23 @@ inventory-system/
 │   │   ├── money.py           # 金额值对象
 │   │   ├── purchase_order.py  # 采购单业务规则
 │   │   └── sale_order.py      # 销售单业务规则
-│   ├── models.py       # ORM 模型
-│   ├── schemas/        # Pydantic 模式
-│   └── enums.py        # 枚举定义
+│   ├── models.py           # ORM 模型（业务表）
+│   ├── models_finance.py   # ORM 模型（会计核算表）
+│   ├── account_dep.py      # 账本依赖注入
+│   ├── accounting_engine.py# 会计核算引擎编排
+│   ├── engine_bank.py      # 银行引擎
+│   ├── engine_finance.py   # 财务引擎（采购/销售凭证生成）
+│   ├── engine_fixed_asset.py# 固定资产引擎（折旧/处置）
+│   ├── engine_inventory.py # 库存引擎（StockMove 流水 + 移动加权平均）
+│   ├── engine_journal.py   # 凭证引擎
+│   ├── engine_ledger.py    # 总账/明细账引擎
+│   ├── engine_receivable.py# 往来账龄引擎
+│   ├── finance_integration.py # 财务引擎与业务的集成层
+│   ├── operation_result.py # 操作结果类型
+│   ├── utils/               # 工具包（`_d`/`get_or_404`/日期解析/工厂函数 + `audit.py` 审计日志）
+│   ├── middleware/          # 中间件包（只读 + EventBus 中间件）
+│   ├── schemas/            # Pydantic 模式
+│   └── enums.py            # 枚举定义
 ├── frontend/
 │   ├── src/
 │   │   ├── views/      # 页面视图
@@ -94,6 +217,9 @@ inventory-system/
 │   │   │   ├── Reconciliations.vue   # 对账管理
 │   │   │   ├── Reports.vue           # 统计报表
 │   │   │   ├── Logs.vue              # 操作日志
+│   │   │   ├── TrialBalance.vue      # 试算平衡表
+│   │   │   ├── JournalMoves.vue      # 凭证管理
+│   │   │   ├── AgingReport.vue       # 往来账龄
 │   │   │   └── Backup.vue            # 数据备份
 │   │   ├── components/ # 组件
 │   │   ├── composables/# 组合式逻辑
@@ -112,17 +238,6 @@ inventory-system/
 "某记录是否有发票"这个事实,**唯一真相**是发票表是否存在指向该记录的关联(Invoice.related_order_id + related_order_type)。
 订单/采购/费用表上的 `has_invoice` 布尔字段是历史遗留副本,目标是删除并改为派生查询(见架构改进方案 1)。
 在此之前,新增逻辑不得依赖 `has_invoice` 字段做业务分支,应查询发票表。
-
-### BR-2:经营口径与税务口径
-
-| 口径 | 取数源 | 用途 |
-|------|--------|------|
-| 经营口径 | **订单金额**(SaleOrder.total_price,含税) | 利润表、内部经营分析 |
-| 税务口径 | **发票金额**(Invoice.amount_without_tax,不含税) | 增值税报表、企业所得税申报 |
-
-- 利润表(经营口径)= 无票收入 + 有票收入,两者均取**订单金额**。录入销售单时 `has_invoice` 必填(真=已开票 / 假=无票),用于利润表分两行列示。
-- 经营口径与税务口径金额天然不同(含税 vs 不含税),**不视为 bug**。利润表应单列"其中:已开票收入(含税)"便于与税务报表对账。
-- **禁止**把两个口径混用或强求一致。
 
 ### BR-3:开票与销售单的关系
 
@@ -163,3 +278,52 @@ inventory-system/
 
 依据: 《会计基础工作规范》第五十一条 — 错误更正使用红字冲销法
 系统实现: `crud/reversal.py`
+
+### BR-7:库存真相源是 StockMove 流水
+
+库存数据的**唯一真相源**是 `StockMove` 流水表，`Inventory` 表仅为性能缓存：
+
+| 来源 | 写入 StockMove | 更新 Inventory | 说明 |
+|------|---------------|---------------|------|
+| 采购入库 | `InventoryEngine.inbound()` | 增加 quantity + 移动加权平均 | |
+| 销售出库 | `InventoryEngine.outbound()` | 减少 quantity | 锁定 unit_cost 到 SaleItem |
+| 库存调整单 | `InventoryEngine.inbound/outbound()` | ± quantity | 记录 InventoryAdjustment 原因 |
+| 取消订单 | `InventoryEngine.reverse()` | 回退 quantity | source_type = `xxx_reversal` |
+
+- StockMove 一旦生成**严禁修改或删除**，错误修正通过红冲调整单实现
+- 创建商品时不再创建 Inventory 记录（不再接受 `initial_stock`），库存必须通过采购单/期初余额/调整单创建
+- 系统实现: `backend/engine_inventory.py`
+
+---
+
+## 产品设计原则
+
+### PR-1: 前端隐藏专业术语
+
+前端不得直接展示会计科目和借贷分录。`FinanceEngine` 在后台生成专业凭证，前端只展示业务语言：
+
+| ❌ 不要 | ✅ 要 |
+|---------|-------|
+| 借：库存商品 1000 贷：银行存款 1000 | 库存增加了 100 个，银行存款减少了 1000 元 |
+| 借：主营业务成本 500 贷：库存商品 500 | 出库了 50 个，成本 500 元 |
+| 借方/贷方/科目名称 | 业务描述（钱/货/往来对象） |
+
+会计核算专用页面（凭证管理、科目余额表）可按会计格式展示，但所有业务操作类界面（采购/销售/库存/费用）严禁出现会计科目。
+
+### PR-2: 报表直击痛点（含已知局限）
+
+> **已知局限**（纯前端方案，不依赖后端改动）：
+> 1. **应收/应付汇总**：通过前端聚合未结清订单计算，不支持大数据分页。远期需加 `GET /finance/receivable/summary` 后端端点。
+> 2. **月度损益不含费用**：`GET /reports/profit` 不返回费用汇总，需额外调 expenses API 前端计算。远期建议 profit 端点内置 expense 字段。
+> 3. **税务速算需 2 趟请求**：增值税月报 + 所得税季报分开调用。远期建议合并为 `GET /tax-report/dashboard-summary`。
+
+老板不关心复杂的勾稽关系，只关心四个问题。所有报表设计围绕核心问题展开：
+
+| 老板问 | 对应报表 | 数据来源 |
+|--------|----------|----------|
+| **这月赚了多少？** | 月度损益速览 | 利润表+ 本期收入/成本/费用汇总 |
+| **仓库压了多少钱？** | 库存资金占用 | StockMove 加权平均成本 × 当前库存量 |
+| **客户欠我多少钱？** | 应收汇总 | 往来账龄 + 未收销售单 |
+| **这个月该交多少税？** | 税务速算 | 增值税 + 企业所得税 + 附加税 |
+
+税务报表输出格式与税务局电子申报系统一致，数字可直接照抄填写，无需二次计算。

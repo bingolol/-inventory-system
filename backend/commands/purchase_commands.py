@@ -21,6 +21,8 @@ from .crud_compat import (
 from crud.reversal import reverse_payments
 from errors import BusinessError, ErrorCode
 from utils import Q2
+from engine_inventory import InventoryEngine
+from engine_finance import FinanceEngine
 
 
 # ═══════════════════════════════════════════════════════════
@@ -65,8 +67,9 @@ class CreatePurchaseOrderHandler(CommandHandler):
         db.add(order)
         db.flush()
 
-        # 4. 创建明细行 + 入库（检查 track_inventory）
+        # 4. 创建明细行 + InventoryEngine 入库 + 收集价税数据
         total = Decimal('0')
+        calculated_data = []
         for it in cmd.items:
             product = get_product(db, cmd.account_id, it['product_id'])
             if not product:
@@ -82,16 +85,29 @@ class CreatePurchaseOrderHandler(CommandHandler):
             )
             db.add(item)
             if product.track_inventory:
-                inv = get_or_create_inventory(db, cmd.account_id, it['product_id'])
-                inv.quantity += it['quantity']
+                calc = InventoryEngine(db).inbound(
+                    account_id=cmd.account_id,
+                    product_id=it['product_id'],
+                    quantity=it['quantity'],
+                    unit_price=it['unit_price'],
+                    source_type="purchase_order",
+                    source_id=order.id,
+                    tax_rate=it.get('tax_rate'),
+                    operator=cmd.operator,
+                )
+                calculated_data.append(calc)
             total += line_total
 
         order.total_price = total.quantize(Q2)
+        db.flush()
 
-        # 5. 事件（仅日志）
+        # 5. 生成会计凭证
+        FinanceEngine(db, cmd.account_id).record_purchase(order, calculated_data or None)
+
+        # 6. 事件（仅日志）
         emit("purchase_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
 
-        # 6. 操作日志
+        # 7. 操作日志
         _log(db, cmd.account_id, "create", "purchase_order", order.id,
              f"创建采购单 {order_no}: {len(cmd.items)}项商品, 总价={total}", operator=cmd.operator)
         db.flush()
@@ -121,13 +137,21 @@ class CancelPurchaseOrderHandler(CommandHandler):
         # 状态变更
         order.status = OrderStatus.CANCELLED
 
-        # 已完成→取消：库存回补
+        # 已完成→取消：InventoryEngine 红冲 + FinanceEngine 冲红凭证
         if old_status == OrderStatus.COMPLETED:
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
                 if product and product.track_inventory:
-                    inv = get_or_create_inventory(db, cmd.account_id, item.product_id)
-                    inv.quantity -= item.quantity
+                    InventoryEngine(db).reverse(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        unit_cost=Decimal("0"),
+                        source_type="purchase_order",
+                        source_id=order.id,
+                        operator=cmd.operator,
+                    )
+            FinanceEngine(db, cmd.account_id).reverse_purchase(order.id)
 
         # 冲销付款记录 + 银行流水
         reverse_payments(db, cmd.account_id, cmd.order_id)
@@ -156,13 +180,21 @@ class DeletePurchaseOrderHandler(CommandHandler):
         if not order:
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": cmd.order_id})
 
-        # 已完成状态：库存回补
+        # 已完成：InventoryEngine 红冲 + FinanceEngine 冲红凭证
         if order.status == OrderStatus.COMPLETED:
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
                 if product and product.track_inventory:
-                    inv = get_or_create_inventory(db, cmd.account_id, item.product_id)
-                    inv.quantity -= item.quantity
+                    InventoryEngine(db).reverse(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        unit_cost=Decimal("0"),
+                        source_type="purchase_order",
+                        source_id=order.id,
+                        operator=cmd.operator,
+                    )
+            FinanceEngine(db, cmd.account_id).reverse_purchase(order.id)
 
         # 冲销付款记录 + 银行流水
         reverse_payments(db, cmd.account_id, cmd.order_id)

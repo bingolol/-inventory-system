@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, CheckConstraint, Date, and_
+from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, CheckConstraint, Date, and_, event
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 from datetime import datetime
@@ -75,6 +75,24 @@ class FixedAsset(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     account = relationship("Account", backref="fixed_assets")
+
+
+# 固定资产折旧流水（真相源）
+class FixedAssetDepreciation(Base):
+    __tablename__ = "fixed_asset_depreciations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("fixed_assets.id"), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    period = Column(String(7), nullable=False, comment="折旧期间 YYYY-MM")
+    amount = Column(Numeric(12, 2), nullable=False, comment="本期折旧额")
+    accumulated_before = Column(Numeric(12, 2), default=Decimal('0'), comment="折旧前累计折旧")
+    accumulated_after = Column(Numeric(12, 2), default=Decimal('0'), comment="折旧后累计折旧")
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint('asset_id', 'period', name='uix_depreciation_period'),
+    )
 
 
 # 无形资产表
@@ -224,6 +242,14 @@ class SaleItem(Base):
     unit_price = Column(Numeric(12, 6), nullable=False, comment="单价")
     tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="税率: 0.01/0.03/0.06/0.09/0.13")
     total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+    _unit_cost = Column("unit_cost", Numeric(14, 6), default=Decimal('0'), comment="出库时移动加权平均成本")
+
+    @property
+    def unit_cost(self):
+        return self._unit_cost
+
+    def set_calculated_cost(self, value):
+        self._unit_cost = value
     notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
 
     order = relationship("SaleOrder", back_populates="items")
@@ -243,14 +269,29 @@ class Inventory(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
     quantity = Column(Integer, default=0, comment="当前库存(允许负数)")
+    average_cost = Column(Numeric(14, 6), default=Decimal('0'), comment="移动加权平均成本")
+    total_value = Column(Numeric(14, 2), default=Decimal('0'), comment="库存总金额")
     last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     product = relationship("Product", back_populates="inventory")
 
     __table_args__ = (
-        # 每个账本内同一商品只能有一条库存记录
         UniqueConstraint('account_id', 'product_id', name='uix_inventory_account_product'),
     )
+
+
+class StockMove(Base):
+    __tablename__ = "stock_moves"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
+    quantity = Column(Numeric(12, 0), nullable=False, comment="入库为正，出库为负")
+    unit_cost = Column(Numeric(14, 6), default=Decimal('0'), comment="移动加权平均单价")
+    total_cost = Column(Numeric(14, 2), default=Decimal('0'), comment="行总金额")
+    source_type = Column(String(50), nullable=False, comment="来源类型: purchase_order/sale_order/adjustment/reversal")
+    source_id = Column(Integer, nullable=False, comment="来源单据ID")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
 class OperationLog(Base):
@@ -459,3 +500,25 @@ class Receipt(Base):
     account = relationship("Account", backref="receipts")
     bank_account = relationship("BankAccount", backref="receipts")
     bank_transaction = relationship("BankTransaction", backref="receipt")
+
+
+# ═══════════════════════════════════════════════════════════
+# before_update 事件：真相源流水表禁止 UPDATE
+# ═══════════════════════════════════════════════════════════
+
+@event.listens_for(StockMove, 'before_update')
+def prevent_stock_move_update(mapper, connection, target):
+    from errors import BusinessError, ErrorCode
+    raise BusinessError(
+        code=ErrorCode.INTERNAL_ERROR,
+        message="StockMove 是库存真相源，一经生成严禁修改"
+    )
+
+
+@event.listens_for(FixedAssetDepreciation, 'before_update')
+def prevent_depreciation_update(mapper, connection, target):
+    from errors import BusinessError, ErrorCode
+    raise BusinessError(
+        code=ErrorCode.INTERNAL_ERROR,
+        message="FixedAssetDepreciation 是折旧真相源，一经生成严禁修改"
+    )

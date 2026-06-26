@@ -294,8 +294,9 @@ def _migrate_numeric_fields(engine):
 
 
 def _ensure_default_accounts():
-    """确保至少存在默认账本（首次安装时自动创建）"""
+    """确保至少存在默认账本 + 对应 Ledger + 科目（首次安装时自动创建）"""
     import models
+    from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
     with SessionLocal() as db:
         count = db.query(models.Account).count()
         if count == 0:
@@ -305,8 +306,77 @@ def _ensure_default_accounts():
             ]
             for acc in defaults:
                 db.add(acc)
-            db.commit()
+            db.flush()
             logger.info("首次安装：已创建默认账本")
+
+        # 为每个 Account 创建对应的 Ledger（如不存在）
+        for acc in db.query(models.Account).all():
+            existing = db.query(Ledger).filter(Ledger.code == acc.code).first()
+            if existing:
+                continue
+            lgr = Ledger(name=acc.name, type=acc.type, code=acc.code,
+                         taxpayer_type=acc.taxpayer_type)
+            db.add(lgr)
+            db.flush()
+            _seed_ledger_accounts(db, lgr.id)
+            logger.info(f"已创建 Ledger + 科目: code={acc.code}")
+
+        db.commit()
+
+
+def _seed_ledger_accounts(db, ledger_id):
+    """为指定 Ledger 插入标准科目"""
+    from models_finance import LedgerAccount, LedgerAccountBalance
+    all_accounts = [
+        ("1001", "库存现金", "asset"),
+        ("1002", "银行存款", "asset"),
+        ("1122", "应收账款", "asset_receivable"),
+        ("1123", "预付账款", "asset_prepaid"),
+        ("1221", "其他应收款", "asset"),
+        ("1405", "库存商品", "asset"),
+        ("1601", "固定资产", "asset"),
+        ("1602", "累计折旧", "asset_contra"),
+        ("1701", "无形资产", "asset"),
+        ("1702", "累计摊销", "asset_contra"),
+        ("2001", "短期借款", "liability"),
+        ("2202", "应付账款", "liability_payable"),
+        ("2203", "预收账款", "liability_advance"),
+        ("2211", "应付职工薪酬", "liability"),
+        ("2221", "应交税费", "liability"),
+        ("222101", "应交增值税-销项税额", "liability"),
+        ("222102", "应交增值税-进项税额", "liability"),
+        ("222103", "应交增值税-小规模", "liability"),
+        ("2241", "其他应付款", "liability"),
+        ("2501", "长期借款", "liability"),
+        ("3001", "实收资本", "equity"),
+        ("4001", "实收资本", "equity"),
+        ("4101", "盈余公积", "equity"),
+        ("4103", "本年利润", "equity"),
+        ("4104", "利润分配", "equity"),
+        ("5001", "主营业务收入", "income"),
+        ("5401", "主营业务成本", "expense"),
+        ("5601", "销售费用", "expense"),
+        ("5602", "管理费用", "expense"),
+        ("5603", "财务费用", "expense"),
+        ("6001", "主营业务收入(旧)", "income"),
+        ("6051", "其他业务收入", "income"),
+        ("6111", "资产处置收益", "income"),
+        ("6401", "主营业务成本(旧)", "expense"),
+        ("6403", "税金及附加", "expense"),
+        ("6601", "管理费用(旧)", "expense"),
+        ("6602", "销售费用(旧)", "expense"),
+        ("6603", "财务费用(旧)", "expense"),
+        ("6701", "营业外支出", "expense"),
+        ("6711", "营业外支出", "expense"),
+        ("6801", "所得税费用", "expense"),
+    ]
+    for code, name, atype in all_accounts:
+        a = LedgerAccount(ledger_id=ledger_id, code=code, name=name,
+                          account_type=atype, is_leaf=True)
+        db.add(a)
+        db.flush()
+        db.add(LedgerAccountBalance(ledger_account_id=a.id, balance=0,
+                                     debit_total=0, credit_total=0))
 
 
 def _migrate_opening_balance_fields(engine):
@@ -497,6 +567,7 @@ def _migrate_purchase_order_tax_amount(engine):
 
 def init_db():
     import models
+    import models_finance
     Base.metadata.create_all(bind=engine)
     _migrate_image_url(engine)
     _migrate_operator(engine)

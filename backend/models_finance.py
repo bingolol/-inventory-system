@@ -7,7 +7,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, DateTime, Date, Text,
-    ForeignKey, JSON, UniqueConstraint, Index
+    ForeignKey, JSON, UniqueConstraint, Index, event
 )
 from sqlalchemy.orm import Session, relationship
 from database import Base
@@ -335,3 +335,19 @@ class PurchaseEstimateItem(Base):
     total_price = Column(Numeric(12, 2), nullable=False)
 
     estimate   = relationship("PurchaseEstimate", back_populates="items")
+
+
+# ═══════════════════════════════════════════════════════════
+# before_update 事件：会计凭证真相源禁止 UPDATE
+# ═══════════════════════════════════════════════════════════
+
+@event.listens_for(AccountMove, 'before_update')
+def prevent_account_move_update(mapper, connection, target):
+    from errors import BusinessError, ErrorCode
+    raise BusinessError(
+        code=ErrorCode.INTERNAL_ERROR,
+        message="AccountMove 是会计凭证真相源，一经生成严禁修改"
+    )
+
+
+# AccountMoveLine 需核销时更新 amount_residual/reconciled，不做全拦

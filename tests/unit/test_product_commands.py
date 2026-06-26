@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from database import SessionLocal, init_db
 from commands.base import dispatch
-from commands.product_commands import CreateProduct, CreateInventoryAdjustment
+from commands.product_commands import CreateProduct, AdjustInventory
 from errors import BusinessError
 
 
@@ -60,7 +60,7 @@ class TestProductCommands:
         db.commit()
 
         with pytest.raises(BusinessError) as exc:
-            dispatch(CreateInventoryAdjustment(
+            dispatch(AdjustInventory(
                 account_id=ACCOUNT_ID, operator=OPERATOR,
                 product_id=product.id, quantity=-5,
                 reason="测试负库存",
@@ -76,7 +76,7 @@ class TestProductCommands:
         ), db)
         db.commit()
 
-        result = dispatch(CreateInventoryAdjustment(
+        result = dispatch(AdjustInventory(
             account_id=ACCOUNT_ID, operator=OPERATOR,
             product_id=product.id, quantity=100,
             reason="初始化",

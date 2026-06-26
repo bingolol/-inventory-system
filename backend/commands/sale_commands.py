@@ -26,6 +26,8 @@ from crud.reversal import reverse_receipts
 from errors import BusinessError, ErrorCode
 from crud.inventory_ops import sale_deduct, sale_restore
 from utils import Q2
+from engine_inventory import InventoryEngine
+from engine_finance import FinanceEngine
 
 
 # ═══════════════════════════════════════════════════════════
@@ -120,9 +122,19 @@ class CreateSaleOrderHandler(CommandHandler):
         order.status = domain.status
         db.flush()
 
-        # 8. 显式联动：扣库存
+        # 8. 显式联动：InventoryEngine 出库 + 生成会计凭证
         if cmd.deduct_inventory:
-            sale_deduct(db, cmd.account_id, order, operator=cmd.operator)
+            for item in order.items:
+                unit_cost = InventoryEngine(db).outbound(
+                    account_id=cmd.account_id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    source_type="sale_order",
+                    source_id=order.id,
+                    operator=cmd.operator,
+                )
+                item.set_calculated_cost(unit_cost)
+            FinanceEngine(db, cmd.account_id).record_sale(order)
 
         # 9. 事件（仅日志）
         emit("sale_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)

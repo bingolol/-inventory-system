@@ -149,7 +149,9 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     inventory_value = Decimal('0')
     for inv in db.query(models.Inventory).filter(models.Inventory.account_id == account_id).all():
-        if inv.product and inv.product.purchase_price:
+        if inv.average_cost:
+            inventory_value += Decimal(str(inv.quantity)) * _d(inv.average_cost)
+        elif inv.product and inv.product.purchase_price:
             inventory_value += Decimal(str(inv.quantity)) * _d(inv.product.purchase_price)
 
     # ── 非流动资产 ──
@@ -289,28 +291,37 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     total_liabilities = total_current_liabilities + total_non_current_liabilities
 
     # ── 所有者权益 ──
-    period_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= opening_date,
-        models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == OrderStatus.COMPLETED
-    ).scalar())
+    bs_account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    bs_is_general = bs_account and bs_account.taxpayer_type == "general"
+    if bs_is_general:
+        bs_items = db.query(models.SaleItem).join(
+            models.SaleOrder, models.SaleItem.order_id == models.SaleOrder.id
+        ).filter(
+            models.SaleOrder.account_id == account_id,
+            models.SaleOrder.sale_date >= opening_date,
+            models.SaleOrder.sale_date <= query_date,
+            models.SaleOrder.status == OrderStatus.COMPLETED
+        ).all()
+        period_revenue = sum(_d(it.total_price) / (Decimal("1") + _d(it.tax_rate)) for it in bs_items)
+        period_revenue = period_revenue.quantize(Q2)
+    else:
+        period_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
+            models.SaleOrder.account_id == account_id,
+            models.SaleOrder.sale_date >= opening_date,
+            models.SaleOrder.sale_date <= query_date,
+            models.SaleOrder.status == OrderStatus.COMPLETED
+        ).scalar())
 
     period_cogs = Decimal('0')
-    completed_sales = db.query(models.SaleOrder).filter(
+    for order in db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= opening_date,
         models.SaleOrder.sale_date <= query_date,
         models.SaleOrder.status == OrderStatus.COMPLETED
-    ).all()
-    for order in completed_sales:
+    ).all():
         for item in order.items:
-            product = db.query(models.Product).filter(
-                models.Product.id == item.product_id,
-                models.Product.account_id == account_id,
-            ).first()
-            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
-            period_cogs += Decimal(str(item.quantity)) * purchase_price
+            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
+            period_cogs += Decimal(str(item.quantity)) * unit_cost
 
     period_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
         models.Expense.account_id == account_id,
@@ -394,13 +405,27 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
-    # ── 营业收入 ──
-    revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= start_dt,
-        models.SaleOrder.sale_date <= end_dt,
-        models.SaleOrder.status == OrderStatus.COMPLETED
-    ).scalar())
+    # ── 营业收入（分口径：一般纳税人不含税，小规模含税）──
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    is_general = account and account.taxpayer_type == "general"
+    if is_general:
+        items = db.query(models.SaleItem).join(
+            models.SaleOrder, models.SaleItem.order_id == models.SaleOrder.id
+        ).filter(
+            models.SaleOrder.account_id == account_id,
+            models.SaleOrder.sale_date >= start_dt,
+            models.SaleOrder.sale_date <= end_dt,
+            models.SaleOrder.status == OrderStatus.COMPLETED
+        ).all()
+        revenue = sum(_d(it.total_price) / (Decimal("1") + _d(it.tax_rate)) for it in items)
+        revenue = revenue.quantize(Q2)
+    else:
+        revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
+            models.SaleOrder.account_id == account_id,
+            models.SaleOrder.sale_date >= start_dt,
+            models.SaleOrder.sale_date <= end_dt,
+            models.SaleOrder.status == OrderStatus.COMPLETED
+        ).scalar())
 
     # ── 营业成本 ──
     cost_of_goods_sold = Decimal('0')
@@ -412,12 +437,8 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     ).all()
     for order in completed_sales:
         for item in order.items:
-            product = db.query(models.Product).filter(
-                models.Product.id == item.product_id,
-                models.Product.account_id == account_id,
-            ).first()
-            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
-            cost_of_goods_sold += Decimal(str(item.quantity)) * purchase_price
+            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
+            cost_of_goods_sold += Decimal(str(item.quantity)) * unit_cost
 
     # ── 营业费用（按功能分类）──
     # 销售费用
@@ -444,7 +465,15 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
         models.Expense.functional_category == "财务费用"
     ).scalar())
 
-    total_operating_expenses = selling_expenses + administrative_expenses + financial_expenses
+    # 税金及附加
+    tax_surcharges = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
+        models.Expense.account_id == account_id,
+        models.Expense.expense_date >= start_dt,
+        models.Expense.expense_date <= end_dt,
+        models.Expense.functional_category == "税金及附加"
+    ).scalar())
+
+    total_operating_expenses = selling_expenses + administrative_expenses + financial_expenses + tax_surcharges
 
     # ── 营业毛利 ──
     gross_profit = revenue - cost_of_goods_sold
@@ -516,6 +545,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
         "selling_expenses": selling_expenses.quantize(Q2),
         "administrative_expenses": administrative_expenses.quantize(Q2),
         "financial_expenses": financial_expenses.quantize(Q2),
+        "tax_surcharges": tax_surcharges.quantize(Q2),
         "total_operating_expenses": total_operating_expenses.quantize(Q2),
         "operating_profit": operating_profit.quantize(Q2),
         "non_operating_income": non_operating_income.quantize(Q2),

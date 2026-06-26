@@ -11,8 +11,9 @@ from models_finance import (
     Ledger, LedgerAccount, AccountMove, AccountMoveLine,
 )
 from commands.base import dispatch
-from commands.purchase_commands import CreatePurchaseOrder
+from commands.purchase_commands import CreatePurchaseOrder, CancelPurchaseOrder
 from enums import OrderStatus, PaymentMethod
+from models import StockMove
 
 
 @pytest.fixture
@@ -196,3 +197,42 @@ class TestSmallScaleTaxpayerPurchase:
 
         assert codes["1405"]["debit"] == Decimal("100.00"), "小规模：全额100进成本"
         assert codes["2202"]["credit"] == Decimal("100.00"), "小规模：应付账款100"
+
+
+class TestCancelPurchaseTriggersReversal:
+    """取消采购单 → 冲红凭证 + 反向 StockMove"""
+
+    def test_cancel_creates_reversal(self, db, account, accts, product):
+        cmd = CreatePurchaseOrder(
+            account_id=account.id,
+            operator="test",
+            supplier_id=1,
+            items=[{
+                "product_id": product.id,
+                "quantity": 10,
+                "unit_price": "10.00",
+                "tax_rate": "0.13",
+            }],
+        )
+        order = dispatch(cmd, db)
+        db.flush()
+
+        cancel_cmd = CancelPurchaseOrder(account_id=account.id, operator="test", order_id=order.id)
+        dispatch(cancel_cmd, db)
+        db.flush()
+
+        # 冲红凭证存在 (is_reversal=True)
+        reversals = db.query(AccountMove).filter(
+            AccountMove.source_model == "purchase_order",
+            AccountMove.source_id == order.id,
+            AccountMove.is_reversal == True,
+        ).all()
+        assert len(reversals) == 1, "取消采购单应生成 1 条冲红凭证"
+
+        # 反向 StockMove 存在
+        rev_moves = db.query(StockMove).filter(
+            StockMove.source_type == "purchase_order_reversal",
+            StockMove.source_id == order.id,
+        ).all()
+        assert len(rev_moves) == 1, "取消采购单应生成 1 条反向库存流水"
+        assert rev_moves[0].quantity == -10, "反向流水数量应为负数"
