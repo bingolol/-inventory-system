@@ -96,6 +96,7 @@ async def create_expense(
         expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "5602")
         post_journal(db, account_id, "expense", {
             "amount": db_expense.amount,
+            "date": db_expense.expense_date.strftime("%Y-%m-%d") if db_expense.expense_date else "",
             "expense_account_code": expense_code,
             "bank_account_id": None,  # 费用创建时未付款，走应付账款
             "partner_id": None,

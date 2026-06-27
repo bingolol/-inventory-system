@@ -98,6 +98,7 @@ def create_payment(
         # 生成会计凭证：借:2202 贷:1002
         post_journal(db, account_id, "payment", {
             "amount": _d(data.amount),
+            "date": data.payment_date.strftime("%Y-%m-%d"),
             "partner_id": data.related_entity_id,
             "partner_type": "supplier",
             "bank_account_id": data.bank_account_id,

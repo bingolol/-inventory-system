@@ -20,7 +20,7 @@ from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, gen
 from enums import ALL_ENUMS, ENUM_LABELS
 from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -174,6 +174,7 @@ async def generic_error_handler(request: Request, exc: Exception):
     })
 
 
+app.include_router(auth.router)
 app.include_router(invoices.router, prefix="/api/invoices", tags=["发票管理"])
 app.include_router(tax.router, prefix="/api/tax-report", tags=["增值税报表"])
 app.include_router(income_tax.router, prefix="/api/income-tax-report", tags=["企业所得税报表"])

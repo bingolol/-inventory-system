@@ -51,6 +51,27 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 # 返回 { "write_endpoints": [...], "note": "..." }
 ```
 
+### 2.2 AI 响应格式（包装结构）
+
+AI 发起的白名单写操作返回统一包装格式：
+
+```json
+{
+  "ok": true,
+  "entity": { ... },          // 原始响应体
+  "operation": "created",     // created / updated / deleted
+  "idempotent": false,        // 是否幂等
+  "state_after": {            // 操作后系统状态快照
+    "inventory": [{"product_id": 1, "remaining": 95}],
+    "order": {"id": 5, "order_no": "XS2026-0001", "total_price": 11300, "status": "completed"}
+  }
+}
+```
+
+- `state_after` 包含操作影响的库存/订单/应收应付快照，用于后续决策
+- 非白名单端点 → 403 + `ai_instruction` + `suggested_endpoint`
+- 收到 403 后 **STOP_RETRYING**，按建议改用规范接口
+
 ---
 
 ## 3. API 速查表
@@ -82,6 +103,8 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 | 资产负债表 | `GET /api/financial-reports/balance-sheet?date=2026-06-19` |
 | 利润表 | `GET /api/financial-reports/income-statement?start_date=...&end_date=...` |
 | 财务汇总 | `GET /api/financial-reports/financial-summary?date=2026-06-19` |
+
+> **收入口径**：利润表 `revenue` = 一般纳税人取**不含税**金额（`SaleItem.total_price / (1 + tax_rate)`），小规模取含税金额。COGS 使用出库时锁定的移动加权平均成本 `SaleItem.unit_cost`。
 | 增值税 | `GET /api/tax-report?year=2026&quarter=2` |
 | 企业所得税 | `GET /api/income-tax-report?year=2026&quarter=2` |
 | 现金流量表 | `GET /api/cash-flows/statement?start_date=...&end_date=...` |
@@ -154,12 +177,16 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 | 操作 | 端点 | 方法 | 必填参数 | 可选参数 |
 |------|------|------|----------|----------|
 | 创建费用 | `/api/expenses` | POST | `category`, `amount`, `expense_date` | `functional_category`, `payment_method`, `description`, `image_url` |
+
+> 创建费用自动生成会计凭证（借:5601/5602/5603 费用科目 贷:2202 应付账款）。`functional_category` 决定费用科目：`销售费用`→5601、`管理费用`→5602、`财务费用`→5603、`税金及附加`→6403。
 | 更新费用 | `/api/expenses/{id}` | PUT | — | `category`, `amount`, `expense_date`, `payment_method`, `description` |
 | 删除费用 | `/api/expenses/{id}` | DELETE | — | — |
 | 创建期初余额 | `/api/opening-balances` | POST | `date` | `cash_balance`, `bank_balance`, `accounts_receivable`, `inventory_value`, `fixed_assets_original`, `accumulated_depreciation`, `accounts_payable`, `tax_payable`, `paid_in_capital`, `retained_earnings` |
 | 创建现金流水 | `/api/cash-flows/transactions` | POST | `type`, `amount`, `transaction_date` | `flow_category`, `description`, `related_entity_type`, `related_entity_id` |
 | 创建固定资产 | `/api/fixed-assets` | POST | `asset_code`, `name`, `original_value`, `useful_life`, `start_date` | `category`, `salvage_rate`, `depreciation_method`, `accumulated_depreciation`, `status` |
 | 更新固定资产 | `/api/fixed-assets/{id}` | PUT | — | `asset_code`, `name`, `category`, `original_value`, `salvage_rate`, `useful_life`, `depreciation_method`, `start_date`, `status` |
+
+> 折旧规则：当月增加**下月开始**计提折旧（《小企业会计准则》第三十一条）。`batch_depreciate(period)` 跳过当月新增资产。折旧流水（FixedAssetDepreciation）为不可变真相源。
 
 #### 个人流水
 
@@ -175,6 +202,9 @@ curl http://localhost:8000/api/_ai/capabilities -H "X-Account-ID: 1"
 |------|------|------|----------|----------|
 | 创建付款 | `/api/payments` | POST | `payment_type`, `related_entity_type`, `related_entity_id`, `amount`, `payment_date` | `payment_method`, `bank_account_id`, `description` |
 | 创建收款 | `/api/receipts` | POST | `receipt_type`, `related_entity_type`, `related_entity_id`, `amount`, `receipt_date` | `receipt_method`, `bank_account_id`, `description` |
+
+> 创建付款自动标记采购单 `payment_status=paid` + 生成会计凭证（借:2202 贷:1002）。
+> 创建收款自动标记销售单 `payment_status=paid` + 生成会计凭证（借:1002 贷:1122）。
 
 #### 会计核算查询 (finance/)
 
@@ -344,12 +374,18 @@ curl -X POST http://localhost:8000/api/personal \
 
 ## 6. 自动联动行为
 
-| 操作 | 系统自动执行 |
-|------|-------------|
-| 创建采购单 | 库存 +quantity |
-| 取消/删除采购单 | 库存 -quantity（回补） |
-| 创建销售单 (deduct_inventory=true) | 库存 -quantity |
-| 取消/删除销售单 | 库存 +quantity（恢复） |
+> **注意**：StockMove（库存流水）、FixedAssetDepreciation（折旧流水）、AccountMove（会计凭证）为**不可变真相源**，一经生成严禁修改或删除。错误修正必须通过红冲/调整单实现，直接修改会被 500 + `INTERNAL_ERROR` 拒绝。
+
+| 操作 | 系统自动执行 | 涉及引擎 |
+|------|-------------|----------|
+| 创建采购单 | StockMove +quantity; Inventory 增加 quantity/average_cost/total_value; 生成会计凭证（借:库存商品 贷:应付账款） | `InventoryEngine.inbound()` + `FinanceEngine.record_purchase()` |
+| 取消/删除已完成采购单 | 反向 StockMove（红冲）; Inventory 回退 quantity; 生成冲红凭证 | `InventoryEngine.reverse()` + `FinanceEngine.reverse_purchase()` |
+| 创建销售单 (deduct_inventory=true) | StockMove -quantity; Inventory 减少 quantity; unit_cost 锁定到 SaleItem; 生成会计凭证（收入+销项税+结转成本） | `InventoryEngine.outbound()` + `FinanceEngine.record_sale()` |
+| 创建费用 | 生成会计凭证（借:5601/5602/5603 贷:2202） | `post_journal()` in router |
+| 创建付款 | 标记采购单 paid; 生成会计凭证（借:2202 贷:1002） | `post_journal()` in router |
+| 创建收款 | 标记销售单 paid; 生成会计凭证（借:1002 贷:1122） | `post_journal()` in router |
+| 计提折旧 | 生成 FixedAssetDepreciation 流水; 生成折旧凭证（借:管理费用/销售费用 贷:累计折旧） | `FixedAssetEngine.record_depreciation()` |
+| 创建发票 (quick) | 自动算税; 可选自动创建销售单/采购单; 可选关联固定资产 | `AccountingEngine.calculate_invoice_amounts()` |
 
 ---
 
@@ -390,6 +426,7 @@ curl -X POST http://localhost:8000/api/personal \
 | `CASH_FLOW_NOT_FOUND` | 现金流水不存在 | 检查 ID |
 | `EXPENSE_NOT_FOUND` | 费用不存在 | 检查 ID |
 | `FIXED_ASSET_NOT_FOUND` | 固定资产不存在 | 检查 ID |
+| `INVALID_OPERATION` | 试图修改不可变真相源 | **STOP_RETRYING**，StockMove/FixedAssetDepreciation/AccountMove 一经生成不可修改，必须通过红冲调整 |
 | `VALIDATION_ERROR` | 字段验证失败 | 检查输入数据 |
 
 ### 7.3 会计计算错误码（AccountingError）
@@ -421,4 +458,4 @@ curl -X POST http://localhost:8000/api/personal \
 
 ---
 
-*财务Agent 操作手册 v3.2 | 2026-06-25*
+*财务Agent 操作手册 v3.3 | 2026-06-26*

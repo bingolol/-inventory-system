@@ -6,6 +6,18 @@ from database import Base
 from enums import OrderStatus, PaymentStatus, PaymentMethod, CertificationStatus, InvoiceStatus, FlowCategory, OrderType
 
 
+# 用户表：支持登录认证
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, comment="用户名")
+    password_hash = Column(String(128), nullable=False, comment="密码哈希")
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, comment="默认账本")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 # 账本表：支持多公司/个人记账切换
 class Account(Base):
     __tablename__ = "accounts"
@@ -345,6 +357,8 @@ class Invoice(Base):
     certification_date = Column(DateTime, nullable=True, comment="认证日期")
     related_order_id = Column(Integer, nullable=True, comment="关联订单ID")
     related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale_order/purchase_order/expense/fixed_asset")
+    is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
+    reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
     notes = Column(Text, default="", comment="备注")
     created_at = Column(DateTime, default=datetime.now)
 

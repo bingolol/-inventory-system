@@ -31,11 +31,12 @@ class InventoryEngine:
                 operator: str = "user") -> dict:
         """采购入库/调整入库
 
+        unit_price 是不含税单价（API 约定）。
         按纳税人类型做价税分离：
         - 一般纳税人(enable_vat_deduction=True)：
-          cost = total_amount / (1 + tax_rate), tax = total_amount - cost
+          total_cost = qty * unit_price (不含税), total_amount = total_cost * (1+rate) (含税)
         - 小规模(enable_vat_deduction=False)：
-          cost = total_amount, tax = 0
+          unit_price 视为含税单价，全额进成本
 
         返回: {"product_id", "quantity", "total_cost", "tax_amount", "total_amount"}
         """
@@ -52,14 +53,15 @@ class InventoryEngine:
                                 data={"details": f"账本不存在: account_id={account_id}"})
 
         new_qty = Decimal(str(quantity))
-        total_amount = (new_qty * Decimal(str(unit_price))).quantize(Q2)
-
         is_general = account.taxpayer_type == "general"
         if is_general and tax_rate is not None:
             rate = Decimal(str(tax_rate))
-            total_cost = (total_amount / (Decimal("1") + rate)).quantize(Q2)
+            total_cost = (new_qty * Decimal(str(unit_price))).quantize(Q2)  # 不含税
+            total_amount = (total_cost * (Decimal("1") + rate)).quantize(Q2)  # 含税
             tax_amount = (total_amount - total_cost).quantize(Q2)
         else:
+            # 小规模：unit_price 含税，全额进成本
+            total_amount = (new_qty * Decimal(str(unit_price))).quantize(Q2)
             total_cost = total_amount
             tax_amount = Decimal("0")
 

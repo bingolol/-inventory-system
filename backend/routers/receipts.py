@@ -88,6 +88,7 @@ def create_receipt(
         # 生成会计凭证：借:1002 贷:1122
         post_journal(db, account_id, "receipt", {
             "amount": _d(data.amount),
+            "date": data.receipt_date.strftime("%Y-%m-%d"),
             "partner_id": data.related_entity_id,
             "bank_account_id": data.bank_account_id,
         })

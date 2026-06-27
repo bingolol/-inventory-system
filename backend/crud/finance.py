@@ -291,6 +291,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     total_liabilities = total_current_liabilities + total_non_current_liabilities
 
     # ── 所有者权益 ──
+    prepaid_tax = Decimal('0')
     bs_account = db.query(models.Account).filter(models.Account.id == account_id).first()
     bs_is_general = bs_account and bs_account.taxpayer_type == "general"
     if bs_is_general:
@@ -304,6 +305,18 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         ).all()
         period_revenue = sum(_d(it.total_price) / (Decimal("1") + _d(it.tax_rate)) for it in bs_items)
         period_revenue = period_revenue.quantize(Q2)
+        # 用全部销项替换发票销项（BR-4 补充）：确保资产负债表反映全部税负
+        all_output_tax = sum(
+            (_d(it.total_price) * _d(it.tax_rate) / (Decimal("1") + _d(it.tax_rate))).quantize(Q2)
+            for it in bs_items
+        )
+        tax_payable = max(all_output_tax - in_invoices_tax, Decimal('0'))
+        prepaid_tax = max(in_invoices_tax - all_output_tax, Decimal('0'))
+        # 重算负债合计（tax_payable 已更新）
+        total_current_liabilities = accounts_payable + tax_payable
+        total_liabilities = total_current_liabilities + total_non_current_liabilities
+        total_current_assets += prepaid_tax
+        total_assets = total_current_assets + total_non_current_assets
     else:
         period_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
             models.SaleOrder.account_id == account_id,
@@ -373,7 +386,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         # 资产
         "monetary_funds": (ending_cash + ending_bank).quantize(Q2),
         "accounts_receivable": accounts_receivable.quantize(Q2),
-        "prepayments": Decimal('0').quantize(Q2),
+        "prepayments": prepaid_tax.quantize(Q2),
         "inventory": inventory_value.quantize(Q2),
         "total_current_assets": total_current_assets.quantize(Q2),
         "fixed_assets_original": fixed_assets_original.quantize(Q2),

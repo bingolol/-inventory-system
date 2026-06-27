@@ -323,6 +323,28 @@ def _ensure_default_accounts():
 
         db.commit()
 
+    # 确保至少存在默认用户
+    _ensure_default_users()
+
+
+def _ensure_default_users():
+    import models
+    import hashlib
+    with SessionLocal() as db:
+        count = db.query(models.User).count()
+        if count > 0:
+            return
+        account = db.query(models.Account).first()
+        if not account:
+            return
+        password_hash = hashlib.sha256(b"admin:inventory-system-2024").hexdigest()
+        db.add(models.User(
+            username="admin", password_hash=password_hash,
+            account_id=account.id, is_active=True,
+        ))
+        db.commit()
+        logger.info("已创建默认用户: admin/admin")
+
 
 def _seed_ledger_accounts(db, ledger_id):
     """为指定 Ledger 插入标准科目"""

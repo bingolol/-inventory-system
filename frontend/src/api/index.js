@@ -32,7 +32,11 @@ api.interceptors.request.use(config => {
   if (accountId) {
     config.headers['X-Account-ID'] = accountId
   }
-  // 不主动设置 X-Operator：后端默认 'user'，AI 客户端/外部 API 调用方需显式传 'X-Operator: ai' 才会被标记
+  // 登录 token：如果存在，自动带 Authorization 头
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
   return config
 })
 

@@ -7,8 +7,12 @@
 拦截规则：
   - GET / HEAD：查询全部放行
   - 写操作（POST/PUT/DELETE/PATCH）：
-    · user + 有前端 Referer/Origin → 全部放行
-    · 其他（AI / 脚本 / curl 等无前端 Origin 的调用）→ 命中白名单放行；否则 403
+    · 无 X-Operator 头 → 403（curl 直调直接拒绝）
+    · X-Operator: user → 全部放行（前端正常操作）
+    · X-Operator: ai → 白名单校验：命中放行（带 state_after 包装）；否则 403
+
+设计意图：前端在 get_operator() 依赖注入中自动设 X-Operator: user，
+脚本/curl 不设头直接 403；AI Agent 设 ai 走白名单。
 
 白名单 AI_CAPABILITIES 是"唯一真相源"，同时驱动：
   - 本中间件的放行判断
@@ -17,7 +21,6 @@
 设计参考 confirm_middleware.py 的 ASGI 中间件模式。
 """
 
-import os
 import re
 import json
 import logging
@@ -116,6 +119,7 @@ _SKIP_PREFIXES = (
     "/api/health",
     "/api/enums",
     "/api/accounts",
+    "/api/auth",       # 登录认证（不设 X-Operator）
 )
 
 WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
@@ -127,16 +131,6 @@ _METHOD_TO_OPERATION = {
     "DELETE": "deleted",
     "PATCH": "updated",
 }
-
-# 前端来源校验：匹配开发环境 localhost 端口 + 生产环境 CORS_ORIGINS
-_ALLOWED_ORIGIN_PATTERN = os.environ.get("CORS_ORIGINS", "")
-_origin_parts = ["^https?://(localhost|127\\.0\\.0\\.1)(:(517\\d|4173|8000))?"]
-if _ALLOWED_ORIGIN_PATTERN:
-    for o in _ALLOWED_ORIGIN_PATTERN.split(","):
-        o = o.strip()
-        if o:
-            _origin_parts.append(re.escape(o))
-_FRONTEND_ORIGIN_RE = re.compile("|".join(_origin_parts))
 
 
 def _match(method: str, path: str) -> Optional[Capability]:
@@ -268,29 +262,36 @@ class AIGatewayMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # 识别调用者身份和来源
-        operator = "user"
-        is_from_frontend = False
+        # 识别调用者
+        operator = ""
         for key, val in scope.get("headers", []):
-            h = key.decode("latin-1").lower()
-            v = val.decode("latin-1")
-            if h == "x-operator":
-                operator = v
-            elif h in ("origin", "referer"):
-                if _FRONTEND_ORIGIN_RE.match(v):
-                    is_from_frontend = True
+            if key.decode("latin-1").lower() == "x-operator":
+                operator = val.decode("latin-1")
+                break
 
-        # 判断是否为白名单端点
-        cap = _match(method, path)
-        is_whitelisted = cap is not None and cap.canonical
-
-        # user + 前端页面 → 全部放行（不包装）
-        if operator == "user" and is_from_frontend:
+        # user（前端正常操作）→ 全部放行
+        if operator == "user":
             await self.app(scope, receive, send)
             return
 
-        # 白名单端点 → 放行 + 响应统一包装
-        if is_whitelisted:
+        # 无 X-Operator → 403（curl 直调拦截）
+        if not operator:
+            logger.info("[AIGateway] 拦截无头写请求: %s %s", method, path)
+            await _send_json(send, 403, {
+                "error": {
+                    "code": "ENDPOINT_NOT_ALLOWED_FOR_AI",
+                    "message": f"写操作需要 X-Operator 头：user（前端）或 ai（白名单）：{method} {path}",
+                    "action": "none",
+                    "action_data": {},
+                    "data": {"method": method, "path": path},
+                    "ai_instruction": "STOP_RETRYING. 写操作必须带 X-Operator 头。前端页面自动带 user，AI Agent 应设 ai。",
+                }
+            })
+            return
+
+        # ai / 其他 → 白名单校验
+        cap = _match(method, path)
+        if cap is not None and cap.canonical:
             captured = {"status": None, "headers": [], "body": bytearray()}
 
             async def wrapped_send(event):

@@ -56,11 +56,11 @@ class TestAIGatewayAllows:
         assert r.status_code == 200
         assert r.json()["reached"] == "inner"
 
-    def test_no_operator_header_frontend_origin_allowed(self, client):
-        """无 X-Operator 头但有 Origin → 视为前端 user，放行"""
-        r = client.post("/api/invoices/with-fixed-asset", json={"x": 1}, headers={"Origin": "http://localhost:5173"})
-        assert r.status_code == 200
-        assert r.json()["reached"] == "inner"
+    def test_no_operator_header_blocked(self, client):
+        """无 X-Operator 头 → 走白名单校验 → /api/invoices/with-fixed-asset 不在白名单 → 403"""
+        r = client.post("/api/invoices/with-fixed-asset", json={"x": 1})
+        assert r.status_code == 403
+        assert r.json()["error"]["code"] == "ENDPOINT_NOT_ALLOWED_FOR_AI"
 
     def test_ai_get_not_blocked(self, client):
         """AI 的 GET 请求 → 查询全部放行"""
