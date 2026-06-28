@@ -162,3 +162,137 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
         purchase_order.payment_status = "unpaid"
 
     db.flush()
+
+
+def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> models.Receipt:
+    """红冲单笔收款：生成反向收款 + 反向银行流水 + 回滚余额"""
+
+    receipt = db.query(models.Receipt).filter(
+        models.Receipt.id == receipt_id,
+        models.Receipt.account_id == account_id,
+    ).first()
+    if not receipt:
+        return None
+
+    original_amount = _d(receipt.amount)
+    if original_amount <= 0:
+        return None  # already reversed
+
+    reversal = models.Receipt(
+        account_id=account_id,
+        receipt_type=receipt.receipt_type,
+        related_entity_type=receipt.related_entity_type,
+        related_entity_id=receipt.related_entity_id,
+        amount=-original_amount,
+        receipt_method=receipt.receipt_method,
+        receipt_date=datetime.now(),
+        bank_account_id=receipt.bank_account_id,
+        description=f"冲销收款 #{receipt.id}",
+    )
+    db.add(reversal)
+    db.flush()
+
+    if receipt.bank_account_id:
+        bank = db.query(models.BankAccount).filter(
+            models.BankAccount.id == receipt.bank_account_id,
+            models.BankAccount.account_id == account_id,
+        ).with_for_update().first()
+        if bank:
+            new_balance = _d(bank.balance) - original_amount
+            reversal_tx = models.BankTransaction(
+                account_id=account_id,
+                bank_account_id=receipt.bank_account_id,
+                transaction_type="outflow",
+                amount=original_amount,
+                balance_after=new_balance,
+                transaction_date=datetime.now(),
+                description=f"冲销收款: {reversal.description}",
+                related_entity_type="receipt",
+                related_entity_id=reversal.id,
+            )
+            db.add(reversal_tx)
+            db.flush()
+            bank.balance = new_balance
+            reversal.bank_transaction_id = reversal_tx.id
+
+        # 生成冲销凭证
+        from finance_integration import reverse_journal
+        reverse_journal(db, account_id, "receipt", receipt.id)
+
+    # 重置关联订单付款状态
+    if receipt.related_entity_type == "sale_order":
+        sale = db.query(models.SaleOrder).filter(
+            models.SaleOrder.id == receipt.related_entity_id,
+            models.SaleOrder.account_id == account_id,
+        ).first()
+        if sale:
+            sale.payment_status = "unpaid"
+
+    db.flush()
+    return reversal
+
+
+def reverse_single_payment(db: Session, account_id: int, payment_id: int) -> models.Payment:
+    """红冲单笔付款：生成反向付款 + 反向银行流水 + 回滚余额"""
+
+    payment = db.query(models.Payment).filter(
+        models.Payment.id == payment_id,
+        models.Payment.account_id == account_id,
+    ).first()
+    if not payment:
+        return None
+
+    original_amount = _d(payment.amount)
+    if original_amount <= 0:
+        return None
+
+    reversal = models.Payment(
+        account_id=account_id,
+        payment_type=payment.payment_type,
+        related_entity_type=payment.related_entity_type,
+        related_entity_id=payment.related_entity_id,
+        amount=-original_amount,
+        payment_method=payment.payment_method,
+        payment_date=datetime.now(),
+        bank_account_id=payment.bank_account_id,
+        description=f"冲销付款 #{payment.id}",
+    )
+    db.add(reversal)
+    db.flush()
+
+    if payment.bank_account_id:
+        bank = db.query(models.BankAccount).filter(
+            models.BankAccount.id == payment.bank_account_id,
+            models.BankAccount.account_id == account_id,
+        ).with_for_update().first()
+        if bank:
+            new_balance = _d(bank.balance) + original_amount
+            reversal_tx = models.BankTransaction(
+                account_id=account_id,
+                bank_account_id=payment.bank_account_id,
+                transaction_type="inflow",
+                amount=original_amount,
+                balance_after=new_balance,
+                transaction_date=datetime.now(),
+                description=f"冲销付款: {reversal.description}",
+                related_entity_type="payment",
+                related_entity_id=reversal.id,
+            )
+            db.add(reversal_tx)
+            db.flush()
+            bank.balance = new_balance
+            reversal.bank_transaction_id = reversal_tx.id
+
+        from finance_integration import reverse_journal
+        reverse_journal(db, account_id, "payment", payment.id)
+
+    if payment.related_entity_type == "purchase_order":
+        po = db.query(models.PurchaseOrder).filter(
+            models.PurchaseOrder.id == payment.related_entity_id,
+            models.PurchaseOrder.account_id == account_id,
+        ).first()
+        if po:
+            po.payment_status = "unpaid"
+
+    db.flush()
+    return reversal

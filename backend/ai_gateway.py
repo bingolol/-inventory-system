@@ -102,6 +102,8 @@ AI_CAPABILITIES: list[Capability] = [
     # ── 付款 / 收款 ──
     Capability("POST",   "/api/payments",            "创建付款"),
     Capability("POST",   "/api/receipts",            "创建收款"),
+    Capability("POST",   "/api/receipts/{id}/reverse", "红冲收款"),
+    Capability("POST",   "/api/payments/{id}/reverse", "红冲付款"),
     # ── 银行管理 ──
     Capability("POST",   "/api/bank-accounts",       "创建银行账户", params_hint="account_name,account_number,bank_name"),
     # ── 月末结账 ──

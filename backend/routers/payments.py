@@ -13,6 +13,7 @@ from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.base import _log
 from crud.finance import list_payments, get_payment
+from crud.reversal import reverse_single_payment
 from utils import _d
 from operation_result import OperationResult, EntityType, OperationType
 from finance_integration import post_journal
@@ -179,3 +180,20 @@ def create_payment(
         changes=changes
     )
     return result.to_dict()
+
+
+@router.post("/{payment_id}/reverse")
+def reverse_payment(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
+):
+    """红冲付款"""
+    with unit_of_work(db):
+        reversal = reverse_single_payment(db, account_id, payment_id)
+        if not reversal:
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"payment_id": payment_id})
+        _log(db, account_id, "reverse", "payment", payment_id,
+             f"红冲付款: {reversal.amount}", operator=operator)
+    return {"status": "reversed", "reversal_id": reversal.id}

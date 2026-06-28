@@ -13,6 +13,7 @@ from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.base import _log
 from crud.finance import list_receipts, get_receipt
+from crud.reversal import reverse_single_receipt
 from utils import _d
 from operation_result import OperationResult, EntityType, OperationType
 from finance_integration import post_journal
@@ -147,3 +148,20 @@ def create_receipt(
         changes={"cash": {"amount": f"+{data.amount}"}}
     )
     return result.to_dict()
+
+
+@router.post("/{receipt_id}/reverse")
+def reverse_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
+):
+    """红冲收款"""
+    with unit_of_work(db):
+        reversal = reverse_single_receipt(db, account_id, receipt_id)
+        if not reversal:
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"receipt_id": receipt_id})
+        _log(db, account_id, "reverse", "receipt", receipt_id,
+             f"红冲收款: {reversal.amount}", operator=operator)
+    return {"status": "reversed", "reversal_id": reversal.id}

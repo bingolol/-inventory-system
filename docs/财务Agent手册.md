@@ -487,7 +487,7 @@ POST /api/receipts
 
 收款/付款完成后，对应订单的 `payment_status` 自动变为 `paid`。`bank_account_id` 和 `receipt_method` 非必填，但填了 bank_account_id 会自动生成 BankTransaction 并更新 1002 余额。
 
-> **财务数据不可直接修改**：收款/付款创建后已触发银行流水和余额更新。没有 PUT/DELETE 接口——这是故意设计。如果录错了（金额/账户/方向），走红冲流程（`reverse_payments` / `reverse_receipts`）生成反向分录，原记录保留供审计追溯。
+> **财务数据不可直接修改**：收款/付款没有 PUT/DELETE 接口——这是故意设计。如果录错了，走红冲流程（`POST /api/receipts/{id}/reverse` / `POST /api/payments/{id}/reverse`）生成反向分录，原记录保留供审计追溯。红冲接口在白名单中但对 AI **不可调用**，如需红冲请告知用户联系操作员处理。
 
 ---
 
@@ -872,7 +872,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | `DATA_INTEGRITY_ERROR` | 数据受保护不可修改 | 需通过红冲/调整单合规操作 |
 | `SECURITY_VIOLATION` | 操作被安全策略拦截 | 请走合规 API |
 | `INVALID_OPERATION` | 尝试修改不可变数据 | 这是系统保护，需通过红冲流程处理 |
-| **用户说的金额和系统算出来对不上** | 税率/含税口径问题 | 跟用户确认："这笔是不含税还是含税价格？税率是多少？" |
+| **用户说"刚才那笔录错了要改"** | 收款/付款/发票已生成不可直接改 | 走红冲：`POST /api/receipts/{id}/reverse` 或 `/api/payments/{id}/reverse`（AI 不可调，告知用户联系操作员） |
 
 ---
 
