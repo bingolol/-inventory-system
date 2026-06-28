@@ -372,44 +372,65 @@ class BankReconcileEngine:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                 message=f"调节不平: book={rec.adjusted_book} stmt={rec.adjusted_statement}")
 
-        # 为 action=generate_entry 的未达项自动生成会计凭证
-        from finance_integration import post_journal
-        items = self.db.query(mb.ReconciliationItem).filter(
+        # 检查未处理的费用/利息项——必须先调 generate-entry 才能确认
+        pending = self.db.query(mb.ReconciliationItem).filter(
             mb.ReconciliationItem.reconciliation_id == rec_id,
             mb.ReconciliationItem.resolved == False,
             mb.ReconciliationItem.action == "generate_entry",
         ).all()
-        for it in items:
-            if it.item_type == "bank_received_not_book":
-                # 结息收入: dr 1002 cr 6603
-                move = post_journal(self.db, self.account_id, "bank_reconcile_entry", {
-                    "amount": abs(it.amount),
-                    "date": self.period + "-01",
-                    "description": f"对账自动分录: {it.notes}" if it.notes else "对账自动分录",
-                    "lines": [
-                        {"account_code": "1002", "debit": abs(it.amount), "credit": Decimal("0")},
-                        {"account_code": "6603", "debit": Decimal("0"), "credit": abs(it.amount)},
-                    ]
-                })
-            elif it.item_type == "bank_paid_not_book":
-                # 费用支出: dr 6603 cr 1002
-                move = post_journal(self.db, self.account_id, "bank_reconcile_entry", {
-                    "amount": abs(it.amount),
-                    "date": self.period + "-01",
-                    "description": f"对账自动分录: {it.notes}" if it.notes else "对账自动分录",
-                    "lines": [
-                        {"account_code": "6603", "debit": abs(it.amount), "credit": Decimal("0")},
-                        {"account_code": "1002", "debit": Decimal("0"), "credit": abs(it.amount)},
-                    ]
-                })
-            it.resolved = True
-            it.move_id = move.id
-        self.db.flush()
+        if pending:
+            item_ids = [it.id for it in pending]
+            total = sum(abs(it.amount) for it in pending)
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"有 {len(pending)} 笔未达项需要先生成凭证（合计 {total} 元），"
+                        f"请先调用 POST /api/bank/reconciliation/{rec_id}/generate-entry",
+                data={"pending_item_ids": item_ids},
+            )
 
         rec.status = "confirmed"
         rec.confirmed_at = datetime.now()
         rec.confirmed_by = operator
         self.db.flush()
+
+    # ═══════════════════════════════════════════════════
+    # generate_entries — 对未达项生成会计凭证
+    # ═══════════════════════════════════════════════════
+
+    def generate_entries(self, rec_id: int) -> list:
+        mb = self._models_bank
+        from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+
+        items = self.db.query(mb.ReconciliationItem).filter(
+            mb.ReconciliationItem.reconciliation_id == rec_id,
+            mb.ReconciliationItem.resolved == False,
+            mb.ReconciliationItem.action == "generate_entry",
+        ).all()
+
+        # 找总账科目
+        account = self.db.query(self._models.Account).filter(
+            self._models.Account.id == self.account_id).first()
+        ledger = account and self.db.query(Ledger).filter(Ledger.code == account.code).first()
+        ac_1002 = self.db.query(LedgerAccount).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002").first() if ledger else None
+        ac_6603 = self.db.query(LedgerAccount).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6603").first() if ledger else None
+
+        generated = []
+        for it in items:
+            move = AccountMove(ledger_id=ledger.id, move_type="bank_fee", date=datetime.now(), state="posted")
+            self.db.add(move); self.db.flush()
+            amt = Decimal(str(it.amount))
+            if it.item_type == "bank_paid_not_book":
+                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=amt, credit=0, amount_residual=amt))
+                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=0, credit=amt, amount_residual=amt))
+            elif it.item_type == "bank_received_not_book":
+                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=amt, credit=0, amount_residual=amt))
+                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=0, credit=amt, amount_residual=amt))
+            it.resolved = True
+            generated.append(it.id)
+        self.db.flush()
+        return generated
 
     # ═══════════════════════════════════════════════════
     # _read_book_balance

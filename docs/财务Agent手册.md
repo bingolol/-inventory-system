@@ -730,11 +730,25 @@ GET /api/bank/reconciliation?period=2025-06
 
 ### 处理未达项
 
-**管理费/手续费/结息** (action=generate_entry)：
+**费用/结息未达项**（item_type 为 `bank_paid_not_book` 或 `bank_received_not_book`，action=`generate_entry`）：
 
-系统对标记为 `generate_entry` 的未达项，在**确认调节表**时自动生成分录：
-- 管理费/手续费：`dr 6603 财务费用 cr 1002 银行存款`
-- 结息收入：`dr 1002 银行存款 cr 6603 财务费用-利息收入`
+先调 `generate-entry` 生成凭证，再调 `confirm` 确认锁定。**两步不能合并。**
+
+```
+# 第1步：生成凭证（生成 dr 6603 cr 1002 或 dr 1002 cr 6603）
+POST /api/bank/reconciliation/{id}/generate-entry
+
+# 第2步：确认调节表（检查全部 resolved → 锁定）
+POST /api/bank/reconciliation/{id}/confirm
+```
+
+生成规则：
+| 未达项类型 | 分录 |
+|-----------|------|
+| `bank_paid_not_book`（手续费/管理费） | dr 6603 财务费用 cr 1002 银行存款 |
+| `bank_received_not_book`（结息收入） | dr 1002 银行存款 cr 6603 财务费用-利息收入 |
+
+> 如果用 `confirm` 时还有未处理的 generate-entry 项，系统会返回 422 + 错误提示，告诉你有几笔待处理。先调 `generate-entry` 再重试 `confirm`。
 
 **强制匹配**（日期超标但金额对得上）：
 

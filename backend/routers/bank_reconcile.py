@@ -12,7 +12,7 @@ from uow import unit_of_work
 from commands.base import dispatch
 from commands.bank_reconcile import (
     ImportBankStatement, ReconcileBank, ForceMatchBankReconciliation,
-    ConfirmBankReconciliation,
+    ConfirmBankReconciliation, GenerateReconciliationEntry,
 )
 from errors import BusinessError, ErrorCode
 
@@ -168,6 +168,20 @@ def confirm_reconciliation(
 ):
     with unit_of_work(db):
         return dispatch(ConfirmBankReconciliation(
+            account_id=account_id, operator=operator,
+            reconciliation_id=rec_id,
+        ), db)
+
+
+@router.post("/bank/reconciliation/{rec_id}/generate-entry")
+def generate_reconciliation_entry(
+    rec_id: int,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    with unit_of_work(db):
+        return dispatch(GenerateReconciliationEntry(
             account_id=account_id, operator=operator,
             reconciliation_id=rec_id,
         ), db)

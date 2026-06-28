@@ -25,12 +25,14 @@ export const resolveImageUrl = (url) => {
 
 api.interceptors.request.use(config => {
   const accountStore = useAccountStore()
-  // 优先读 store（响应式、与 UI 同步），空值时从 accounts 列表取第一个，而非硬编码 '1'
   const accountId = accountStore.currentAccountId
     || (accountStore.accounts.length > 0 && String(accountStore.accounts[0].id))
     || ''
   if (accountId) {
     config.headers['X-Account-ID'] = accountId
+  } else {
+    console.warn('[API] 无有效账本ID，跳过请求:', config.url)
+    return Promise.reject({ response: { data: { error: { code: 'NO_ACCOUNT', message: '请先创建账本', action: 'none' } } } })
   }
   // 登录 token：如果存在，自动带 Authorization 头
   const token = localStorage.getItem('auth_token')
@@ -62,6 +64,12 @@ api.interceptors.response.use(
     const errData = err.response?.data
     if (errData?.error) {
       console.error(`[API Error] ${errData.error.code}: ${errData.error.message}`, errData.error)
+      // 如果后端返回账本不存在，清除 localStorage 中的 stale ID
+      if (errData.error.code === 'ORDER_NOT_FOUND' && errData.error.message?.includes('账本不存在')) {
+        localStorage.removeItem('currentAccountId')
+        const store = useAccountStore()
+        store.currentAccountId = ''
+      }
     } else {
       console.error('API Error:', errData || err.message)
     }

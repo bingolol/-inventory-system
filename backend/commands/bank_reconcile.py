@@ -143,3 +143,29 @@ class ConfirmBankReconciliationHandler(CommandHandler):
              f"确认调节表 {rec.period}", operator=cmd.operator)
         db.flush()
         return {"status": rec.status}
+
+
+@dataclass
+class GenerateReconciliationEntry(Command):
+    reconciliation_id: int = 0
+
+
+@register(GenerateReconciliationEntry)
+class GenerateReconciliationEntryHandler(CommandHandler):
+    def handle(self, cmd: GenerateReconciliationEntry, db: Any):
+        import models, models_bank
+
+        rec = db.query(models_bank.BankReconciliation).filter(
+            models_bank.BankReconciliation.id == cmd.reconciliation_id,
+            models_bank.BankReconciliation.account_id == cmd.account_id,
+        ).first()
+        if not rec:
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "调节表"})
+
+        engine = BankReconcileEngine(db, cmd.account_id, rec.bank_account_id, rec.period)
+        result = engine.generate_entries(cmd.reconciliation_id)
+
+        _log(db, cmd.account_id, "generate_entry", "bank_reconciliation", cmd.reconciliation_id,
+             f"生成手续费凭证 {len(result)}笔", operator=cmd.operator)
+        db.flush()
+        return {"generated": len(result)}
