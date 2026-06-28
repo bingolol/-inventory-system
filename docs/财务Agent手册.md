@@ -758,6 +758,8 @@ POST /api/bank/statement
 
 > 每笔 line 的 `amount`：正数=银行收到，负数=银行支出。同系统 BankTransaction 的方向一致。
 >
+> ⚠️ **`opening_balance` 必须与银行对账单上的期初余额一致**，填错会导致所有未达项计算偏移，整张调节表作废。如果发现对账结果异常，先检查期初余额和 seed 参数是否正确。
+>
 > ⚠️ 如果导入返回 500 "数据库操作失败"，说明银行对账相关数据库表尚未创建。请告知开发人员在 `backend/database.py:120` 添加 `import models_bank` 后重启系统。
 
 **第2步：执行自动对账**
