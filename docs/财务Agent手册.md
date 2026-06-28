@@ -487,6 +487,8 @@ POST /api/receipts
 
 收款/付款完成后，对应订单的 `payment_status` 自动变为 `paid`。`bank_account_id` 和 `receipt_method` 非必填，但填了 bank_account_id 会自动生成 BankTransaction 并更新 1002 余额。
 
+> **财务数据不可直接修改**：收款/付款创建后已触发银行流水和余额更新。没有 PUT/DELETE 接口——这是故意设计。如果录错了（金额/账户/方向），走红冲流程（`reverse_payments` / `reverse_receipts`）生成反向分录，原记录保留供审计追溯。
+
 ---
 
 ### 7. 银行管理：用户说"开个账户/查银行流水"
