@@ -30,6 +30,10 @@ api.interceptors.request.use(config => {
     || ''
   if (accountId) {
     config.headers['X-Account-ID'] = accountId
+    // 写操作需要 X-Operator 头标识操作来源
+    if (config.method !== 'get' && config.method !== 'head') {
+      config.headers['X-Operator'] = 'user'
+    }
   } else {
     console.warn('[API] 无有效账本ID，跳过请求:', config.url)
     return Promise.reject({ response: { data: { error: { code: 'NO_ACCOUNT', message: '请先创建账本', action: 'none' } } } })
