@@ -40,13 +40,24 @@ def import_bank_statement(
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),
 ):
-    with unit_of_work(db):
-        return dispatch(ImportBankStatement(
-            account_id=account_id, operator=operator,
-            period_start=body.period_start, period_end=body.period_end,
-            opening_balance=body.opening_balance, closing_balance=body.closing_balance,
-            lines=[l.model_dump() for l in body.lines],
-        ), db)
+    import traceback, logging
+    logger = logging.getLogger("inventory")
+    try:
+        with unit_of_work(db):
+            return dispatch(ImportBankStatement(
+                account_id=account_id, operator=operator,
+                period_start=body.period_start, period_end=body.period_end,
+                opening_balance=body.opening_balance, closing_balance=body.closing_balance,
+                lines=[l.model_dump() for l in body.lines],
+            ), db)
+    except BusinessError:
+        raise
+    except Exception as e:
+        logger.error(f"导入对账单失败: {e}\n{traceback.format_exc()}")
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"导入对账单失败: {str(e)}",
+        )
 
 
 @router.get("/bank/statement/{stmt_id}")
@@ -91,13 +102,23 @@ def reconcile_bank(
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),
 ):
-    import json
+    import json, traceback, logging
+    logger = logging.getLogger("inventory")
     seeds = json.loads(seed) if seed else []
-    with unit_of_work(db):
-        return dispatch(ReconcileBank(
-            account_id=account_id, operator=operator,
-            period=period, seed=seeds,
-        ), db)
+    try:
+        with unit_of_work(db):
+            return dispatch(ReconcileBank(
+                account_id=account_id, operator=operator,
+                period=period, seed=seeds,
+            ), db)
+    except BusinessError:
+        raise
+    except Exception as e:
+        logger.error(f"银行对账失败 period={period}: {e}\n{traceback.format_exc()}")
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"银行对账失败: {str(e)}。请确认：1) 已导入对账单 2) 银行账户存在 3) 期初银行流水已录入",
+        )
 
 
 @router.get("/bank/reconciliation")

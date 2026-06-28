@@ -76,7 +76,7 @@ const loadBalanceSheet = async () => {
   finally { loading.value = false }
 }
 
-useAccountAwareData(load)
+useAccountAwareData(loadBalanceSheet)
 </script>
 
 <style scoped>

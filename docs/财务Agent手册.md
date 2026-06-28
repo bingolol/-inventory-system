@@ -570,6 +570,8 @@ POST /api/bank/entry
 
 ### 创建现金流水
 
+> 银行流水（BankTransaction）不允许 AI 直接创建。所有银行流水必须通过业务操作自动生成：付款（`POST /api/payments`）、收款（`POST /api/receipts`）、利息/手续费直录（`POST /api/bank/entry`）、对账补录（`POST /api/bank/reconciliation/{id}/generate-entry`）。直接创建流水会破坏账务一致性，导致对账不平。
+
 用户说"有一笔银行转账/现金收入"：
 
 ```json
