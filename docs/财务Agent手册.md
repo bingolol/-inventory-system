@@ -408,10 +408,13 @@ POST /api/fixed-assets
 
 ## 6. 付款/收款：用户说"付了钱/收了钱"
 
-**建议先建银行账户**（非必须，但推荐）：
+**必须先建银行账户**，否则付款不会产生银行流水，余额不会更新。
+
 ```text
 查：GET /api/bank-accounts
-建：POST /api/bank-accounts {"account_name": "基本户", "account_number": "6222****"}
+→ 不存在则创建：POST /api/bank-accounts {"account_name": "基本户", "account_number": "6222****", "balance": 100000}
+→ 记下 bank_account_id
+→ 确认余额充足（balance >= 付款金额）
 ```
 
 **字段合法值**：
