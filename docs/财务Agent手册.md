@@ -275,7 +275,9 @@ POST /api/sales
 2. 提取：发票号码、客户名称、金额、税率
 3. 确认：seller_name = 本公司、buyer_name = 客户名称
 4. 确认商品明细 items：
-   - 用户给了明细 → 填 items
+   - 用户给了明细 → 对每种商品先查：GET /api/products?search=名称
+     → 存在则记下 product_id
+     → 不存在则创建：POST /api/products {"name": "...", "sale_price": ..., "track_inventory": true}
    - 用户没给 → 问："发票上列了什么商品？"（items 必填，至少 1 行）
 5. 确认 sale_order_action：
    - 如果这笔销售还没有建销售单 → "auto_create"（自动建单+出库）
@@ -309,10 +311,15 @@ POST /api/invoices/quick
 3. 确认 invoice_type：
    - 专票（special）→ 后续可以认证抵扣
    - 普票（ordinary）→ 不可抵扣，全额进成本
-4. 确认 purchase_order_action：
+4. 确认商品明细 items：
+   - 用户给了明细 → 对每种商品先查：GET /api/products?search=名称
+     → 存在则记下 product_id
+     → 不存在则创建：POST /api/products {"name": "...", "purchase_price": ..., "track_inventory": true}
+   - 用户没给 → 问："发票上列了什么商品？"（items 必填，至少 1 行）
+5. 确认 purchase_order_action：
    - 如果还没建采购单 → "auto_create"
    - 已建采购单 → "link_existing"
-5. 进项专票记得提醒用户：需要认证才能抵扣
+6. 进项专票记得提醒用户：需要认证才能抵扣
 ```
 
 ```json
