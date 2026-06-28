@@ -80,7 +80,7 @@ AI_CAPABILITIES: list[Capability] = [
     Capability(
         "POST", "/api/invoices/quick", "AI 快捷录发票（规范入口，支持 fixed_asset 嵌套对象）",
         replaces=["POST /api/invoices", "POST /api/invoices/with-fixed-asset"],
-        params_hint="invoice_no,direction,invoices_type,amount_with_tax,tax_rate,counterparty_name,issue_date; 可选 fixed_asset{}",
+        params_hint="invoice_no,direction,invoice_type,amount_with_tax,tax_rate,counterparty_name,seller_name,buyer_name,issue_date,items[]; 可选 fixed_asset{},sale_order_action,purchase_order_action,related_order_id",
     ),
     Capability("PUT",    "/api/invoices/{id}",       "更新发票（字段级 patch）"),
     Capability("POST",   "/api/invoices/{id}/certify", "认证进项专票"),
