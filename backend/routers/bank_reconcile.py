@@ -185,3 +185,66 @@ def generate_reconciliation_entry(
             account_id=account_id, operator=operator,
             reconciliation_id=rec_id,
         ), db)
+
+
+class BankEntryBody(BaseModel):
+    entry_type: str   # interest_income(利息收入) | bank_fee(银行手续费)
+    amount: float
+    transaction_date: str  # YYYY-MM-DD
+    description: str = ""
+
+
+@router.post("/bank/entry")
+def create_bank_entry(
+    body: BankEntryBody,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """直接录入银行利息收入/手续费（无需走完整对账流程）"""
+    import models, models_finance
+    from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+    from datetime import datetime
+
+    ba = db.query(models.BankAccount).filter(
+        models.BankAccount.account_id == account_id,
+    ).first()
+
+    ledger = db.query(Ledger).filter(
+        Ledger.code == db.query(models.Account).filter(
+            models.Account.id == account_id).first().code
+    ).first()
+    ac_1002 = db.query(LedgerAccount).filter(
+        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002").first()
+    ac_6603 = db.query(LedgerAccount).filter(
+        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6603").first()
+
+    amt = Decimal(str(body.amount))
+    dt = datetime.strptime(body.transaction_date, "%Y-%m-%d")
+
+    with unit_of_work(db):
+        move = AccountMove(ledger_id=ledger.id, move_type="bank_entry", date=dt, state="posted")
+        db.add(move); db.flush()
+
+        if body.entry_type == "interest_income":
+            # 利息收入: dr 1002 cr 6603
+            db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=amt, credit=0, amount_residual=amt))
+            db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=0, credit=amt, amount_residual=amt))
+            if ba: ba.balance += amt
+        elif body.entry_type == "bank_fee":
+            # 银行手续费: dr 6603 cr 1002
+            db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=amt, credit=0, amount_residual=amt))
+            db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=0, credit=amt, amount_residual=amt))
+            if ba: ba.balance -= amt
+
+        if ba:
+            db.add(models.BankTransaction(
+                account_id=account_id, bank_account_id=ba.id,
+                transaction_type="inflow" if body.entry_type == "interest_income" else "outflow",
+                amount=amt, balance_after=ba.balance,
+                transaction_date=dt, description=body.description or body.entry_type,
+                flow_category="operating",
+            ))
+
+        db.flush()
+    return {"status": "ok", "entry_type": body.entry_type, "amount": float(amt)}

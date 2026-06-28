@@ -114,6 +114,7 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/bank/reconciliation/{id}/match", "强制匹配未达项"),
     Capability("POST",   "/api/bank/reconciliation/{id}/generate-entry", "生成手续费/利息凭证"),
     Capability("POST",   "/api/bank/reconciliation/{id}/confirm", "确认调节表"),
+    Capability("POST",   "/api/bank/entry",         "录入银行利息收入/手续费"),
     # ── 备份 ──
     Capability("POST",   "/api/backup/hot",          "热备份"),
     # ── 删除类（危险操作，放行后由 ConfirmMiddleware 二次确认）──

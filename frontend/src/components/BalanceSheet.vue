@@ -67,9 +67,9 @@ const loading = ref(false)
 const d = ref(null)
 const reportDate = ref(props.date)
 
-watch(() => props.date, (v) => { reportDate.value = v; load() })
+watch(() => props.date, (v) => { reportDate.value = v; loadBalanceSheet() })
 
-const load = async () => {
+const loadBalanceSheet = async () => {
   loading.value = true
   try { d.value = await financeApi.getBalanceSheet(reportDate.value) }
   catch (e) { handleError(e, { defaultMsg: '加载资产负债表失败，请检查期初余额是否已设置' }); d.value = null }

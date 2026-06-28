@@ -548,6 +548,26 @@ POST /api/bank-accounts
 2. GET /api/bank-transactions?bank_account_id=1 → 查看流水明细
 ```
 
+### 银行利息/手续费直录
+
+用户说"银行扣了手续费/给了利息"，不需要走对账流程，直接录入：
+
+```json
+POST /api/bank/entry
+{
+  "entry_type": "interest_income",
+  "amount": 0.61,
+  "transaction_date": "2025-06-21"
+}
+```
+
+| entry_type | 分录 |
+|-----------|------|
+| `interest_income`（利息收入） | dr 1002 银行存款 cr 6603 财务费用-利息收入 |
+| `bank_fee`（手续费/管理费） | dr 6603 财务费用 cr 1002 银行存款 |
+
+> 系统同时生成 BankTransaction 流水和会计凭证，无需手动对账。
+
 ### 创建现金流水
 
 用户说"有一笔银行转账/现金收入"：
