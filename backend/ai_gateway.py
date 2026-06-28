@@ -102,6 +102,14 @@ AI_CAPABILITIES: list[Capability] = [
     # ── 付款 / 收款 ──
     Capability("POST",   "/api/payments",            "创建付款"),
     Capability("POST",   "/api/receipts",            "创建收款"),
+    # ── 银行管理 ──
+    Capability("POST",   "/api/bank-accounts",       "创建银行账户", params_hint="account_name,account_number,bank_name"),
+    # ── 月末结账 ──
+    Capability("POST",   "/api/finance/month-close", "月末结账（自动算税+生成凭证）", params_hint="period:YYYY-MM"),
+    # ── 银行对账 ──
+    Capability("POST",   "/api/bank/statement",      "导入银行对账单"),
+    Capability("POST",   "/api/bank/reconcile",      "执行银行对账", params_hint="period:YYYY-MM"),
+    Capability("POST",   "/api/bank/reconciliation/{id}/confirm", "确认调节表"),
     # ── 备份 ──
     Capability("POST",   "/api/backup/hot",          "热备份"),
     # ── 删除类（危险操作，放行后由 ConfirmMiddleware 二次确认）──

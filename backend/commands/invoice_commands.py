@@ -539,9 +539,25 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
 
     issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
     order_no = _generate_order_no(db, "SO", issue_dt)
+
+    # 从发票 counterparty_name 查找或创建客户
+    customer = db.query(models.Customer).filter(
+        models.Customer.account_id == account_id,
+        models.Customer.name == invoice.counterparty_name,
+    ).first()
+    if not customer and invoice.counterparty_name:
+        customer = models.Customer(
+            account_id=account_id, name=invoice.counterparty_name,
+            contact="", phone="",
+        )
+        db.add(customer)
+        db.flush()
+    customer_id = customer.id if customer else None
+
     order = models.SaleOrder(
         account_id=account_id,
         order_no=order_no,
+        customer_id=customer_id,
         order_type=OrderType.RETAIL,
         payment_status=PaymentStatus.UNPAID,
         status=OrderStatus.COMPLETED,
