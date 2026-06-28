@@ -1,269 +1,188 @@
 <template>
-  <div class="income-tax-report-section" v-loading="loading">
-    <!-- 年份/季度选择 -->
-    <el-form :inline="true" :model="queryForm" class="filter-bar">
-      <el-form-item label="年份">
-        <el-select v-model="queryForm.year" placeholder="请选择年份" required>
-          <el-option v-for="year in years" :key="year" :label="year" :value="year" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="季度">
-        <el-select v-model="queryForm.quarter" placeholder="请选择季度" required>
-          <el-option label="第一季度" :value="1" />
-          <el-option label="第二季度" :value="2" />
-          <el-option label="第三季度" :value="3" />
-          <el-option label="第四季度" :value="4" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="getIncomeTaxReport">查询</el-button>
-      </el-form-item>
-    </el-form>
+  <div v-loading="loading">
+    <div class="filter-bar">
+      <el-select v-model="queryForm.year" placeholder="年份" style="width:120px">
+        <el-option v-for="year in years" :key="year" :label="year" :value="year" />
+      </el-select>
+      <el-select v-model="queryForm.quarter" placeholder="季度" style="width:120px">
+        <el-option label="第一季度" :value="1" />
+        <el-option label="第二季度" :value="2" />
+        <el-option label="第三季度" :value="3" />
+        <el-option label="第四季度" :value="4" />
+      </el-select>
+      <el-button type="primary" @click="getReport">查询</el-button>
+    </div>
 
-    <!-- 报表内容 -->
-    <el-card v-if="incomeTaxReport" class="report-card" shadow="hover">
-      <template #header>
-        <div class="report-header">
-          <div class="header-title">
-            <el-icon class="title-icon"><TrendCharts /></el-icon>
-            <span>{{ queryForm.year }}年第{{ queryForm.quarter }}季度企业所得税报表</span>
-          </div>
-          <el-tag type="warning" effect="plain" size="small">季度预缴申报</el-tag>
+    <div v-if="r" class="it-page">
+      <div class="it-hero">
+        <div class="it-hero-top">
+          <div class="it-hero-title">企业所得税</div>
+          <span class="it-period">{{ queryForm.year }}年第{{ queryForm.quarter }}季度</span>
         </div>
-      </template>
-
-      <div class="report-body">
-        <el-table 
-          :data="reportData" 
-          class="financial-table"
-          :show-header="false"
-          stripe
-          highlight-current-row
-        >
-          <el-table-column prop="item" label="项目" min-width="400">
-            <template #default="scope">
-              <div :class="['item-cell', {
-                'section-header': scope.row.isHeader,
-                'indent-level-1': !scope.row.isHeader && scope.row.item.startsWith('  '),
-                'total-highlight': isTotalItem(scope.row.item)
-              }]">
-                <span v-if="scope.row.isHeader" class="section-marker">▸</span>
-                {{ scope.row.item.replace(/^ +/, '') }}
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="value" label="金额" width="240" align="right">
-            <template #default="scope">
-              <span :class="['amount-cell', {
-                'empty-value': scope.row.value === '',
-                'highlight-amount': isHighlightAmount(scope.row.item)
-              }]">
-                {{ typeof scope.row.value === 'number' ? formatMoney(scope.row.value) : scope.row.value }}
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="it-hero-main">
+          <div class="it-hero-number">
+            <span class="it-hero-label">应纳企业所得税</span>
+            <span class="it-hero-value">{{ formatMoney(r.tax_amount) }}</span>
+          </div>
+          <div class="it-hero-rate">
+            <span>税率</span>
+            <strong>{{ (Number(r.tax_rate) * 100).toFixed(1) }}%</strong>
+          </div>
+        </div>
       </div>
-    </el-card>
 
-    <el-empty v-else-if="!loading" description="请选择年份和季度后点击查询" />
+      <div class="it-waterfall">
+        <div class="it-step it-step-positive">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">营业收入</span>
+            <span class="it-step-value">+ {{ formatMoney(r.total_revenue) }}</span>
+          </div>
+        </div>
+        <div class="it-step it-step-negative">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">营业成本</span>
+            <span class="it-step-value">- {{ formatMoney(r.total_cost) }}</span>
+          </div>
+        </div>
+        <div class="it-step it-step-inter">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">毛利润</span>
+            <span class="it-step-value">{{ formatMoney(r.gross_profit) }}</span>
+          </div>
+        </div>
+        <div class="it-step it-step-negative">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">减：可税前扣除费用</span>
+            <span class="it-step-value">- {{ formatMoney(r.operating_expenses) }}</span>
+          </div>
+        </div>
+        <div class="it-step it-step-final">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">应纳税所得额</span>
+            <span class="it-step-value">{{ formatMoney(r.taxable_income) }}</span>
+          </div>
+        </div>
+        <div class="it-step it-step-result">
+          <div class="it-step-line"></div>
+          <div class="it-step-body">
+            <span class="it-step-label">应纳企业所得税</span>
+            <span class="it-step-value">{{ formatMoney(r.tax_amount) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="it-note">按税务口径计算 · 收入/成本基于发票数据</div>
+    </div>
+
+    <el-empty v-else-if="!loading" description="选择年份和季度后点击查询" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { TrendCharts } from '@element-plus/icons-vue'
+import { ref } from 'vue'
 import invoicesApi from '../api/invoices'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { handleError } from '../utils/errorHandler'
 
-// 获取当前季度
-const getCurrentQuarter = () => Math.ceil((new Date().getMonth() + 1) / 3)
-
-// 查询表单
-const queryForm = ref({
-  year: new Date().getFullYear(),
-  quarter: getCurrentQuarter()
-})
-
-// 年份列表
+const getQ = () => Math.ceil((new Date().getMonth() + 1) / 3)
+const queryForm = ref({ year: new Date().getFullYear(), quarter: getQ() })
 const years = ref([])
-// 企业所得税报表
-const incomeTaxReport = ref(null)
-// 加载状态
+const r = ref(null)
 const loading = ref(false)
 
-// 生成年份列表
-const generateYears = () => {
-  const currentYear = new Date().getFullYear()
-  for (let i = currentYear - 3; i <= currentYear; i++) {
-    years.value.push(i)
-  }
+const genYears = () => {
+  const cy = new Date().getFullYear()
+  for (let i = cy - 3; i <= cy; i++) years.value.push(i)
 }
 
-// 报表数据（税务口径：发票说话）
-const reportData = computed(() => {
-  if (!incomeTaxReport.value) return []
-  const r = incomeTaxReport.value
-  // 后端 IncomeTaxReport schema 返回字段：
-  // total_revenue: 销项发票不含税金额合计（税务口径收入）
-  // total_cost: 进项发票不含税金额合计（税务口径成本）
-  // operating_expenses: 有票费用合计（可税前扣除）
-  // gross_profit: 毛利润 = total_revenue - total_cost
-  // taxable_income: 应纳税所得额 = gross_profit - operating_expenses
-  // tax_rate: 实际税率
-  // tax_amount: 应纳企业所得税
-  // invoice_revenue / invoice_cost / invoiced_expenses / non_invoice_expenses: 明细参考
-  return [
-    { item: '一、营业收入（税务口径）', value: r.total_revenue },
-    { item: '  其中：销项发票不含税金额', value: r.invoice_revenue },
-    { item: '二、营业成本（税务口径）', value: r.total_cost },
-    { item: '  其中：进项发票不含税金额', value: r.invoice_cost },
-    { item: '三、毛利润', value: r.gross_profit },
-    { item: '四、减：有票费用（可税前扣除）', value: r.operating_expenses },
-    { item: '  其中：无票费用（仅供参考）', value: r.non_invoice_expenses },
-    { item: '五、应纳税所得额', value: r.taxable_income },
-    { item: '六、税率', value: `${(Number(r.tax_rate) * 100).toFixed(2)}%` },
-    { item: '七、应纳企业所得税', value: r.tax_amount }
-  ]
-})
-
-// 判断是否为合计/关键项目
-const isTotalItem = (item) => {
-  const totalKeywords = ['合计', '总额', '实际利润额', '应纳所得税额', '实际应纳', '应补']
-  return totalKeywords.some(keyword => item.includes(keyword))
-}
-
-// 判断是否需要高亮金额
-const isHighlightAmount = (item) => {
-  const highlightKeywords = ['利润总额', '实际利润额', '应纳所得税额', '实际应纳', '应补']
-  return highlightKeywords.some(keyword => item.includes(keyword))
-}
-
-// 获取企业所得税报表
-const getIncomeTaxReport = async () => {
+const getReport = async () => {
   loading.value = true
-  try {
-    const response = await invoicesApi.getIncomeTaxReport(queryForm.value.year, queryForm.value.quarter)
-    incomeTaxReport.value = response
-  } catch (error) {
-    console.error('获取企业所得税报表失败:', error)
-    ElMessage.error(error.response?.data?.detail || '获取企业所得税报表失败，请稍后重试')
-  } finally {
-    loading.value = false
-  }
+  try { r.value = await invoicesApi.getIncomeTaxReport(queryForm.value.year, queryForm.value.quarter) }
+  catch (e) { handleError(e, { defaultMsg: '获取所得税报表失败，请检查所选季度是否有收入数据' }) }
+  finally { loading.value = false }
 }
 
-generateYears()
-useAccountAwareData(getIncomeTaxReport)
+genYears()
+useAccountAwareData(getReport)
 </script>
 
 <style scoped>
-.income-tax-report-section {
+.it-page { animation: itFade 0.3s ease; margin-top: 16px; }
+@keyframes itFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.it-hero {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border-radius: 16px;
+  padding: 24px 28px;
+  color: #fff;
+}
+.it-hero-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.it-hero-title { font-size: 18px; font-weight: 700; }
+.it-period { font-size: 13px; padding: 4px 14px; background: rgba(255,255,255,0.1); border-radius: 9999px; }
+.it-hero-main { display: flex; align-items: flex-end; gap: 24px; }
+.it-hero-number { flex: 1; }
+.it-hero-label { font-size: 13px; color: rgba(255,255,255,0.5); display: block; margin-bottom: 4px; }
+.it-hero-value { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
+.it-hero-rate { font-size: 13px; color: rgba(255,255,255,0.5); padding: 8px 16px; background: rgba(255,255,255,0.06); border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.it-hero-rate strong { font-size: 20px; color: #fff; }
+
+.it-waterfall {
+  margin-top: 20px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #f0f0f0;
+  padding: 8px 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.it-step {
+  display: flex;
+  align-items: stretch;
   padding: 0;
 }
-
-/* ========== 报表卡片 ========== */
-.report-card {
-  margin-top: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  transition: box-shadow 0.3s ease;
+.it-step-line {
+  width: 4px;
+  flex-shrink: 0;
+  margin: 0 20px;
+  border-radius: 2px;
 }
+.it-step-positive .it-step-line { background: #67c23a; }
+.it-step-negative .it-step-line { background: #f56c6c; }
+.it-step-inter .it-step-line { background: #e6a23c; }
+.it-step-final .it-step-line { background: #4f6ef7; }
+.it-step-result .it-step-line { background: linear-gradient(180deg, #4f6ef7, #6366f1); }
 
-.report-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-}
-
-/* ========== 报表头部 ========== */
-.report-header {
+.it-step-body {
+  flex: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.title-icon {
-  font-size: 20px;
-  color: var(--el-color-warning);
-}
-
-/* ========== 报表主体 ========== */
-.report-body {
-  margin-bottom: 24px;
-}
-
-.financial-table {
-  --el-table-border-color: var(--el-border-color-lighter);
-  --el-table-row-hover-bg-color: var(--el-fill-color-light);
-}
-
-.financial-table :deep(.el-table__row) {
-  transition: background-color 0.2s ease;
-}
-
-.item-cell {
-  padding: 10px 0;
-  font-size: 14px;
-  color: var(--el-text-color-regular);
-  transition: color 0.2s ease;
-}
-
-.section-header {
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  background: linear-gradient(to right, var(--el-fill-color-light), transparent);
-  padding: 10px 12px;
-  margin: 4px -12px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.section-marker {
-  color: var(--el-color-warning);
-  font-size: 12px;
-}
-
-.indent-level-1 {
-  padding-left: 24px;
-  color: var(--el-text-color-secondary);
-}
-
-.total-highlight {
-  font-weight: 600;
-  color: var(--el-color-primary);
+  padding: 14px 20px 14px 0;
+  border-bottom: 1px solid #f5f5f5;
   font-size: 15px;
-  border-top: 1px dashed var(--el-border-color);
-  padding-top: 12px;
-  margin-top: 4px;
 }
+.it-step:last-child .it-step-body { border-bottom: none; }
+.it-step-label { color: #4e5969; }
+.it-step-value { font-weight: 700; font-family: 'Consolas', 'Monaco', monospace; }
+.it-step-positive .it-step-value { color: #67c23a; }
+.it-step-negative .it-step-value { color: #f56c6c; }
+.it-step-final .it-step-value { color: #4f6ef7; font-size: 16px; }
+.it-step-result .it-step-value { color: #fff; font-size: 18px; }
+.it-step-result .it-step-body { background: linear-gradient(135deg, #4f6ef7, #6366f1); border-radius: 10px; margin: 4px 4px 4px 0; padding: 16px 20px; }
+.it-step-result .it-step-label { color: rgba(255,255,255,0.7); }
 
-.amount-cell {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 14px;
-  color: var(--el-text-color-regular);
-  transition: color 0.2s ease;
-}
-
-.empty-value {
-  color: var(--el-text-color-placeholder);
-  font-style: italic;
-}
-
-.highlight-amount {
-  font-weight: 700;
-  color: var(--el-color-primary);
-  font-size: 15px;
+.it-note {
+  text-align: center;
+  font-size: 13px;
+  color: #c9cdd4;
+  margin-top: 16px;
 }
 </style>

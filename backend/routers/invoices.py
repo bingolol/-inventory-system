@@ -137,7 +137,7 @@ async def create_invoice(
             )
             db_invoice = dispatch(cmd, db)
     except ValueError as e:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建发票失败，请检查输入数据"})
     except IntegrityError:
         raise BusinessError(code=ErrorCode.INVOICE_DUPLICATE_NUMBER, data={"invoice_number": invoice.invoice_no})
     db.refresh(db_invoice)
@@ -229,7 +229,7 @@ async def quick_create_invoice(
                 db_invoice = dispatch(cmd, db)
                 db_asset = None
     except ValueError as e:
-        raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, message=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建发票失败，请检查输入数据"})
     except IntegrityError:
         raise BusinessError(code=ErrorCode.INVOICE_DUPLICATE_NUMBER, data={"invoice_number": invoice.invoice_no})
     db.refresh(db_invoice)

@@ -20,7 +20,7 @@ class BankEngine:
             BankAccount.account_id == self.account_id,
         ).with_for_update().first()
         if not bank_account:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": bank_account_id})
 
         if transaction_type == "inflow":
             bank_account.balance = Decimal(str(bank_account.balance)) + amount

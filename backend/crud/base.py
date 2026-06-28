@@ -9,17 +9,15 @@ from errors import BusinessError, ErrorCode
 logger = logging.getLogger("inventory")
 
 
-def _generate_order_no(db, prefix):
+def _generate_order_no(db, prefix, business_date=None):
     """生成订单号：{中文前缀}{年}—{月}-{日}-{时}:{分}-{序号}，如 CG2026—2-17-20:01-01"""
-    # 前缀映射：英文缩写 → 中文首字母大写
     prefix_map = {"PO": "CG", "PL": "RG", "SO": "XS", "PS": "XS"}
     cn_prefix = prefix_map.get(prefix, prefix)
 
-    now = datetime.now()
-    date_part = f"{now.year}—{now.month}-{now.day}"
-    time_part = f"{now.hour:02d}:{now.minute:02d}"
-    # LIKE 匹配需注意中文破折号
-    pattern = f"{cn_prefix}{now.year}—{now.month}-{now.day}-{now.hour:02d}:{now.minute:02d}-%"
+    dt = business_date or datetime.now()
+    date_part = f"{dt.year}—{dt.month}-{dt.day}"
+    time_part = f"{dt.hour:02d}:{dt.minute:02d}"
+    pattern = f"{cn_prefix}{dt.year}—{dt.month}-{dt.day}-{dt.hour:02d}:{dt.minute:02d}-%"
     model = models.PurchaseOrder if prefix in ("PO", "PL") else models.SaleOrder
     count = db.query(model).filter(model.order_no.like(pattern)).count()
     return f"{cn_prefix}{date_part}-{time_part}-{count + 1:02d}"

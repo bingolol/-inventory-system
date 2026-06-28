@@ -5,8 +5,8 @@ from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from models_finance import (
     LedgerAccount, AccountMove, AccountMoveLine, AccountPartialReconcile,
-    AccountingError,
 )
+from accounting_engine import AccountingError, AccountingErrorCode
 
 
 class ReceivableEngine:
@@ -27,7 +27,7 @@ class ReceivableEngine:
         ).first()
 
         if not debit_line or not credit_line:
-            raise AccountingError("LINE_NOT_FOUND",
+            raise AccountingError(AccountingErrorCode.LINE_NOT_FOUND,
                 "核销行不存在或不属于当前账本")
 
         reconcile = AccountPartialReconcile(

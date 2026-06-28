@@ -45,7 +45,7 @@ class BankTransactionBase(BaseModel):
     amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2, description="金额")
     transaction_date: datetime = Field(..., description="交易日期")
     description: str = Field(default="", max_length=500, description="描述")
-    reference_no: str = Field(..., min_length=1, max_length=100, description="银行流水号（必填，用于对账）")
+    reference_no: str = Field(default="", max_length=100, description="银行流水号（为空时系统自动分配）")
 
 
 class BankTransactionCreate(BankTransactionBase):

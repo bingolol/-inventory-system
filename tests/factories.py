@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from helpers import get_entity_id, uniq
+from tests.helpers import get_entity_id, uniq
 
 
 # ── DB-level factories (unit tests) ──
@@ -16,7 +16,7 @@ from helpers import get_entity_id, uniq
 def make_account(db, name="测试账本"):
     from models import Account
     tag = uuid.uuid4().hex[:8]
-    acc = Account(name=name, code=f"TEST-{tag}", enable_vat_deduction=False)
+    acc = Account(name=name, code=f"TEST-{tag}", taxpayer_type="small_scale")
     db.add(acc)
     db.flush()
     return acc
@@ -59,10 +59,10 @@ def make_product(db, account_id, name=None, track_inventory=True, purchase_price
 
 def make_customer(db, account_id, name=None):
     tag = uuid.uuid4().hex[:8]
-    from models import Partner
-    p = Partner(
+    from models import Customer
+    p = Customer(
         account_id=account_id,
-        name=name or f"客户-{tag}", partner_type="customer",
+        name=name or f"客户-{tag}",
         contact="测试", phone=f"138{tag[:8]}",
     )
     db.add(p)
@@ -71,10 +71,10 @@ def make_customer(db, account_id, name=None):
 
 def make_supplier(db, account_id, name=None):
     tag = uuid.uuid4().hex[:8]
-    from models import Partner
-    p = Partner(
+    from models import Supplier
+    p = Supplier(
         account_id=account_id,
-        name=name or f"供应商-{tag}", partner_type="supplier",
+        name=name or f"供应商-{tag}",
         contact="测试", phone=f"139{tag[:8]}",
     )
     db.add(p)

@@ -26,19 +26,19 @@
         <template #empty>
           <el-empty description="暂无操作日志" />
         </template>
-        <el-table-column prop="created_at" label="时间" width="180">
+        <el-table-column prop="created_at" label="时间" min-width="180">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column prop="operation" label="操作" width="100">
+        <el-table-column prop="operation" label="操作" min-width="100">
           <template #default="{ row }">
             <el-tag :type="opTagType(row.operation)" size="small">{{ opLabel(row.operation) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="entity_type" label="类型" width="100">
+        <el-table-column prop="entity_type" label="类型" min-width="100">
           <template #default="{ row }">{{ entityLabel(row.entity_type) }}</template>
         </el-table-column>
-        <el-table-column prop="entity_id" label="ID" width="80" />
-        <el-table-column prop="operator" label="操作者" width="80" align="center">
+        <el-table-column prop="entity_id" label="ID" min-width="80" />
+        <el-table-column prop="operator" label="操作者" min-width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.operator === 'ai' ? 'warning' : 'primary'" size="small">
               {{ row.operator === 'ai' ? 'AI' : '我' }}
@@ -85,9 +85,11 @@ const loadData = async () => {
     const res = await commonApi.getLogs(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '加载操作日志失败，请检查网络连接' }) }
   finally { loading.value = false }
 }
 
 useAccountAwareData(loadData)
 </script>
+
+<style scoped></style>

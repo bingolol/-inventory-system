@@ -3,8 +3,8 @@ from sqlalchemy import func, select, union_all
 from sqlalchemy.orm import Session
 from models_finance import (
     LedgerAccount, LedgerAccountBalance, AccountMoveLine, AccountMove,
-    AccountingError,
 )
+from accounting_engine import AccountingError, AccountingErrorCode
 
 
 class LedgerEngine:
@@ -58,11 +58,11 @@ class LedgerEngine:
         ).with_for_update().first()
 
         if not account:
-            raise AccountingError("ACCOUNT_NOT_FOUND",
+            raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
                 f"科目不存在: {line.ledger_account_id}")
 
         if not account.is_leaf:
-            raise AccountingError("NON_LEAF_ACCOUNT",
+            raise AccountingError(AccountingErrorCode.NON_LEAF_ACCOUNT,
                 f"科目 {account.code}({account.name}) 不是叶子科目，不能直接记账。"
                 f"请改用其子科目。如确认需使用此科目，请在科目表中设 is_leaf=True。")
 
@@ -70,7 +70,7 @@ class LedgerEngine:
         delta = Decimal(str(line.debit)) - Decimal(str(line.credit))
 
         if account.code == "1001" and balance_row.balance + delta < 0:
-            raise AccountingError("INSUFFICIENT_BALANCE",
+            raise AccountingError(AccountingErrorCode.INSUFFICIENT_BALANCE,
                 f"库存现金余额不足。当前余额: {balance_row.balance}，"
                 f"扣减: {abs(delta) if delta < 0 else delta}")
 
@@ -84,7 +84,7 @@ class LedgerEngine:
         ).first()
 
         if not account:
-            raise AccountingError("ACCOUNT_NOT_FOUND",
+            raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
                 f"科目不存在: {ledger_account_id}")
 
         if date:

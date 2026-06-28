@@ -65,6 +65,9 @@ def dispatch(cmd: Command, db: Any) -> Any:
         raise KeyError(
             f"No handler registered for command type: {cmd_type.__name__}"
         )
+    # 设置审计上下文（供 SQLAlchemy 事件监听器使用）
+    from utils.audit import set_audit_context
+    set_audit_context(db, account_id=cmd.account_id, operator=cmd.operator)
     return handler_cls().handle(cmd, db)
 
 

@@ -75,7 +75,7 @@ async def create_expense(
     """创建费用"""
     # 校验费用类别
     if expense.category not in EXPENSE_CATEGORIES:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"category '{expense.category}' not in {EXPENSE_CATEGORIES}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"费用类别 '{expense.category}' 不合法，合法值: {EXPENSE_CATEGORIES}"})
     # 创建费用
     db_expense = Expense(
         account_id=account_id,
@@ -92,13 +92,15 @@ async def create_expense(
         db.add(db_expense)
         db.flush()
 
-        # 生成会计凭证：借:5601/5602/5603 贷:1002/2202
-        expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "5602")
+        # 生成会计凭证：借:费用科目 贷:应付科目（按业务类型）
+        expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "6601")
+        credit_code = "2241" if db_expense.payment_method == "private_advance" else "2211" if db_expense.category == "gongzi" else "2202"
         post_journal(db, account_id, "expense", {
             "amount": db_expense.amount,
             "date": db_expense.expense_date.strftime("%Y-%m-%d") if db_expense.expense_date else "",
             "expense_account_code": expense_code,
-            "bank_account_id": None,  # 费用创建时未付款，走应付账款
+            "credit_account_code": credit_code,
+            "bank_account_id": None,
             "partner_id": None,
             "partner_type": None,
         })
@@ -163,7 +165,7 @@ async def update_expense(
     # 更新费用
     update_data = expense_update.model_dump(exclude_unset=True)
     if expense_update.category is not None and expense_update.category not in EXPENSE_CATEGORIES:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"category '{expense_update.category}' not in {EXPENSE_CATEGORIES}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"费用类别 '{expense_update.category}' 不合法，合法值: {EXPENSE_CATEGORIES}"})
     with unit_of_work(db):
         for field, value in update_data.items():
             setattr(expense, field, value)

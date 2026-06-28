@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from models import Product
 from models_finance import (
     LedgerAccount, AccountMove, AccountMoveLine, AccountJournal,
-    generate_voucher_number, AccountingError,
+    generate_voucher_number,
 )
+from accounting_engine import AccountingError, AccountingErrorCode
 from engine_ledger import LedgerEngine
 
 
@@ -67,19 +68,26 @@ class JournalEngine:
 
     def _build(self, move_type: str, source: dict):
         builders = {
-            "sale_order":       self._build_sale_order,
-            "purchase_order":   self._build_purchase_order,
-            "receipt":          self._build_receipt,
-            "payment":          self._build_payment,
-            "expense":          self._build_expense,
-            "depreciation":     self._build_depreciation,
-            "asset_disposal":   self._build_asset_disposal,
+            "sale_order":              self._build_sale_order,
+            "purchase_order":          self._build_purchase_order,
+            "receipt":                 self._build_receipt,
+            "payment":                 self._build_payment,
+            "expense":                 self._build_expense,
+            "depreciation":            self._build_depreciation,
+            "asset_disposal":          self._build_asset_disposal,
+            "fixed_asset_purchase":    self._build_fixed_asset_purchase,
+            "opening_balance":         self._build_opening_balance,
+            "cash_flow":               self._build_cash_flow,
+            "tax_surcharge":           self._build_tax_surcharge,
+            "tax_income":              self._build_tax_income,
+            "tax_income_reversal":     self._build_tax_income_reversal,
+            "vat_transfer_out":        self._build_vat_transfer_out,
         }
         builder = builders.get(move_type)
         if not builder:
-            raise AccountingError("UNKNOWN_MOVE_TYPE",
+            raise AccountingError(AccountingErrorCode.UNKNOWN_MOVE_TYPE,
                 f"未知凭证类型: {move_type}。支持 "
-                f"sale_order/purchase_order/receipt/payment/expense/depreciation/asset_disposal")
+                f"sale_order/purchase_order/receipt/payment/expense/depreciation/asset_disposal/fixed_asset_purchase/opening_balance/cash_flow")
         return builder(source)
 
     def _build_sale_order(self, source):
@@ -91,7 +99,7 @@ class JournalEngine:
         tax_amount = Decimal(str(source["tax_amount"]))
 
         if total_without_tax + tax_amount != total_with_tax:
-            raise AccountingError("AMOUNT_MISMATCH", "不含税 + 税额 != 价税合计")
+            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH, "不含税 + 税额 != 价税合计")
 
         acct_conf = source.get("account_config", {})
         taxpayer_type = acct_conf.get("taxpayer_type") if "account_config" in source else "general"
@@ -100,7 +108,7 @@ class JournalEngine:
         lines = [
             {"account_code": "1122", "debit": total_with_tax, "credit": Decimal("0"),
              "partner_id": source["partner_id"], "partner_type": "customer"},
-            {"account_code": "5001", "debit": Decimal("0"), "credit": total_without_tax},
+            {"account_code": "6001", "debit": Decimal("0"), "credit": total_without_tax},
             {"account_code": tax_code, "debit": Decimal("0"), "credit": tax_amount},
         ]
 
@@ -116,7 +124,7 @@ class JournalEngine:
             total_cost += quantity * Decimal(str(unit_cost))
 
         if total_cost > 0:
-            lines.append({"account_code": "5401", "debit": total_cost, "credit": Decimal("0")})
+            lines.append({"account_code": "6401", "debit": total_cost, "credit": Decimal("0")})
             lines.append({"account_code": "1405", "debit": Decimal("0"), "credit": total_cost})
 
         return lines, "SALE", {"balance_check": True}
@@ -130,7 +138,7 @@ class JournalEngine:
         tax_amount = Decimal(str(source["tax_amount"]))
 
         if total_without_tax + tax_amount != total_with_tax:
-            raise AccountingError("AMOUNT_MISMATCH", "不含税 + 税额 != 价税合计")
+            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH, "不含税 + 税额 != 价税合计")
 
         acct_conf = source.get("account_config", {})
         enable_vat_deduction = acct_conf.get("enable_vat_deduction") if "account_config" in source else True
@@ -174,7 +182,8 @@ class JournalEngine:
 
         amount = Decimal(str(source["amount"]))
         partner_id = source.get("partner_id")
-        dr_line = {"account_code": "2202", "debit": amount, "credit": Decimal("0")}
+        debit_account = source.get("debit_account_code", "2202")
+        dr_line = {"account_code": debit_account, "debit": amount, "credit": Decimal("0")}
         if partner_id is not None:
             dr_line["partner_id"] = partner_id
             dr_line["partner_type"] = "supplier"
@@ -195,6 +204,7 @@ class JournalEngine:
 
         amount = Decimal(str(source["amount"]))
         bank_account_id = source.get("bank_account_id")
+        credit_account = source.get("credit_account_code", "2202")
 
         if bank_account_id is not None:
             lines = [
@@ -204,7 +214,7 @@ class JournalEngine:
         else:
             lines = [
                 {"account_code": source["expense_account_code"], "debit": amount, "credit": Decimal("0")},
-                {"account_code": "2202", "debit": Decimal("0"), "credit": amount,
+                {"account_code": credit_account, "debit": Decimal("0"), "credit": amount,
                  "partner_id": source.get("partner_id"), "partner_type": source.get("partner_type", "supplier")},
             ]
 
@@ -215,7 +225,7 @@ class JournalEngine:
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
         return [
-            {"account_code": "5602", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "6601", "debit": amount, "credit": Decimal("0")},
             {"account_code": "1602", "debit": Decimal("0"), "credit": amount},
         ], "FA", {"balance_check": True}
 
@@ -246,18 +256,91 @@ class JournalEngine:
 
         return lines, "FA", {"balance_check": True}
 
+    def _build_fixed_asset_purchase(self, source):
+        """固定资产入账：借:1601（固定资产）贷:2202（应付账款）"""
+        self._check_required(source, ["original_value", "asset_id"])
+        original = Decimal(str(source["original_value"]))
+        return [
+            {"account_code": "1601", "debit": original, "credit": Decimal("0")},
+            {"account_code": "2202", "debit": Decimal("0"), "credit": original},
+        ], "GEN", {"balance_check": True}
+
+    def _build_opening_balance(self, source):
+        """期初余额过账：动态科目，按传入的 lines 生成"""
+        self._check_required(source, ["lines"])
+        result = []
+        for line in source["lines"]:
+            result.append({
+                "account_code": line["account_code"],
+                "debit": Decimal(str(line.get("debit", 0))),
+                "credit": Decimal(str(line.get("credit", 0))),
+            })
+        return result, "GEN", {"balance_check": True}
+
+    def _build_cash_flow(self, source):
+        """现金流水：inflow → 借:1002 贷:对应科目，outflow → 借:对应科目 贷:1002"""
+        self._check_required(source, ["amount", "flow_category", "direction"])
+        amount = Decimal(str(source["amount"]))
+        direction = source["direction"]
+        if direction == "inflow":
+            return [
+                {"account_code": "1002", "debit": amount, "credit": Decimal("0")},
+                {"account_code": source["counter_account"], "debit": Decimal("0"), "credit": amount},
+            ], "GEN", {"balance_check": True}
+        else:
+            return [
+                {"account_code": source["counter_account"], "debit": amount, "credit": Decimal("0")},
+                {"account_code": "1002", "debit": Decimal("0"), "credit": amount},
+            ], "GEN", {"balance_check": True}
+
+    def _build_tax_surcharge(self, source):
+        """计提附加税：借:6403（税金及附加）贷:222104（应交附加税）"""
+        self._check_required(source, ["amount"])
+        amount = Decimal(str(source["amount"]))
+        return [
+            {"account_code": "6403", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "222104", "debit": Decimal("0"), "credit": amount},
+        ], "TAX", {"balance_check": True}
+
+    def _build_tax_income(self, source):
+        """计提所得税：借:6801（所得税费用）贷:222105（应交所得税）"""
+        self._check_required(source, ["amount"])
+        amount = Decimal(str(source["amount"]))
+        return [
+            {"account_code": "6801", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "222105", "debit": Decimal("0"), "credit": amount},
+        ], "TAX", {"balance_check": True}
+
+    def _build_tax_income_reversal(self, source):
+        """冲回所得税：借:222105（应交所得税）贷:6801（所得税费用）"""
+        self._check_required(source, ["amount"])
+        amount = Decimal(str(source["amount"]))
+        return [
+            {"account_code": "222105", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "6801", "debit": Decimal("0"), "credit": amount},
+        ], "TAX", {"balance_check": True}
+
+    def _build_vat_transfer_out(self, source):
+        """转出未交增值税：dr:222106(转出未交增值税) cr:222107(未交增值税)"""
+        self._check_required(source, ["amount"])
+        amount = Decimal(str(source["amount"]))
+        return [
+            {"account_code": "222106", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "222107", "debit": Decimal("0"), "credit": amount},
+        ], "VAT", {"balance_check": True}
+
     def _validate(self, lines: list, validation: dict):
         if validation.get("balance_check"):
             total_debit = sum(l["debit"] for l in lines)
             total_credit = sum(l["credit"] for l in lines)
             if abs(total_debit - total_credit) > Decimal("0.01"):
-                raise AccountingError("BALANCE_NOT_EQUAL",
+                raise AccountingError(AccountingErrorCode.BALANCE_NOT_EQUAL,
                     f"借贷不平衡: 借={total_debit}, 贷={total_credit}")
 
     def _check_required(self, source: dict, fields: list):
         for field in fields:
             if field not in source or source[field] is None:
-                raise AccountingError("FIELD_REQUIRED", f"{field} 为必填")
+                raise AccountingError(AccountingErrorCode.FIELD_REQUIRED, f"{field} 为必填")
 
     def _get_leaf_account_id(self, ledger_id: int, account_code: str) -> int:
         if account_code.startswith("DYNAMIC_"):
@@ -268,7 +351,7 @@ class JournalEngine:
                 LedgerAccount.is_leaf == True,
             ).first()
             if not account:
-                raise AccountingError("ACCOUNT_NOT_FOUND",
+                raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
                     f"找不到 {acct_type} 类型叶子科目，请检查科目表")
             return account.id
 
@@ -277,6 +360,6 @@ class JournalEngine:
             LedgerAccount.code == account_code,
         ).first()
         if not account:
-            raise AccountingError("ACCOUNT_NOT_FOUND",
+            raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
                 f"科目编码不存在: {account_code}")
         return account.id

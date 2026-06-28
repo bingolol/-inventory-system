@@ -1,0 +1,9 @@
+INFO:     Started server process [8456]
+INFO:     Waiting for application startup.
+2026-06-24 13:45:58,029 [INFO] inventory: 迁移: 联动迁移已跳过（项目功能已移除）
+2026-06-24 13:45:58,032 [INFO] inventory: Float→Numeric 迁移: 已完成，跳过
+2026-06-24 13:45:58,034 [INFO] inventory: has_invoice 迁移:已完成,跳过
+2026-06-24 13:45:58,039 [INFO] inventory: 迁移: inventory_adjustments 表已就绪
+2026-06-24 13:45:58,106 [INFO] inventory: 进销存管理系统启动完成
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)

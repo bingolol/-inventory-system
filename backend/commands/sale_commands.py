@@ -24,7 +24,7 @@ from .crud_compat import (
 )
 from crud.reversal import reverse_receipts
 from errors import BusinessError, ErrorCode
-from crud.inventory_ops import sale_deduct, sale_restore
+from crud.inventory_ops import sale_deduct
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
@@ -58,7 +58,7 @@ class CreateSaleOrderHandler(CommandHandler):
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         # 2. 生成订单号
-        order_no = _generate_order_no(db, "SO")
+        order_no = _generate_order_no(db, "SO", cmd.sale_date)
 
         # 3. 创建订单头
         order = models.SaleOrder(
@@ -71,7 +71,7 @@ class CreateSaleOrderHandler(CommandHandler):
             notes=cmd.notes,
             image_url=cmd.image_url,
             total_price=0,
-            sale_date=cmd.sale_date or datetime.now(),
+            sale_date=datetime.fromisoformat(cmd.sale_date) if isinstance(cmd.sale_date, str) else (cmd.sale_date or datetime.now()),
         )
         db.add(order)
         db.flush()
@@ -125,15 +125,19 @@ class CreateSaleOrderHandler(CommandHandler):
         # 8. 显式联动：InventoryEngine 出库 + 生成会计凭证
         if cmd.deduct_inventory:
             for item in order.items:
-                unit_cost = InventoryEngine(db).outbound(
-                    account_id=cmd.account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity,
-                    source_type="sale_order",
-                    source_id=order.id,
-                    operator=cmd.operator,
-                )
-                item.set_calculated_cost(unit_cost)
+                product = get_product(db, cmd.account_id, item.product_id)
+                if product.track_inventory:
+                    unit_cost = InventoryEngine(db).outbound(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        source_type="sale_order",
+                        source_id=order.id,
+                        operator=cmd.operator,
+                    )
+                    item.set_calculated_cost(unit_cost)
+                else:
+                    item.set_calculated_cost(Decimal("0"))
             FinanceEngine(db, cmd.account_id).record_sale(order)
 
         # 9. 事件（仅日志）
@@ -172,11 +176,24 @@ class CancelSaleOrderHandler(CommandHandler):
         domain.transition_to(OrderStatus.CANCELLED)
         order.status = domain.status
 
-        # 显式联动：回补库存
-        sale_restore(db, cmd.account_id, order, operator=cmd.operator)
+        # 显式联动：InventoryEngine 回补库存（BR-7: StockMove 真相源）
+        eng = InventoryEngine(db)
+        for item in order.items:
+            eng.reverse(
+                account_id=cmd.account_id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit_cost=Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0'),
+                source_type="sale_order",
+                source_id=order.id,
+                operator=cmd.operator,
+            )
 
         # 显式联动：冲销收款记录 + 银行流水
         reverse_receipts(db, cmd.account_id, cmd.order_id)
+
+        # 显式联动：冲红会计凭证
+        FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
 
         # 事件（仅日志）
         emit("sale_order.cancelled", db=db, account_id=cmd.account_id, order=order,
@@ -253,12 +270,26 @@ class DeleteSaleOrderHandler(CommandHandler):
         if not domain.can_delete():
             raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": order.status, "action": "删除"})
 
-        # 显式联动：回补库存
+        # 显式联动：InventoryEngine 回补库存（BR-7: StockMove 真相源）
         if order.status == OrderStatus.COMPLETED:
-            sale_restore(db, cmd.account_id, order, operator=cmd.operator)
+            eng = InventoryEngine(db)
+            for item in order.items:
+                eng.reverse(
+                    account_id=cmd.account_id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    unit_cost=Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0'),
+                    source_type="sale_order",
+                    source_id=order.id,
+                    operator=cmd.operator,
+                )
 
         # 显式联动：冲销收款记录 + 银行流水
         reverse_receipts(db, cmd.account_id, cmd.order_id)
+
+        # 显式联动：冲红会计凭证
+        if order.status == OrderStatus.COMPLETED:
+            FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
 
         # 事件（仅日志）
         emit("sale_order.deleted", db=db, account_id=cmd.account_id, order=order,

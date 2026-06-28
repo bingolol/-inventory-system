@@ -101,7 +101,7 @@ class FixedAssetEngine:
         dep_date = _period_to_date(period)
         source = {
             "amount": monthly,
-            "expense_account_code": "5602",
+            "expense_account_code": "6601",
             "contra_account_code": "1602",
             "source_model": "fixed_asset_depreciation",
             "source_id": dep.id,
@@ -174,6 +174,6 @@ class FixedAssetEngine:
 def _period_to_date(period: str) -> date:
     """YYYY-MM → 该月最后一天"""
     year, month = map(int, period.split("-"))
-    if month == 12:
-        return date(year + 1, 1, 1)
-    return date(year, month + 1, 1)
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, last_day)

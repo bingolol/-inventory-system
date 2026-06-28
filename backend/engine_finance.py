@@ -71,20 +71,24 @@ class FinanceEngine:
         post_journal(self.db, self.account_id, "purchase_order", source)
 
     def record_sale(self, order) -> None:
-        from finance_integration import _calc_tax_from_items
         is_small_scale = self.account and self.account.taxpayer_type == "small_scale"
-        items_for_tax = []
+        total_without_tax = Decimal('0')
+        tax_amount = Decimal('0')
         for item in order.items:
+            line_total = Decimal(str(item.total_price))
+            total_without_tax += line_total
             rate = item.tax_rate
             if is_small_scale and rate and rate > 0:
                 rate = self._vat_rate(self.account)
-            items_for_tax.append({"total_price": str(item.total_price), "tax_rate": str(rate)})
-        tax_info = _calc_tax_from_items(order.total_price, items_for_tax)
+            if rate:
+                tax_amount += (line_total * Decimal(str(rate))).quantize(Q2)
+        tax_amount = tax_amount.quantize(Q2)
+        total_with_tax = (total_without_tax + tax_amount).quantize(Q2)
         source = {
             "partner_id": order.customer_id or 0,
-            "total_with_tax": order.total_price,
-            "total_without_tax": tax_info["total_without_tax"],
-            "tax_amount": tax_info["tax_amount"],
+            "total_with_tax": total_with_tax,
+            "total_without_tax": total_without_tax,
+            "tax_amount": tax_amount,
             "items": [
                 {
                     "product_id": item.product_id,

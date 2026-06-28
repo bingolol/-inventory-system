@@ -1,7 +1,7 @@
 """集成测试公共辅助函数（放在 backend/ 下，确保 sys.path 已含 backend）"""
 from decimal import Decimal
 from datetime import datetime
-from database import SessionLocal
+from database import SessionLocal, set_maintenance_mode
 from models import Account, Product, Inventory
 
 
@@ -10,6 +10,7 @@ def ensure_test_product(account_id: int = None) -> int:
 
     供所有集成测试共用，避免新数据库无商品导致测试失败。
     """
+    set_maintenance_mode(True)
     db = SessionLocal()
     try:
         if account_id is None:
@@ -42,3 +43,4 @@ def ensure_test_product(account_id: int = None) -> int:
         return product.id
     finally:
         db.close()
+        set_maintenance_mode(False)

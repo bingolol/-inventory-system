@@ -21,16 +21,14 @@
 
       <div v-loading="loading">
         <template v-if="result">
-          <el-card shadow="never" class="balance-card">
-            <div class="balance-row">
-              <span class="balance-label">{{ partnerType === 'customer' ? '客户' : '供应商' }}应收/应付余额</span>
-              <span class="balance-value">¥{{ formatMoney(result.balance) }}</span>
-            </div>
-          </el-card>
+          <div class="ag-balance">
+            <span class="ag-balance-label">{{ partnerType === 'customer' ? '客户' : '供应商' }}应收/应付余额</span>
+            <span class="ag-balance-value">¥{{ formatMoney(result.balance) }}</span>
+          </div>
 
-          <el-table :data="agingRows" stripe border style="margin-top: 16px;">
+          <el-table :data="agingRows" stripe style="margin-top:16px;">
             <template #empty><el-empty description="暂无账龄数据" /></template>
-            <el-table-column prop="bucket" label="账龄区间" width="160" />
+            <el-table-column prop="bucket" label="账龄区间" min-width="160" />
             <el-table-column label="金额" align="right" min-width="200">
               <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
             </el-table-column>
@@ -81,7 +79,7 @@ const loadPartners = async () => {
     const res = await api({ page_size: 1000 })
     partners.value = res.items || []
   } catch (e) {
-    handleError(e, { defaultMsg: '加载往来单位列表失败' })
+    handleError(e, { defaultMsg: '加载往来单位列表失败，请检查网络连接' })
   }
 }
 
@@ -99,7 +97,7 @@ const loadData = async () => {
     })
     result.value = res
   } catch (e) {
-    handleError(e, { defaultMsg: '加载账龄分析失败' })
+    handleError(e, { defaultMsg: '加载账龄分析失败，请检查筛选条件是否正确' })
   } finally {
     loading.value = false
   }
@@ -111,23 +109,22 @@ useAccountAwareData(() => {
 </script>
 
 <style scoped>
-.balance-card {
-  margin-bottom: 0;
-  background: var(--el-color-primary-light-9);
-  border-color: var(--el-color-primary-light-7);
-}
-.balance-row {
+.ag-balance {
+  background: linear-gradient(135deg, #f4f6ff, #eef1ff);
+  border: 1px solid #dce0ff;
+  border-radius: 12px;
+  padding: 16px 20px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
 }
-.balance-label {
+.ag-balance-label {
   font-size: 14px;
-  color: var(--el-text-color-secondary);
+  color: #4e5969;
 }
-.balance-value {
+.ag-balance-value {
   font-size: 24px;
   font-weight: 700;
-  color: var(--el-color-primary);
+  color: #4f6ef7;
 }
 </style>

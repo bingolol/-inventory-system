@@ -71,6 +71,7 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
                 account_id=account_id,
                 operator=operator,
                 supplier_id=data.supplier_id,
+                purchase_date=data.purchase_date,
                 payment_method=data.payment_method,
                 notes=data.notes,
                 image_url=data.image_url or "",

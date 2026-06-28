@@ -1,36 +1,40 @@
-/**
- * 侧边栏菜单配置
- *
- * 从 Layout.vue 提取，数据驱动渲染。
- * icon 字段为 Element Plus 图标组件名，模板中通过 <component :is> 动态渲染。
- */
-
 export const companyMenuItems = [
   { index: '/', icon: 'DataAnalysis', label: '仪表盘' },
-  { index: '/products', icon: 'Goods', label: '商品管理' },
-  { index: '/suppliers', icon: 'OfficeBuilding', label: '供应商管理' },
-  { index: '/customers', icon: 'User', label: '客户管理' },
-  { index: '/purchases', icon: 'ShoppingCart', label: '采购管理' },
-  { index: '/sales', icon: 'Sell', label: '销售管理' },
-  { index: '/inventory', icon: 'Box', label: '库存管理', badge: 'alertCount' },
   {
-    index: 'finance', icon: 'Document', label: '财务方向',
+    index: 'ops', icon: 'Sell', label: '业务处理',
     children: [
-      { index: '/financial-reports', icon: 'TrendCharts', label: '财务报表' },
-      { index: '/cash-flows', icon: 'Wallet', label: '现金流量表' },
+      { index: '/sales-customers', icon: 'Sell', label: '销售开单' },
+      { index: '/supply-chain', icon: 'Box', label: '采购入库' },
+      { index: '/invoices', icon: 'DocumentChecked', label: '发票录入' },
+    ]
+  },
+  {
+    index: 'finance', icon: 'Wallet', label: '财务核算',
+    children: [
+      { index: '/financial-overview', icon: 'DataBoard', label: '财务总览' },
+      { index: '/bank-accounts', icon: 'Wallet', label: '银行账户' },
       { index: '/expenses', icon: 'Ticket', label: '费用管理' },
+      { index: '/reconciliations', icon: 'Files', label: '对账管理' },
+      { index: '/cash-flows', icon: 'TrendCharts', label: '现金流量表' },
     ]
   },
   {
-    index: 'tax', icon: 'DataLine', label: '税务方向',
+    index: 'reports', icon: 'Document', label: '财务报表',
     children: [
+      { index: '/financial-reports', icon: 'TrendCharts', label: '利润表/资产负债表' },
+      { index: '/finance/journal/moves', icon: 'Document', label: '会计凭证' },
+      { index: '/finance/reports/trial-balance', icon: 'DataLine', label: '试算平衡表' },
+      { index: '/finance/receivable/aging', icon: 'Files', label: '往来账龄' },
       { index: '/tax-report', icon: 'DataBoard', label: '税务报表' },
-      { index: '/invoices', icon: 'DocumentChecked', label: '发票管理' },
     ]
   },
-  { index: '/reconciliations', icon: 'Files', label: '对账管理' },
-  { index: '/logs', icon: 'Document', label: '操作日志' },
-  { index: '/backup', icon: 'FolderChecked', label: '数据备份' },
+  {
+    index: 'system', icon: 'Document', label: '系统管理',
+    children: [
+      { index: '/logs', icon: 'Document', label: '操作日志' },
+      { index: '/backup', icon: 'FolderChecked', label: '数据备份' },
+    ]
+  },
 ]
 
 export const personalMenuItems = [

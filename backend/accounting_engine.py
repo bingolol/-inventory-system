@@ -44,6 +44,16 @@ class AccountingErrorCode(str, Enum):
     AMORTIZATION_USEFUL_LIFE_ZERO = "AMORTIZATION_USEFUL_LIFE_ZERO"
     AMORTIZATION_CALCULATION_INVALID = "AMORTIZATION_CALCULATION_INVALID"
 
+    # 凭证/科目 (引擎内部)
+    ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
+    AMOUNT_MISMATCH = "AMOUNT_MISMATCH"
+    BALANCE_NOT_EQUAL = "BALANCE_NOT_EQUAL"
+    FIELD_REQUIRED = "FIELD_REQUIRED"
+    INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
+    NON_LEAF_ACCOUNT = "NON_LEAF_ACCOUNT"
+    LINE_NOT_FOUND = "LINE_NOT_FOUND"
+    UNKNOWN_MOVE_TYPE = "UNKNOWN_MOVE_TYPE"
+
     # 报表验证
     BALANCE_SHEET_UNBALANCED = "BALANCE_SHEET_UNBALANCED"
     INCOME_STATEMENT_INVALID = "INCOME_STATEMENT_INVALID"
@@ -98,9 +108,10 @@ class AccountingError(Exception):
                 "calculation_detail": {...},     # 会计错误专属:数值明细
             }}
         """
+        code_val = self.code.value if isinstance(self.code, AccountingErrorCode) else str(self.code)
         return {
             "error": {
-                "code": self.code.value,
+                "code": code_val,
                 "message": self.message,
                 "ai_instruction": self.ai_instruction,
                 "accounting_rule": self.accounting_rule,
@@ -388,8 +399,8 @@ class AccountingEngine:
                 accounting_rule="《小企业会计准则》第三十条"
             )
 
-        # 计算年数总和
-        n = useful_life
+        # 计算年数总和（useful_life 是月数，转为年数）
+        n = useful_life // 12
         sum_of_years = n * (n + 1) // 2
 
         # 计算应计折旧总额

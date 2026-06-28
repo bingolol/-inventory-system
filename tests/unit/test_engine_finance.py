@@ -13,7 +13,7 @@ from enums import OrderStatus, PaymentMethod
 @pytest.fixture
 def account(db):
     a = Account(id=1, name="测试", type="company", code="test",
-                taxpayer_type="general", enable_vat_deduction=True, vat_rate=Decimal("0.13"))
+                taxpayer_type="general")
     db.add(a)
     db.commit()
     return a
@@ -140,7 +140,7 @@ class TestRecordSale:
     def test_creates_revenue_and_cogs_journal(self, db, account, accts, product):
         so = SaleOrder(
             account_id=1, order_no="SO-TEST-001", customer_id=1,
-            total_price=Decimal("226.00"),
+            total_price=Decimal("200.00"),
             status=OrderStatus.COMPLETED,
             sale_date=datetime.now(),
         )
@@ -149,7 +149,7 @@ class TestRecordSale:
         si = SaleItem(
             order_id=so.id, product_id=product.id,
             quantity=10, unit_price=Decimal("20.00"),
-            tax_rate=Decimal("0.13"), total_price=Decimal("226.00"),
+            tax_rate=Decimal("0.13"), total_price=Decimal("200.00"),
         )
         si.set_calculated_cost(Decimal("10.00"))
         db.add(si)
@@ -236,7 +236,7 @@ class TestReverse:
     def test_reverse_sale(self, db, account, accts, product):
         so = SaleOrder(
             account_id=1, order_no="SO-TEST-002", customer_id=1,
-            total_price=Decimal("226.00"),
+            total_price=Decimal("200.00"),
             status=OrderStatus.COMPLETED,
             sale_date=datetime.now(),
         )
@@ -245,7 +245,7 @@ class TestReverse:
         si = SaleItem(
             order_id=so.id, product_id=product.id,
             quantity=10, unit_price=Decimal("20.00"),
-            tax_rate=Decimal("0.13"), total_price=Decimal("226.00"),
+            tax_rate=Decimal("0.13"), total_price=Decimal("200.00"),
         )
         si.set_calculated_cost(Decimal("10.00"))
         db.add(si)

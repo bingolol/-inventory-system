@@ -7,6 +7,7 @@ from .base import Command, CommandHandler, register
 from .crud_compat import _log
 from errors import BusinessError, ErrorCode
 from crud.base import get_account
+from finance_integration import get_or_create_ledger_id
 
 
 @dataclass
@@ -30,6 +31,7 @@ class CreateAccountHandler(CommandHandler):
         )
         db.add(account)
         db.flush()
+        get_or_create_ledger_id(db, account.id)
         return account
 
 

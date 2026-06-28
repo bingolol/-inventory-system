@@ -28,6 +28,7 @@ class PurchaseItemOut(BaseModel):
 
 class PurchaseOrderCreate(BaseModel):
     supplier_id: Optional[int] = None
+    purchase_date: Optional[datetime] = None
     payment_method: str = "company"
     image_url: Optional[str] = ""
     notes: str = ""
@@ -145,3 +146,4 @@ class InventoryOut(BaseModel):
 
 class InventoryAdjust(BaseModel):
     quantity: int
+    adjust_date: Optional[str] = None

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, CheckConstraint, Date, and_, event
+from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey, Boolean, Text, UniqueConstraint, CheckConstraint, Date, and_, event, JSON
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 from datetime import datetime
@@ -7,7 +7,7 @@ from enums import OrderStatus, PaymentStatus, PaymentMethod, CertificationStatus
 
 
 # 用户表：支持登录认证
-class User(Base):
+class User(Base, JSON):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -303,6 +303,7 @@ class StockMove(Base):
     total_cost = Column(Numeric(14, 2), default=Decimal('0'), comment="行总金额")
     source_type = Column(String(50), nullable=False, comment="来源类型: purchase_order/sale_order/adjustment/reversal")
     source_id = Column(Integer, nullable=False, comment="来源单据ID")
+    move_date = Column(DateTime, nullable=True, comment="业务日期（取自源单据）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
@@ -317,6 +318,22 @@ class OperationLog(Base):
     detail = Column(Text, default="", comment="操作详情")
     operator = Column(String(20), nullable=False, default="user", comment="操作者: user / ai")
     created_at = Column(DateTime, default=datetime.now)
+
+
+class AuditLog(Base):
+    """审计日志 — 记录实体变更前后状态（通过 SQLAlchemy 事件自动写入）"""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, index=True, nullable=True, comment="所属账本")
+    operator = Column(String(50), default="system", comment="操作者")
+    action = Column(String(20), nullable=False, comment="create / update / delete")
+    entity_type = Column(String(50), nullable=False, comment="实体类型")
+    entity_id = Column(Integer, nullable=True, comment="实体ID")
+    before_data = Column(JSON, nullable=True, comment="变更前（JSON）")
+    after_data = Column(JSON, nullable=True, comment="变更后（JSON）")
+    changed_fields = Column(JSON, nullable=True, comment="变更字段列表")
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
 
 # 个人流水账（仅 personal 账本使用）
@@ -524,8 +541,8 @@ class Receipt(Base):
 def prevent_stock_move_update(mapper, connection, target):
     from errors import BusinessError, ErrorCode
     raise BusinessError(
-        code=ErrorCode.INTERNAL_ERROR,
-        message="StockMove 是库存真相源，一经生成严禁修改"
+        code=ErrorCode.DATA_INTEGRITY_ERROR,
+        data={"details": "StockMove 是库存真相源，一经生成严禁修改"}
     )
 
 
@@ -533,6 +550,6 @@ def prevent_stock_move_update(mapper, connection, target):
 def prevent_depreciation_update(mapper, connection, target):
     from errors import BusinessError, ErrorCode
     raise BusinessError(
-        code=ErrorCode.INTERNAL_ERROR,
-        message="FixedAssetDepreciation 是折旧真相源，一经生成严禁修改"
+        code=ErrorCode.DATA_INTEGRITY_ERROR,
+        data={"details": "FixedAssetDepreciation 是折旧真相源，一经生成严禁修改"}
     )

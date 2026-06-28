@@ -58,11 +58,17 @@ class ErrorCode(str, Enum):
     # 固定资产 (8.5xxx)
     FIXED_ASSET_NOT_FOUND = "FIXED_ASSET_NOT_FOUND"
 
+    # 银行账户 (9xxx)
+    BANK_ACCOUNT_NOT_FOUND = "BANK_ACCOUNT_NOT_FOUND"
+
     # 通用 (9xxx)
     VALIDATION_ERROR = "VALIDATION_ERROR"
     DUPLICATE_ENTRY = "DUPLICATE_ENTRY"
+    DATA_INTEGRITY_ERROR = "DATA_INTEGRITY_ERROR"
+    READONLY_DATA = "READONLY_DATA"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     ENDPOINT_NOT_ALLOWED_FOR_AI = "ENDPOINT_NOT_ALLOWED_FOR_AI"
+    SECURITY_VIOLATION = "SECURITY_VIOLATION"
 
 
 # ErrorCode → (HTTP status, default action, 中文消息模板, AI指令)
@@ -190,6 +196,13 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         "STOP_RETRYING. 固定资产不存在，请检查资产ID是否正确。"
     ),
 
+    # 银行账户
+    ErrorCode.BANK_ACCOUNT_NOT_FOUND: (
+        404, ActionType.NONE,
+        "银行账户不存在: ID={bank_account_id}",
+        "STOP_RETRYING. 银行账户不存在，请检查账户ID是否正确。"
+    ),
+
     # 通用
     ErrorCode.VALIDATION_ERROR: (
         422, ActionType.USER_INPUT,
@@ -201,6 +214,16 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         "数据冲突: {details}",
         "STOP_RETRYING. 数据重复，请检查输入是否与已有数据冲突。"
     ),
+    ErrorCode.DATA_INTEGRITY_ERROR: (
+        409, ActionType.CONTACT_ADMIN,
+        "数据完整性保护: {details}",
+        "STOP_RETRYING. 该数据受保护，无法直接修改。需通过红冲/调整单等合规渠道操作。"
+    ),
+    ErrorCode.READONLY_DATA: (
+        403, ActionType.NONE,
+        "只读数据不可修改: {details}",
+        "STOP_RETRYING. 当前系统处于维护模式，数据为只读状态。"
+    ),
     ErrorCode.INTERNAL_ERROR: (
         500, ActionType.CONTACT_ADMIN,
         "服务器内部错误",
@@ -210,6 +233,11 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         403, ActionType.NONE,
         "AI 不允许调用此接口: {method} {path}",
         "STOP_RETRYING. 该接口对 AI 未开放，请改用规范接口（见 ai_instruction / suggested_endpoint）。"
+    ),
+    ErrorCode.SECURITY_VIOLATION: (
+        403, ActionType.NONE,
+        "安全违规: {message}",
+        "STOP_RETRYING. 该操作被安全策略拦截，请通过合规 API 进行操作。"
     ),
 }
 

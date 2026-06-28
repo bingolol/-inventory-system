@@ -1,197 +1,140 @@
 <template>
-  <div class="income-statement-container">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>利润表</span>
-          <div class="header-actions">
-            <el-date-picker
-              v-model="startDate"
-              type="date"
-              placeholder="开始日期"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="loadIncomeStatement"
-            />
-            <span>至</span>
-            <el-date-picker
-              v-model="endDate"
-              type="date"
-              placeholder="结束日期"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="loadIncomeStatement"
-            />
-            <el-button type="primary" @click="loadIncomeStatement" :loading="loading">刷新</el-button>
-            <el-button @click="exportReport">导出</el-button>
-          </div>
+  <div>
+    <div class="is-top">
+      <el-date-picker v-model="s" type="date" placeholder="开始日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="load" style="width:150px" />
+      <span style="color:#86909c;">至</span>
+      <el-date-picker v-model="e" type="date" placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="load" style="width:150px" />
+      <el-button type="primary" @click="load" :loading="loading">查询</el-button>
+    </div>
+
+    <div v-if="d" class="is-body">
+      <div class="is-hero">
+        <div>
+          <div class="is-hero-title">利润表</div>
+          <div class="is-hero-period">{{ formatDate(s) }} ~ {{ formatDate(e) }}</div>
         </div>
-      </template>
-      
-      <div v-if="incomeStatement" class="report-content">
-        <div class="report-title">利润表（会小企02表）</div>
-        <div class="report-period">期间: {{ formatDate(startDate) }} 至 {{ formatDate(endDate) }}</div>
-        
-        <el-table :data="incomeData" style="width: 100%" :show-header="false">
-          <el-table-column prop="item" label="项目" width="400" />
-          <el-table-column prop="amount" label="金额" width="200" align="right">
-            <template #default="scope">
-              <strong v-if="scope.row.isTotal">{{ formatMoney(scope.row.amount) }}</strong>
-              <span v-else>{{ formatMoney(scope.row.amount) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-        
-        <el-divider />
-        
-        <div class="profit-summary">
-          <el-row :gutter="20">
-            <el-col :span="6">
-              <el-statistic title="营业收入" :value="incomeStatement.revenue" :precision="2" />
-            </el-col>
-            <el-col :span="6">
-              <el-statistic title="营业成本" :value="incomeStatement.cost_of_goods_sold" :precision="2" />
-            </el-col>
-            <el-col :span="6">
-              <el-statistic title="营业费用" :value="incomeStatement.total_operating_expenses" :precision="2" />
-            </el-col>
-            <el-col :span="6">
-              <el-statistic title="净利润" :value="incomeStatement.net_profit" :precision="2">
-                <template #suffix>
-                  <span :class="incomeStatement.net_profit >= 0 ? 'profit-positive' : 'profit-negative'">
-                    {{ incomeStatement.net_profit >= 0 ? '盈利' : '亏损' }}
-                  </span>
-                </template>
-              </el-statistic>
-            </el-col>
-          </el-row>
+        <div class="is-hero-result">
+          <div class="is-hero-label">净利润</div>
+          <div class="is-hero-value" :style="{ color: d.net_profit >= 0 ? '#67c23a' : '#f56c6c' }">{{ formatMoney(d.net_profit) }}</div>
         </div>
       </div>
-      
-      <div v-else class="no-data">
-        <el-empty description="暂无数据，请先录入业务数据" />
+
+      <div class="is-cards">
+        <div class="is-card">
+          <div class="is-card-header c-primary">营业收入</div>
+          <div class="is-card-value c-primary">{{ formatMoney(d.revenue) }}</div>
+          <div class="is-card-formula">本月已完成的销售订单金额合计</div>
+        </div>
+
+        <div class="is-card">
+          <div class="is-card-header c-warning">营业成本</div>
+          <div class="is-card-value c-warning">{{ formatMoney(d.cost_of_goods_sold) }}</div>
+          <div class="is-card-formula">已售商品的成本合计</div>
+        </div>
+
+        <div class="is-card is-card-hl">
+          <div class="is-card-header">毛利润</div>
+          <div class="is-card-value">{{ formatMoney(d.gross_profit) }}</div>
+          <div class="is-card-formula">营业收入 − 营业成本 = 毛利润</div>
+        </div>
       </div>
-    </el-card>
+
+      <div class="is-breakdown">
+        <div class="is-breakdown-title">费用明细</div>
+        <div class="is-breakdown-cols">
+          <div class="is-bd-item"><span class="is-bd-label">销售费用</span><span class="is-bd-value">{{ formatMoney(d.selling_expenses) }}</span></div>
+          <div class="is-bd-item"><span class="is-bd-label">管理费用</span><span class="is-bd-value">{{ formatMoney(d.administrative_expenses) }}</span></div>
+          <div class="is-bd-item"><span class="is-bd-label">财务费用</span><span class="is-bd-value">{{ formatMoney(d.financial_expenses) }}</span></div>
+          <div class="is-bd-item is-bd-total"><span class="is-bd-label">费用合计</span><span class="is-bd-value">{{ formatMoney(d.total_operating_expenses) }}</span></div>
+        </div>
+      </div>
+
+      <div class="is-formula-chain">
+        <div class="is-fc-step">
+          <div class="is-fc-expr">毛利润 − 费用合计 = 营业利润</div>
+          <div class="is-fc-num">{{ formatMoney(d.gross_profit) }} − {{ formatMoney(d.total_operating_expenses) }} = <strong>{{ formatMoney(d.operating_profit) }}</strong></div>
+        </div>
+        <div class="is-fc-step" v-if="d.non_operating_income || d.non_operating_expense">
+          <div class="is-fc-expr">营业利润 + 营业外收入 − 营业外支出 = 利润总额</div>
+          <div class="is-fc-num">{{ formatMoney(d.operating_profit) }} + {{ formatMoney(d.non_operating_income) }} − {{ formatMoney(d.non_operating_expense) }} = <strong>{{ formatMoney(d.gross_profit_total) }}</strong></div>
+        </div>
+        <div class="is-fc-step">
+          <div class="is-fc-expr">利润总额 − 所得税费用 = 净利润</div>
+          <div class="is-fc-num">{{ formatMoney(d.gross_profit_total) }} − {{ formatMoney(d.income_tax_expense) }} = <strong>{{ formatMoney(d.net_profit) }}</strong></div>
+        </div>
+      </div>
+    </div>
+    <div v-else style="padding:40px 0;"><el-empty description="暂无数据，请先录入业务数据" /></div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, watch } from 'vue'
 import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
-import { handleError } from '../api/index'
+import { handleError } from '../utils/errorHandler'
 
 const props = defineProps({
-  startDate: {
-    type: String,
-    default: () => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
-  },
-  endDate: {
-    type: String,
-    default: () => new Date().toISOString().split('T')[0]
-  }
+  startDate: { type: String, default: () => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0] },
+  endDate: { type: String, default: () => new Date().toISOString().split('T')[0] }
 })
-
 const loading = ref(false)
-const incomeStatement = ref(null)
-const startDate = ref(props.startDate)
-const endDate = ref(props.endDate)
+const d = ref(null)
+const s = ref(props.startDate)
+const e = ref(props.endDate)
 
-watch([() => props.startDate, () => props.endDate], ([newStart, newEnd]) => {
-  startDate.value = newStart
-  endDate.value = newEnd
-  loadIncomeStatement()
-})
-
-const loadIncomeStatement = async () => {
+watch(() => [props.startDate, props.endDate], ([ns, ne]) => { s.value = ns; e.value = ne; load() })
+const load = async () => {
   loading.value = true
-  try {
-    const response = await financeApi.getIncomeStatement(startDate.value, endDate.value)
-    incomeStatement.value = response
-  } catch (error) {
-    handleError(error, { defaultMsg: '加载利润表失败' })
-    incomeStatement.value = null
-  } finally {
-    loading.value = false
-  }
+  try { d.value = await financeApi.getIncomeStatement(s.value, e.value) }
+  catch (err) { handleError(err, { defaultMsg: '加载利润表失败，请检查本期是否有已完成销售订单' }); d.value = null }
+  finally { loading.value = false }
 }
-
-
-
-const incomeData = computed(() => {
-  if (!incomeStatement.value) return []
-  
-  const d = incomeStatement.value
-  const data = []
-  data.push({ item: '一、营业收入', amount: d.revenue, isTotal: true })
-  data.push({ item: '减：营业成本', amount: d.cost_of_goods_sold, isTotal: true })
-  data.push({ item: '二、营业毛利', amount: d.gross_profit, isTotal: true })
-  data.push({ item: '减：营业费用', amount: 0, isSubHeader: true })
-  data.push({ item: '  销售费用', amount: d.selling_expenses })
-  data.push({ item: '  管理费用', amount: d.administrative_expenses })
-  data.push({ item: '  财务费用', amount: d.financial_expenses })
-  data.push({ item: '营业费用合计', amount: d.total_operating_expenses, isTotal: true })
-  data.push({ item: '三、营业利润', amount: d.operating_profit, isTotal: true })
-  data.push({ item: '加：营业外收入', amount: d.non_operating_income })
-  data.push({ item: '减：营业外支出', amount: d.non_operating_expense })
-  data.push({ item: '四、利润总额', amount: d.gross_profit_total, isTotal: true })
-  data.push({ item: '减：所得税费用', amount: d.income_tax_expense })
-  data.push({ item: '五、净利润', amount: d.net_profit, isTotal: true })
-  
-  return data
-})
-
-const exportReport = () => {
-  ElMessage.info('导出功能开发中...')
-}
-
-useAccountAwareData(loadIncomeStatement)
+useAccountAwareData(load)
 </script>
 
 <style scoped>
-.income-statement-container {
-  padding: 20px;
-}
+.is-top { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.is-body { animation: if2 0.3s ease; }
+@keyframes if2 { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-.report-content {
-  padding: 20px;
+.is-hero {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border-radius: 14px; padding: 20px 24px; color: #fff;
+  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;
 }
+.is-hero-title { font-size: 20px; font-weight: 700; }
+.is-hero-period { font-size: 13px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+.is-hero-result { text-align: right; }
+.is-hero-label { font-size: 12px; color: rgba(255,255,255,0.4); display: block; margin-bottom: 2px; }
+.is-hero-value { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
 
-.report-title {
-  text-align: center;
-  font-size: 24px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
+.is-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+.is-card { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 12px; padding: 16px; }
+.is-card-hl { background: #f4f6ff; border-color: #dce0ff; }
+.is-card-header { font-size: 13px; font-weight: 600; color: #1d2129; margin-bottom: 6px; }
+.is-card-value { font-size: 22px; font-weight: 700; margin-bottom: 6px; font-family: 'Consolas', 'Monaco', monospace; }
+.is-card-formula { font-size: 12px; color: #86909c; }
 
-.report-period {
-  text-align: center;
-  font-size: 16px;
-  color: var(--text-regular);
-  margin-bottom: 30px;
+.is-breakdown { margin-bottom: 16px; }
+.is-breakdown-title { font-size: 14px; font-weight: 600; color: #1d2129; margin-bottom: 8px; }
+.is-breakdown-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.is-bd-item {
+  background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
 }
+.is-bd-label { font-size: 12px; color: #86909c; }
+.is-bd-value { font-size: 16px; font-weight: 700; color: #f56c6c; font-family: 'Consolas', 'Monaco', monospace; }
+.is-bd-total { background: #fef0f0; border-color: #fce4e4; }
+.is-bd-total .is-bd-value { font-size: 18px; }
 
-.profit-summary {
-  margin-top: 20px;
-  padding: 20px;
-  background-color: var(--bg-page);
-  border-radius: var(--radius);
+.is-formula-chain { display: flex; flex-direction: column; gap: 8px; }
+.is-fc-step {
+  background: #fff; border: 1px solid #f0f0f0; border-radius: 10px;
+  padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.02);
 }
-
-.profit-positive {
-  color: var(--success);
-  font-weight: bold;
-}
-
-.profit-negative {
-  color: var(--danger);
-  font-weight: bold;
-}
-
-.no-data {
-  text-align: center;
-  padding: 40px;
-}
+.is-fc-expr { font-size: 13px; color: #86909c; margin-bottom: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+.is-fc-num { font-size: 15px; color: #4e5969; font-family: 'Consolas', 'Monaco', monospace; }
+.is-fc-num strong { color: #4f6ef7; font-size: 17px; }
 </style>

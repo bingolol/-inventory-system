@@ -2,8 +2,8 @@
   <div class="backup-page">
     <el-card shadow="never">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:16px;font-weight:600;">数据热备份</span>
+        <div class="card-header">
+          <span class="page-title">数据热备份</span>
           <el-button type="primary" :loading="backupLoading" @click="doBackup">
             <el-icon><FolderChecked /></el-icon>
             一键备份
@@ -29,12 +29,12 @@
 
       <el-table :data="backups" stripe v-loading="listLoading" empty-text="暂无备份">
         <el-table-column label="备份文件" prop="filename" min-width="180" />
-        <el-table-column label="大小" width="120">
+        <el-table-column label="大小" min-width="120">
           <template #default="{ row }">
             {{ row.size_kb >= 1024 ? (row.size_kb / 1024).toFixed(1) + ' MB' : row.size_kb + ' KB' }}
           </template>
         </el-table-column>
-        <el-table-column label="备份时间" width="180">
+        <el-table-column label="备份时间" min-width="180">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
@@ -66,7 +66,7 @@ const loadBackups = async () => {
   try {
     backups.value = await backupApi.listBackups()
   } catch (e) {
-    handleError(e, { defaultMsg: '获取备份列表失败', feedback: 'silent' })
+    handleError(e, { defaultMsg: '获取备份列表失败，请检查网络连接', feedback: 'silent' })
   } finally {
     listLoading.value = false
   }

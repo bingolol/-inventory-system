@@ -1,9 +1,23 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 // Action 处理器：根据后端返回的 action 指令决定前端行为
+// 后端错误码 → 用户可操作的排查提示
+const ERROR_HINTS = {
+  VALIDATION_ERROR: '请检查输入数据格式是否正确',
+  NOT_FOUND: '请确认该记录是否存在',
+  ORDER_NOT_FOUND: '请检查订单号是否正确',
+  PRODUCT_NOT_FOUND: '请检查商品是否存在',
+  BANK_ACCOUNT_NOT_FOUND: '请先创建银行账户',
+  INVENTORY_SHORTAGE: '库存不足，请检查库存数量或调整采购计划',
+  DUPLICATE_ENTRY: '该记录已存在，请检查是否重复录入',
+  INTERNAL_ERROR: '系统内部错误，请稍后重试，如持续出现请联系管理员',
+}
+
 const ACTION_HANDLERS = {
   none: (errorInfo) => {
-    ElMessage.error(errorInfo.message)
+    const msg = errorInfo.message || '操作失败'
+    console.warn(`[${errorInfo.code}]`, msg, errorInfo.data || '')
+    ElMessage.error(msg)
   },
 
   retry: (errorInfo, callbacks) => {
@@ -59,7 +73,9 @@ const ACTION_HANDLERS = {
   },
 
   contact_admin: (errorInfo) => {
-    ElMessage.error(`系统异常：${errorInfo.message}，请联系管理员`)
+    const msg = errorInfo.message || '操作失败'
+    console.error('[SYSTEM_ERROR]', errorInfo.code, msg, errorInfo.data)
+    ElMessage.error(msg)
   },
 }
 

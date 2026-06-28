@@ -531,12 +531,14 @@ class UpdateInvoiceWithFixedAssetHandler(CommandHandler):
 # ═══════════════════════════════════════════════════════════
 
 def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
-    """销项发票创建后自动生成销售单，金额取发票金额，扣库存。"""
+    """销项发票联动自动创建销售单：取发票金额，扣库存"""
     from .crud_compat import _generate_order_no, _log
     from enums import OrderStatus, OrderType, PaymentStatus
     from crud.inventory_ops import sale_deduct
+    from datetime import datetime as dt_mod
 
-    order_no = _generate_order_no(db, "SO")
+    issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
+    order_no = _generate_order_no(db, "SO", issue_dt)
     order = models.SaleOrder(
         account_id=account_id,
         order_no=order_no,
@@ -574,26 +576,45 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
 
 
 def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, items: list):
-    """进项发票创建后自动生成采购单，金额取发票金额，入库。"""
-    from .crud_compat import _generate_order_no, _log, get_or_create_inventory, get_product
-    from enums import OrderStatus, OrderType, PaymentMethod
+    """进项发票创建后自动生成采购单，金额取发票金额，入库。
 
-    order_no = _generate_order_no(db, "PO")
+    使用 InventoryEngine.inbound() 创建 StockMove（BR-7 合规）。
+    按 counterparty_name 匹配已有供应商。
+    """
+    from .crud_compat import _generate_order_no, _log, get_product
+    from enums import OrderStatus, OrderType, PaymentMethod
+    from engine_inventory import InventoryEngine
+    from engine_finance import FinanceEngine
+
+    # 按发票 counterparty_name 匹配已有供应商
+    supplier_id = None
+    supplier = db.query(models.Supplier).filter(
+        models.Supplier.account_id == account_id,
+        models.Supplier.name == invoice.counterparty_name,
+    ).first()
+    if supplier:
+        supplier_id = supplier.id
+
+    from datetime import datetime as dt_mod
+    issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
+    order_no = _generate_order_no(db, "PO", issue_dt)
     order = models.PurchaseOrder(
         account_id=account_id,
         order_no=order_no,
-        supplier_id=None,
+        supplier_id=supplier_id,
         order_type=OrderType.RETAIL,
         payment_method=PaymentMethod.COMPANY,
         status=OrderStatus.COMPLETED,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price=_d(invoice.amount_with_tax),
+        total_price=Decimal("0"),  # 下面逐行累加
         tax_amount=_d(invoice.tax_amount),
         purchase_date=invoice.issue_date,
     )
     db.add(order)
     db.flush()
 
+    total = Decimal("0")
+    calculated_data = []
     for it in items:
         product = get_product(db, account_id, it['product_id'])
         if not product:
@@ -609,10 +630,25 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         )
         db.add(item)
         if product.track_inventory:
-            inv = get_or_create_inventory(db, account_id, it['product_id'])
-            inv.quantity += it['quantity']
+            calc = InventoryEngine(db).inbound(
+                account_id=account_id,
+                product_id=it['product_id'],
+                quantity=it['quantity'],
+                unit_price=it['unit_price'],
+                source_type="purchase_order",
+                source_id=order.id,
+                tax_rate=it.get('tax_rate'),
+                operator=operator,
+            )
+            calculated_data.append(calc)
+        total += line_total
 
+    order.total_price = total.quantize(Q2)
     db.flush()
+
+    # 生成会计凭证
+    if calculated_data:
+        FinanceEngine(db, account_id).record_purchase(order, calculated_data)
 
     _log(db, account_id, "create", "purchase_order", order.id,
          f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",

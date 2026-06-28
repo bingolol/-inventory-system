@@ -42,6 +42,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api/index'
+import { handleError } from '../utils/errorHandler'
 
 const visible = ref(false)
 const pendingItems = ref([])
@@ -78,7 +79,7 @@ const handleConfirm = async (item) => {
     pendingItems.value = pendingItems.value.filter(i => i.confirm_token !== item.confirm_token)
     visible.value = pendingItems.value.length > 0
   } catch (e) {
-    ElMessage.error(`执行失败: ${e.response?.data?.detail || e.message}`)
+    handleError(e, { defaultMsg: '执行失败，请检查该操作是否符合业务规则' })
   } finally {
     item._loading = false
   }
@@ -92,7 +93,7 @@ const handleCancel = async (item) => {
     pendingItems.value = pendingItems.value.filter(i => i.confirm_token !== item.confirm_token)
     visible.value = pendingItems.value.length > 0
   } catch (e) {
-    ElMessage.error(`取消失败: ${e.response?.data?.detail || e.message}`)
+    handleError(e, { defaultMsg: '取消失败，请检查网络连接' })
   }
 }
 

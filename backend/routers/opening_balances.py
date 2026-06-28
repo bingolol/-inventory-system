@@ -60,8 +60,8 @@ def create_opening_balance(data: schemas.OpeningBalanceCreate, account_id: int =
                 retained_earnings=data.retained_earnings,
             )
             opening_balance = dispatch(cmd, db)
-    except ValueError as e:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+    except ValueError:
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建期初余额失败，请检查输入数据"})
     db.refresh(opening_balance)
     
     # 返回 OperationResult 格式
@@ -143,10 +143,8 @@ def update_opening_balance(opening_balance_id: int, data: schemas.OpeningBalance
                 retained_earnings=data.retained_earnings,
             )
             opening_balance = dispatch(cmd, db)
-    except ValueError as e:
-        if "不存在" in str(e):
-            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, message=str(e))
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+    except ValueError:
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新期初余额失败，请检查输入数据"})
     db.refresh(opening_balance)
     return _build_ob_out(opening_balance)
 

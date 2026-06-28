@@ -6,6 +6,7 @@ v7 改造后：移除项目模块
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, List, Optional
 
@@ -32,6 +33,7 @@ from engine_finance import FinanceEngine
 @dataclass
 class CreatePurchaseOrder(Command):
     supplier_id: Optional[int] = None
+    purchase_date: Optional[datetime] = None
     payment_method: str = "company"
     notes: str = ""
     image_url: str = ""
@@ -50,13 +52,15 @@ class CreatePurchaseOrderHandler(CommandHandler):
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
         # 2. 生成订单号
-        order_no = _generate_order_no(db, "PO")
+        purchase_dt = datetime.fromisoformat(cmd.purchase_date) if isinstance(cmd.purchase_date, str) else (cmd.purchase_date or datetime.now())
+        order_no = _generate_order_no(db, "PO", purchase_dt)
 
         # 3. 创建订单头
         order = models.PurchaseOrder(
             account_id=cmd.account_id,
             order_no=order_no,
             supplier_id=cmd.supplier_id,
+            purchase_date=datetime.fromisoformat(cmd.purchase_date) if isinstance(cmd.purchase_date, str) else (cmd.purchase_date or datetime.now()),
             order_type=OrderType.RETAIL,
             payment_method=cmd.payment_method,
             status=OrderStatus.COMPLETED,
@@ -299,6 +303,7 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
         _log(db, cmd.account_id, "update", "purchase_order", cmd.order_id,
              f"更新采购单明细 {order.order_no}: 状态={old_status}->{new_status}", operator=cmd.operator)
         db.flush()
+        db.refresh(order)
         return order
 
 

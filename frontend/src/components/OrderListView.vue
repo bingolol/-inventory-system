@@ -44,7 +44,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="order_no" label="单号" width="130">
+        <el-table-column prop="order_no" label="单号" min-width="130">
           <template #default="{ row }">
             <div class="order-no">
               <div class="order-no-line1">{{ splitOrderNo(row.order_no).line1 }}</div>
@@ -52,16 +52,16 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :prop="partnerPropName" :label="partnerLabel" width="120" />
-        <el-table-column label="商品数" width="80"><template #default="{ row }">{{ row.items?.length || 0 }}</template></el-table-column>
-        <el-table-column prop="total_price" label="总价" width="110" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(row.total_price) }}</span></template></el-table-column>
-        <el-table-column prop="has_invoice" label="已开票" width="80" align="center"><template #default="{ row }"><el-tag :type="row.has_invoice?'success':'info'" size="small">{{ row.has_invoice?'是':'否' }}</el-tag></template></el-table-column>
-        <el-table-column v-if="orderType==='purchase'" prop="payment_method" label="支付方式" width="100" align="center"><template #default="{ row }"><el-tag :type="row.payment_method==='company'?'primary':'warning'" size="small">{{ enumsStore.getLabel('payment_method', row.payment_method) }}</el-tag></template></el-table-column>
-        <el-table-column prop="payment_status" :label="paymentStatusLabel" width="100" align="center"><template #default="{ row }"><StatusTag :status="row.payment_status" type="payment_status" size="small" /></template></el-table-column>
-        <el-table-column prop="status" label="状态" width="90"><template #default="{ row }"><StatusTag :status="row.status" type="order" size="small" /></template></el-table-column>
-        <el-table-column :prop="datePropName" label="日期" width="110"><template #default="{ row }">{{ formatDate(row[datePropName]) }}</template></el-table-column>
+        <el-table-column :prop="partnerPropName" :label="partnerLabel" min-width="120" />
+        <el-table-column label="商品数" min-width="80"><template #default="{ row }">{{ row.items?.length || 0 }}</template></el-table-column>
+        <el-table-column prop="total_price" label="总价" min-width="110" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(row.total_price) }}</span></template></el-table-column>
+        <el-table-column prop="has_invoice" label="已开票" min-width="80" align="center"><template #default="{ row }"><span class="status-badge" :class="row.has_invoice?'success':'info'">{{ row.has_invoice?'是':'否' }}</span></template></el-table-column>
+        <el-table-column v-if="orderType==='purchase'" prop="payment_method" label="支付方式" min-width="100" align="center"><template #default="{ row }"><span class="status-badge" :class="row.payment_method==='company'?'primary':'warning'">{{ enumsStore.getLabel('payment_method', row.payment_method) }}</span></template></el-table-column>
+        <el-table-column prop="payment_status" :label="paymentStatusLabel" min-width="100" align="center"><template #default="{ row }"><StatusTag :status="row.payment_status" type="payment_status" size="small" /></template></el-table-column>
+        <el-table-column prop="status" label="状态" min-width="90"><template #default="{ row }"><StatusTag :status="row.status" type="order" size="small" /></template></el-table-column>
+        <el-table-column :prop="datePropName" label="日期" min-width="110"><template #default="{ row }">{{ formatDate(row[datePropName]) }}</template></el-table-column>
         <el-table-column prop="notes" label="备注" min-width="100" />
-        <el-table-column v-if="orderType==='sale'" label="附件" width="70" align="center">
+        <el-table-column v-if="orderType==='sale'" label="附件" min-width="70" align="center">
           <template #default="{ row }">
             <el-image v-if="row.image_url" :src="resolveImageUrl(row.image_url)" style="width:36px;height:36px;border-radius:4px" fit="cover" :preview-src-list="[resolveImageUrl(row.image_url)]" preview-teleported />
             <span v-else style="color:#999;font-size:12px">无</span>
@@ -249,7 +249,7 @@ async function handleSave() {
     
     orderForm.dialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: props.orderType === 'sale' ? '销售失败' : '采购失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: props.orderType === 'sale' ? '销售失败，请检查库存和客户信息是否正确' : '采购失败，请检查输入数据是否正确' }) }
 }
 
 async function handleEditSave() {
@@ -276,6 +276,8 @@ async function handleEditSave() {
     ElMessage.success(validItems.length === 0 ? `${orderLabel}已删除（商品行数归零）` : `${orderLabel}修改成功`)
     orderForm.editDialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '修改失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '修改失败，请检查输入数据是否正确' }) }
 }
 </script>
+
+<style scoped></style>

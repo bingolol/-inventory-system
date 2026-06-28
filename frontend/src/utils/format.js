@@ -14,31 +14,44 @@ export const formatMoney = (value) => {
  * 日期时间格式化工具
  *
  * 后端返回的 datetime 字符串无时区后缀（如 2026-05-07T13:24:04），
- * 浏览器 new Date() 会按本地时区解析，toLocaleString 自动转为本地格式显示。
+ * 统一按中国时区（UTC+8）解析显示，不依赖浏览器本地时区。
  */
 
+function parseChinaDate(str) {
+  if (!str) return null
+  if (typeof str !== 'string') return null
+  const [datePart, timePart] = str.split('T')
+  if (!datePart) return null
+  const [y, M, d] = datePart.split('-').map(Number)
+  if (!y || !M || !d) return null
+  if (timePart) {
+    const [h, m] = timePart.split(':').map(Number)
+    return { y, M, d, h: h || 0, m: m || 0 }
+  }
+  return { y, M, d }
+}
+
 /**
- * 格式化日期时间（含时分秒）
+ * 格式化日期时间（含时分，无秒）
  * @param {string|null} str - ISO datetime 字符串
- * @returns {string} 如 "2026/5/7 13:24:04"
+ * @returns {string} 如 "2026-6-28-11:08"
  */
 export const formatDateTime = (str) => {
-  if (!str) return '-'
-  const d = new Date(str)
-  if (isNaN(d.getTime())) return '-'
-  return d.toLocaleString('zh-CN', { hour12: false })
+  const p = parseChinaDate(str)
+  if (!p) return '-'
+  const m = String(p.m).padStart(2, '0')
+  return `${p.y}-${p.M}-${p.d}-${p.h}:${m}`
 }
 
 /**
  * 格式化日期（仅年月日）
  * @param {string|null} str - ISO datetime 或 date 字符串
- * @returns {string} 如 "2026/5/7"
+ * @returns {string} 如 "2026-6-28"
  */
 export const formatDate = (str) => {
-  if (!str) return '-'
-  const d = new Date(str)
-  if (isNaN(d.getTime())) return '-'
-  return d.toLocaleDateString('zh-CN')
+  const p = parseChinaDate(str)
+  if (!p) return '-'
+  return `${p.y}-${p.M}-${p.d}`
 }
 
 /**

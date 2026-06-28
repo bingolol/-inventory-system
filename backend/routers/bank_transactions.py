@@ -1,7 +1,8 @@
 """银行流水路由"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 from datetime import datetime
 
 from database import get_db
@@ -14,6 +15,28 @@ from crud.base import _log
 from utils import _d
 
 router = APIRouter()
+
+
+@router.get("")
+def list_bank_transactions(
+    bank_account_id: int = Query(..., description="银行账户ID"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id)
+):
+    """查询银行流水"""
+    query = db.query(BankTransaction).filter(
+        BankTransaction.bank_account_id == bank_account_id,
+        BankTransaction.account_id == account_id
+    ).order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
+    total = query.count()
+    items = query.offset(skip).limit(limit).all()
+    try:
+        return {"total": total, "items": [BankTransactionOut.model_validate(t) for t in items]}
+    except Exception as e:
+        from errors import BusinessError, ErrorCode
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"银行流水数据格式异常: {str(e)}", ai_instruction="STOP_RETRYING. 银行流水数据异常，请检查数据库记录完整性")
 
 
 @router.post("", response_model=BankTransactionOut)
@@ -31,7 +54,7 @@ def create_bank_transaction(
             BankAccount.account_id == account_id
         ).with_for_update().first()
         if not bank_account:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": data.bank_account_id})
 
         # 计算交易后余额
         amount = _d(data.amount)

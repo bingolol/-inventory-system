@@ -20,7 +20,7 @@ from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, gen
 from enums import ALL_ENUMS, ENUM_LABELS
 from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,15 +49,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── AI 中间件栈（执行顺序 = 从外到内）──
-# Starlette 中"后添加的中间件在外层、先执行"，故按期望执行顺序倒序添加：
-#   1. AIGatewayMiddleware（最外层，最先执行）：白名单校验入口合法性 → 非规范写接口直接 403
-#   2. ConfirmMiddleware（内层，后执行）：对已放行的危险写操作做二次确认（202 + token）
-# 逻辑：先校验"能不能调这个端点"，再校验"这个操作危不危险"。
+# ── 安全中间件栈（从外到内执行）──
+#   1. AIGatewayMiddleware：白名单校验入口合法性
+#   2. WritePermissionMiddleware：给已放行的写请求设 SecureSession 令牌
+#   3. ConfirmMiddleware：对危险写操作做二次确认
 from confirm_middleware import ConfirmMiddleware
+from middleware.write_permission import WritePermissionMiddleware
 from ai_gateway import AIGatewayMiddleware
-app.add_middleware(ConfirmMiddleware)
-app.add_middleware(AIGatewayMiddleware)
+app.add_middleware(ConfirmMiddleware)              # 最内层
+app.add_middleware(WritePermissionMiddleware)      # 中间层
+app.add_middleware(AIGatewayMiddleware)            # 最外层
 
 # ── 422 校验错误处理器：枚举值写错时返回字段名+非法值+合法值列表 ──
 # 字段名 → ALL_ENUMS key 的映射，ENUM_MAP 从 ALL_ENUMS 动态生成，避免重复定义
@@ -202,19 +203,30 @@ app.include_router(payments.router, prefix="/api/payments", tags=["付款管理"
 app.include_router(receipts.router, prefix="/api/receipts", tags=["收款管理"])
 app.include_router(check.router, prefix="/api/check", tags=["前置条件检查"])
 app.include_router(accounting_check.router, prefix="/api/accounting", tags=["会计准则约束检查"])
+app.include_router(finance.router, prefix="/api/finance", tags=["财务管理查询"])
+app.include_router(month_end.router, prefix="/api/finance", tags=["月末结账"])
+app.include_router(tax_check.router, prefix="/api/tax", tags=["税务核对"])
+app.include_router(bank_reconcile.router, prefix="/api", tags=["银行对账"])
 # AI 能力发现接口（/api/_ai 前缀已在 AIGatewayMiddleware._SKIP_PREFIXES 放行）
 app.include_router(ai_capabilities.router, prefix="/api/_ai", tags=["AI 能力发现"])
+app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["初始化"])
 
 
 @app.on_event("startup")
 def startup():
+    from database import set_maintenance_mode
     workspace.ensure_workspace()
+    set_maintenance_mode(True)
     init_db()
+    set_maintenance_mode(False)
     # ── EventBus 初始化 ──
     from middleware import register_middleware
-    import handlers  # 触发 handler 注册
-    import commands  # 确保 Command 全部注册（虽然 Router 导入已触发，但显式导入更安全）
+    import handlers
+    import commands
     register_middleware()
+    # ── 审计日志事件监听 ──
+    from utils.audit import register_listeners
+    register_listeners()
     logger.info("进销存管理系统启动完成")
 
 
@@ -301,8 +313,8 @@ def delete_account(account_id: int, db: Session = Depends(get_db)):
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本"})
         db.commit()
         return {"message": "账本已删除"}
-    except ValueError as e:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+    except ValueError:
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "删除账本失败，请先清理关联数据"})
 
 
 @app.get("/api/health")

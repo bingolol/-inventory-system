@@ -81,7 +81,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
             )
             order = dispatch(cmd, db)
         except ValueError as e:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建销售单失败，请检查输入数据"})
     db.refresh(order)
     
     # 构建库存变化信息
@@ -171,7 +171,7 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
             if order is None:
                 order = crud.get_sale_order(db, account_id, sale_id)
         except ValueError as e:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新销售单失败，请检查输入数据"})
 
     if not order:
         raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})

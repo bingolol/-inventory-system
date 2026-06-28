@@ -35,24 +35,24 @@
           <el-empty description="暂无商品数据" />
         </template>
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="sku" label="编码" width="120" />
+        <el-table-column prop="sku" label="编码" min-width="120" />
         <el-table-column prop="name" label="商品名称" min-width="160" />
-        <el-table-column prop="category" label="分类" width="100" />
-        <el-table-column prop="unit" label="单位" width="70" align="center" />
-        <el-table-column prop="purchase_price" label="进价" width="110" align="right">
+        <el-table-column prop="category" label="分类" min-width="100" />
+        <el-table-column prop="unit" label="单位" min-width="70" align="center" />
+        <el-table-column prop="purchase_price" label="进价" min-width="110" align="right">
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.purchase_price) }}</span></template>
         </el-table-column>
-        <el-table-column prop="sale_price" label="售价" width="110" align="right">
+        <el-table-column prop="sale_price" label="售价" min-width="110" align="right">
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.sale_price) }}</span></template>
         </el-table-column>
-        <el-table-column label="库存" width="80" align="center">
+        <el-table-column label="库存" min-width="80" align="center">
           <template #default="{ row }">
             <span :class="{ 'negative-stock': row.current_stock < 0, 'alert-stock': row.current_stock >= 0 && row.current_stock < row.min_stock }">
               {{ row.current_stock ?? 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="min_stock" label="预警线" width="80" align="center" />
+        <el-table-column prop="min_stock" label="预警线" min-width="80" align="center" />
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="showDialog(row)">编辑</el-button>
@@ -69,33 +69,26 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑商品' : '新增商品'" width="500px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="80px" style="padding-right:20px;">
-        <el-form-item label="商品名称" prop="name" required>
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="编码" prop="sku" required>
-          <el-input v-model="form.sku" />
-        </el-form-item>
-        <el-form-item label="分类">
-          <el-input v-model="form.category" />
-        </el-form-item>
-        <el-form-item label="单位">
-          <el-input v-model="form.unit" style="width:120px" />
-        </el-form-item>
-        <el-form-item label="进价">
-          <el-input-number v-model="form.purchase_price" :min="0" :precision="2" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="售价">
-          <el-input-number v-model="form.sale_price" :min="0" :precision="2" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="预警库存">
-          <el-input-number v-model="form.min_stock" :min="0" style="width:100%" />
-        </el-form-item>
-
-        <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="2" />
-        </el-form-item>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑商品' : '新增商品'" width="560px" destroy-on-close>
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="0">
+        <div class="p-group" style="border-left-color:#4f6ef7;">
+          <div class="p-group-header"><span class="p-group-tag" style="background:#eef1ff;color:#4f6ef7;">基本信息</span></div>
+          <div class="p-group-body">
+            <div class="p-field"><span class="p-label" style="min-width:80px;">商品名称</span><el-input v-model="form.name" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">编码</span><el-input v-model="form.sku" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">分类</span><el-input v-model="form.category" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">单位</span><el-input v-model="form.unit" style="width:120px" /></div>
+          </div>
+        </div>
+        <div class="p-group" style="border-left-color:#e6a23c;">
+          <div class="p-group-header"><span class="p-group-tag" style="background:#fdf6ec;color:#e6a23c;">价格库存</span></div>
+          <div class="p-group-body">
+            <div class="p-field"><span class="p-label" style="min-width:80px;">进价</span><el-input-number v-model="form.purchase_price" :min="0" :precision="2" style="width:100%" controls-position="right" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">售价</span><el-input-number v-model="form.sale_price" :min="0" :precision="2" style="width:100%" controls-position="right" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">预警库存</span><el-input-number v-model="form.min_stock" :min="0" style="width:100%" controls-position="right" /></div>
+            <div class="p-field"><span class="p-label" style="min-width:80px;">描述</span><el-input v-model="form.description" type="textarea" :rows="2" /></div>
+          </div>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -143,7 +136,7 @@ const loadData = async () => {
     const res = await productsApi.getProducts(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '加载商品列表失败，请检查网络连接' }) }
   finally { loading.value = false }
 }
 
@@ -181,12 +174,12 @@ const handleSave = async () => {
     }
     dialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '保存失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '保存失败，请检查输入数据是否正确' }) }
 }
 
 const handleDelete = async (id) => {
   try { await productsApi.deleteProduct(id); ElMessage.success('已删除'); loadData() }
-  catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
+  catch (e) { handleError(e, { defaultMsg: '删除失败，请检查该商品是否已被其他单据引用' }) }
 }
 
 const handleSelectionChange = (rows) => {
@@ -204,10 +197,19 @@ const exportBatch = async (format) => {
     await exportApi.exportProductsBatch(ids, format)
     ElMessage.success('导出成功')
   } catch (e) {
-    handleError(e, { defaultMsg: '导出失败' })
+    handleError(e, { defaultMsg: '导出失败，请检查文件权限和磁盘空间' })
   }
 }
 
 useAccountAwareData(loadData)
 loadCategories()
 </script>
+
+<style scoped>
+.p-group { background: #fafafa; border: 1px solid #f0f0f0; border-left: 4px solid; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+.p-group-header { padding: 12px 16px 4px; }
+.p-group-tag { display: inline-block; padding: 2px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+.p-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.p-field { display: flex; align-items: center; gap: 12px; }
+.p-label { font-size: 13px; color: #4e5969; flex-shrink: 0; }
+</style>

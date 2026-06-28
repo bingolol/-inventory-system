@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from typing import Optional
+from decimal import Decimal
+from datetime import date
 
 from database import get_db
 from schemas import FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, FixedAssetWithInvoiceUpdate, PaginatedResponse
@@ -9,6 +11,7 @@ from account_dep import get_account_id, get_operator
 import crud
 from uow import unit_of_work
 from commands.base import dispatch
+from engine_fixed_asset import FixedAssetEngine
 
 router = APIRouter()
 
@@ -93,6 +96,56 @@ def delete_fixed_asset(
     return {"message": "固定资产已删除"}
 
 
+@router.post("/{asset_id}/depreciate")
+def depreciate_fixed_asset(
+    asset_id: int,
+    period: str = Query(..., description="计提期间 YYYY-MM"),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """计提单个固定资产月折旧"""
+    with unit_of_work(db):
+        eng = FixedAssetEngine(db, account_id)
+        dep = eng.record_depreciation(asset_id, period)
+    if dep is None:
+        return {"message": "无需计提（已提足或不在计提期）", "depreciation_id": None}
+    return {"message": f"折旧计提成功: {dep.amount}", "depreciation_id": dep.id, "amount": str(dep.amount)}
+
+
+@router.post("/batch-depreciate")
+def batch_depreciate_fixed_assets(
+    period: str = Query(..., description="计提期间 YYYY-MM"),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """批量计提所有在用固定资产折旧"""
+    with unit_of_work(db):
+        eng = FixedAssetEngine(db, account_id)
+        results = eng.batch_depreciate(period)
+    return {
+        "message": f"批量折旧完成: {len(results)}项资产已计提",
+        "count": len(results),
+        "details": [{"asset_id": d.asset_id, "period": d.period, "amount": str(d.amount)} for d in results],
+    }
+
+
+@router.post("/{asset_id}/dispose")
+def dispose_fixed_asset(
+    asset_id: int,
+    disposal_price: Decimal = Query(Decimal("0"), description="处置价格"),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """处置（报废/出售）固定资产"""
+    with unit_of_work(db):
+        eng = FixedAssetEngine(db, account_id)
+        eng.record_disposal(asset_id, disposal_price)
+    return {"message": "固定资产已处置"}
+
+
 @router.put("/{asset_id}/with-invoice")
 def update_asset_with_invoice(
     asset_id: int,
@@ -120,8 +173,8 @@ def update_asset_with_invoice(
                 status=data.status,
             )
             result = dispatch(cmd, db)
-    except ValueError as e:
-        raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, message=str(e))
+    except ValueError:
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新固定资产失败，请检查输入数据"})
 
     asset = result["asset"]
     invoice = result["invoice"]

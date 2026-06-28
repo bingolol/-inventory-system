@@ -28,32 +28,32 @@
         <el-button type="primary" @click="loadData"><el-icon><Search /></el-icon> 查询</el-button>
       </div>
       <el-table :data="list" stripe style="width:100%">
-        <el-table-column prop="product_sku" label="编码" width="110" />
+        <el-table-column prop="product_sku" label="编码" min-width="110" />
         <el-table-column prop="product_name" label="商品名称" min-width="140" />
-        <el-table-column prop="product_category" label="分类" width="100" />
-        <el-table-column prop="product_unit" label="单位" width="70" />
-        <el-table-column label="当前库存" width="100">
+        <el-table-column prop="product_category" label="分类" min-width="100" />
+        <el-table-column prop="product_unit" label="单位" min-width="70" />
+        <el-table-column label="当前库存" min-width="100">
           <template #default="{ row }">
             <span :class="{ 'negative-stock': row.quantity < 0, 'alert-stock': row.quantity >= 0 && row.is_alert }">
               {{ row.quantity }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="min_stock" label="预警线" width="80" />
-        <el-table-column label="预警" width="70">
+        <el-table-column prop="min_stock" label="预警线" min-width="80" />
+        <el-table-column label="预警" min-width="70">
           <template #default="{ row }">
-            <el-tag v-if="row.quantity < 0" type="danger" size="small">负库存</el-tag>
-            <el-tag v-else-if="row.is_alert" type="warning" size="small">不足</el-tag>
-            <el-tag v-else type="success" size="small">正常</el-tag>
+            <span class="status-badge danger" v-if="row.quantity < 0">负库存</span>
+            <span class="status-badge warning" v-else-if="row.is_alert">不足</span>
+            <span class="status-badge success" v-else>正常</span>
           </template>
         </el-table-column>
-        <el-table-column prop="purchase_price" label="进价" width="110" align="right">
+        <el-table-column prop="purchase_price" label="进价" min-width="110" align="right">
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.purchase_price) }}</span></template>
         </el-table-column>
-        <el-table-column prop="sale_price" label="售价" width="110" align="right">
+        <el-table-column prop="sale_price" label="售价" min-width="110" align="right">
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.sale_price) }}</span></template>
         </el-table-column>
-        <el-table-column label="库存价值" width="120" align="right">
+        <el-table-column label="库存价值" min-width="120" align="right">
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.quantity * (row.purchase_price ?? 0)) }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
@@ -116,7 +116,7 @@ const loadData = async () => {
     const res = await productsApi.getInventory(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '加载库存数据失败，请检查网络连接' }) }
 }
 
 const showAdjust = (row) => {
@@ -135,7 +135,7 @@ const handleAdjust = async () => {
     ElMessage.success('库存已调整')
     adjustVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '调整失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '调整失败，请检查输入数量是否正确' }) }
 }
 
 const loadCategories = async () => {
@@ -148,9 +148,11 @@ const exportData = async (format) => {
     if (searchKeyword.value) params.search = searchKeyword.value
     if (categoryFilter.value) params.category = categoryFilter.value
     await exportApi.exportFile('inventory', format, params)
-  } catch (e) { handleError(e, { defaultMsg: '导出失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '导出失败，请检查文件权限和磁盘空间' }) }
 }
 
 useAccountAwareData(loadData)
 loadCategories()
 </script>
+
+<style scoped></style>

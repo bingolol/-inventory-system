@@ -78,18 +78,18 @@
         <el-button @click="loadData">查询</el-button>
       </div>
       <el-table :data="list" stripe style="width:100%">
-        <el-table-column prop="date" label="日期" width="120">
+        <el-table-column prop="date" label="日期" min-width="120">
           <template #default="{ row }">{{ row.date?.slice(0, 10) }}</template>
         </el-table-column>
-        <el-table-column prop="type" label="类型" width="90">
+        <el-table-column prop="type" label="类型" min-width="90">
           <template #default="{ row }">
-            <el-tag :type="row.type === 'income' ? 'success' : 'danger'" size="small">
+            <span class="status-badge" :class="row.type === 'income' ? 'success' : 'danger'">
               {{ row.type === 'income' ? '收入' : '支出' }}
-            </el-tag>
+            </span>
           </template>
         </el-table-column>
-        <el-table-column prop="category" label="分类" width="120" />
-        <el-table-column prop="amount" label="金额" width="120">
+        <el-table-column prop="category" label="分类" min-width="120" />
+        <el-table-column prop="amount" label="金额" min-width="120">
           <template #default="{ row }">
             <span :style="{ color: row.type === 'income' ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }">
               {{ row.type === 'income' ? '+' : '-' }}¥{{ formatMoney(row.amount) }}
@@ -97,7 +97,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="description" label="备注" min-width="150" />
-        <el-table-column prop="image_url" label="附件" width="70" align="center">
+        <el-table-column prop="image_url" label="附件" min-width="70" align="center">
           <template #default="{ row }">
             <el-image v-if="row.image_url" :src="resolveImageUrl(row.image_url)" style="width:36px;height:36px;" fit="cover" :preview-src-list="[resolveImageUrl(row.image_url)]" />
             <span v-else>-</span>
@@ -115,9 +115,9 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:10px 16px;background:var(--fill-light);border-radius:6px;">
         <div style="display:flex;gap:24px;font-size:14px;">
           <span>筛选合计：</span>
-          <span style="color:var(--success);font-weight:600;">收入 ¥{{ formatMoney(filterSummary.sum_income) }}</span>
-          <span style="color:var(--danger);font-weight:600;">支出 ¥{{ formatMoney(filterSummary.sum_expense) }}</span>
-          <span style="color:var(--primary);font-weight:600;">结余 ¥{{ formatMoney(filterSummary.sum_balance) }}</span>
+          <span class="c-success" style="font-weight:600;">收入 ¥{{ formatMoney(filterSummary.sum_income) }}</span>
+          <span class="c-danger" style="font-weight:600;">支出 ¥{{ formatMoney(filterSummary.sum_expense) }}</span>
+          <span class="c-primary" style="font-weight:600;">结余 ¥{{ formatMoney(filterSummary.sum_balance) }}</span>
         </div>
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
       </div>
@@ -255,7 +255,7 @@ const loadData = async () => {
     total.value = res.total
     list.value = res.items
     filterSummary.value = { sum_income: res.sum_income || 0, sum_expense: res.sum_expense || 0, sum_balance: res.sum_balance || 0 }
-  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '加载个人流水失败，请检查网络连接' }) }
 }
 
 const loadSummary = async () => {
@@ -315,7 +315,7 @@ const handleSave = async () => {
     loadSummary()
     loadCategorySummary()
     loadMonthlySummary()
-  } catch (e) { handleError(e, { defaultMsg: '保存失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '保存失败，请检查输入数据是否正确' }) }
 }
 
 const handleDelete = async (id) => {
@@ -326,9 +326,11 @@ const handleDelete = async (id) => {
     loadSummary()
     loadCategorySummary()
     loadMonthlySummary()
-  } catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '删除失败，请检查该记录是否可删除' }) }
 }
 
 useAccountAwareData(loadData, loadSummary, loadCategorySummary, loadMonthlySummary)
 enumsStore.fetchEnums()
 </script>
+
+<style scoped></style>

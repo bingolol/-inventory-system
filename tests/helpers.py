@@ -7,14 +7,16 @@ from models import Account
 
 
 def get_entity_id(resp_json):
-    """从 API 响应中提取实体 ID"""
+    """从 API 响应中提取实体 ID（支持 OperationResult + 传统格式）"""
     if isinstance(resp_json, dict):
-        if "id" in resp_json:
-            return resp_json["id"]
-        if "data" in resp_json and isinstance(resp_json["data"], dict) and "id" in resp_json["data"]:
-            return resp_json["data"]["id"]
         if "entity_id" in resp_json:
             return resp_json["entity_id"]
+        if "entity" in resp_json and isinstance(resp_json["entity"], dict) and "id" in resp_json["entity"]:
+            return resp_json["entity"]["id"]
+        if "data" in resp_json and isinstance(resp_json["data"], dict) and "id" in resp_json["data"]:
+            return resp_json["data"]["id"]
+        if "id" in resp_json:
+            return resp_json["id"]
     return None
 
 

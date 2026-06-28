@@ -1,20 +1,49 @@
 """付款路由"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from database import get_db
 from models import Payment, Expense, BankAccount, BankTransaction, PurchaseOrder
 from schemas.payment import PaymentCreate, PaymentOut
+from schemas import PaginatedResponse
 from account_dep import get_account_id, get_operator
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.base import _log
+from crud.finance import list_payments, get_payment
 from utils import _d
 from operation_result import OperationResult, EntityType, OperationType
 from finance_integration import post_journal
 
 router = APIRouter()
+
+
+@router.get("", response_model=PaginatedResponse)
+def get_payments(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
+):
+    """获取付款记录列表"""
+    items = list_payments(db, account_id, skip=skip, limit=limit)
+    total = len(items)
+    return PaginatedResponse(total=total, items=[PaymentOut.model_validate(p) for p in items])
+
+
+@router.get("/{payment_id}", response_model=PaymentOut)
+def get_payment_by_id(
+    payment_id: int,
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
+):
+    """获取单条付款记录"""
+    p = get_payment(db, account_id, payment_id)
+    if not p:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"payment_id": payment_id})
+    return PaymentOut.model_validate(p)
 
 
 @router.post("")
@@ -49,7 +78,7 @@ def create_payment(
                 BankAccount.account_id == account_id
             ).with_for_update().first()
             if not bank_account:
-                raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+                raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": data.bank_account_id})
 
             # 计算交易后余额
             new_balance = _d(bank_account.balance) - _d(data.amount)
@@ -95,10 +124,20 @@ def create_payment(
             if purchase_order:
                 purchase_order.payment_status = "paid"
 
-        # 生成会计凭证：借:2202 贷:1002
+        # 确定冲销科目：工资→2211，个人垫付→2241，缴税→2221，其他→2202
+        if data.payment_type == "salary":
+            debit_code = "2211"
+        elif data.payment_type == "tax":
+            debit_code = "2221"
+        elif data.payment_type == "expense" and data.related_entity_type == "expense":
+            adv = db.query(Expense).filter(Expense.id == data.related_entity_id).first()
+            debit_code = "2241" if adv and adv.payment_method == "private_advance" else "2202"
+        else:
+            debit_code = "2202"
         post_journal(db, account_id, "payment", {
             "amount": _d(data.amount),
             "date": data.payment_date.strftime("%Y-%m-%d"),
+            "debit_account_code": debit_code,
             "partner_id": data.related_entity_id,
             "partner_type": "supplier",
             "bank_account_id": data.bank_account_id,

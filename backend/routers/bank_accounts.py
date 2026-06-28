@@ -70,15 +70,12 @@ def update_bank_account(
             BankAccount.account_id == account_id
         ).first()
         if not bank_account:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": bank_account_id})
 
         if data.bank_name is not None:
             bank_account.bank_name = data.bank_name
         if data.account_number is not None:
             bank_account.account_number = data.account_number
-        # 注意：余额不能直接编辑，只能通过银行流水调整
-        # if data.balance is not None:
-        #     bank_account.balance = data.balance
         if data.description is not None:
             bank_account.description = data.description
 
@@ -103,7 +100,7 @@ def delete_bank_account(
             BankAccount.account_id == account_id
         ).first()
         if not bank_account:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": bank_account_id})
 
         # 检查关联数据
         transactions_count = db.query(models.BankTransaction).filter(

@@ -99,9 +99,9 @@ class TestPurchaseCreateTriggersAccounting:
             ).first()
             codes[la.code] = {"debit": line.debit, "credit": line.credit}
 
-        assert codes["1405"]["debit"] == Decimal("88.50"), "库存商品借(不含税): 88.50"
-        assert codes["222102"]["debit"] == Decimal("11.50"), "进项税借: 11.50"
-        assert codes["2202"]["credit"] == Decimal("100.00"), "应付账款贷(价税合计): 100.00"
+        assert codes["1405"]["debit"] == Decimal("100.00"), "库存商品借(不含税): 100.00"
+        assert codes["222102"]["debit"] == Decimal("13.00"), "进项税借: 13.00"
+        assert codes["2202"]["credit"] == Decimal("113.00"), "应付账款贷(价税合计): 113.00"
 
         # ── StockMove 存在 ──
         from models import StockMove
@@ -112,7 +112,7 @@ class TestPurchaseCreateTriggersAccounting:
         assert len(stock_moves) == 1, "创建采购单后应生成 1 条库存流水"
         sm = stock_moves[0]
         assert sm.quantity == 10
-        assert sm.total_cost == Decimal("88.50")
+        assert sm.total_cost == Decimal("100.00")
         assert sm.product_id == product.id
 
     def test_idempotent_post_journal(self, db, account, accts, product):

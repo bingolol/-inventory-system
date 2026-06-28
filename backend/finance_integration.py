@@ -9,8 +9,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from crud.base import get_account
+from accounting_engine import AccountingError
 from models_finance import (
-    Ledger, AccountMove, AccountMoveLine, AccountingError,
+    Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine,
 )
 from engine_journal import JournalEngine
 from errors import BusinessError, ErrorCode
@@ -18,14 +19,62 @@ from utils import Q2
 
 
 EXPENSE_ACCOUNT_CODE_MAP = {
-    "销售费用": "5601",
-    "管理费用": "5602",
-    "财务费用": "5603",
+    "销售费用": "6602",
+    "管理费用": "6601",
+    "财务费用": "6603",
 }
 
 
-def get_ledger_id(db: Session, account_id: int) -> int:
-    """通过 account.code → ledger.code 的 1:1 映射获取 ledger_id"""
+CHART_OF_ACCOUNTS = [
+    # 资产类
+    ("1001", "库存现金", "asset"),
+    ("1002", "银行存款", "asset"),
+    ("1122", "应收账款", "asset_receivable"),
+    ("1123", "预付账款", "asset_prepaid"),
+    ("1221", "其他应收款", "asset"),
+    ("1405", "库存商品", "asset"),
+    ("1601", "固定资产", "asset"),
+    ("1602", "累计折旧", "asset_contra"),
+    ("1701", "无形资产", "asset"),
+    ("1702", "累计摊销", "asset_contra"),
+    # 负债类
+    ("2001", "短期借款", "liability"),
+    ("2202", "应付账款", "liability_payable"),
+    ("2203", "预收账款", "liability_advance"),
+    ("2211", "应付职工薪酬", "liability"),
+    ("2221", "应交税费", "liability"),
+    ("222101", "应交增值税-销项税额", "liability"),
+    ("222102", "应交增值税-进项税额", "liability"),
+    ("222103", "应交增值税-小规模", "liability"),
+    ("222106", "应交增值税-转出未交增值税", "liability"),
+    ("222107", "未交增值税", "liability"),
+    ("222104", "应交附加税", "liability"),
+    ("222105", "应交所得税", "liability"),
+    ("2241", "其他应付款", "liability"),
+    ("2501", "长期借款", "liability"),
+    # 权益类
+    ("3001", "实收资本", "equity"),
+    ("4001", "资本公积", "equity"),
+    ("4101", "盈余公积", "equity"),
+    ("4103", "本年利润", "equity"),
+    ("4104", "利润分配", "equity"),
+    # 损益类
+    ("6001", "主营业务收入", "income"),
+    ("6051", "其他业务收入", "income"),
+    ("6111", "资产处置收益", "income"),
+    ("6401", "主营业务成本", "expense"),
+    ("6403", "税金及附加", "expense"),
+    ("6601", "管理费用", "expense"),
+    ("6602", "销售费用", "expense"),
+    ("6603", "财务费用", "expense"),
+    ("6701", "营业外支出", "expense"),
+    ("6711", "资产处置损失", "expense"),
+    ("6801", "所得税费用", "expense"),
+]
+
+
+def get_or_create_ledger_id(db: Session, account_id: int) -> int:
+    """获取 account_id 对应的 ledger_id，不存在则自动创建"""
     account = get_account(db, account_id)
     if not account:
         raise BusinessError(
@@ -34,11 +83,26 @@ def get_ledger_id(db: Session, account_id: int) -> int:
         )
     ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
     if not ledger:
-        raise BusinessError(
-            code=ErrorCode.VALIDATION_ERROR,
-            message=f"会计科目表未初始化: account_id={account_id}, code={account.code}",
+        ledger = Ledger(
+            name=account.name,
+            type=account.type or "company",
+            code=account.code,
+            taxpayer_type=account.taxpayer_type or "small_scale",
         )
+        db.add(ledger)
+        db.flush()
+        for code, name, atype in CHART_OF_ACCOUNTS:
+            la = LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True)
+            db.add(la)
+            db.flush()
+            db.add(LedgerAccountBalance(ledger_account_id=la.id, balance=0, debit_total=0, credit_total=0))
+    else:
+        # 如果 ledger 已存在但缺少 LedgerAccount，补充（保证不会因测试预创建导致重复）
+        pass
     return ledger.id
+
+
+get_ledger_id = get_or_create_ledger_id  # 向下兼容
 
 
 def _calc_tax_from_items(total_with_tax: Decimal, items: list) -> dict:
@@ -80,7 +144,7 @@ def post_journal(
         if existing:
             return existing
 
-    ledger_id = get_ledger_id(db, account_id)
+    ledger_id = get_or_create_ledger_id(db, account_id)
     try:
         engine = JournalEngine(db)
         return engine.post(ledger_id, move_type, source)

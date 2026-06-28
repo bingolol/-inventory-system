@@ -5,7 +5,7 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
@@ -16,6 +16,7 @@ from .base import _log
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
+from models_finance import Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine
 
 _engine = AccountingEngine()
 
@@ -62,15 +63,113 @@ def get_latest_opening_balance(db: Session, account_id: int, date: str = None):
     return query.order_by(models.OpeningBalance.date.desc()).first()
 
 
+def _stock_moves_as_of(db: Session, account_id: int, query_end) -> list:
+    """获取截至 query_end 的 StockMove。
+
+    move_date 优先（StockMove 自带业务日期），
+    无 move_date 时关联 source 单据查询（向后兼容）：
+    - purchase_order → PurchaseOrder.purchase_date
+    - sale_order → SaleOrder.sale_date
+    - *_reversal → 取原单据日期
+    """
+    moves = db.query(models.StockMove).filter(
+        models.StockMove.account_id == account_id,
+    ).all()
+
+    po_dates = {po.id: po.purchase_date for po in db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.account_id == account_id).all()}
+    so_dates = {so.id: so.sale_date for so in db.query(models.SaleOrder).filter(
+        models.SaleOrder.account_id == account_id).all()}
+
+    result = []
+    for m in moves:
+        if m.move_date is not None:
+            biz_date = m.move_date
+        else:
+            st = m.source_type
+            if st.endswith("_reversal"):
+                base_type = st[:-len("_reversal")]
+                sid = m.source_id
+                if base_type == "purchase_order" and sid in po_dates:
+                    biz_date = po_dates[sid]
+                elif base_type == "sale_order" and sid in so_dates:
+                    biz_date = so_dates[sid]
+                else:
+                    biz_date = m.created_at
+            elif st == "purchase_order" and m.source_id in po_dates:
+                biz_date = po_dates[m.source_id]
+            elif st == "sale_order" and m.source_id in so_dates:
+                biz_date = so_dates[m.source_id]
+            else:
+                biz_date = m.created_at
+
+        if biz_date is None:
+            continue
+        if hasattr(biz_date, "hour"):
+            if biz_date <= query_end:
+                result.append(m)
+        else:
+            biz_dt = datetime.combine(biz_date, datetime.min.time())
+            if biz_dt <= query_end:
+                result.append(m)
+    return result
+
+
+
+# ── 单一真相源：BS/IS共享的总账查询 ──
+
+def _l(db, ledger, code, cutoff):
+    """累计 (debit, credit) 截止cutoff"""
+    if not ledger: return Decimal("0"), Decimal("0")
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit),0)).join(
+        LedgerAccount,AccountMoveLine.ledger_account_id==LedgerAccount.id
+    ).join(AccountMove,AccountMoveLine.move_id==AccountMove.id).filter(
+        LedgerAccount.ledger_id==ledger.id,LedgerAccount.code==code,
+        AccountMove.date<=cutoff).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit),0)).join(
+        LedgerAccount,AccountMoveLine.ledger_account_id==LedgerAccount.id
+    ).join(AccountMove,AccountMoveLine.move_id==AccountMove.id).filter(
+        LedgerAccount.ledger_id==ledger.id,LedgerAccount.code==code,
+        AccountMove.date<=cutoff).scalar())
+    return d,c
+
+def _lp(db, ledger, code, start, end):
+    """期间 (debit, credit) [start,end]"""
+    if not ledger: return Decimal("0"),Decimal("0")
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit),0)).join(
+        LedgerAccount,AccountMoveLine.ledger_account_id==LedgerAccount.id
+    ).join(AccountMove,AccountMoveLine.move_id==AccountMove.id).filter(
+        LedgerAccount.ledger_id==ledger.id,LedgerAccount.code==code,
+        AccountMove.date>=start,AccountMove.date<=end).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit),0)).join(
+        LedgerAccount,AccountMoveLine.ledger_account_id==LedgerAccount.id
+    ).join(AccountMove,AccountMoveLine.move_id==AccountMove.id).filter(
+        LedgerAccount.ledger_id==ledger.id,LedgerAccount.code==code,
+        AccountMove.date>=start,AccountMove.date<=end).scalar())
+    return d,c
+
+def _bal(db, ledger, code, cutoff):
+    """asset/expense余额: 借-贷"""
+    d,c=_l(db,ledger,code,cutoff); return d-c
+
+def _crd(db, ledger, code, cutoff):
+    """liability/equity/income余额: 贷-借"""
+    d,c=_l(db,ledger,code,cutoff); return c-d
+
+def _pdr(db, ledger, code, start, end):
+    """期内借方"""
+    d,_=_lp(db,ledger,code,start,end); return d
+
 # ── 资产负债表 (会小企01表) ──
 
 def generate_balance_sheet(db: Session, account_id: int, date: str):
     """生成资产负债表"""
-    query_date = datetime.strptime(date, "%Y-%m-%d").date()
+    query_date = datetime.strptime(date, "%Y-%m-%d")
+    query_end = query_date + timedelta(days=1) - timedelta(seconds=1)
     opening_balance = get_latest_opening_balance(db, account_id, date)
 
     if not opening_balance:
-        opening_date = datetime(2000, 1, 1).date()
+        opening_date = datetime(2000, 1, 1)
         opening_cash = Decimal('0')
         opening_bank = Decimal('0')
         opening_retained_earnings = Decimal('0')
@@ -83,7 +182,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         opening_long_term_borrowings = Decimal('0')
         opening_paid_in_capital = Decimal('0')
     else:
-        opening_date = opening_balance.date
+        opening_date = datetime.combine(opening_balance.date, datetime.min.time())
         opening_cash = _d(opening_balance.cash_balance)
         opening_bank = _d(opening_balance.bank_balance)
         opening_retained_earnings = _d(opening_balance.retained_earnings)
@@ -100,7 +199,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     sales_received = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= opening_date,
-        models.SaleOrder.sale_date <= query_date,
+        models.SaleOrder.sale_date <= query_end,
         models.SaleOrder.status == OrderStatus.COMPLETED,
         models.SaleOrder.payment_status == PaymentStatus.PAID
     ).scalar())
@@ -108,7 +207,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     purchase_paid = _d(db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
         models.PurchaseOrder.account_id == account_id,
         models.PurchaseOrder.purchase_date >= opening_date,
-        models.PurchaseOrder.purchase_date <= query_date,
+        models.PurchaseOrder.purchase_date <= query_end,
         models.PurchaseOrder.status == OrderStatus.COMPLETED,
         models.PurchaseOrder.payment_status == PaymentStatus.PAID,
         models.PurchaseOrder.payment_method == PaymentMethod.COMPANY
@@ -117,271 +216,134 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     expense_paid = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
         models.Expense.account_id == account_id,
         models.Expense.expense_date >= opening_date,
-        models.Expense.expense_date <= query_date,
+        models.Expense.expense_date <= query_end,
         models.Expense.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
-    # 货币资金计算（权责发生制）
-    # 优先使用银行账户余额（反映实际收支），否则用期初余额
-    has_bank_accounts = db.query(models.BankAccount).filter(
-        models.BankAccount.account_id == account_id
-    ).first() is not None
+    # 货币资金计算：单一真相源-从总账取数
+    acct = db.query(models.Account).filter(models.Account.id == account_id).first()
+    ledger = acct and db.query(Ledger).filter(Ledger.code == acct.code).first()
 
-    if has_bank_accounts:
-        # 从银行账户表读取余额
-        bank_balance = _d(db.query(sqlfunc.sum(models.BankAccount.balance)).filter(
-            models.BankAccount.account_id == account_id
-        ).scalar())
-        ending_cash = Decimal('0')
-        ending_bank = bank_balance
+    L  = lambda code, cutoff=None: _l(db, ledger, code, cutoff or query_end)
+    B  = lambda code, cutoff=None: _bal(db, ledger, code, cutoff or query_end)
+    C  = lambda code, cutoff=None: _crd(db, ledger, code, cutoff or query_end)
+    # 旧名兼容
+    _balance = B
+    _credit_balance = C
+
+    cash_from_ledger = _balance("1001")
+    bank_from_ledger = _balance("1002")
+
+    if ledger and (cash_from_ledger != 0 or bank_from_ledger != 0):
+        ending_cash = cash_from_ledger
+        ending_bank = bank_from_ledger
     else:
-        # 没有银行账户时，使用期初余额
-        ending_cash = opening_cash
-        ending_bank = opening_bank
+        # 总账无数据时回退到银行账户表
+        has_bank_accounts = db.query(models.BankAccount).filter(
+            models.BankAccount.account_id == account_id
+        ).first() is not None
+        if has_bank_accounts:
+            bank_balance = _d(db.query(sqlfunc.sum(models.BankAccount.balance)).filter(
+                models.BankAccount.account_id == account_id
+            ).scalar())
+            ending_cash = Decimal('0')
+            ending_bank = bank_balance
+        else:
+            total_payments = _d(db.query(sqlfunc.sum(models.Payment.amount)).filter(
+                models.Payment.account_id == account_id,
+                models.Payment.payment_date >= opening_date,
+                models.Payment.payment_date <= query_end,
+            ).scalar())
+            total_receipts = _d(db.query(sqlfunc.sum(models.Receipt.amount)).filter(
+                models.Receipt.account_id == account_id,
+                models.Receipt.receipt_date >= opening_date,
+                models.Receipt.receipt_date <= query_end,
+            ).scalar())
+            ending_cash = opening_cash - total_payments + total_receipts
+            ending_bank = Decimal('0')
 
-    accounts_receivable = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= opening_date,
-        models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == OrderStatus.COMPLETED,
-        models.SaleOrder.payment_status == PaymentStatus.UNPAID
-    ).scalar())
+    # 应收账款 = 总账 1122
+    accounts_receivable = _balance("1122").quantize(Q2)
 
+    # BR-7: 库存真相源是 StockMove 流水，Inventory 表仅为缓存。
+    # 按 query_end 截止日期过滤 StockMove（关联业务单据日期），聚合期末存货数量与价值。
+    as_of_moves = _stock_moves_as_of(db, account_id, query_end)
+    inv_agg = {}
+    for m in as_of_moves:
+        pid = m.product_id
+        if pid not in inv_agg:
+            inv_agg[pid] = {"qty": Decimal("0"), "value": Decimal("0")}
+        qty = Decimal(str(m.quantity))
+        inv_agg[pid]["qty"] += qty
+        # StockMove.total_cost 存的是绝对值，方向由 quantity 正负表示
+        if qty > 0:
+            inv_agg[pid]["value"] += _d(m.total_cost)
+        else:
+            inv_agg[pid]["value"] -= _d(m.total_cost)
     inventory_value = Decimal('0')
-    for inv in db.query(models.Inventory).filter(models.Inventory.account_id == account_id).all():
-        if inv.average_cost:
-            inventory_value += Decimal(str(inv.quantity)) * _d(inv.average_cost)
-        elif inv.product and inv.product.purchase_price:
-            inventory_value += Decimal(str(inv.quantity)) * _d(inv.product.purchase_price)
+    for pid, agg in inv_agg.items():
+        if agg["qty"] > 0:
+            inventory_value += agg["value"]
 
-    # ── 非流动资产 ──
-    # 固定资产
-    fixed_assets = db.query(models.FixedAsset).filter(
-        models.FixedAsset.account_id == account_id,
-        models.FixedAsset.status == "在用"
-    ).all()
-    
-    # 固定资产原值 = 期初 + 期间新增
-    fixed_assets_original = opening_fixed_assets_original
-    accumulated_depreciation = opening_accumulated_depreciation
-    
-    for asset in fixed_assets:
-        # 累加所有在用固定资产的原值
-        fixed_assets_original += _d(asset.original_value)
-        
-        if asset.start_date and asset.start_date <= query_date:
-            # 计算累计折旧（使用 AccountingEngine）
-            months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
-            if months > 0:
-                result = _engine.calculate_depreciation_straight_line(
-                    original_value=_d(asset.original_value),
-                    salvage_rate=_d(asset.salvage_rate),
-                    useful_life=asset.useful_life,
-                    months_used=months
-                )
-                accumulated_depreciation += result.accumulated_depreciation
-    
+    # ── 非流动资产 ── 从总账取
+    fixed_assets_original = _balance("1601").quantize(Q2)
+    accumulated_depreciation = _credit_balance("1602").quantize(Q2)
     fixed_assets_net = fixed_assets_original - accumulated_depreciation
-    
+
     # 无形资产
-    intangible_assets = db.query(models.IntangibleAsset).filter(
-        models.IntangibleAsset.account_id == account_id,
-        models.IntangibleAsset.status == "使用中"
-    ).all()
-    
-    intangible_assets_original = opening_intangible_assets_original
-    accumulated_amortization = opening_accumulated_amortization
-    
-    for asset in intangible_assets:
-        if asset.start_date and asset.start_date <= query_date:
-            # 计算累计摊销（使用 AccountingEngine，符合 AP-7.1）
-            months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
-            if months > 0:
-                result = _engine.calculate_intangible_amortization(
-                    original_value=_d(asset.original_value),
-                    useful_life=asset.useful_life,
-                    months_used=months
-                )
-                accumulated_amortization += result.accumulated_amortization
-    
+    intangible_assets_original = _balance("1701").quantize(Q2)
+    accumulated_amortization = _credit_balance("1702").quantize(Q2)
     intangible_assets_net = intangible_assets_original - accumulated_amortization
     
     total_non_current_assets = fixed_assets_net + intangible_assets_net
 
-    # ── 流动负债 ──
-    po_payable = _d(db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
-        models.PurchaseOrder.account_id == account_id,
-        models.PurchaseOrder.purchase_date >= opening_date,
-        models.PurchaseOrder.purchase_date <= query_date,
-        models.PurchaseOrder.status == OrderStatus.COMPLETED,
-        models.PurchaseOrder.payment_status == PaymentStatus.UNPAID
-    ).scalar())
+    # ── 流动负债 ── 从总账
+    accounts_payable = _credit_balance("2202").quantize(Q2)
 
-    expense_payable = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= opening_date,
-        models.Expense.expense_date <= query_date,
-        models.Expense.payment_status == "unpaid"
-    ).scalar())
-
-    # 未付款的固定资产（从 FixedAsset 表查询）
-    fixed_assets_payable = _d(db.query(sqlfunc.sum(models.FixedAsset.original_value)).filter(
-        models.FixedAsset.account_id == account_id,
-        models.FixedAsset.status == "在用",
-    ).scalar())
-    # 减去已付款的固定资产金额（通过 Payment 表查询）
-    fixed_asset_paid = _d(db.query(sqlfunc.sum(models.Payment.amount)).filter(
-        models.Payment.account_id == account_id,
-        models.Payment.payment_type == "purchase",
-        models.Payment.related_entity_type.in_(["invoice", "fixed_asset"]),
-    ).scalar())
-    fixed_asset_payable = max(fixed_assets_payable - fixed_asset_paid, Decimal('0'))
-
-    # 存货价值（未通过采购单入库的部分，需要计入应付账款）
-    # 注意：如果存货是通过采购单入库的，已经在 po_payable 中计算了
-    # 这里只计算直接入库的存货（如测试数据）
-    inventory_payable = Decimal('0')
-    # 查询没有对应采购单的库存记录
-    inventory_items = db.query(models.Inventory).filter(
-        models.Inventory.account_id == account_id
-    ).all()
-    for inv_item in inventory_items:
-        if inv_item.product and inv_item.product.purchase_price:
-            inv_value = _d(inv_item.quantity) * _d(inv_item.product.purchase_price)
-            # 检查是否已通过采购单入库
-            po_items = db.query(models.PurchaseItem).filter(
-                models.PurchaseItem.product_id == inv_item.product_id,
-                models.PurchaseItem.order.has(account_id=account_id),
-            ).all()
-            po_quantity = sum(pi.quantity for pi in po_items)
-            if inv_item.quantity > po_quantity:
-                # 有未通过采购单入库的库存
-                extra_quantity = inv_item.quantity - po_quantity
-                inventory_payable += _d(extra_quantity) * _d(inv_item.product.purchase_price)
-
-    accounts_payable = po_payable + expense_payable + fixed_asset_payable + inventory_payable
-
-    out_invoices_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
-        models.Invoice.account_id == account_id,
-        models.Invoice.direction == InvoiceDirection.OUT,
-        models.Invoice.issue_date >= opening_date,
-        models.Invoice.issue_date <= query_date
-    ).scalar())
-
-    in_invoices_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
-        models.Invoice.account_id == account_id,
-        models.Invoice.direction == InvoiceDirection.IN,
-        models.Invoice.issue_date >= opening_date,
-        models.Invoice.issue_date <= query_date,
-        models.Invoice.certification_status == "certified",
-        models.Invoice.invoice_type == "special"
-    ).scalar())
-
-    tax_payable = max(out_invoices_tax - in_invoices_tax, Decimal('0'))
+    # ── 应交税费 — 纯总账取数（月结后自动体现）──
+    vat_payable = _credit_balance("222107").quantize(Q2)
+    surcharge_liability = _credit_balance("222104").quantize(Q2)
+    income_tax_liability = _credit_balance("222105").quantize(Q2)
+    tax_payable = (vat_payable + surcharge_liability + income_tax_liability).quantize(Q2)
+    # 留抵 = 应交增值税借方余额（222101+222102+222106，转出后剩余为留抵）
+    vat_debit = (_balance("222101") + _balance("222102") + _balance("222106"))
+    prepaid_tax = max(vat_debit, Decimal("0")).quantize(Q2)
 
     # ── 非流动负债 ──
     long_term_borrowings = opening_long_term_borrowings
 
-    # ── 汇总 ──
-    total_current_assets = ending_cash + ending_bank + accounts_receivable + inventory_value
-    total_assets = total_current_assets + total_non_current_assets
-    
-    total_current_liabilities = accounts_payable + tax_payable
-    total_non_current_liabilities = long_term_borrowings
-    total_liabilities = total_current_liabilities + total_non_current_liabilities
+    # ── 利润构成（全从总账取，月结后税金自动体现）──
+    period_revenue = _credit_balance("6001").quantize(Q2)
+    period_cogs = _balance("6401").quantize(Q2)
+    period_expenses = _balance("6601").quantize(Q2)
+    dep_d, dep_c = _lp(db, ledger, "1602", opening_date, query_end)
+    depreciation_expense = dep_c.quantize(Q2)
+    amortization_expense = Decimal("0")
+    surcharge_expense = _balance("6403").quantize(Q2)
+    income_tax_expense = _balance("6801").quantize(Q2)
 
-    # ── 所有者权益 ──
-    prepaid_tax = Decimal('0')
-    bs_account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    bs_is_general = bs_account and bs_account.taxpayer_type == "general"
-    if bs_is_general:
-        bs_items = db.query(models.SaleItem).join(
-            models.SaleOrder, models.SaleItem.order_id == models.SaleOrder.id
-        ).filter(
-            models.SaleOrder.account_id == account_id,
-            models.SaleOrder.sale_date >= opening_date,
-            models.SaleOrder.sale_date <= query_date,
-            models.SaleOrder.status == OrderStatus.COMPLETED
-        ).all()
-        period_revenue = sum(_d(it.total_price) / (Decimal("1") + _d(it.tax_rate)) for it in bs_items)
-        period_revenue = period_revenue.quantize(Q2)
-        # 用全部销项替换发票销项（BR-4 补充）：确保资产负债表反映全部税负
-        all_output_tax = sum(
-            (_d(it.total_price) * _d(it.tax_rate) / (Decimal("1") + _d(it.tax_rate))).quantize(Q2)
-            for it in bs_items
-        )
-        tax_payable = max(all_output_tax - in_invoices_tax, Decimal('0'))
-        prepaid_tax = max(in_invoices_tax - all_output_tax, Decimal('0'))
-        # 重算负债合计（tax_payable 已更新）
-        total_current_liabilities = accounts_payable + tax_payable
-        total_liabilities = total_current_liabilities + total_non_current_liabilities
-        total_current_assets += prepaid_tax
-        total_assets = total_current_assets + total_non_current_assets
-    else:
-        period_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-            models.SaleOrder.account_id == account_id,
-            models.SaleOrder.sale_date >= opening_date,
-            models.SaleOrder.sale_date <= query_date,
-            models.SaleOrder.status == OrderStatus.COMPLETED
-        ).scalar())
+    period_profit = (period_revenue - period_cogs - period_expenses
+                     - surcharge_expense - income_tax_expense
+                     - amortization_expense)
 
-    period_cogs = Decimal('0')
-    for order in db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= opening_date,
-        models.SaleOrder.sale_date <= query_date,
-        models.SaleOrder.status == OrderStatus.COMPLETED
-    ).all():
-        for item in order.items:
-            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
-            period_cogs += Decimal(str(item.quantity)) * unit_cost
-
-    period_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= opening_date,
-        models.Expense.expense_date <= query_date
-    ).scalar())
-
-    # 计算折旧费用（使用 AccountingEngine）
-    depreciation_expense = Decimal('0')
-    for asset in fixed_assets:
-        if asset.start_date and asset.start_date <= query_date:
-            months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
-            if 0 < months <= asset.useful_life:
-                result = _engine.calculate_depreciation_straight_line(
-                    original_value=_d(asset.original_value),
-                    salvage_rate=_d(asset.salvage_rate),
-                    useful_life=asset.useful_life,
-                    months_used=months
-                )
-                depreciation_expense += result.accumulated_depreciation
-
-    # 计算摊销费用（使用 AccountingEngine，符合 AP-7.1）
-    amortization_expense = Decimal('0')
-    for asset in intangible_assets:
-        if asset.start_date and asset.start_date <= query_date:
-            months = (query_date.year - asset.start_date.year) * 12 + (query_date.month - asset.start_date.month)
-            if 0 < months <= asset.useful_life:
-                result = _engine.calculate_intangible_amortization(
-                    original_value=_d(asset.original_value),
-                    useful_life=asset.useful_life,
-                    months_used=months
-                )
-                amortization_expense += result.monthly_amortization
-
-    period_profit = period_revenue - period_cogs - period_expenses - depreciation_expense - amortization_expense
-    paid_in_capital = opening_paid_in_capital
+    paid_in_capital = _credit_balance("3001").quantize(Q2)
     retained_earnings = opening_retained_earnings + period_profit
     total_equity = paid_in_capital + retained_earnings
 
-    if abs(total_assets - (total_liabilities + total_equity)) > Decimal('0.01'):
-        raise BusinessError(
-            code=ErrorCode.BALANCE_SHEET_UNBALANCED,
-            message=f"资产负债表不平衡: 资产={total_assets}, 负债+权益={total_liabilities + total_equity}",
-            data={"assets": float(total_assets), "liabilities_equity": float(total_liabilities + total_equity)}
-        )
+    # ── 汇总 ──
+    total_current_assets = (ending_cash + ending_bank + accounts_receivable
+                            + inventory_value + prepaid_tax)
+    total_assets = total_current_assets + total_non_current_assets
+    total_non_current_liabilities = long_term_borrowings
+    total_current_liabilities = accounts_payable + tax_payable
+    total_liabilities = total_current_liabilities + total_non_current_liabilities
+
+    diff = total_assets - (total_liabilities + total_equity)
+    balanced = abs(diff) <= Decimal('0.01')
 
     return {
+        "balanced": balanced,
+        "diff": float(diff.quantize(Q2)),
         "date": date,
         # 资产
         "monetary_funds": (ending_cash + ending_bank).quantize(Q2),
@@ -407,7 +369,14 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         "paid_in_capital": paid_in_capital.quantize(Q2),
         "retained_earnings": retained_earnings.quantize(Q2),
         "total_equity": total_equity.quantize(Q2),
-        "total_liabilities_and_equity": (total_liabilities + total_equity).quantize(Q2)
+        "total_liabilities_and_equity": (total_liabilities + total_equity).quantize(Q2),
+        # 利润构成（用于调试）
+        "period_revenue": period_revenue.quantize(Q2),
+        "period_cogs": period_cogs.quantize(Q2),
+        "period_expenses": period_expenses.quantize(Q2),
+        "depreciation_expense": depreciation_expense.quantize(Q2),
+        "amortization_expense": amortization_expense.quantize(Q2),
+        "period_profit": period_profit.quantize(Q2),
     }
 
 
@@ -416,77 +385,21 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 def generate_income_statement(db: Session, account_id: int, start_date: str, end_date: str):
     """生成利润表"""
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
 
-    # ── 营业收入（分口径：一般纳税人不含税，小规模含税）──
+    # ── 利润表全从总账取数 ──
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    is_general = account and account.taxpayer_type == "general"
-    if is_general:
-        items = db.query(models.SaleItem).join(
-            models.SaleOrder, models.SaleItem.order_id == models.SaleOrder.id
-        ).filter(
-            models.SaleOrder.account_id == account_id,
-            models.SaleOrder.sale_date >= start_dt,
-            models.SaleOrder.sale_date <= end_dt,
-            models.SaleOrder.status == OrderStatus.COMPLETED
-        ).all()
-        revenue = sum(_d(it.total_price) / (Decimal("1") + _d(it.tax_rate)) for it in items)
-        revenue = revenue.quantize(Q2)
-    else:
-        revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-            models.SaleOrder.account_id == account_id,
-            models.SaleOrder.sale_date >= start_dt,
-            models.SaleOrder.sale_date <= end_dt,
-            models.SaleOrder.status == OrderStatus.COMPLETED
-        ).scalar())
+    ledger_is = account and db.query(Ledger).filter(Ledger.code == account.code).first()
 
-    # ── 营业成本 ──
-    cost_of_goods_sold = Decimal('0')
-    completed_sales = db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= start_dt,
-        models.SaleOrder.sale_date <= end_dt,
-        models.SaleOrder.status == OrderStatus.COMPLETED
-    ).all()
-    for order in completed_sales:
-        for item in order.items:
-            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
-            cost_of_goods_sold += Decimal(str(item.quantity)) * unit_cost
-
-    # ── 营业费用（按功能分类）──
-    # 销售费用
-    selling_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= start_dt,
-        models.Expense.expense_date <= end_dt,
-        models.Expense.functional_category == "销售费用"
-    ).scalar())
-
-    # 管理费用
-    administrative_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= start_dt,
-        models.Expense.expense_date <= end_dt,
-        models.Expense.functional_category == "管理费用"
-    ).scalar())
-
-    # 财务费用
-    financial_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= start_dt,
-        models.Expense.expense_date <= end_dt,
-        models.Expense.functional_category == "财务费用"
-    ).scalar())
-
-    # 税金及附加
-    tax_surcharges = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date >= start_dt,
-        models.Expense.expense_date <= end_dt,
-        models.Expense.functional_category == "税金及附加"
-    ).scalar())
-
-    total_operating_expenses = selling_expenses + administrative_expenses + financial_expenses + tax_surcharges
+    rev_d, rev_c = _lp(db, ledger_is, "6001", start_dt, end_dt)
+    revenue = (rev_c - rev_d).quantize(Q2)
+    cogs_d, cogs_c = _lp(db, ledger_is, "6401", start_dt, end_dt)
+    cost_of_goods_sold = (cogs_d - cogs_c).quantize(Q2)
+    administrative_expenses = _pdr(db, ledger_is, "6601", start_dt, end_dt).quantize(Q2)
+    selling_expenses = financial_expenses = Decimal("0")
+    depr_d, depr_c = _lp(db, ledger_is, "1602", start_dt, end_dt)
+    depreciation_expense = depr_c.quantize(Q2)
+    total_operating_expenses = (selling_expenses + administrative_expenses + financial_expenses).quantize(Q2)
 
     # ── 营业毛利 ──
     gross_profit = revenue - cost_of_goods_sold
@@ -494,21 +407,21 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     # ── 营业利润 ──
     operating_profit = gross_profit - total_operating_expenses
 
+    # ── 税金及附加 + 所得税 — 纯总账取数（月结后自动体现）──
+    sur_d, sur_c = _lp(db, ledger_is, "6403", start_dt, end_dt)
+    tax_surcharges = (sur_d - sur_c).quantize(Q2)
+    total_operating_expenses = (total_operating_expenses + tax_surcharges).quantize(Q2)
+    operating_profit = gross_profit - total_operating_expenses
+
     # ── 营业外收支 ──
-    non_operating_income = Decimal('0')
-    non_operating_expense = Decimal('0')
+    non_operating_income = non_operating_expense = Decimal('0')
 
     # ── 利润总额 ──
     gross_profit_total = operating_profit + non_operating_income - non_operating_expense
 
-    # ── 所得税费用（调用 AccountingEngine 计算）──
-    from accounting_engine import AccountingEngine
-    engine = AccountingEngine()
-    if gross_profit_total > 0:
-        tax_result = engine.calculate_income_tax(profit=gross_profit_total, taxpayer_type='small_micro')
-        income_tax_expense = tax_result.actual_tax
-    else:
-        income_tax_expense = Decimal('0')
+    # ── 所得税 = 期内 6801 净发生额 ──
+    it_d, it_c = _lp(db, ledger_is, "6801", start_dt, end_dt)
+    income_tax_expense = (it_d - it_c).quantize(Q2)
 
     # ── 净利润 ──
     net_profit = gross_profit_total - income_tax_expense
@@ -575,9 +488,11 @@ def list_cash_flow_transactions(db: Session, account_id: int, skip: int = 0, lim
                                  start_date: str = None, end_date: str = None, flow_category: str = None):
     q = db.query(models.CashFlowTransaction).filter(models.CashFlowTransaction.account_id == account_id)
     if start_date:
-        q = q.filter(models.CashFlowTransaction.transaction_date >= start_date)
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        q = q.filter(models.CashFlowTransaction.transaction_date >= start_dt)
     if end_date:
-        q = q.filter(models.CashFlowTransaction.transaction_date <= end_date + " 23:59:59")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+        q = q.filter(models.CashFlowTransaction.transaction_date <= end_dt)
     if flow_category:
         q = q.filter(models.CashFlowTransaction.flow_category == flow_category)
     total = q.count()
@@ -587,7 +502,7 @@ def list_cash_flow_transactions(db: Session, account_id: int, skip: int = 0, lim
 
 def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, end_date: str):
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
 
     opening_balance = get_latest_opening_balance(db, account_id, start_date)
     beginning_cash_balance = (_d(opening_balance.cash_balance) + _d(opening_balance.bank_balance)) if opening_balance else Decimal('0')
@@ -698,7 +613,7 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
 # ── 固定资产 ──
 
 def create_fixed_asset(db: Session, account_id: int, data: schemas.FixedAssetCreate, operator: str = "user"):
-    """创建固定资产"""
+    """创建固定资产（含会计凭证：借:1601 贷:2202）"""
     asset = models.FixedAsset(
         account_id=account_id,
         asset_code=data.asset_code,
@@ -714,6 +629,14 @@ def create_fixed_asset(db: Session, account_id: int, data: schemas.FixedAssetCre
     )
     db.add(asset)
     db.flush()
+    from finance_integration import post_journal
+    post_journal(db, account_id, "fixed_asset_purchase", {
+        "asset_id": asset.id,
+        "original_value": data.original_value,
+        "date": data.start_date,
+        "source_model": "fixed_asset",
+        "source_id": asset.id,
+    })
     _log(db, account_id, "create", "fixed_asset", asset.id, f"创建固定资产: {data.name}", operator=operator)
     return asset
 
@@ -837,16 +760,16 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
     # 确定季度日期范围
     if quarter == 1:
         start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 3, 31)
+        end_date = datetime(year, 3, 31, 23, 59, 59)
     elif quarter == 2:
         start_date = datetime(year, 4, 1)
-        end_date = datetime(year, 6, 30)
+        end_date = datetime(year, 6, 30, 23, 59, 59)
     elif quarter == 3:
         start_date = datetime(year, 7, 1)
-        end_date = datetime(year, 9, 30)
+        end_date = datetime(year, 9, 30, 23, 59, 59)
     else:
         start_date = datetime(year, 10, 1)
-        end_date = datetime(year, 12, 31)
+        end_date = datetime(year, 12, 31, 23, 59, 59)
 
     # 销项发票
     output_invoices = db.query(models.Invoice).filter(
@@ -901,16 +824,16 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     # 确定季度日期范围
     if quarter == 1:
         start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 3, 31)
+        end_date = datetime(year, 3, 31, 23, 59, 59)
     elif quarter == 2:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 6, 30)
+        start_date = datetime(year, 4, 1)
+        end_date = datetime(year, 6, 30, 23, 59, 59)
     elif quarter == 3:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 9, 30)
+        start_date = datetime(year, 7, 1)
+        end_date = datetime(year, 9, 30, 23, 59, 59)
     else:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 12, 31)
+        start_date = datetime(year, 10, 1)
+        end_date = datetime(year, 12, 31, 23, 59, 59)
 
     # 营业收入
     operating_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
@@ -1064,3 +987,31 @@ def generate_asset_depreciation_detail(db: Session, account_id: int, year: int, 
         "total_depreciation": total_depreciation.quantize(Q2),
         "total_accumulated": total_accumulated.quantize(Q2)
     }
+
+
+# ── 付款 / 收款 查询 ──
+
+def list_payments(db: Session, account_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Payment).filter(
+        models.Payment.account_id == account_id
+    ).order_by(models.Payment.payment_date.desc()).offset(skip).limit(limit).all()
+
+
+def get_payment(db: Session, account_id: int, payment_id: int):
+    return db.query(models.Payment).filter(
+        models.Payment.account_id == account_id,
+        models.Payment.id == payment_id
+    ).first()
+
+
+def list_receipts(db: Session, account_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Receipt).filter(
+        models.Receipt.account_id == account_id
+    ).order_by(models.Receipt.receipt_date.desc()).offset(skip).limit(limit).all()
+
+
+def get_receipt(db: Session, account_id: int, receipt_id: int):
+    return db.query(models.Receipt).filter(
+        models.Receipt.account_id == account_id,
+        models.Receipt.id == receipt_id
+    ).first()

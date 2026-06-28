@@ -35,8 +35,8 @@ def accts(db, ledger):
         ("1122", "应收账款", "asset"),
         ("1405", "库存商品", "asset"),
         ("222101", "应交增值税-销项税额", "liability"),
-        ("5001", "主营业务收入", "income"),
-        ("5401", "主营业务成本", "expense"),
+        ("6001", "主营业务收入", "income"),
+        ("6401", "主营业务成本", "expense"),
     ]
     for code, name, atype in seed:
         db.add(LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True))
@@ -94,10 +94,10 @@ class TestSaleCreateTriggersAccounting:
             ).first()
             codes[la.code] = {"debit": line.debit, "credit": line.credit}
 
-        assert codes["1122"]["debit"] == Decimal("200.00"), "应收账款借: 200"
-        assert codes["5001"]["credit"] == Decimal("176.99"), "主营业务收入贷(不含税): 176.99"
-        assert codes["222101"]["credit"] == Decimal("23.01"), "销项税额贷: 23.01"
-        assert codes["5401"]["debit"] == Decimal("80.00"), "主营业务成本借: 80"
+        assert codes["1122"]["debit"] == Decimal("226.00"), "应收账款借(含税): 226"
+        assert codes["6001"]["credit"] == Decimal("200.00"), "主营业务收入贷(不含税): 200"
+        assert codes["222101"]["credit"] == Decimal("26.00"), "销项税额贷: 26"
+        assert codes["6401"]["debit"] == Decimal("80.00"), "主营业务成本借: 80"
         assert codes["1405"]["credit"] == Decimal("80.00"), "库存商品贷: 80"
 
         from models import StockMove

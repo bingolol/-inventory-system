@@ -1,20 +1,49 @@
 """收款路由"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from database import get_db
 from models import Receipt, SaleOrder, BankAccount, BankTransaction
 from schemas.receipt import ReceiptCreate, ReceiptOut
+from schemas import PaginatedResponse
 from account_dep import get_account_id, get_operator
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.base import _log
+from crud.finance import list_receipts, get_receipt
 from utils import _d
 from operation_result import OperationResult, EntityType, OperationType
 from finance_integration import post_journal
 
 router = APIRouter()
+
+
+@router.get("", response_model=PaginatedResponse)
+def get_receipts(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
+):
+    """获取收款记录列表"""
+    items = list_receipts(db, account_id, skip=skip, limit=limit)
+    total = len(items)
+    return PaginatedResponse(total=total, items=[ReceiptOut.model_validate(r) for r in items])
+
+
+@router.get("/{receipt_id}", response_model=ReceiptOut)
+def get_receipt_by_id(
+    receipt_id: int,
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
+):
+    """获取单条收款记录"""
+    r = get_receipt(db, account_id, receipt_id)
+    if not r:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"receipt_id": receipt_id})
+    return ReceiptOut.model_validate(r)
 
 
 @router.post("")
@@ -49,7 +78,7 @@ def create_receipt(
                 BankAccount.account_id == account_id
             ).with_for_update().first()
             if not bank_account:
-                raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="银行账户不存在")
+                raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": data.bank_account_id})
 
             # 计算交易后余额
             new_balance = _d(bank_account.balance) + _d(data.amount)

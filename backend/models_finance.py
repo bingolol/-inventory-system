@@ -14,15 +14,6 @@ from database import Base
 from utils import Q2
 
 
-class AccountingError(Exception):
-    """会计模块业务错误"""
-
-    def __init__(self, code: str, message: str):
-        self.code = code
-        self.message = message
-        super().__init__(f"[{code}] {message}")
-
-
 class Ledger(Base):
     """账本（新会计系统，与旧 accounts 表并存）"""
     __tablename__ = "ledgers"
@@ -345,8 +336,8 @@ class PurchaseEstimateItem(Base):
 def prevent_account_move_update(mapper, connection, target):
     from errors import BusinessError, ErrorCode
     raise BusinessError(
-        code=ErrorCode.INTERNAL_ERROR,
-        message="AccountMove 是会计凭证真相源，一经生成严禁修改"
+        code=ErrorCode.DATA_INTEGRITY_ERROR,
+        data={"details": "AccountMove 是会计凭证真相源，一经生成严禁修改"}
     )
 
 

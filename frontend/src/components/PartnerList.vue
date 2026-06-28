@@ -15,8 +15,8 @@
       </div>
       <el-table :data="list" stripe style="width:100%">
         <el-table-column prop="name" :label="nameLabel" min-width="140" />
-        <el-table-column prop="contact" label="联系人" width="120" />
-        <el-table-column prop="phone" label="电话" width="140" />
+        <el-table-column prop="contact" label="联系人" min-width="120" />
+        <el-table-column prop="phone" label="电话" min-width="140" />
         <el-table-column prop="address" label="地址" min-width="180" />
         <el-table-column prop="notes" label="备注" min-width="120" />
         <el-table-column label="操作" width="140" fixed="right">
@@ -34,12 +34,17 @@
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? editTitle : addTitle" width="500px" destroy-on-close>
-      <el-form :model="form" label-width="80px" style="padding-right:20px;">
-        <el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="联系人"><el-input v-model="form.contact" /></el-form-item>
-        <el-form-item label="电话"><el-input v-model="form.phone" /></el-form-item>
-        <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
+      <el-form :model="form" label-width="0">
+        <div class="pl-group" style="border-left-color:#4f6ef7;">
+          <div class="pl-group-header"><span class="pl-group-tag" style="background:#eef1ff;color:#4f6ef7;">联系信息</span></div>
+          <div class="pl-group-body">
+            <div class="pl-field"><span class="pl-label" style="min-width:70px;">名称</span><el-input v-model="form.name" /></div>
+            <div class="pl-field"><span class="pl-label" style="min-width:70px;">联系人</span><el-input v-model="form.contact" /></div>
+            <div class="pl-field"><span class="pl-label" style="min-width:70px;">电话</span><el-input v-model="form.phone" /></div>
+            <div class="pl-field"><span class="pl-label" style="min-width:70px;">地址</span><el-input v-model="form.address" /></div>
+            <div class="pl-field"><span class="pl-label" style="min-width:70px;">备注</span><el-input v-model="form.notes" type="textarea" :rows="2" /></div>
+          </div>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -83,7 +88,7 @@ const loadData = async () => {
     const res = await props.api.getList(params)
     total.value = res.total
     list.value = res.items
-  } catch (e) { handleError(e, { defaultMsg: '加载失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '加载伙伴列表失败，请检查网络连接' }) }
 }
 
 const showDialog = (row) => {
@@ -103,7 +108,7 @@ const handleSave = async () => {
     }
     dialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '保存失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '保存失败，请检查输入数据是否正确' }) }
 }
 
 const handleDelete = async (id) => {
@@ -111,8 +116,17 @@ const handleDelete = async (id) => {
     await props.api.delete(id)
     ElMessage.success('已删除')
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '删除失败' }) }
+  } catch (e) { handleError(e, { defaultMsg: '删除失败，请检查该伙伴是否已被其他单据引用' }) }
 }
 
 useAccountAwareData(loadData)
 </script>
+
+<style scoped>
+.pl-group { background: #fafafa; border: 1px solid #f0f0f0; border-left: 4px solid; border-radius: 12px; overflow: hidden; }
+.pl-group-header { padding: 12px 16px 4px; }
+.pl-group-tag { display: inline-block; padding: 2px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+.pl-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.pl-field { display: flex; align-items: center; gap: 12px; }
+.pl-label { font-size: 13px; color: #4e5969; flex-shrink: 0; }
+</style>

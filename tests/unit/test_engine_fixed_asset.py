@@ -31,9 +31,9 @@ def accts(db, ledger):
         ("1002", "银行存款", "asset"),
         ("1601", "固定资产", "asset"),
         ("1602", "累计折旧", "asset"),
-        ("6602", "管理费用", "expense"),
+        ("6601", "管理费用", "expense"),
         ("6111", "资产处置收益", "income"),
-        ("6711", "营业外支出", "expense"),
+        ("6711", "资产处置损失", "expense"),
     ]
     result = {}
     for code, name, atype in seed:

@@ -43,14 +43,15 @@ def create_cash_transaction(
                 flow_category=data.flow_category,
                 description=data.description,
                 transaction_date=data.transaction_date,
+                counter_account_code=data.counter_account_code,
                 related_entity_type=getattr(data, 'related_entity_type', None),
                 related_entity_id=getattr(data, 'related_entity_id', None),
             )
             tx = dispatch(cmd, db)
-    except ValueError as e:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
-    except Exception as e:
-        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"创建现金流水失败: {str(e)}")
+    except ValueError:
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建现金流水失败，请检查输入数据"})
+    except Exception:
+        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, data={"details": "创建现金流水失败"})
     db.refresh(tx)
     return tx
 
@@ -95,7 +96,7 @@ def update_cash_transaction(
     except ValueError as e:
         if "不存在" in str(e):
             raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新现金流水失败，请检查输入数据"})
     db.refresh(transaction)
     return transaction
 
@@ -116,5 +117,5 @@ def delete_cash_transaction(
     except ValueError as e:
         if "不存在" in str(e):
             raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "删除现金流水失败，请检查输入数据"})
     return {"result": "现金流水已删除"}

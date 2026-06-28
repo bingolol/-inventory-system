@@ -9,7 +9,7 @@
       </template>
     
     <!-- 筛选条件 -->
-    <el-form :inline="true" :model="filterForm" class="filter-form">
+    <el-form :inline="true" :model="filterForm" class="filter-bar">
       <el-form-item label="方向">
         <el-select v-model="filterForm.direction" placeholder="全部">
           <el-option v-for="opt in enumsStore.invoiceDirectionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -45,28 +45,19 @@
     </el-form>
 
     <!-- 本季度税务统计 -->
-    <div class="tax-stats">
-      <el-card class="stat-card">
-        <template #header>
-          <div class="card-header">
-            <span>本季度税务统计</span>
-          </div>
-        </template>
-        <div class="stats-content">
-          <div class="stat-item">
-            <span class="stat-label">销项税额</span>
-            <span class="stat-value">{{ formatMoney(taxStats.outputTax) }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">进项税额</span>
-            <span class="stat-value">{{ formatMoney(taxStats.inputTax) }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">应纳税额</span>
-            <span class="stat-value text-red">{{ formatMoney(taxStats.taxPayable) }}</span>
-          </div>
-        </div>
-      </el-card>
+    <div class="inv-stats">
+      <div class="inv-stat-item">
+        <span class="inv-stat-label">销项税额</span>
+        <span class="inv-stat-value c-primary">{{ formatMoney(taxStats.outputTax) }}</span>
+      </div>
+      <div class="inv-stat-item">
+        <span class="inv-stat-label">进项税额</span>
+        <span class="inv-stat-value c-success">{{ formatMoney(taxStats.inputTax) }}</span>
+      </div>
+      <div class="inv-stat-item">
+        <span class="inv-stat-label">应纳税额</span>
+        <span class="inv-stat-value c-danger">{{ formatMoney(taxStats.taxPayable) }}</span>
+      </div>
     </div>
 
     <!-- 发票列表 -->
@@ -74,48 +65,50 @@
       <template #empty>
         <el-empty description="暂无发票记录" />
       </template>
-      <el-table-column prop="invoice_no" label="发票号码" width="150" />
-      <el-table-column prop="direction" label="方向" width="80" align="center">
+      <el-table-column prop="invoice_no" label="发票号码" min-width="150" />
+      <el-table-column prop="direction" label="方向" min-width="80" align="center">
         <template #default="scope">
-          <el-tag :type="scope.row.direction === 'out' ? 'primary' : 'success'">
+          <span class="status-badge" :class="scope.row.direction === 'out' ? 'primary' : 'success'">
             {{ enumsStore.getLabel('invoice_direction', scope.row.direction) }}
-          </el-tag>
+          </span>
         </template>
       </el-table-column>
-      <el-table-column prop="invoice_type" label="类型" width="80" align="center">
+      <el-table-column prop="invoice_type" label="类型" min-width="80" align="center">
         <template #default="scope">
-          <el-tag :type="scope.row.invoice_type === 'special' ? 'warning' : 'info'">
+          <span class="status-badge" :class="scope.row.invoice_type === 'special' ? 'warning' : 'info'">
             {{ enumsStore.getLabel('invoice_type', scope.row.invoice_type) }}
-          </el-tag>
+          </span>
         </template>
       </el-table-column>
-      <el-table-column prop="tax_rate" label="税率" width="80" align="center">
+      <el-table-column prop="tax_rate" label="税率" min-width="80" align="center">
         <template #default="scope">
           {{ Number(scope.row.tax_rate * 100).toFixed(0) }}%
         </template>
       </el-table-column>
-      <el-table-column prop="amount_without_tax" label="不含税金额" width="120" align="right">
+      <el-table-column prop="amount_without_tax" label="不含税金额" min-width="120" align="right">
         <template #default="scope">
           {{ formatMoney(scope.row.amount_without_tax) }}
         </template>
       </el-table-column>
-      <el-table-column prop="tax_amount" label="税额" width="100" align="right">
+      <el-table-column prop="tax_amount" label="税额" min-width="100" align="right">
         <template #default="scope">
           {{ formatMoney(scope.row.tax_amount) }}
         </template>
       </el-table-column>
-      <el-table-column prop="amount_with_tax" label="价税合计" width="120" align="right">
+      <el-table-column prop="amount_with_tax" label="价税合计" min-width="120" align="right">
         <template #default="scope">
           {{ formatMoney(scope.row.amount_with_tax) }}
         </template>
       </el-table-column>
-      <el-table-column prop="counterparty_name" label="对方名称" width="150" />
-      <el-table-column prop="issue_date" label="开票日期" width="120" />
-      <el-table-column prop="certification_status" label="认证状态" width="100" align="center">
+      <el-table-column prop="counterparty_name" label="对方名称" min-width="150" />
+      <el-table-column label="开票日期" min-width="120">
+        <template #default="{ row }">{{ formatDate(row.issue_date) }}</template>
+      </el-table-column>
+      <el-table-column prop="certification_status" label="认证状态" min-width="100" align="center">
         <template #default="scope">
-          <el-tag :type="getCertificationType(scope.row.certification_status)">
+          <span class="status-badge" :class="getCertificationType(scope.row.certification_status)">
             {{ getCertificationText(scope.row.certification_status) }}
-          </el-tag>
+          </span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="240" align="center">
@@ -126,7 +119,7 @@
           <el-button v-if="scope.row.image_url" @click="previewImage(scope.row)" type="info" size="small">
             图片
           </el-button>
-          <el-button @click="editInvoice(scope.row)" type="primary" size="small">
+          <el-button @click="editInvoice(scope.row)" size="small" link type="primary">
             编辑
           </el-button>
           <el-popconfirm v-if="!scope.row.is_reversed" title="确定红冲此发票？（关联订单将自动取消）" @confirm="reverseInvoice(scope.row.id)">
@@ -142,13 +135,11 @@
     </el-table>
     
     <!-- 筛选合计 -->
-    <div style="margin-top:12px;padding:10px 16px;background:var(--fill-light);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
-      <div style="display:flex;gap:24px;font-size:14px;">
-        <span>筛选合计：</span>
-        <span style="font-weight:600;">不含税 ¥{{ formatMoney(totalAmountWithoutTax) }}</span>
-        <span style="font-weight:600;">税额 ¥{{ formatMoney(totalTaxAmount) }}</span>
-        <span style="color:var(--primary);font-weight:600;">价税合计 ¥{{ formatMoney(totalAmountWithTax) }}</span>
-      </div>
+    <div class="inv-total">
+      <span>筛选合计：</span>
+      <span class="inv-total-item">不含税 ¥{{ formatMoney(totalAmountWithoutTax) }}</span>
+      <span class="inv-total-item">税额 ¥{{ formatMoney(totalTaxAmount) }}</span>
+      <span class="inv-total-highlight">价税合计 ¥{{ formatMoney(totalAmountWithTax) }}</span>
     </div>
     </el-card>
 
@@ -344,7 +335,7 @@ const fetchTaxStats = async (year, quarter) => {
       inputTax: taxRes.input_tax || 0,
       taxPayable: taxRes.tax_payable || 0
     }
-  } catch (e) { handleError(e, { defaultMsg: '获取税务统计失败', feedback: 'silent' }) }
+  } catch (e) { handleError(e, { defaultMsg: '获取税务统计失败，请检查本期是否有发票数据', feedback: 'silent' }) }
 }
 
 // 获取发票列表
@@ -368,7 +359,7 @@ const getInvoices = async () => {
       await fetchTaxStats()
     }
   } catch (error) {
-    handleError(error, { defaultMsg: '获取发票列表失败', feedback: 'silent' })
+    handleError(error, { defaultMsg: '获取发票列表失败，请检查筛选条件是否正确', feedback: 'silent' })
     invoices.value = []
   } finally {
     loading.value = false
@@ -415,7 +406,7 @@ const saveInvoice = async () => {
     dialogVisible.value = false
     getInvoices()
   } catch (error) {
-    handleError(error, { defaultMsg: '保存发票失败' })
+    handleError(error, { defaultMsg: '保存发票失败，请检查输入数据是否正确' })
   }
 }
 
@@ -437,7 +428,7 @@ const deleteInvoice = async (id) => {
     await invoicesApi.deleteInvoice(id)
     getInvoices()
   } catch (error) {
-    handleError(error, { defaultMsg: '删除发票失败' })
+    handleError(error, { defaultMsg: '删除发票失败，请检查该发票是否已被红冲' })
   }
 }
 
@@ -448,7 +439,7 @@ const reverseInvoice = async (id) => {
     ElMessage.success('发票已红冲')
     getInvoices()
   } catch (error) {
-    handleError(error, { defaultMsg: '红冲发票失败' })
+    handleError(error, { defaultMsg: '红冲发票失败，请检查该发票是否允许红冲' })
   }
 }
 
@@ -458,7 +449,7 @@ const certifyInvoice = async (id) => {
     await invoicesApi.certifyInvoice(id)
     getInvoices()
   } catch (error) {
-    handleError(error, { defaultMsg: '认证发票失败' })
+    handleError(error, { defaultMsg: '认证发票失败，请检查发票认证状态' })
   }
 }
 
@@ -540,55 +531,49 @@ enumsStore.fetchEnums()
 </script>
 
 <style scoped>
-.invoices-container {
-  padding: 20px;
-}
-
-.filter-form {
-  margin-bottom: 20px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.tax-stats {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  width: 100%;
-}
-
-.stats-content {
+.inv-stats {
   display: flex;
-  gap: 40px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
-
-.stat-item {
+.inv-stat-item {
+  flex: 1;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 6px;
 }
-
-.stat-label {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 5px;
+.inv-stat-label {
+  font-size: 12px;
+  color: #86909c;
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
-
-.stat-value {
-  font-size: 24px;
-  font-weight: bold;
-  color: var(--primary);
+.inv-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
-
-.text-red {
-  color: var(--danger);
-}
-
-.dialog-footer {
+.inv-total {
+  margin-top: 12px;
+  padding: 10px 16px;
+  background: #fafafa;
+  border-radius: 8px;
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 24px;
+  font-size: 14px;
+  color: #86909c;
+}
+.inv-total-item {
+  font-weight: 600;
+  color: #4e5969;
+}
+.inv-total-highlight {
+  font-weight: 700;
+  color: #4f6ef7;
 }
 </style>

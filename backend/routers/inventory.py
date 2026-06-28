@@ -61,6 +61,7 @@ def adjust_inventory(product_id: int, data: schemas.InventoryAdjust, account_id:
             operator=operator,
             product_id=product_id,
             quantity=data.quantity,
+            adjust_date=data.adjust_date,
         ), db)
     if not inv:
         raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})

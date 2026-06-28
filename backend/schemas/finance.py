@@ -372,6 +372,7 @@ class CashFlowTransactionCreate(BaseModel):
     flow_category: str = Field("operating", pattern="^(operating|investing|financing)$")
     description: str = ""
     transaction_date: str
+    counter_account_code: str = Field("2202", description="对方科目编码（按 flow_category 默认映射）")
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[int] = None
 

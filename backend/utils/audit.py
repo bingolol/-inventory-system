@@ -1,179 +1,129 @@
-"""审计日志自动化 — SQLAlchemy 事件监听器
+"""审计日志 — SQLAlchemy 事件监听器自动记录实体变更。
 
-通过 before_flush + after_flush 两阶段捕获所有数据变更：
-  - before_flush: 收集变更对象（此时 INSERT 对象尚无 ID）
-  - after_flush: 创建 AuditLog 记录（此时所有 ID 已生成）
-
-操作上下文（operator / account_id）通过 contextvar 传入，
-由 FastAPI 中间件 AuditContextMiddleware 在每个请求开始时设置。
+设计：
+  - after_insert / before_delete：直接捕获当前状态
+  - before_update / before_flush 配合：在 flush 前从 DB 查旧值，在 update 时写入审计
+  - 审计上下文（account_id, operator）通过 session.info 传递
 """
-
-import logging
-import contextvars
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import event, inspect
-from sqlalchemy.orm import Session, ColumnProperty
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from models import AuditLog, AuditableMixin
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+from models import (
+    AuditLog, SaleOrder, PurchaseOrder, Product, Expense, Invoice, FixedAsset,
+    Account, Payment, Receipt,
+)
 
-logger = logging.getLogger("inventory")
-
-# 操作上下文：由 AuditContextMiddleware 在每个请求开始时设置
-audit_ctx: contextvars.ContextVar[dict] = contextvars.ContextVar("audit_ctx", default={})
-
-
-def _serialize(obj):
-    """将 ORM 对象转为可 JSON 序列化的字典"""
-    result = {}
-    for c in obj.__table__.columns:
-        val = getattr(obj, c.name)
-        if isinstance(val, Decimal):
-            result[c.name] = float(val)
-        elif isinstance(val, (datetime, date)):
-            result[c.name] = val.isoformat()
-        elif isinstance(val, bytes):
-            result[c.name] = val.hex() if val else None
-        else:
-            result[c.name] = val
-    return result
+# 受审计的实体列表
+_AUDIT_ENTITIES = [
+    SaleOrder, PurchaseOrder, Product, Expense, Invoice, FixedAsset,
+    Account, Payment, Receipt,
+]
 
 
-def _get_changes(obj):
-    """计算 ORM 对象的变更字段，返回 {field: {old: ..., new: ...}}
+def _to_dict(obj) -> dict:
+    """ORM → JSON 兼容 dict"""
+    if obj is None:
+        return {}
+    d = {}
+    for col in obj.__table__.columns:
+        v = getattr(obj, col.name)
+        if isinstance(v, datetime):
+            v = v.isoformat()
+        elif isinstance(v, date):
+            v = v.isoformat()
+        elif isinstance(v, Decimal):
+            v = float(v)
+        elif v is not None and not isinstance(v, (int, float, str, bool, list, dict)):
+            v = str(v)
+        d[col.name] = v
+    return d
 
-    只跟踪 ColumnProperty（实际数据库列），跳过关系属性（RelationshipProperty），
-    因为关系属性的值可能是 ORM 对象，无法 JSON 序列化。
-    """
-    insp = inspect(obj)
-    exclude = getattr(obj, '__audit_exclude__', [])
-    changes = {}
-    for attr in insp.attrs:
-        if not isinstance(attr, ColumnProperty):
-            continue
-        hist = attr.load_history()
-        if hist.has_changes():
-            field = attr.key
-            if field in exclude:
+
+def _ctx(db) -> dict:
+    c = db.info.get("audit", {})
+    return {"account_id": c.get("account_id"), "operator": c.get("operator", "system")}
+
+
+def _write(db, action, entity_type, entity_id, before=None, after=None):
+    ctx = _ctx(db)
+    changed = [k for k in (before or {}) if before.get(k) != (after or {}).get(k)] if before and after else None
+    log = AuditLog(
+        account_id=ctx["account_id"] or (after or before or {}).get("account_id"),
+        operator=ctx["operator"],
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        before_data=before,
+        after_data=after,
+        changed_fields=changed,
+    )
+    db.add(log)
+
+
+# ── 公共入口 ───────────────────────────────────────────────
+
+def set_audit_context(db: Session, account_id: int = None, operator: str = None):
+    """请求入口调用：设置审计上下文。"""
+    db.info.setdefault("audit", {}).update(
+        account_id=account_id, operator=operator or "system",
+    )
+
+
+def register_listeners():
+    """启动时调用：注册所有事件监听。"""
+
+    for model in _AUDIT_ENTITIES:
+        tbl = model.__tablename__
+
+        @event.listens_for(model, 'after_insert')
+        def on_insert(mapper, connection, target, _m=model, _t=tbl):
+            try:
+                db = Session.object_session(target)
+                if db is None: return
+                _write(db, "create", _t, target.id, after=_to_dict(target))
+                db.flush()
+            except Exception:
+                pass
+
+        @event.listens_for(model, 'before_delete')
+        def on_delete(mapper, connection, target, _m=model, _t=tbl):
+            try:
+                db = Session.object_session(target)
+                if db is None: return
+                _write(db, "delete", _t, target.id, before=_to_dict(target))
+            except Exception:
+                pass
+
+    # before_update：在 UPDATE SQL 执行前触发，此时 DB 仍是旧值
+    # 我们结合 before_flush 捕获待更新对象的 DB 快照
+    @event.listens_for(Session, 'before_flush')
+    def capture_old_values(session, flush_context, instances):
+        """flush 前从数据库查询 dirty 对象的当前值（即将被覆盖）。"""
+        olds = {}
+        for obj in session.dirty:
+            if not any(isinstance(obj, e) for e in _AUDIT_ENTITIES):
                 continue
-            old = hist.unchanged[0] if hist.unchanged else None
-            new = attr.value
-            old_compat = _safe_value(old)
-            new_compat = _safe_value(new)
-            if old_compat != new_compat:
-                changes[field] = {"old": old_compat, "new": new_compat}
-    return changes
+            # 重新查询 DB 获取即将被覆盖的值
+            try:
+                old = session.query(type(obj)).filter(type(obj).id == obj.id).with_for_update().first()
+                if old:
+                    olds[id(obj)] = _to_dict(old)
+            except Exception:
+                pass
+        session.info["_audit_old"] = olds
 
-
-def _safe_value(val):
-    """将值转为 JSON 安全类型"""
-    if isinstance(val, Decimal):
-        return float(val)
-    if isinstance(val, (datetime, date)):
-        return val.isoformat()
-    if isinstance(val, bytes):
-        return val.hex() if val else None
-    return val
-
-
-def _is_auditable(obj):
-    """判断对象是否需要审计"""
-    return isinstance(obj, AuditableMixin) and not isinstance(obj, AuditLog)
-
-
-@event.listens_for(Session, 'before_flush')
-def _before_flush_collect(session, context, instances):
-    """Phase 1: 收集变更对象（此时 INSERT 对象尚无 ID）"""
-    pendings = []
-
-    for obj in session.new:
-        if _is_auditable(obj):
-            pendings.append({
-                'action': 'INSERT',
-                'obj': obj,
-                'before': None,
-                'after': _serialize(obj),
-                'changes': None,
-            })
-
-    for obj in session.dirty:
-        if _is_auditable(obj):
-            changes = _get_changes(obj)
-            if changes:
-                pendings.append({
-                    'action': 'UPDATE',
-                    'obj': obj,
-                    'before': {k: v['old'] for k, v in changes.items()},
-                    'after': {k: v['new'] for k, v in changes.items()},
-                    'changes': changes,
-                })
-
-    for obj in session.deleted:
-        if _is_auditable(obj):
-            pendings.append({
-                'action': 'DELETE',
-                'obj': obj,
-                'before': _serialize(obj),
-                'after': None,
-                'changes': None,
-            })
-
-    if pendings:
-        session.info['_pending_audit'] = pendings
-
-
-@event.listens_for(Session, 'after_flush')
-def _after_flush_create_logs(session, context):
-    """Phase 2: 创建审计日志（此时所有 ID 已生成）"""
-    pendings = session.info.pop('_pending_audit', None)
-    if not pendings:
-        return
-
-    ctx = audit_ctx.get()
-    operator = ctx.get('operator', 'system')
-    account_id = ctx.get('account_id')
-
-    logs = []
-    for p in pendings:
-        obj = p['obj']
-        log = AuditLog(
-            account_id=account_id,
-            operator=operator,
-            action=p['action'],
-            entity_type=obj.__tablename__,
-            entity_id=obj.id,
-            before_data=p['before'],
-            after_data=p['after'] if p['action'] != 'DELETE' else None,
-            changed_fields=p['changes'] if p['action'] == 'UPDATE' else
-                         (list(p['after'].keys()) if p['action'] == 'INSERT' and p['after'] else None),
-        )
-        logs.append(log)
-
-    if logs:
-        session.add_all(logs)
-
-
-# ═══════════════════════════════════════════════════════════
-# FastAPI 中间件：在每个请求开始时设置 audit_ctx
-# ═══════════════════════════════════════════════════════════
-
-class AuditContextMiddleware(BaseHTTPMiddleware):
-    """在每个请求开始时，从请求头提取操作上下文并注入 audit_ctx。
-
-    用法: app.add_middleware(AuditContextMiddleware)
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        operator = request.headers.get("X-Operator", "user")
-        account_id = None
-        raw_id = request.headers.get("X-Account-ID")
-        if raw_id:
-            account_id = int(raw_id)
-
-        token = audit_ctx.set({"operator": operator, "account_id": account_id})
-        try:
-            response = await call_next(request)
-            return response
-        finally:
-            audit_ctx.reset(token)
+    @event.listens_for(Session, 'after_flush')
+    def write_update_logs(session, flush_context):
+        """flush 后，对比新旧值写入审计。"""
+        olds = session.info.pop("_audit_old", {})
+        for obj in session.dirty:
+            if id(obj) not in olds:
+                continue
+            if not any(isinstance(obj, e) for e in _AUDIT_ENTITIES):
+                continue
+            before = olds[id(obj)]
+            after = _to_dict(obj)
+            if before != after:
+                _write(session, "update", type(obj).__tablename__, obj.id,
+                       before=before, after=after)

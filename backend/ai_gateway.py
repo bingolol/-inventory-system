@@ -1,3 +1,7 @@
+import contextvars
+
+_gateway_authorized = contextvars.ContextVar('_gateway_authorized', default=False)
+
 """AI 接口网关 — 规范接口白名单 + 403 硬拦截
 
 约束 AI Agent 只能调用"规范接口"，杜绝过度开发带来的多入口混乱：
@@ -89,6 +93,9 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/cash-flows/transactions", "创建现金流水"),
     Capability("POST",   "/api/fixed-assets",        "创建固定资产（独立入账）"),
     Capability("PUT",    "/api/fixed-assets/{id}",   "更新固定资产"),
+    Capability("POST",   "/api/fixed-assets/{id}/depreciate", "计提单个资产折旧"),
+    Capability("POST",   "/api/fixed-assets/batch-depreciate", "批量计提折旧"),
+    Capability("POST",   "/api/fixed-assets/{id}/dispose", "处置固定资产"),
     # ── 个人流水 ──
     Capability("POST",   "/api/personal",            "创建个人流水记录"),
     Capability("PUT",    "/api/personal/{tx_id}",    "更新个人流水记录"),
@@ -115,6 +122,7 @@ _COMPILED = [(c, _compile(c.path)) for c in AI_CAPABILITIES]
 # 永远放行的路径前缀（基础设施接口，AI 与前端共用）
 _SKIP_PREFIXES = (
     "/api/_ai",        # 能力发现接口本身
+    "/api/bootstrap",  # 首次初始化
     "/api/confirm",    # 确认流程接口
     "/api/health",
     "/api/enums",
@@ -254,11 +262,13 @@ class AIGatewayMiddleware:
 
         # 非写操作一律放行（查询不约束）
         if method not in WRITE_METHODS:
+            _gateway_authorized.set(True)
             await self.app(scope, receive, send)
             return
 
         # 基础设施接口放行
         if path.startswith(_SKIP_PREFIXES):
+            _gateway_authorized.set(True)
             await self.app(scope, receive, send)
             return
 
@@ -271,6 +281,7 @@ class AIGatewayMiddleware:
 
         # user（前端正常操作）→ 全部放行
         if operator == "user":
+            _gateway_authorized.set(True)
             await self.app(scope, receive, send)
             return
 
@@ -292,6 +303,7 @@ class AIGatewayMiddleware:
         # ai / 其他 → 白名单校验
         cap = _match(method, path)
         if cap is not None and cap.canonical:
+            _gateway_authorized.set(True)
             captured = {"status": None, "headers": [], "body": bytearray()}
 
             async def wrapped_send(event):

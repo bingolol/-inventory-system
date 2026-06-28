@@ -1,290 +1,126 @@
 <template>
-  <div class="financial-summary-container">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>财务汇总</span>
-          <div class="header-actions">
-            <el-date-picker
-              v-model="reportDate"
-              type="date"
-              placeholder="选择日期"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="loadFinancialSummary"
-            />
-            <el-button type="primary" @click="loadFinancialSummary" :loading="loading">刷新</el-button>
+  <div>
+    <div class="fs-top">
+      <el-date-picker v-model="reportDate" type="date" placeholder="选择日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="loadFinancialSummary" style="width:160px" />
+      <el-button type="primary" @click="loadFinancialSummary" :loading="loading">查询</el-button>
+    </div>
+    <div v-if="financialSummary" class="fs-body">
+      <div class="fs-cards">
+        <div class="fs-card">
+          <div class="fs-card-title" style="color:#4f6ef7;">资产状况</div>
+          <div class="fs-row"><span class="fs-label">货币资金</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.monetary_funds) }}</span></div>
+          <div class="fs-row"><span class="fs-label">应收账款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.accounts_receivable) }}</span></div>
+          <div class="fs-row"><span class="fs-label">库存价值</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.inventory) }}</span></div>
+          <div class="fs-row fs-total"><span class="fs-label">资产总计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_assets) }}</span></div>
+        </div>
+        <div class="fs-card">
+          <div class="fs-card-title" style="color:#e6a23c;">负债状况</div>
+          <div class="fs-row"><span class="fs-label">应付账款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.accounts_payable) }}</span></div>
+          <div class="fs-row"><span class="fs-label">应交税费</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.tax_payable) }}</span></div>
+          <div class="fs-row fs-total"><span class="fs-label">负债合计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_liabilities) }}</span></div>
+        </div>
+        <div class="fs-card">
+          <div class="fs-card-title" style="color:#67c23a;">权益状况</div>
+          <div class="fs-row"><span class="fs-label">未分配利润</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.retained_earnings) }}</span></div>
+          <div class="fs-row fs-total"><span class="fs-label">权益合计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_equity) }}</span></div>
+        </div>
+      </div>
+      <div class="fs-health">
+        <div class="fs-health-title">财务健康度</div>
+        <div class="fs-health-cards">
+          <div class="fs-h-item">
+            <span class="fs-h-label">资产负债率</span>
+            <span class="fs-h-value" :style="{ color: debtRatio < 50 ? '#67c23a' : debtRatio < 70 ? '#e6a23c' : '#f56c6c' }">{{ debtRatio.toFixed(1) }}%</span>
+            <span class="fs-h-tag" :class="debtRatio < 50 ? 'good' : debtRatio < 70 ? 'mid' : 'bad'">{{ debtRatio < 50 ? '健康' : debtRatio < 70 ? '注意' : '风险' }}</span>
+          </div>
+          <div class="fs-h-item">
+            <span class="fs-h-label">流动比率</span>
+            <span class="fs-h-value" :style="{ color: currentRatio > 2 ? '#67c23a' : currentRatio > 1 ? '#e6a23c' : '#f56c6c' }">{{ currentRatio.toFixed(2) }}</span>
+            <span class="fs-h-tag" :class="currentRatio > 2 ? 'good' : currentRatio > 1 ? 'mid' : 'bad'">{{ currentRatio > 2 ? '良好' : currentRatio > 1 ? '一般' : '紧张' }}</span>
+          </div>
+          <div class="fs-h-item">
+            <span class="fs-h-label">权益比率</span>
+            <span class="fs-h-value" :style="{ color: equityRatio > 50 ? '#67c23a' : equityRatio > 30 ? '#e6a23c' : '#f56c6c' }">{{ equityRatio.toFixed(1) }}%</span>
+            <span class="fs-h-tag" :class="equityRatio > 50 ? 'good' : equityRatio > 30 ? 'mid' : 'bad'">{{ equityRatio > 50 ? '稳健' : equityRatio > 30 ? '一般' : '偏低' }}</span>
+          </div>
+          <div class="fs-h-item">
+            <span class="fs-h-label">期初余额状态</span>
+            <span class="fs-h-value" style="font-size:14px;">{{ openingBalanceStatus.text }}</span>
+            <span class="status-badge" :class="openingBalanceStatus.code">{{ openingBalanceStatus.text }}</span>
           </div>
         </div>
-      </template>
-      
-      <div v-if="financialSummary" class="summary-content">
-        <el-row :gutter="20">
-          <el-col :span="8">
-            <el-card shadow="hover" class="summary-card">
-              <template #header>
-                <div class="card-title">资产状况</div>
-              </template>
-              <div class="summary-item">
-                <span class="label">货币资金:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.monetary_funds) }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">应收账款:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.accounts_receivable) }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">库存价值:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.inventory) }}</span>
-              </div>
-              <div class="summary-item total">
-                <span class="label">资产总计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_assets) }}</span>
-              </div>
-            </el-card>
-          </el-col>
-          
-          <el-col :span="8">
-            <el-card shadow="hover" class="summary-card">
-              <template #header>
-                <div class="card-title">负债状况</div>
-              </template>
-              <div class="summary-item">
-                <span class="label">应付账款:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.accounts_payable) }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">应交税费:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.tax_payable) }}</span>
-              </div>
-              <div class="summary-item total">
-                <span class="label">负债合计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_liabilities) }}</span>
-              </div>
-            </el-card>
-          </el-col>
-          
-          <el-col :span="8">
-            <el-card shadow="hover" class="summary-card">
-              <template #header>
-                <div class="card-title">权益状况</div>
-              </template>
-              <div class="summary-item">
-                <span class="label">未分配利润:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.retained_earnings) }}</span>
-              </div>
-              <div class="summary-item total">
-                <span class="label">权益合计:</span>
-                <span class="value">{{ formatMoney(financialSummary.balance_sheet.total_equity) }}</span>
-              </div>
-            </el-card>
-          </el-col>
-        </el-row>
-        
-        <el-row :gutter="20" style="margin-top: 20px;">
-          <el-col :span="24">
-            <el-card shadow="hover" class="summary-card">
-              <template #header>
-                <div class="card-title">财务健康度</div>
-              </template>
-              <el-row :gutter="20">
-                <el-col :span="6">
-                  <el-statistic title="资产负债率" :value="debtRatio" :precision="2" suffix="%">
-                    <template #suffix>
-                      <span :class="debtRatio < 50 ? 'healthy' : debtRatio < 70 ? 'warning' : 'danger'">
-                        {{ debtRatio < 50 ? '健康' : debtRatio < 70 ? '注意' : '风险' }}
-                      </span>
-                    </template>
-                  </el-statistic>
-                </el-col>
-                <el-col :span="6">
-                  <el-statistic title="流动比率" :value="currentRatio" :precision="2">
-                    <template #suffix>
-                      <span :class="currentRatio > 2 ? 'healthy' : currentRatio > 1 ? 'warning' : 'danger'">
-                        {{ currentRatio > 2 ? '良好' : currentRatio > 1 ? '一般' : '紧张' }}
-                      </span>
-                    </template>
-                  </el-statistic>
-                </el-col>
-                <el-col :span="6">
-                  <el-statistic title="权益比率" :value="equityRatio" :precision="2" suffix="%">
-                    <template #suffix>
-                      <span :class="equityRatio > 50 ? 'healthy' : equityRatio > 30 ? 'warning' : 'danger'">
-                        {{ equityRatio > 50 ? '稳健' : equityRatio > 30 ? '一般' : '偏低' }}
-                      </span>
-                    </template>
-                  </el-statistic>
-                </el-col>
-                <el-col :span="6">
-                  <div class="status-statistic">
-                    <div class="statistic-title">期初余额状态</div>
-                    <div class="statistic-content">
-                      <el-tag :type="openingBalanceStatus.type" size="large">
-                        {{ openingBalanceStatus.text }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </el-col>
-              </el-row>
-            </el-card>
-          </el-col>
-        </el-row>
       </div>
-      
-      <div v-else class="no-data">
-        <el-empty description="暂无数据，请先设置期初余额" />
-      </div>
-    </el-card>
+    </div>
+    <div v-else style="padding:40px 0;"><el-empty description="暂无数据，请先设置期初余额" /></div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { handleError } from '../api/index'
 import financeApi from '../api/finance'
-import { formatMoney, formatDate } from '../utils/format'
+import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { handleError } from '../api/index'
 
-const props = defineProps({
-  date: {
-    type: String,
-    default: () => new Date().toISOString().split('T')[0]
-  }
-})
-
+const props = defineProps({ date: { type: String, default: () => new Date().toISOString().split('T')[0] } })
 const loading = ref(false)
 const financialSummary = ref(null)
 const reportDate = ref(props.date)
 
-watch(() => props.date, (newDate) => {
-  reportDate.value = newDate
-  loadFinancialSummary()
-})
+watch(() => props.date, (d) => { reportDate.value = d; loadFinancialSummary() })
 
 const loadFinancialSummary = async () => {
   loading.value = true
-  try {
-    const response = await financeApi.getFinancialSummary(reportDate.value)
-    financialSummary.value = response
-  } catch (error) {
-    handleError(error, { defaultMsg: '加载财务汇总失败' })
-    financialSummary.value = null
-  } finally {
-    loading.value = false
-  }
+  try { financialSummary.value = await financeApi.getFinancialSummary(reportDate.value) }
+  catch (e) { handleError(e, { defaultMsg: '加载财务汇总失败，请检查账套设置是否正确' }); financialSummary.value = null }
+  finally { loading.value = false }
 }
-
-
 
 const debtRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const totalAssets = financialSummary.value.balance_sheet.total_assets
-  const totalLiabilities = financialSummary.value.balance_sheet.total_liabilities
-  return totalAssets > 0 ? (totalLiabilities / totalAssets * 100) : 0
+  const ta = financialSummary.value.balance_sheet.total_assets
+  const tl = financialSummary.value.balance_sheet.total_liabilities
+  return ta > 0 ? (tl / ta * 100) : 0
 })
-
 const currentRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const currentAssets = financialSummary.value.balance_sheet.total_current_assets
-  const currentLiabilities = financialSummary.value.balance_sheet.total_liabilities
-  return currentLiabilities > 0 ? (currentAssets / currentLiabilities) : 0
+  return financialSummary.value.balance_sheet.total_liabilities > 0
+    ? (financialSummary.value.balance_sheet.total_current_assets / financialSummary.value.balance_sheet.total_liabilities) : 0
 })
-
 const equityRatio = computed(() => {
   if (!financialSummary.value) return 0
-  const totalAssets = financialSummary.value.balance_sheet.total_assets
-  const totalEquity = financialSummary.value.balance_sheet.total_equity
-  return totalAssets > 0 ? (totalEquity / totalAssets * 100) : 0
+  const ta = financialSummary.value.balance_sheet.total_assets
+  const te = financialSummary.value.balance_sheet.total_equity
+  return ta > 0 ? (te / ta * 100) : 0
 })
-
-const openingBalanceStatus = computed(() => {
-  if (!financialSummary.value) return { text: '未知', type: 'info' }
-  return financialSummary.value.opening_balance_exists 
-    ? { text: '已设置', type: 'success' } 
-    : { text: '未设置', type: 'warning' }
-})
+const openingBalanceStatus = computed(() => financialSummary.value?.opening_balance_exists
+  ? { text: '已设置', code: 'success' } : { text: '未设置', code: 'warning' })
 
 useAccountAwareData(loadFinancialSummary)
 </script>
 
 <style scoped>
-.financial-summary-container {
-  padding: 20px;
-}
+.fs-top { display: flex; gap: 8px; margin-bottom: 16px; }
+.fs-body { animation: fsFade 0.3s ease; }
+@keyframes fsFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.fs-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.fs-card { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px; }
+.fs-card-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #f0f0f0; }
+.fs-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+.fs-label { color: #86909c; }
+.fs-value { font-weight: 600; color: #4e5969; font-family: 'Consolas', 'Monaco', monospace; }
+.fs-total { border-top: 2px solid #e0e0e0; margin-top: 10px; padding-top: 12px; }
+.fs-total .fs-label { font-weight: 700; color: #1d2129; font-size: 14px; }
+.fs-total .fs-value { font-weight: 800; color: #1d2129; font-size: 17px; }
 
-.summary-content {
-  padding: 20px;
-}
-
-.summary-card {
-  margin-bottom: 20px;
-}
-
-.card-title {
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.summary-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.summary-item:last-child {
-  border-bottom: none;
-}
-
-.summary-item.total {
-  font-weight: bold;
-  font-size: 16px;
-  border-top: 2px solid var(--border-color);
-  margin-top: 10px;
-  padding-top: 10px;
-}
-
-.label {
-  color: var(--text-secondary);
-}
-
-.value {
-  font-weight: bold;
-  color: var(--text-primary);
-}
-
-.healthy {
-  color: var(--success);
-  font-weight: bold;
-}
-
-.warning {
-  color: var(--warning);
-  font-weight: bold;
-}
-
-.danger {
-  color: var(--danger);
-  font-weight: bold;
-}
-
-.no-data {
-  text-align: center;
-  padding: 40px;
-}
-
-.status-statistic {
-  text-align: center;
-  padding: 8px 0;
-}
-.status-statistic .statistic-title {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-.status-statistic .statistic-content {
-  font-size: 20px;
-  font-weight: bold;
-}
+.fs-health { background: #fff; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px; }
+.fs-health-title { font-size: 15px; font-weight: 600; color: #1d2129; margin-bottom: 16px; }
+.fs-health-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.fs-h-item { display: flex; flex-direction: column; gap: 6px; }
+.fs-h-label { font-size: 12px; color: #86909c; font-weight: 500; }
+.fs-h-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+.fs-h-tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; width: fit-content; }
+.fs-h-tag.good { background: #f0f9eb; color: #67c23a; }
+.fs-h-tag.mid { background: #fdf6ec; color: #e6a23c; }
+.fs-h-tag.bad { background: #fef0f0; color: #f56c6c; }
 </style>

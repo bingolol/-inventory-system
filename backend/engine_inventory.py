@@ -3,6 +3,7 @@
 StockMove 是所有库存数据的单一真相源，Inventory 表仅为性能缓存。
 一旦写入 StockMove，严禁修改或删除，错误修正必须通过冲红调整单。
 """
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -14,6 +15,21 @@ from utils import Q2
 class InventoryEngine:
     def __init__(self, db: Session):
         self.db = db
+
+    def _get_move_date(self, source_type: str, source_id: int) -> datetime:
+        """从源单据获取业务日期"""
+        if source_type == "purchase_order":
+            po = self.db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == source_id).first()
+            return po.purchase_date if po and po.purchase_date else datetime.now()
+        if source_type == "sale_order":
+            so = self.db.query(models.SaleOrder).filter(models.SaleOrder.id == source_id).first()
+            return so.sale_date if so and so.sale_date else datetime.now()
+        if source_type.endswith("_reversal"):
+            base_type = source_type.replace("_reversal", "")
+            return self._get_move_date(base_type, source_id)
+        if source_type == "inventory_adjustment":
+            return datetime.now()
+        return datetime.now()
 
     def _get_product(self, account_id: int, product_id: int):
         """查询并校验产品存在性"""
@@ -28,7 +44,8 @@ class InventoryEngine:
     def inbound(self, account_id: int, product_id: int, quantity: int,
                 unit_price: Decimal, source_type: str, source_id: int,
                 tax_rate: Decimal = None,
-                operator: str = "user") -> dict:
+                operator: str = "user",
+                move_date: datetime = None) -> dict:
         """采购入库/调整入库
 
         unit_price 是不含税单价（API 约定）。
@@ -99,6 +116,7 @@ class InventoryEngine:
             total_cost=total_cost,
             source_type=source_type,
             source_id=source_id,
+            move_date=move_date or self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 
@@ -113,7 +131,8 @@ class InventoryEngine:
 
     def outbound(self, account_id: int, product_id: int, quantity: int,
                  source_type: str, source_id: int,
-                 operator: str = "user") -> Decimal:
+                 operator: str = "user",
+                 move_date: datetime = None) -> Decimal:
         """销售出库/调整出库
 
         1. 校验库存充足
@@ -134,11 +153,12 @@ class InventoryEngine:
             return existing.unit_cost
 
         return self._record_outbound(account_id, product_id, quantity,
-                                     source_type, source_id, operator)
+                                      source_type, source_id, operator, move_date)
 
     def _record_outbound(self, account_id: int, product_id: int, quantity: int,
                          source_type: str, source_id: int,
-                         operator: str = "user") -> Decimal:
+                         operator: str = "user",
+                         move_date: datetime = None) -> Decimal:
         """执行出库写操作（无幂等检查，被 outbound / force_outbound 共用）"""
         product = self._get_product(account_id, product_id)
         if not product.track_inventory:
@@ -167,6 +187,7 @@ class InventoryEngine:
             total_cost=out_cost,
             source_type=source_type,
             source_id=source_id,
+            move_date=move_date or self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 
@@ -227,6 +248,7 @@ class InventoryEngine:
             total_cost=rev_cost,
             source_type=rev_source_type,
             source_id=source_id,
+            move_date=self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 

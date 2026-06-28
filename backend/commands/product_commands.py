@@ -5,6 +5,9 @@
 """
 
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+import time
 from typing import Any, Optional
 
 import models
@@ -13,6 +16,8 @@ from sqlalchemy import or_
 from .base import Command, CommandHandler, register
 from .crud_compat import _log, get_or_create_inventory
 from errors import BusinessError, ErrorCode
+from utils import Q2
+from engine_inventory import InventoryEngine
 
 
 # ═══════════════════════════════════════════════════════════
@@ -169,6 +174,7 @@ class DeleteProductHandler(CommandHandler):
 class AdjustInventory(Command):
     product_id: int = 0
     quantity: float = 0.0
+    adjust_date: Optional[str] = None
 
 
 @register(AdjustInventory)
@@ -184,12 +190,62 @@ class AdjustInventoryHandler(CommandHandler):
 
         # 2. 获取或创建库存记录
         inv = get_or_create_inventory(db, cmd.account_id, cmd.product_id)
+        product = db.query(models.Product).filter(
+            models.Product.id == cmd.product_id,
+            models.Product.account_id == cmd.account_id,
+        ).first()
         old_qty = inv.quantity
+        new_qty = Decimal(str(cmd.quantity))
+        delta = new_qty - old_qty
 
-        # 3. 更新数量
-        inv.quantity = cmd.quantity
+        # 3. 通过 InventoryEngine 创建 StockMove（BR-7 合规）
+        if delta != 0 and product and product.track_inventory:
+            adj_id = int(time.time() * 1000)
+            engine = InventoryEngine(db)
+            unit_cost = inv.average_cost if inv.average_cost and inv.average_cost > 0 else Decimal(str(product.purchase_price or 0))
+            move_date = None
+            if cmd.adjust_date:
+                move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d")
+            if delta > 0:
+                engine.inbound(
+                    account_id=cmd.account_id, product_id=cmd.product_id,
+                    quantity=int(delta), unit_price=unit_cost,
+                    source_type="inventory_adjustment", source_id=adj_id,
+                    tax_rate=Decimal("0"), operator=cmd.operator,
+                    move_date=move_date,
+                )
+            else:
+                engine.outbound(
+                    account_id=cmd.account_id, product_id=cmd.product_id,
+                    quantity=int(-delta), source_type="inventory_adjustment",
+                    source_id=adj_id, operator=cmd.operator,
+                    move_date=move_date,
+                )
 
-        # 4. 日志（记录新旧数量对比）
+            # 3a. 过账
+            value = (abs(delta) * unit_cost).quantize(Q2)
+            if value > 0:
+                from finance_integration import post_journal
+                from datetime import date
+                journal_date = cmd.adjust_date if cmd.adjust_date else date.today().isoformat()
+                if delta < 0:
+                    lines = [
+                        {"account_code": "6601", "debit": value, "credit": Decimal("0")},
+                        {"account_code": "1405", "debit": Decimal("0"), "credit": value},
+                    ]
+                else:
+                    lines = [
+                        {"account_code": "1405", "debit": value, "credit": Decimal("0")},
+                        {"account_code": "6601", "debit": Decimal("0"), "credit": value},
+                    ]
+                post_journal(db, cmd.account_id, "opening_balance", {
+                    "date": journal_date,
+                    "lines": lines,
+                })
+        else:
+            inv.quantity = new_qty
+
+        # 4. 日志
         _log(db, cmd.account_id, "adjust", "inventory", cmd.product_id,
              f"库存盘点: {old_qty}->{cmd.quantity}", operator=cmd.operator)
         db.flush()

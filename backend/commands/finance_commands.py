@@ -85,7 +85,30 @@ class CreateOpeningBalanceHandler(CommandHandler):
         db.add(opening_balance)
         db.flush()
 
-        # 4. 日志
+        # 4. 过账到总账
+        lines = []
+        for code, field in [("1001", "cash_balance"), ("1002", "bank_balance"),
+                            ("1122", "accounts_receivable"), ("1405", "inventory_value"),
+                            ("1601", "fixed_assets_original"), ("1701", "intangible_assets_original")]:
+            val = _d(getattr(cmd, field, 0))
+            if val > 0:
+                lines.append({"account_code": code, "debit": val, "credit": Decimal("0")})
+        for code, field in [("1602", "accumulated_depreciation"), ("1702", "accumulated_amortization"),
+                            ("2202", "accounts_payable"), ("2221", "tax_payable"),
+                            ("2501", "long_term_borrowings"), ("3001", "paid_in_capital"),
+                            ("4104", "retained_earnings")]:
+            val = _d(getattr(cmd, field, 0))
+            if val > 0:
+                lines.append({"account_code": code, "debit": Decimal("0"), "credit": val})
+        from finance_integration import post_journal
+        post_journal(db, cmd.account_id, "opening_balance", {
+            "lines": lines,
+            "date": cmd.date,
+            "source_model": "opening_balance",
+            "source_id": opening_balance.id,
+        })
+
+        # 5. 日志
         _log(db, cmd.account_id, "create", "opening_balance", opening_balance.id,
              f"创建期初余额: {cmd.date}", operator=cmd.operator)
         db.flush()
@@ -189,6 +212,7 @@ class CreateCashFlowTransaction(Command):
     flow_category: str = "operating"        # operating / investing / financing
     description: str = ""
     transaction_date: str = ""              # YYYY-MM-DD
+    counter_account_code: str = "2202"      # 对方科目编码
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[int] = None
 
@@ -210,7 +234,31 @@ class CreateCashFlowTransactionHandler(CommandHandler):
         db.add(transaction)
         db.flush()
 
-        # 2. 日志
+        # 2. 过账到总账
+        from finance_integration import post_journal
+        counter_account = cmd.counter_account_code
+        if not counter_account or counter_account == "2202":
+            # 按 flow_category 映射默认对方科目
+            mapping = {
+                ("operating", "inflow"): "6001",
+                ("operating", "outflow"): "6602",
+                ("investing", "inflow"): "6111",
+                ("investing", "outflow"): "1601",
+                ("financing", "inflow"): "2001",
+                ("financing", "outflow"): "2501",
+            }
+            counter_account = mapping.get((cmd.flow_category, cmd.type), "2202")
+        post_journal(db, cmd.account_id, "cash_flow", {
+            "amount": cmd.amount,
+            "direction": cmd.type,
+            "flow_category": cmd.flow_category,
+            "counter_account": counter_account,
+            "date": cmd.transaction_date,
+            "source_model": "cash_flow",
+            "source_id": transaction.id,
+        })
+
+        # 3. 日志
         _log(db, cmd.account_id, "create", "cash_flow", transaction.id,
              f"创建现金流水: {cmd.type} {cmd.amount}", operator=cmd.operator)
         db.flush()

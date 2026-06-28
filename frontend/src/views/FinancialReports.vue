@@ -13,9 +13,6 @@
         <el-tab-pane label="利润表" name="income-statement">
           <IncomeStatement :start-date="startDate" :end-date="endDate" />
         </el-tab-pane>
-        <el-tab-pane label="财务汇总" name="summary">
-          <FinancialSummary :date="reportDate" />
-        </el-tab-pane>
         <el-tab-pane label="期初余额" name="opening-balance">
           <OpeningBalanceTab />
         </el-tab-pane>
@@ -31,7 +28,6 @@
 import { ref } from 'vue'
 import BalanceSheet from '../components/BalanceSheet.vue'
 import IncomeStatement from '../components/IncomeStatement.vue'
-import FinancialSummary from '../components/FinancialSummary.vue'
 import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
 import FixedAssetsTab from '../components/FixedAssetsTab.vue'
 
