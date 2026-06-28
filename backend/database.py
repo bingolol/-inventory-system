@@ -118,4 +118,5 @@ def get_db():
 def init_db():
     import models
     import models_finance
+    import models_bank
     Base.metadata.create_all(bind=_engine)

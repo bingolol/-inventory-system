@@ -681,6 +681,8 @@ POST /api/bank/statement
 ```
 
 > 每笔 line 的 `amount`：正数=银行收到，负数=银行支出。同系统 BankTransaction 的方向一致。
+>
+> ⚠️ 如果导入返回 500 "数据库操作失败"，说明银行对账相关数据库表尚未创建。请告知开发人员在 `backend/database.py:120` 添加 `import models_bank` 后重启系统。
 
 **第2步：执行自动对账**
 
@@ -727,6 +729,8 @@ GET /api/bank/reconciliation?period=2025-06
 | `bank_paid_not_book` | 银行已付企业未付 | 账面 - |
 | `book_received_not_bank` | 企业已收银行未收 | 对账单 + |
 | `book_paid_not_bank` | 企业已付银行未付 | 对账单 - |
+
+> **常见原因**：`bank_received_not_book` 通常是收款时没传 `bank_account_id`，系统没生成银行流水。`bank_paid_not_book` 同理。这些未达项可通过 `generate-entry` 生成补录凭证，但根因是操作不规范。如果大量出现，建议告知用户：后续收款/付款务必填 `bank_account_id`。
 
 ### 处理未达项
 
@@ -879,7 +883,8 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 
 **第四步：承认不确定**
 - 如果以上都找不到答案，直接告诉用户："这个场景手册没有覆盖，我需要确认一下。"
-- 不要编造接口、不要编造参数、不要猜测业务规则。
+- 如果发现是系统设计缺陷或代码 bug（如缺少 import、表未创建、字段缺失），直接告诉用户问题根因，并建议联系开发人员修复。
+- **不要编造接口、不要编造参数、不要猜测业务规则。**
 
 ---
 
