@@ -584,6 +584,10 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     db.flush()
     sale_deduct(db, account_id, order, operator=operator)
 
+    # 生成会计凭证: dr 1122, cr 6001+222101 + dr 6401, cr 1405
+    from engine_finance import FinanceEngine
+    FinanceEngine(db, account_id).record_sale(order)
+
     _log(db, account_id, "create", "sale_order", order.id,
          f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",
          operator=operator)

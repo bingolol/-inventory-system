@@ -762,6 +762,21 @@ POST /api/bank/statement
 
 **第2步：执行自动对账**
 
+如果期初账面余额和对账单期初余额不一致，差额就是**期初未达项**，通过 `seed` 参数传入：
+
+```
+POST /api/bank/reconcile?period=2025-06&seed=[{"item_type":"book_paid_not_bank","amount":3500,"direction":"out","notes":"上月底已付银行未扣"}]
+```
+
+| seed 参数 | 说明 |
+|-----------|------|
+| `item_type` | `book_paid_not_bank` / `book_received_not_bank` / `adjustment` |
+| `amount` | 金额 |
+| `direction` | `in`（账面加项） / `out`（账面减项） |
+| `notes` | 原因说明 |
+
+没有期初未达项则直接调：
+
 ```
 POST /api/bank/reconcile?period=2025-06
 ```
