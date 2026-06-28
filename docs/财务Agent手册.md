@@ -269,7 +269,7 @@ POST /api/sales
 
 > **一般纳税人注意**：发票是本系统创建采购/销售订单的**唯一入口**。不要直接调 §1/§2 创建订单，必须通过发票的 `auto_create` 自动生成。
 
-> 发票 `items[].unit_price` 为**含税单价**。`sale_order_action=auto_create` 或 `purchase_order_action=auto_create` 时，系统自动建单，商品需已启用 `track_inventory` 才会自动出入库。
+> 发票 `items[].unit_price` 为**含税单价**。`sale_order_action=auto_create` 或 `purchase_order_action=auto_create` 时，系统自动建单+出入库+生成会计凭证：销项→ dr 1122 cr 6001+222101 + dr 6401 cr 1405。商品需已启用 `track_inventory`。
 
 ### 用户说"给XX客户开了张发票"
 
@@ -951,7 +951,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | `POST /api/expenses` | 生成应付费用凭证 |
 | `POST /api/payments` | 标记采购单已付 + 生成付款凭证 + 更新银行余额 |
 | `POST /api/receipts` | 标记销售单已收 + 生成收款凭证 + 更新银行余额 |
-| `POST /api/invoices/quick` + `auto_create` | **一般纳税人唯一入口**：自动建销售单/采购单 + 出入库 + 生成凭证 |
+| `POST /api/invoices/quick` + `auto_create` | **一般纳税人唯一入口**：自动建销售单/采购单 + 出入库 + 生成收入/成本凭证（dr 1122 cr 6001+222101 + dr 6401 cr 1405） |
 | `POST /api/finance/month-close` | 计算 VAT → 转出未交增值税 → 计提附加税 → 计提所得税 → 自动税务核对 |
 | `POST /api/bank/reconcile` | 4轮匹配(1:1+N:1) + 跨期滚动 + 费用扫描 + 调节后余额计算 |
 | `POST /api/bank/reconciliation/{id}/generate-entry` | 生成未达项分录：手续费 dr 6603 cr 1002，结息 dr 1002 cr 6603 |

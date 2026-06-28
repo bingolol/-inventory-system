@@ -30,7 +30,11 @@ class BankReconcileEngine:
         self.bank_account_id = bank_account_id
         self.period = period
         self.period_start = datetime(int(period[:4]), int(period[5:7]), 1).date()
-        cd = datetime(int(period[:4]), int(period[5:7]) + 1, 1) - timedelta(days=1)
+        y, m = int(period[:4]), int(period[5:7])
+        if m == 12:
+            cd = datetime(y + 1, 1, 1) - timedelta(days=1)
+        else:
+            cd = datetime(y, m + 1, 1) - timedelta(days=1)
         self.period_end = cd.date()
         self._models = models
         self._models_bank = models_bank
