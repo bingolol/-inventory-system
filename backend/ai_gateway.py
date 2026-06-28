@@ -109,6 +109,8 @@ AI_CAPABILITIES: list[Capability] = [
     # ── 银行对账 ──
     Capability("POST",   "/api/bank/statement",      "导入银行对账单"),
     Capability("POST",   "/api/bank/reconcile",      "执行银行对账", params_hint="period:YYYY-MM"),
+    Capability("POST",   "/api/bank/reconciliation/{id}/match", "强制匹配未达项"),
+    Capability("POST",   "/api/bank/reconciliation/{id}/generate-entry", "生成手续费/利息凭证"),
     Capability("POST",   "/api/bank/reconciliation/{id}/confirm", "确认调节表"),
     # ── 备份 ──
     Capability("POST",   "/api/backup/hot",          "热备份"),

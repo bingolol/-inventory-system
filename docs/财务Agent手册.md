@@ -114,6 +114,15 @@ POST /api/opening-balances
 从用户的话里提取：商品/客户/供应商、数量、单价、金额、日期。
 如果用户没说日期，默认用今天。
 
+按业务类型补充提取：
+
+| 场景 | 额外提取 |
+|------|----------|
+| 月结 | 期间（如"6月"→ `period=2026-06`） |
+| 银行对账 | 期间、银行名称、期初余额、期末余额、每笔流水的日期/金额/摘要 |
+| 税务核对 | 期间 + 8 项申报数据（销售额/销项税/进项税/未交增值税/所得税/附加税/VAT/利润） |
+| 强制匹配 | 未达项 ID（从对账结果 `GET /api/bank/reconciliation` 获取） |
+
 **3. 识别缺什么**
 
 - 缺商品 → 问："什么商品？"
@@ -122,6 +131,9 @@ POST /api/opening-balances
 - 金额说了一个数但没说含不含税 → 问："这个金额是含税还是不含税？"
 - 没提税率 → 一般纳税人默认 13%，小规模默认 1%
 - 用户说"帮我记个账"没有细节 → 问："请描述一下发生了什么"
+- 用户说"月结/结账"但没说月份 → 问："结哪个月？"
+- 用户说"对账"但没有对账单数据 → 问："有银行对账单吗？期初余额和期末余额是多少？"
+- 对账后发现未达项但不知道处理方式 → 查看 item_type 和 action，按 §12 处理未达项流程走
 
 > **不要编造数据**。用户没说的信息就问，不要自己猜。
 
@@ -187,9 +199,10 @@ POST /api/purchases
 1. 提取商品名称、数量、单价
 2. GET /api/products?search=关键词 → 确认存在，检查 track_inventory
    → track_inventory=false 且用户要管库存 → 先更新：PUT /api/products/{id} {"track_inventory": true}
+   → 记下 product_id
 3. 如果用户提到客户：
    GET /api/customers?search=关键词 → 确认存在
-   不存在则 POST /api/customers
+   不存在则 POST /api/customers，记下返回的 customer_id
 4. 确认 sale_date（如果用户没给日期，问用户）
 ```
 
@@ -199,8 +212,8 @@ POST /api/purchases
 
 POST /api/sales
 {
-  "customer_id": 1,
-  "sale_date": "2026-06-26",       # 必填，格式 YYYY-MM-DD
+  "customer_id": 1,             # 上一步取的 customer_id，没有则不传
+  "sale_date": "2026-06-26",    # 必填，格式 YYYY-MM-DD
   "deduct_inventory": true,         # 默认true，自动出库
   "items": [
     {
@@ -861,7 +874,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | `POST /api/invoices/quick` + `auto_create` | **一般纳税人唯一入口**：自动建销售单/采购单 + 出入库 + 生成凭证 |
 | `POST /api/finance/month-close` | 计算 VAT → 转出未交增值税 → 计提附加税 → 计提所得税 → 自动税务核对 |
 | `POST /api/bank/reconcile` | 4轮匹配(1:1+N:1) + 跨期滚动 + 费用扫描 + 调节后余额计算 |
-| `POST /api/bank/reconciliation/{id}/generate-entry` | 生成手续费凭证 dr 6603 cr 1002 |
+| `POST /api/bank/reconciliation/{id}/generate-entry` | 生成未达项分录：手续费 dr 6603 cr 1002，结息 dr 1002 cr 6603 |
 
 **以下数据不可修改**：StockMove（库存流水）、FixedAssetDepreciation（折旧流水）、AccountMove（会计凭证）。出错只能通过红冲/调整。
 
