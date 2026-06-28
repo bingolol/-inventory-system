@@ -70,6 +70,14 @@ def create_receipt(
         db.add(receipt)
         db.flush()
 
+        # 如果没有指定银行账户，自动关联第一个银行账户
+        if not data.bank_account_id:
+            default_bank = db.query(BankAccount).filter(
+                BankAccount.account_id == account_id
+            ).first()
+            if default_bank:
+                data.bank_account_id = default_bank.id
+
         # 如果有银行账户，创建银行流水并更新余额
         if data.bank_account_id:
             # 添加行锁防止并发问题
