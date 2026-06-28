@@ -659,9 +659,11 @@ dr 6801 所得税 xx           cr 222105 应交所得税 xx           (所得税
 
 ## 12. 银行对账：用户说"对账/银行余额调节表"
 
-### 流程：导入 → 对账 → 确认
+对账完整流程：**导入对账单 → 自动对账 → 查看未达项 → 处理未达项 → 确认调节表**
 
-**第1步：导入银行对账单**
+### 第1步：导入银行对账单
+
+从银行下载的流水（网银导出的 Excel/CSV）整理成以下格式：
 
 ```json
 POST /api/bank/statement
@@ -728,13 +730,11 @@ GET /api/bank/reconciliation?period=2025-06
 
 ### 处理未达项
 
-**管理费/手续费** (action=generate_entry)：
+**管理费/手续费/结息** (action=generate_entry)：
 
-```
-POST /api/bank/reconciliation/{id}/generate-entry
-```
-
-系统自动生成 `dr 6603 财务费用 cr 1002 银行存款`。该未达项标记为 resolved。
+系统对标记为 `generate_entry` 的未达项，在**确认调节表**时自动生成分录：
+- 管理费/手续费：`dr 6603 财务费用 cr 1002 银行存款`
+- 结息收入：`dr 1002 银行存款 cr 6603 财务费用-利息收入`
 
 **强制匹配**（日期超标但金额对得上）：
 

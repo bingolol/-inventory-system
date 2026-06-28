@@ -372,6 +372,40 @@ class BankReconcileEngine:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                 message=f"调节不平: book={rec.adjusted_book} stmt={rec.adjusted_statement}")
 
+        # 为 action=generate_entry 的未达项自动生成会计凭证
+        from finance_integration import post_journal
+        items = self.db.query(mb.ReconciliationItem).filter(
+            mb.ReconciliationItem.reconciliation_id == rec_id,
+            mb.ReconciliationItem.resolved == False,
+            mb.ReconciliationItem.action == "generate_entry",
+        ).all()
+        for it in items:
+            if it.item_type == "bank_received_not_book":
+                # 结息收入: dr 1002 cr 6603
+                move = post_journal(self.db, self.account_id, "bank_reconcile_entry", {
+                    "amount": abs(it.amount),
+                    "date": self.period + "-01",
+                    "description": f"对账自动分录: {it.notes}" if it.notes else "对账自动分录",
+                    "lines": [
+                        {"account_code": "1002", "debit": abs(it.amount), "credit": Decimal("0")},
+                        {"account_code": "6603", "debit": Decimal("0"), "credit": abs(it.amount)},
+                    ]
+                })
+            elif it.item_type == "bank_paid_not_book":
+                # 费用支出: dr 6603 cr 1002
+                move = post_journal(self.db, self.account_id, "bank_reconcile_entry", {
+                    "amount": abs(it.amount),
+                    "date": self.period + "-01",
+                    "description": f"对账自动分录: {it.notes}" if it.notes else "对账自动分录",
+                    "lines": [
+                        {"account_code": "6603", "debit": abs(it.amount), "credit": Decimal("0")},
+                        {"account_code": "1002", "debit": Decimal("0"), "credit": abs(it.amount)},
+                    ]
+                })
+            it.resolved = True
+            it.move_id = move.id
+        self.db.flush()
+
         rec.status = "confirmed"
         rec.confirmed_at = datetime.now()
         rec.confirmed_by = operator
