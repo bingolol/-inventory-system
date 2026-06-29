@@ -1,38 +1,9 @@
 {
-  "account_id": 10,
+  "account_id": 21,
   "total_checks": 23,
-  "passed": 19,
-  "failed": 4,
-  "bugs": [
-    {
-      "label": "月结所得税",
-      "expected": "4517.50",
-      "actual": "0.00",
-      "diff": "4517.50",
-      "pass": false
-    },
-    {
-      "label": "净利润",
-      "expected": "13552.50",
-      "actual": "19950.00",
-      "diff": "6397.50",
-      "pass": false
-    },
-    {
-      "label": "税务核对全通过",
-      "expected": "True",
-      "actual": "False",
-      "diff": "N/A",
-      "pass": false
-    },
-    {
-      "label": "季度销项税",
-      "expected": "25740.00",
-      "actual": "26780.00",
-      "diff": "1040.00",
-      "pass": false
-    }
-  ],
+  "passed": 23,
+  "failed": 0,
+  "bugs": [],
   "steps": [
     {
       "label": "期初BS平衡",
@@ -141,10 +112,10 @@
     },
     {
       "label": "月结所得税",
-      "expected": "4517.50",
-      "actual": "0.00",
-      "diff": "4517.50",
-      "pass": false
+      "expected": "5017.50",
+      "actual": "5017.50",
+      "diff": "0.00",
+      "pass": true
     },
     {
       "label": "月结后BS平衡",
@@ -169,24 +140,24 @@
     },
     {
       "label": "净利润",
-      "expected": "13552.50",
-      "actual": "19950.00",
-      "diff": "6397.50",
-      "pass": false
+      "expected": "14932.50",
+      "actual": "14932.50",
+      "diff": "0.00",
+      "pass": true
     },
     {
       "label": "税务核对全通过",
       "expected": "True",
-      "actual": "False",
+      "actual": "True",
       "diff": "N/A",
-      "pass": false
+      "pass": true
     },
     {
       "label": "季度销项税",
-      "expected": "25740.00",
+      "expected": "26780.00",
       "actual": "26780.00",
-      "diff": "1040.00",
-      "pass": false
+      "diff": "0.00",
+      "pass": true
     },
     {
       "label": "季度进项税",
@@ -200,8 +171,8 @@
     "revenue": "198000",
     "cogs": "135000",
     "vat": "0",
-    "profit": "18070",
-    "income_tax": "4517.50",
+    "profit": "20070",
+    "income_tax": "5017.50",
     "output_vat": "25740",
     "input_vat": "26000"
   }

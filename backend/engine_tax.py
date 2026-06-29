@@ -98,9 +98,12 @@ class TaxAccrualEngine:
             carry_forward = Decimal("0")
         else:
             # 一般纳税人：222101(销项) - 222102(进项)，考虑留抵
-            _, output_vat = _lp(self.db, ledger, "222101", period_start, close_dt)
-            in_d, _ = _lp(self.db, ledger, "222102", period_start, close_dt)
-            input_vat = in_d
+            # 销项税净额 = 贷方(销售销项) - 借方(退货冲红/红字发票冲减)
+            out_d, out_c = _lp(self.db, ledger, "222101", period_start, close_dt)
+            output_vat = out_c - out_d  # 净销项 = 贷方 - 借方(退货冲红)
+            # 进项税净额 = 借方(采购进项) - 贷方(退货冲红/进项转出)
+            in_d, in_c = _lp(self.db, ledger, "222102", period_start, close_dt)
+            input_vat = in_d - in_c  # 净进项 = 借方 - 贷方(退货冲红)
 
             prev_input_end = period_start - timedelta(seconds=1)
             prev_input_total = _bal(self.db, ledger, "222102", prev_input_end)

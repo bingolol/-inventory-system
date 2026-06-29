@@ -140,7 +140,9 @@ def post_journal(
     sm = source.get("source_model")
     si = source.get("source_id")
     if sm and si is not None and not force:
+        ledger_id = get_or_create_ledger_id(db, account_id)
         existing = db.query(AccountMove).filter(
+            AccountMove.ledger_id == ledger_id,
             AccountMove.source_model == sm,
             AccountMove.source_id == si,
             AccountMove.is_reversal == False,

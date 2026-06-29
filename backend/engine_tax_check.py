@@ -71,21 +71,21 @@ class TaxCheckEngine:
         ledger = self.ledger
         checks = []
 
-        # ── 1. 销售额: 申报 vs 6001+6051 贷方发生额 ──
-        _, b1 = _lp(self.db, ledger, "6001", start_dt, end_dt)
-        _, b1b = _lp(self.db, ledger, "6051", start_dt, end_dt)
+        # ── 1. 销售额: 申报 vs 6001+6051 贷方净额(扣减退货冲红) ──
+        s1d, s1c = _lp(self.db, ledger, "6001", start_dt, end_dt)
+        _, s1b = _lp(self.db, ledger, "6051", start_dt, end_dt)
         checks.append(self._ck("销售额", declared.get("sales"),
-                               (b1 + b1b).quantize(Q2)))
+                               (s1c - s1d + s1b).quantize(Q2)))
 
-        # ── 2. 销项税额: 申报 vs 222101 贷方发生额 ──
-        _, b2 = _lp(self.db, ledger, "222101", start_dt, end_dt)
+        # ── 2. 销项税额: 申报 vs 222101 贷方净额(扣减退货冲红/红字发票) ──
+        b2d, b2c = _lp(self.db, ledger, "222101", start_dt, end_dt)
         checks.append(self._ck("销项税额", declared.get("output_vat"),
-                               b2.quantize(Q2)))
+                               (b2c - b2d).quantize(Q2)))
 
-        # ── 3. 进项税额: 申报 vs 222102 借方发生额 ──
-        b3, _ = _lp(self.db, ledger, "222102", start_dt, end_dt)
+        # ── 3. 进项税额: 申报 vs 222102 借方净额(扣减退货冲红/进项转出) ──
+        b3d, b3c = _lp(self.db, ledger, "222102", start_dt, end_dt)
         checks.append(self._ck("进项税额", declared.get("input_vat"),
-                               b3.quantize(Q2)))
+                               (b3d - b3c).quantize(Q2)))
 
         # ── 4. 未交增值税: 申报"应补税额" vs 222107 贷方余额 ──
         b4 = _crd(self.db, ledger, "222107", end_dt)

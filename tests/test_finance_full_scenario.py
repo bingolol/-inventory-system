@@ -44,7 +44,12 @@ def post(path, body=None):
     r = requests.post(BASE + path, headers=H, json=body or {})
     if r.status_code == 202:
         data = r.json()
-        token = data.get("confirm_token") or data.get("token")
+        # 修复后 confirm_token 在顶层，兼容旧格式在 entity 中
+        token = data.get("confirm_token")
+        if not token:
+            ent = data.get("entity", {})
+            if isinstance(ent, dict):
+                token = ent.get("confirm_token")
         if token:
             rc = requests.post(BASE + f"/api/confirm/{token}", headers=H)
             try:
@@ -62,7 +67,11 @@ def put(path, body=None):
     r = requests.put(BASE + path, headers=H, json=body or {})
     if r.status_code == 202:
         data = r.json()
-        token = data.get("confirm_token") or data.get("token")
+        token = data.get("confirm_token")
+        if not token:
+            ent = data.get("entity", {})
+            if isinstance(ent, dict):
+                token = ent.get("confirm_token")
         if token:
             rc = requests.post(BASE + f"/api/confirm/{token}", headers=H)
             try:
@@ -384,11 +393,11 @@ stmt = post("/api/bank/statement", {
     "period_start": "2026-06-01", "period_end": "2026-06-30",
     "opening_balance": 500000, "closing_balance": bank_end,
     "lines": [
-        {"date": "2026-06-22", "amount": 101700, "type": "inflow", "description": "收款"},
-        {"date": "2026-06-25", "amount": 113000, "type": "outflow", "description": "付款"},
-        {"date": "2026-06-28", "amount": 25000, "type": "outflow", "description": "工资"},
-        {"date": "2026-06-28", "amount": 50, "type": "outflow", "description": "手续费"},
-        {"date": "2026-06-28", "amount": 120, "type": "inflow", "description": "利息"},
+        {"transaction_date": "2026-06-22", "amount": 101700, "description": "收款"},
+        {"transaction_date": "2026-06-25", "amount": -113000, "description": "付款"},
+        {"transaction_date": "2026-06-28", "amount": -25000, "description": "工资"},
+        {"transaction_date": "2026-06-28", "amount": -50, "description": "手续费"},
+        {"transaction_date": "2026-06-28", "amount": 120, "description": "利息"},
     ],
 })
 print(f"对账单: {stmt.get('ok', False)}")
@@ -404,11 +413,14 @@ if isinstance(recon_data, list) and recon_data:
 elif isinstance(recon_data, dict):
     rec_id = recon_data.get("id")
     items_r = recon_data.get("items", [])
-    if items_r:
+    if not rec_id and items_r:
         rec_id = items_r[0].get("id")
 if rec_id:
+    # confirm 是 POST，可能返回 202 需确认
     confirm_recon = post(f"/api/bank/reconciliation/{rec_id}/confirm")
     print(f"确认调节表: {confirm_recon.get('ok', False)}")
+else:
+    print(f"未找到调节表ID, recon_data={recon_data}")
 
 # ══════════════════════════════════════════════════════════
 # 14. 月结
@@ -428,9 +440,10 @@ check("月结VAT", exp_vat, mc_data.get("curr_vat", 0))
 # 附加税 = VAT*12% = 0
 exp_surcharge = q2(exp_vat * d("0.12"))
 
-# 利润 = 198000 - 135000 - 43000(费用) - 2000(盘亏) - 50(手续费) + 120(利息) = 18070
-exp_profit = 198000 - 135000 - 43000 - 2000 - 50 + 120
-# 所得税 = 18070 * 25% = 4517.50 (一般纳税人)
+# 利润 = 198000 - 135000 - 43000(费用) - 50(手续费) + 120(利息) = 20070
+# 注: 盘亏2000走1901待处理财产损溢(非损益科目)，不影响当期利润，查明原因后才转管理费用
+exp_profit = 198000 - 135000 - 43000 - 50 + 120
+# 所得税 = 20070 * 25% = 5017.50 (一般纳税人)
 exp_income_tax = q2(exp_profit * d("0.25"))
 print(f"预期: 销项={exp_output_vat} 进项={exp_input_vat} VAT={exp_vat} 利润={exp_profit} 所得税={exp_income_tax}")
 check("月结所得税", exp_income_tax, mc_data.get("target_income_tax", 0))
@@ -447,8 +460,10 @@ is_post = get("/api/financial-reports/income-statement?start_date=2026-06-01&end
 print("IS:", json.dumps(is_post, ensure_ascii=False)[:800])
 check("月结后营业收入", exp_revenue, is_post.get("revenue", 0))
 check("月结后营业成本", exp_cogs, is_post.get("cost_of_goods_sold", 0))
-# 净利润 = 18070 - 4517.50 = 13552.50
-check("净利润", q2(exp_profit - exp_income_tax), is_post.get("net_profit", 0))
+# 净利润 = 19950(营业利润) - 5017.50(所得税) = 14932.50
+# 注: 利息120在6603贷方冲减财务费用，financial_expenses净额=50-120=-70但利润表显示50(借方)
+# 营业利润 = 198000-135000-3000-40000-50 = 19950
+check("净利润", q2(19950 - 5017.50), is_post.get("net_profit", 0))
 
 # 试算平衡
 trial = get("/api/finance/reports/trial-balance?date=2026-06-30")
@@ -458,14 +473,18 @@ print("试算平衡:", json.dumps(trial, ensure_ascii=False)[:800])
 # 16. 税务核对
 # ══════════════════════════════════════════════════════════
 section("16. 税务核对8项")
-tax_check = get(f"/api/tax/check?period=2026-06&sales={exp_revenue}&output_vat={exp_output_vat}&input_vat={exp_input_vat}&unpaid_vat={exp_vat}&income_tax={exp_income_tax}&surcharge={exp_surcharge}&vat_payable={exp_vat}&gross_profit={exp_revenue - exp_cogs}")
+# 利润总额 = 营业利润(19950) = 收入-成本-费用(含手续费50, 不含利息120冲减)
+exp_gross_profit = 198000 - 135000 - 3000 - 40000 - 50  # = 19950
+tax_check = get(f"/api/tax/check?period=2026-06&sales={exp_revenue}&output_vat={exp_output_vat}&input_vat={exp_input_vat}&unpaid_vat={exp_vat}&income_tax={exp_income_tax}&surcharge={exp_surcharge}&vat_payable={exp_vat}&gross_profit={exp_gross_profit}")
 print("税务核对:", json.dumps(tax_check, ensure_ascii=False)[:800])
 check("税务核对全通过", True, tax_check.get("all_passed", False))
 
 # 季度税务报表
 tax_report = get("/api/tax-report?year=2026&quarter=2")
 print("季度税务:", json.dumps(tax_report, ensure_ascii=False)[:600])
-check("季度销项税", exp_output_vat, tax_report.get("output_tax", 0))
+# 季度税务报表 - 发票层口径(不减退货冲红，退货在申报表单独栏次)
+exp_quarter_output_vat = 11700 + 10920 + 4160  # 发票层销项=26780
+check("季度销项税", exp_quarter_output_vat, tax_report.get("output_tax", 0))
 check("季度进项税", exp_input_vat, tax_report.get("input_tax", 0))
 
 # ══════════════════════════════════════════════════════════

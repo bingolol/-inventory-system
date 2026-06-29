@@ -20,6 +20,7 @@ const routes = [
   { path: '/financial-overview', name: 'FinancialOverview', component: () => import('../views/FinancialOverview.vue'), meta: { title: '财务总览', desc: '资产负债、利润、现金流、费用一站式查看' } },
   { path: '/bank-accounts', name: 'BankAccounts', component: () => import('../views/BankAccounts.vue'), meta: { title: '银行账户', desc: '管理各银行账户余额及流水，由业务自动生成' } },
   { path: '/expenses', name: 'Expenses', component: () => import('../views/Expenses.vue'), meta: { title: '费用管理', desc: '录入和管理日常经营费用' } },
+  { path: '/personal', name: 'Personal', component: () => import('../views/Personal.vue'), meta: { title: '个人流水', desc: '个人账本收支记录' } },
   { path: '/logs', name: 'Logs', component: () => import('../views/Logs.vue'), meta: { title: '操作日志', desc: '查看系统所有操作记录' } },
   { path: '/backup', name: 'Backup', component: () => import('../views/Backup.vue'), meta: { title: '数据备份', desc: '备份和恢复系统数据' } },
   { path: '/reconciliations', name: 'Reconciliations', component: () => import('../views/Reconciliations.vue'), meta: { title: '对账管理', desc: '供应商/客户往来账款核对' } },
