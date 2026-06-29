@@ -274,6 +274,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     # ── 流动负债 ── 从总账
     accounts_payable = _credit_balance("2202").quantize(Q2)
+    salaries_payable = _credit_balance("2211").quantize(Q2)  # 应付职工薪酬
 
     # ── 应交税费 — 纯总账取数（月结后自动体现）──
     # 一般纳税人：222101→222106→222107 月结后余额在 222107
@@ -312,10 +313,11 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable
-                            + inventory_value + prepaid_tax)
+                            + inventory_value + prepaid_tax
+                            + _balance("1901").quantize(Q2))  # 待处理财产损溢
     total_assets = total_current_assets + total_non_current_assets
     total_non_current_liabilities = long_term_borrowings
-    total_current_liabilities = accounts_payable + tax_payable
+    total_current_liabilities = accounts_payable + salaries_payable + tax_payable
     total_liabilities = total_current_liabilities + total_non_current_liabilities
 
     diff = total_assets - (total_liabilities + total_equity)

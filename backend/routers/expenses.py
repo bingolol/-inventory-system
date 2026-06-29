@@ -94,7 +94,7 @@ async def create_expense(
 
         # 生成会计凭证：借:费用科目 贷:应付科目（按业务类型）
         expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "6601")
-        credit_code = "2241" if db_expense.payment_method == "private_advance" else "2211" if db_expense.category == "gongzi" else "2202"
+        credit_code = "2241" if db_expense.payment_method == "private_advance" else "2211" if db_expense.category == "工资" else "2202"
         post_journal(db, account_id, "expense", {
             "amount": db_expense.amount,
             "date": db_expense.expense_date.strftime("%Y-%m-%d") if db_expense.expense_date else "",

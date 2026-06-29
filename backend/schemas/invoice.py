@@ -77,7 +77,8 @@ class InvoiceItemCreate(BaseModel):
     product_id: int
     quantity: int = Field(..., gt=0)
     unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
-    tax_rate: Decimal = Field(default=Decimal('0.01'), ge=0, le=1, max_digits=12, decimal_places=2)
+    tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2,
+        description="行项税率，必填。一般纳税人13%/9%/6%，小规模1%，出口0%")
 
 
 class InvoiceQuickCreate(BaseModel):

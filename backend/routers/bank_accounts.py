@@ -64,6 +64,15 @@ def create_bank_account(
         db.add(bank_account)
         db.flush()
 
+        # 反向同步：若账本已有期初余额中的 bank_balance 但此前无银行账户导致未同步，
+        # 创建银行账户时自动补齐（期初余额录入 → finance_commands 已有正向同步，
+        # 此处处理"先录期初、后建银行账户"的时序场景）
+        latest_ob = db.query(models.OpeningBalance).filter(
+            models.OpeningBalance.account_id == account_id,
+        ).order_by(models.OpeningBalance.date.desc()).first()
+        if latest_ob and latest_ob.bank_balance and latest_ob.bank_balance > 0:
+            bank_account.balance = Decimal(str(latest_ob.bank_balance)).quantize(Decimal("0.01"))
+
         _log(db, account_id, "create", "bank_account", bank_account.id,
              f"创建银行账户: {data.bank_name} {data.account_number}", operator=operator)
     db.refresh(bank_account)

@@ -19,6 +19,8 @@ def list_inventory(page: int = 1, page_size: int = 20, alert_only: bool = False,
         p = inv.product
         result.append(schemas.InventoryOut(
             id=inv.id, product_id=inv.product_id, quantity=inv.quantity,
+            average_cost=inv.average_cost,
+            total_value=(inv.average_cost * inv.quantity) if inv.average_cost else None,
             product_name=p.name if p else "",
             product_sku=p.sku if p else "",
             product_category=p.category if p else "",
@@ -40,6 +42,8 @@ def get_alerts(account_id: int = Depends(get_account_id), db: Session = Depends(
         p = inv.product
         result.append(schemas.InventoryOut(
             id=inv.id, product_id=inv.product_id, quantity=inv.quantity,
+            average_cost=inv.average_cost,
+            total_value=(inv.average_cost * inv.quantity) if inv.average_cost else None,
             product_name=p.name if p else "",
             product_sku=p.sku if p else "",
             product_category=p.category if p else "",
@@ -71,6 +75,8 @@ def adjust_inventory(product_id: int, data: schemas.InventoryAdjust, account_id:
     p = inv.product
     return schemas.InventoryOut(
         id=inv.id, product_id=inv.product_id, quantity=inv.quantity,
+        average_cost=inv.average_cost,
+        total_value=(inv.average_cost * inv.quantity) if inv.average_cost else None,
         product_name=p.name if p else "",
         product_sku=p.sku if p else "",
         product_category=p.category if p else "",

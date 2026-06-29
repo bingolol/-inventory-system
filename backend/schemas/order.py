@@ -131,6 +131,8 @@ class InventoryOut(BaseModel):
     id: int
     product_id: int
     quantity: int
+    average_cost: Optional[Decimal] = None
+    total_value: Optional[Decimal] = None
     product_name: Optional[str] = None
     product_sku: Optional[str] = None
     product_category: Optional[str] = None

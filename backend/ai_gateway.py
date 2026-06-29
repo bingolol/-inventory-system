@@ -394,10 +394,15 @@ class AIGatewayMiddleware:
             state_after.update(snapshot)
 
         wrapped = {
-            "ok": captured["status"] == 200,
+            "ok": captured["status"] in (200, 202),
             "entity": inner,
             "operation": operation,
             "idempotent": idempotent,
             "state_after": state_after,
         }
+        # 202 确认响应：将 confirm_token 提到顶层，方便调用者提取
+        if captured["status"] == 202 and isinstance(inner, dict):
+            token = inner.get("confirm_token")
+            if token:
+                wrapped["confirm_token"] = token
         return json.dumps(wrapped, ensure_ascii=False, default=str).encode("utf-8")

@@ -1,0 +1,208 @@
+{
+  "account_id": 10,
+  "total_checks": 23,
+  "passed": 19,
+  "failed": 4,
+  "bugs": [
+    {
+      "label": "月结所得税",
+      "expected": "4517.50",
+      "actual": "0.00",
+      "diff": "4517.50",
+      "pass": false
+    },
+    {
+      "label": "净利润",
+      "expected": "13552.50",
+      "actual": "19950.00",
+      "diff": "6397.50",
+      "pass": false
+    },
+    {
+      "label": "税务核对全通过",
+      "expected": "True",
+      "actual": "False",
+      "diff": "N/A",
+      "pass": false
+    },
+    {
+      "label": "季度销项税",
+      "expected": "25740.00",
+      "actual": "26780.00",
+      "diff": "1040.00",
+      "pass": false
+    }
+  ],
+  "steps": [
+    {
+      "label": "期初BS平衡",
+      "expected": "0.00",
+      "actual": "0.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "期初总资产",
+      "expected": "550000.00",
+      "actual": "550000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品A库存量",
+      "expected": "100.00",
+      "actual": "100.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品A均价",
+      "expected": "1000.00",
+      "actual": "1000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品B库存量",
+      "expected": "50.00",
+      "actual": "50.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品B均价",
+      "expected": "2000.00",
+      "actual": "2000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品A库存量(销售后)",
+      "expected": "20.00",
+      "actual": "20.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品A均价(销售后)",
+      "expected": "1000.00",
+      "actual": "1000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品B库存量(销售后)",
+      "expected": "20.00",
+      "actual": "20.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品B均价(销售后)",
+      "expected": "2000.00",
+      "actual": "2000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "营业收入",
+      "expected": "198000.00",
+      "actual": "198000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "营业成本",
+      "expected": "135000.00",
+      "actual": "135000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "月结前BS平衡",
+      "expected": "0.00",
+      "actual": "0.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "商品A库存量(退货后)",
+      "expected": "23.00",
+      "actual": "23.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "月结VAT",
+      "expected": "0.00",
+      "actual": "0.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "月结所得税",
+      "expected": "4517.50",
+      "actual": "0.00",
+      "diff": "4517.50",
+      "pass": false
+    },
+    {
+      "label": "月结后BS平衡",
+      "expected": "0.00",
+      "actual": "0.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "月结后营业收入",
+      "expected": "198000.00",
+      "actual": "198000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "月结后营业成本",
+      "expected": "135000.00",
+      "actual": "135000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "净利润",
+      "expected": "13552.50",
+      "actual": "19950.00",
+      "diff": "6397.50",
+      "pass": false
+    },
+    {
+      "label": "税务核对全通过",
+      "expected": "True",
+      "actual": "False",
+      "diff": "N/A",
+      "pass": false
+    },
+    {
+      "label": "季度销项税",
+      "expected": "25740.00",
+      "actual": "26780.00",
+      "diff": "1040.00",
+      "pass": false
+    },
+    {
+      "label": "季度进项税",
+      "expected": "26000.00",
+      "actual": "26000.00",
+      "diff": "0.00",
+      "pass": true
+    }
+  ],
+  "expected": {
+    "revenue": "198000",
+    "cogs": "135000",
+    "vat": "0",
+    "profit": "18070",
+    "income_tax": "4517.50",
+    "output_vat": "25740",
+    "input_vat": "26000"
+  }
+}
