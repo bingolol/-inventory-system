@@ -48,6 +48,7 @@ dist2/
 
 # Temporary scripts
 _*.py
+!__init__.py
 fix_*.py
 create_*.py
 tmp_*.py
