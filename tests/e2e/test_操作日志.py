@@ -278,9 +278,10 @@ class TestE2EWithOperatorPropagation:
                 OperationLog.entity_type == "sale_order",
                 OperationLog.entity_id == sale_id,
             ).order_by(OperationLog.id.asc()).all()
-            # 应该至少有 2 条：Command 写的 1 条 + EventBus handler 写的 1 条
-            assert len(logs) >= 2, \
-                f"应有至少 2 条新日志（Command + EventBus），实际 {len(logs)} 条"
+            # Emit-as-Log 单一写入点：每个操作恰好 1 条日志（emit 携带 log 元数据，
+            # 由 handlers.py 单写）。历史双写（Command _log + EventBus handler _log）已修复。
+            assert len(logs) == 1, \
+                f"应恰好 1 条新日志（Emit-as-Log 单写），实际 {len(logs)} 条"
             for l in logs:
                 assert l.operator == "ai", \
                     f"本次测试创建的所有 sale_order#{sale_id} 日志应都是 ai，但 id={l.id} 是 {l.operator!r}（detail={l.detail!r}）"
@@ -440,8 +441,8 @@ class TestE2EAISaleLifecycle:
         finally:
             db.close()
 
-        # 5. 验证：至少应有 2 条日志（Command _log + EventBus handler _log）
-        assert len(logs) >= 2, f"预期至少 2 条日志，实际 {len(logs)}"
+        # 5. 验证：Emit-as-Log 单一写入点，恰好 1 条日志
+        assert len(logs) == 1, f"预期恰好 1 条日志（Emit-as-Log 单写），实际 {len(logs)}"
 
         print(f"\nAI 创建销售单 #{sale_id} 产生 {len(logs)} 条日志:")
         for log in logs:
@@ -575,8 +576,8 @@ class TestE2EAISaleLifecycle:
         finally:
             db.close()
 
-        # 验证：至少有 2 条（Command delete + EventBus handler delete）
-        assert len(delete_logs) >= 2, f"预期至少 2 条删除日志，实际 {len(delete_logs)}"
+        # 验证：Emit-as-Log 单一写入点，恰好 1 条删除日志
+        assert len(delete_logs) == 1, f"预期恰好 1 条删除日志（Emit-as-Log 单写），实际 {len(delete_logs)}"
 
         print(f"\nUser 删除销售单 #{sale_id} 产生 {len(delete_logs)} 条删除日志:")
         for log in delete_logs:

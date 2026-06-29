@@ -16,7 +16,7 @@ from enums import OrderStatus, OrderType
 from events import emit
 
 from .base import Command, CommandHandler, register
-from crud.base import _generate_order_no, _log
+from crud.base import _generate_order_no
 from crud.products import get_product
 from crud.orders import get_purchase_order, _d
 from crud.reversal import reverse_payments
@@ -116,12 +116,10 @@ class CreatePurchaseOrderHandler(CommandHandler):
         # 5. 生成会计凭证
         FinanceEngine(db, cmd.account_id).record_purchase(order, calculated_data or None)
 
-        # 6. 事件（仅日志）
-        emit("purchase_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        # 7. 操作日志
-        _log(db, cmd.account_id, "create", "purchase_order", order.id,
-             f"创建采购单 {order_no}: {len(cmd.items)}项商品, 总价={total}", operator=cmd.operator)
+        # 6. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
+        emit("purchase_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="create",
+             log_detail=f"创建采购单 {order_no}: {len(cmd.items)}项商品, 总价={total}")
         db.flush()
         return order
 
@@ -168,10 +166,9 @@ class CancelPurchaseOrderHandler(CommandHandler):
         # 冲销付款记录 + 银行流水
         reverse_payments(db, cmd.account_id, cmd.order_id)
 
-        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        _log(db, cmd.account_id, "update", "purchase_order", cmd.order_id,
-             f"取消采购单 {order.order_no}: 状态={old_status}->cancelled", operator=cmd.operator)
+        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="update",
+             log_detail=f"取消采购单 {order.order_no}: 状态={old_status}->cancelled")
         db.flush()
         return order
 
@@ -309,12 +306,11 @@ class ReturnPurchaseOrderHandler(CommandHandler):
             "date": cmd.return_date,
         })
 
-        # 5. 事件 + 日志
+        # 5. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("purchase_order.returned", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, return_amount=total_with_tax_ret)
-        _log(db, cmd.account_id, "return", "purchase_order", cmd.order_id,
-             f"采购退货 {order.order_no}: 退货金额={total_with_tax_ret}, 原因={cmd.reason or '未提供'}",
-             operator=cmd.operator)
+             operator=cmd.operator, return_amount=total_with_tax_ret,
+             log_action="return",
+             log_detail=f"采购退货 {order.order_no}: 退货金额={total_with_tax_ret}, 原因={cmd.reason or '未提供'}")
         db.flush()
         return order
 
@@ -354,10 +350,10 @@ class DeletePurchaseOrderHandler(CommandHandler):
         # 冲销付款记录 + 银行流水
         reverse_payments(db, cmd.account_id, cmd.order_id)
 
-        _log(db, cmd.account_id, "delete", "purchase_order", cmd.order_id,
-             f"删除采购单 {order.order_no}: 状态={order.status}", operator=cmd.operator)
-
-        emit("purchase_order.deleted", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
+        emit("purchase_order.deleted", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="delete",
+             log_detail=f"删除采购单 {order.order_no}: 状态={order.status}")
 
         db.delete(order)
         db.flush()
@@ -419,8 +415,11 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
 
         # 新 items 为空 → 删除整个采购单
         if len(cmd.items) == 0:
-            _log(db, cmd.account_id, "delete", "purchase_order", cmd.order_id,
-                 f"删除采购单 {order.order_no}（商品行数归零自动删除）", operator=cmd.operator)
+            # Emit-as-Log：复用 deleted 事件，携带自动删除的 log_detail
+            emit("purchase_order.deleted", db=db, account_id=cmd.account_id, order=order,
+                 operator=cmd.operator,
+                 log_action="delete",
+                 log_detail=f"删除采购单 {order.order_no}（商品行数归零自动删除）")
             db.delete(order)
             db.flush()
             return None
@@ -474,10 +473,9 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
         if new_status == OrderStatus.COMPLETED:
             FinanceEngine(db, cmd.account_id).record_purchase(order, calculated_data or None, force=True)
 
-        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        _log(db, cmd.account_id, "update", "purchase_order", cmd.order_id,
-             f"更新采购单明细 {order.order_no}: 状态={old_status}->{new_status}", operator=cmd.operator)
+        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="update",
+             log_detail=f"更新采购单明细 {order.order_no}: 状态={old_status}->{new_status}")
         db.flush()
         db.refresh(order)
         return order
@@ -561,9 +559,8 @@ class UpdatePurchaseOrderFieldsHandler(CommandHandler):
                     calculated_data.append(calc)
             fin.record_purchase(order, calculated_data or None, force=True)
 
-        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        _log(db, cmd.account_id, "update", "purchase_order", cmd.order_id,
-             f"更新采购单字段 {order.order_no}: 状态={old_status}->{new_status}", operator=cmd.operator)
+        emit("purchase_order.updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="update",
+             log_detail=f"更新采购单字段 {order.order_no}: 状态={old_status}->{new_status}")
         db.flush()
         return order

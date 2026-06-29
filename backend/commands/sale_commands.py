@@ -18,7 +18,7 @@ from events import emit
 from domain.sale_order import SaleOrderDomain
 
 from .base import Command, CommandHandler, register
-from crud.base import _generate_order_no, _log
+from crud.base import _generate_order_no
 from crud.products import get_product
 from crud.orders import get_sale_order, _d, _distribute_total_price
 from crud.reversal import reverse_receipts
@@ -147,12 +147,10 @@ class CreateSaleOrderHandler(CommandHandler):
                     item.set_calculated_cost(Decimal("0"))
             FinanceEngine(db, cmd.account_id).record_sale(order)
 
-        # 9. 事件（仅日志）
-        emit("sale_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        # 10. 操作日志
-        _log(db, cmd.account_id, "create", "sale_order", order.id,
-             f"创建销售单 {order_no}: {len(cmd.items)}项商品, 总价={total}", operator=cmd.operator)
+        # 9. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
+        emit("sale_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="create",
+             log_detail=f"创建销售单 {order_no}: {len(cmd.items)}项商品, 总价={total}")
         db.flush()
         return order
 
@@ -202,13 +200,11 @@ class CancelSaleOrderHandler(CommandHandler):
         # 显式联动：冲红会计凭证
         FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
 
-        # 事件（仅日志）
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.cancelled", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, old_status=old_status)
-
-        # 操作日志
-        _log(db, cmd.account_id, "update", "sale_order", cmd.order_id,
-             f"取消销售单 {order.order_no}: 状态={old_status}->cancelled", operator=cmd.operator)
+             operator=cmd.operator, old_status=old_status,
+             log_action="update",
+             log_detail=f"取消销售单 {order.order_no}: 状态={old_status}->cancelled")
         db.flush()
         return order
 
@@ -341,12 +337,11 @@ class ReturnSaleOrderHandler(CommandHandler):
             "date": cmd.return_date,
         })
 
-        # 5. 事件 + 日志
+        # 5. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.returned", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, return_amount=total_with_tax_ret)
-        _log(db, cmd.account_id, "return", "sale_order", cmd.order_id,
-             f"销售退货 {order.order_no}: 退货金额={total_with_tax_ret}, 原因={cmd.reason or '未提供'}",
-             operator=cmd.operator)
+             operator=cmd.operator, return_amount=total_with_tax_ret,
+             log_action="return",
+             log_detail=f"销售退货 {order.order_no}: 退货金额={total_with_tax_ret}, 原因={cmd.reason or '未提供'}")
         db.flush()
         return order
 
@@ -401,13 +396,11 @@ class RestoreSaleOrderHandler(CommandHandler):
                 item.set_calculated_cost(Decimal("0"))
         FinanceEngine(db, cmd.account_id).record_sale(order, force=True)
 
-        # 事件（仅日志）
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.restored", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, old_status=old_status)
-
-        # 操作日志
-        _log(db, cmd.account_id, "update", "sale_order", cmd.order_id,
-             f"恢复销售单 {order.order_no}: 状态={old_status}->completed", operator=cmd.operator)
+             operator=cmd.operator, old_status=old_status,
+             log_action="update",
+             log_detail=f"恢复销售单 {order.order_no}: 状态={old_status}->completed")
         db.flush()
         return order
 
@@ -454,13 +447,11 @@ class DeleteSaleOrderHandler(CommandHandler):
         if order.status == OrderStatus.COMPLETED:
             FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
 
-        # 事件（仅日志）
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.deleted", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, old_status=order.status)
-
-        # 操作日志
-        _log(db, cmd.account_id, "delete", "sale_order", cmd.order_id,
-             f"删除销售单 {order.order_no}: 状态={order.status}", operator=cmd.operator)
+             operator=cmd.operator, old_status=order.status,
+             log_action="delete",
+             log_detail=f"删除销售单 {order.order_no}: 状态={order.status}")
 
         # 删除
         db.delete(order)
@@ -526,8 +517,11 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
 
         # 新 items 为空 → 删除整个销售单（旧行已在上文冲红）
         if len(cmd.items) == 0:
-            _log(db, cmd.account_id, "delete", "sale_order", cmd.order_id,
-                 f"删除销售单 {order.order_no}（商品行数归零自动删除）", operator=cmd.operator)
+            # Emit-as-Log：复用 deleted 事件，携带自动删除的 log_detail
+            emit("sale_order.deleted", db=db, account_id=cmd.account_id, order=order,
+                 operator=cmd.operator,
+                 log_action="delete",
+                 log_detail=f"删除销售单 {order.order_no}（商品行数归零自动删除）")
             db.delete(order)
             db.flush()
             return None
@@ -589,13 +583,11 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
                     item.set_calculated_cost(Decimal("0"))
             FinanceEngine(db, cmd.account_id).record_sale(order, force=True)
 
-        # 事件（仅日志）
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.items_updated", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator)
-
-        # 操作日志
-        _log(db, cmd.account_id, "update", "sale_order", cmd.order_id,
-             f"更新销售单明细 {order.order_no}", operator=cmd.operator)
+             operator=cmd.operator,
+             log_action="update",
+             log_detail=f"更新销售单明细 {order.order_no}")
         db.flush()
         return order
 
@@ -632,11 +624,9 @@ class UpdateSaleOrderFieldsHandler(CommandHandler):
             if v is not None:
                 setattr(order, k, v)
 
-        # 事件（仅日志）
-        emit("sale_order.fields_updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator)
-
-        # 操作日志
-        _log(db, cmd.account_id, "update", "sale_order", cmd.order_id,
-             f"更新销售单字段 {order.order_no}", operator=cmd.operator)
+        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
+        emit("sale_order.fields_updated", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
+             log_action="update",
+             log_detail=f"更新销售单字段 {order.order_no}")
         db.flush()
         return order
