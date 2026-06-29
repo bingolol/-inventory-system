@@ -17,11 +17,12 @@ import tempfile
 import uuid
 
 from main import app
-from database import get_db, Base, set_maintenance_mode, configure_engine
+from database import get_db, Base, set_maintenance_mode, configure_engine, get_db_url
 import database
 import models
 from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
 from tests.helpers import get_entity_id
+from confirm_middleware import confirm_store
 
 
 _TEST_DB_FILE = os.path.join(tempfile.gettempdir(), f"test_accrual_{uuid.uuid4().hex[:8]}.db")
@@ -70,7 +71,8 @@ _PHASE1_ACCOUNTS = [
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    """每个测试前重建数据库"""
+    """每个测试前重建数据库，退出时恢复全局 engine"""
+    _orig_db_url = get_db_url()
     set_maintenance_mode(True)
     Base.metadata.drop_all(bind=database._engine)
     configure_engine(_TEST_DATABASE_URL)
@@ -107,8 +109,12 @@ def setup_db():
     yield
     set_maintenance_mode(True)
     Base.metadata.drop_all(bind=database._engine)
-    set_maintenance_mode(False)
     app.dependency_overrides.clear()
+    # 恢复全局 engine 到 production DB
+    configure_engine(_orig_db_url)
+    Base.metadata.create_all(bind=database._engine)
+    confirm_store._init_db()
+    set_maintenance_mode(False)
 
 
 @pytest.fixture

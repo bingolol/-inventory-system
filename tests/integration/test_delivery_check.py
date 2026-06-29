@@ -17,7 +17,8 @@ import pytest
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 from sqlalchemy import func as sqlfunc
-from database import engine, SessionLocal
+from database import SessionLocal, get_engine
+engine = get_engine()
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "delivery_test"}
 ACCOUNT_ID = 1

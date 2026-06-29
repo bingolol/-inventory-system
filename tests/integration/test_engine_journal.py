@@ -5,8 +5,8 @@ from decimal import Decimal
 from models import Product
 from models_finance import (
     Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine,
-    AccountingError,
 )
+from accounting_engine import AccountingError
 from engine_journal import JournalEngine
 
 

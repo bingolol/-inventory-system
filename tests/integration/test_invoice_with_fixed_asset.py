@@ -38,14 +38,15 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 
 
 # 保存原始生产数据库 URL（用于隔离验证）
-ORIGINAL_PROD_DB_URL = str(database.engine.url)
+ORIGINAL_PROD_DB_URL = str(database.get_engine().url)
 
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     """每个测试前重建数据库，并完全隔离生产数据库"""
     # 覆盖 database 模块的全局变量，确保完全隔离
-    monkeypatch.setattr(database, 'engine', test_engine)
+    # _engine 是私有全局，get_engine() 读取它；SessionLocal 是 session 工厂
+    monkeypatch.setattr(database, '_engine', test_engine)
     monkeypatch.setattr(database, 'SessionLocal', TestingSessionLocal)
 
     # 创建表

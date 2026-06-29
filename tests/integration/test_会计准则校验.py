@@ -39,11 +39,11 @@ def seed_opening_balance():
     """模块级前置：清理预存数据 + 创建期初余额 + 库存 + 银行账户"""
     from datetime import date, datetime
     from decimal import Decimal
-    from database import engine, SessionLocal
+    from database import SessionLocal, get_engine
     from models import OpeningBalance, BankAccount, Product, Inventory
 
     # 使用原始 sqlite3 连接清理业务数据（不删 opening_balances，仅更新）
-    raw = engine.raw_connection()
+    raw = get_engine().raw_connection()
     raw.execute("PRAGMA foreign_keys=OFF")
     for tname in ["account_move_lines", "account_moves", "stock_moves",
                    "receipts", "payments", "invoices", "fixed_assets",

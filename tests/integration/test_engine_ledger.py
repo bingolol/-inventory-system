@@ -4,8 +4,8 @@ from datetime import date as date_obj
 from decimal import Decimal
 from models_finance import (
     Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine,
-    AccountingError,
 )
+from accounting_engine import AccountingError
 from engine_ledger import LedgerEngine
 
 

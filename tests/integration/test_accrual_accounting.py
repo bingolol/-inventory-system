@@ -17,10 +17,11 @@ import tempfile
 import uuid
 
 from main import app
-from database import get_db, Base, PHASE1_ACCOUNTS
+from database import get_db, Base
 import database
 import models
 from models_finance import Ledger, LedgerAccount
+from finance_integration import CHART_OF_ACCOUNTS
 
 
 # 测试数据库
@@ -33,7 +34,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     """每个测试前重建数据库"""
-    monkeypatch.setattr(database, 'engine', test_engine)
+    monkeypatch.setattr(database, '_engine', test_engine)
     monkeypatch.setattr(database, 'SessionLocal', TestingSessionLocal)
     Base.metadata.create_all(bind=test_engine)
 
@@ -60,7 +61,7 @@ def auto_create_account_ledger(setup_db):
     ledger = Ledger(code="test_accrual", name="测试账本", type="company")
     db.add(ledger)
     db.flush()
-    for code, name, acct_type in PHASE1_ACCOUNTS:
+    for code, name, acct_type in CHART_OF_ACCOUNTS:
         db.add(LedgerAccount(
             ledger_id=ledger.id, code=code, name=name,
             account_type=acct_type, is_leaf=True, is_active=True,
