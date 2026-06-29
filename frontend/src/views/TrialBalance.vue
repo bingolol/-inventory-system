@@ -86,12 +86,12 @@ useAccountAwareData(loadData)
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px;
 }
-.tb-ok { background: #f0f9eb; color: #67c23a; }
-.tb-err { background: #fef0f0; color: #f56c6c; }
+.tb-ok { background: var(--success-light); color: var(--success); }
+.tb-err { background: var(--danger-light); color: var(--danger); }
 .tb-bar-left { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .tb-icon { font-size: 18px; font-weight: 700; }
 .tb-bar-right { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .tb-bar-right span { font-weight: 600; }
-.tb-vs { color: #c9cdd4; font-weight: 400 !important; }
-.tb-formula { font-size: 12px; color: #c9cdd4; text-align: center; margin-bottom: 16px; font-family: 'Consolas', 'Monaco', monospace; }
+.tb-vs { color: var(--text-placeholder); font-weight: 400 !important; }
+.tb-formula { font-size: 12px; color: var(--text-placeholder); text-align: center; margin-bottom: 16px; font-family: 'Consolas', 'Monaco', monospace; }
 </style>

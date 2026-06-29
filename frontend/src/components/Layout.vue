@@ -3,7 +3,10 @@
     <aside class="side">
       <div class="side-hd">
         <div class="side-nm">进销存</div>
-        <div class="side-sub">v2.0</div>
+        <div class="side-nm-sub" v-if="currentAccount?.name">{{ currentAccount.name }}</div>
+        <div class="side-sub" v-else>v2.0</div>
+        <div class="side-type" v-if="currentAccount?.taxpayer_type === 'general'">一般纳税人</div>
+        <div class="side-type" v-else-if="currentAccount?.type === 'company'">小规模纳税人</div>
       </div>
       <div class="side-acct">
         <el-select v-model="currentAccountId" size="small" class="acct-sl" @change="onAccountChange">
@@ -133,44 +136,46 @@ onUnmounted(() => { clearInterval(dateTimer) })
 <style scoped>
 .app-shell { height: 100vh; overflow: hidden; }
 
-/* Sidebar — 200px white, clean */
+/* Sidebar — Claude 暖米色浅色侧栏 */
 .side {
   width: 200px; flex-shrink: 0;
-  background: #fff; border-right: 1px solid #edf0f5;
+  background: var(--sidebar-bg); border-right: 1px solid var(--sidebar-border);
   display: flex; flex-direction: column; overflow-y: auto;
 }
-.side-hd { padding: 20px 16px 14px; border-bottom: 1px solid #f5f6f8; }
-.side-nm { font-size: 15px; font-weight: 700; color: #1d2129; }
-.side-sub { font-size: 11px; color: #86909c; margin-top: 1px; }
-.side-acct { padding: 8px 10px; border-bottom: 1px solid #f5f6f8; }
+.side-hd { padding: 20px 16px 14px; border-bottom: 1px solid var(--sidebar-border); }
+.side-nm { font-size: 16px; font-weight: 800; color: var(--sidebar-primary); font-family: var(--font-display); letter-spacing: 0.5px; }
+.side-nm-sub { font-size: 12px; color: var(--sidebar-foreground); margin-top: 2px; }
+.side-sub { font-size: 11px; color: var(--sidebar-foreground); opacity: 0.6; margin-top: 1px; }
+.side-type { font-size: 10px; color: var(--sidebar-primary); opacity: 0.8; margin-top: 1px; font-weight: 600; }
+.side-acct { padding: 8px 10px; border-bottom: 1px solid var(--sidebar-border); }
 .side-acct-acts { display: flex; gap: 4px; margin-top: 6px; }
-.sa-btn { flex:1; display:flex; align-items:center; justify-content:center; padding:3px 0; border:1px solid #edf0f5; border-radius:4px; font-size:13px; color:#4e5969; cursor:pointer; background:#fff; }
-.sa-btn:hover { background:#f5f6f8; }
+.sa-btn { flex:1; display:flex; align-items:center; justify-content:center; padding:3px 0; border:1px solid var(--sidebar-border); border-radius:8px; font-size:13px; color:var(--sidebar-foreground); cursor:pointer; background:transparent; }
+.sa-btn:hover { background:var(--sidebar-accent); color:var(--sidebar-primary); border-color:var(--sidebar-border); }
 .acct-sl { width: 100%; }
 .side-nav { padding: 4px 6px; flex: 1; overflow-y: auto; }
-.sgt { font-size: 10px; font-weight: 600; color: #86909c; padding: 10px 10px 3px; letter-spacing: 1px; }
-.si { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 13px; color: #4e5969; cursor: pointer; text-decoration: none; margin: 1px 0; }
-.si:hover { background: #f5f6f8; color: #1d2129; }
-.si.active { background: #f0f2f5; color: #1d2129; font-weight: 600; }
+.sgt { font-size: 10px; font-weight: 600; color: var(--sidebar-foreground); opacity: 0.5; padding: 10px 10px 3px; letter-spacing: 1px; text-transform: uppercase; }
+.si { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; font-size: 13px; color: var(--sidebar-foreground); cursor: pointer; text-decoration: none; margin: 1px 0; border-left: 3px solid transparent; }
+.si:hover { background: var(--sidebar-accent); color: var(--sidebar-primary); }
+.si.active { background: var(--sidebar-accent); color: var(--sidebar-primary); font-weight: 700; border-left-color: var(--sidebar-primary); }
 .si-ic { font-size: 14px; width: 18px; text-align: center; }
 
-/* Header — 48px */
+/* Header — 暖白顶栏 + 品牌色底边 */
 .app-bar {
-  background: #fff; border-bottom: 1px solid #edf0f5;
+  background: var(--bg-card); border-bottom: 2px solid var(--primary);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 24px; height: 48px !important; position: sticky; top: 0; z-index: 100;
 }
 .app-bar-left { display: flex; align-items: center; gap: 10px; }
-.app-bar-title { font-size: 14px; font-weight: 600; color: #1d2129; }
-.app-bar-desc { font-size: 12px; color: #c9cdd4; }
-.app-bar-date { font-size: 12px; color: #86909c; background: #f5f6f8; padding: 2px 10px; border-radius: 4px; }
+.app-bar-title { font-size: 15px; font-weight: 700; color: var(--primary); }
+.app-bar-desc { font-size: 12px; color: var(--text-placeholder); }
+.app-bar-date { font-size: 12px; color: var(--text-secondary); background: var(--primary-light); padding: 2px 12px; border-radius: 8px; border: 1px solid var(--primary-lighter); font-weight: 500; }
 
-/* Content */
-.app-body { padding: 24px; overflow-y: auto; background: #f8f9fa; }
+/* Content — Claude 暗色背景 */
+.app-body { padding: 24px; overflow-y: auto; background: var(--bg-page); }
 
 /* Scrollbar */
 .side::-webkit-scrollbar { width: 4px; }
-.side::-webkit-scrollbar-thumb { background: #edf0f5; border-radius: 4px; }
+.side::-webkit-scrollbar-thumb { background: var(--sidebar-border); border-radius: 4px; }
 .app-body::-webkit-scrollbar { width: 6px; }
-.app-body::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+.app-body::-webkit-scrollbar-thumb { background: var(--border-lighter); border-radius: 4px; }
 </style>

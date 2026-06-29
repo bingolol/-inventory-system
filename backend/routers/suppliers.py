@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
 import schemas, crud
-from commands import dispatch, CreateSupplier, UpdateSupplier, DeleteSupplier
+from commands import dispatch, CreatePartner, UpdatePartner, DeletePartner
 from uow import unit_of_work
 from errors import BusinessError, ErrorCode
 from operation_result import OperationResult, EntityType, OperationType
@@ -21,9 +21,10 @@ def list_suppliers(page: int = 1, page_size: int = 20, search: str = None, accou
 @router.post("")
 def create_supplier(data: schemas.SupplierCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
-        s = dispatch(CreateSupplier(
+        s = dispatch(CreatePartner(
             account_id=account_id,
             operator=operator,
+            partner_type="supplier",
             name=data.name,
             contact=data.contact,
             phone=data.phone,
@@ -59,10 +60,11 @@ def get_supplier(supplier_id: int, account_id: int = Depends(get_account_id), db
 @router.put("/{supplier_id}")
 def update_supplier(supplier_id: int, data: schemas.SupplierUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
-        s = dispatch(UpdateSupplier(
+        s = dispatch(UpdatePartner(
             account_id=account_id,
             operator=operator,
-            supplier_id=supplier_id,
+            partner_type="supplier",
+            partner_id=supplier_id,
             name=data.name,
             contact=data.contact,
             phone=data.phone,
@@ -92,10 +94,11 @@ def delete_supplier(supplier_id: int, account_id: int = Depends(get_account_id),
         raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "供应商", "order_id": supplier_id})
     
     with unit_of_work(db):
-        if not dispatch(DeleteSupplier(
+        if not dispatch(DeletePartner(
             account_id=account_id,
             operator=operator,
-            supplier_id=supplier_id,
+            partner_type="supplier",
+            partner_id=supplier_id,
         ), db):
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "供应商", "order_id": supplier_id})
     

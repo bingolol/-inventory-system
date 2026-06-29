@@ -1,7 +1,6 @@
 """供应商 + 客户 Command + Handler — 3个通用命令覆盖伙伴管理全部写操作
 
 Supplier 和 Customer 共享相同的 CRUD 模式，通过 partner_type 参数化区分。
-旧类名（CreateSupplier 等）保留为向后兼容别名。
 """
 
 from dataclasses import dataclass
@@ -10,7 +9,7 @@ from typing import Any, Optional
 import models
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log
+from crud.base import _log
 from errors import BusinessError, ErrorCode
 
 
@@ -148,61 +147,3 @@ class DeletePartnerHandler(CommandHandler):
         db.delete(entity)
         db.flush()
         return True
-
-
-# ═══════════════════════════════════════════════════════════
-# 向后兼容别名
-# ═══════════════════════════════════════════════════════════
-
-# 供应商命令
-@dataclass
-class CreateSupplier(CreatePartner):
-    partner_type: str = "supplier"
-
-@dataclass
-class UpdateSupplier(UpdatePartner):
-    partner_type: str = "supplier"
-    supplier_id: int = 0
-
-    def __post_init__(self):
-        self.partner_id = self.supplier_id
-
-@dataclass
-class DeleteSupplier(DeletePartner):
-    partner_type: str = "supplier"
-    supplier_id: int = 0
-
-    def __post_init__(self):
-        self.partner_id = self.supplier_id
-
-
-# 客户命令
-@dataclass
-class CreateCustomer(CreatePartner):
-    partner_type: str = "customer"
-
-@dataclass
-class UpdateCustomer(UpdatePartner):
-    partner_type: str = "customer"
-    customer_id: int = 0
-
-    def __post_init__(self):
-        self.partner_id = self.customer_id
-
-@dataclass
-class DeleteCustomer(DeletePartner):
-    partner_type: str = "customer"
-    customer_id: int = 0
-
-    def __post_init__(self):
-        self.partner_id = self.customer_id
-
-
-# 注册别名到 registry（dispatch 按 type(cmd) 查表，需要显式注册）
-from .base import register_alias
-register_alias(CreateSupplier, CreatePartnerHandler)
-register_alias(UpdateSupplier, UpdatePartnerHandler)
-register_alias(DeleteSupplier, DeletePartnerHandler)
-register_alias(CreateCustomer, CreatePartnerHandler)
-register_alias(UpdateCustomer, UpdatePartnerHandler)
-register_alias(DeleteCustomer, DeletePartnerHandler)

@@ -83,15 +83,15 @@ useAccountAwareData(loadBalanceSheet)
 .bs-top { display: flex; gap: 8px; margin-bottom: 16px; }
 .bs-body { animation: bf 0.3s ease; }
 @keyframes bf { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.bs-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0; }
-.bs-title-text { font-size: 18px; font-weight: 700; color: #1d2129; }
-.bs-title-date { font-size: 13px; color: #86909c; }
+.bs-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-lighter); }
+.bs-title-text { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.bs-title-date { font-size: 13px; color: var(--text-secondary); }
 .bs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.bs-col-header { font-size: 14px; font-weight: 700; color: #4f6ef7; padding: 8px 0; margin-bottom: 4px; border-bottom: 2px solid #eef1ff; }
+.bs-col-header { font-size: 14px; font-weight: 700; color: var(--primary); padding: 8px 0; margin-bottom: 4px; border-bottom: 2px solid var(--primary-light); }
 .bs-table { display: flex; flex-direction: column; }
-.bs-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #4e5969; border-bottom: 1px solid #f5f5f5; }
-.bs-main { font-weight: 700; color: #1d2129; font-size: 14px; border-bottom: none; }
+.bs-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: var(--text-regular); border-bottom: 1px solid var(--border-lighter); }
+.bs-main { font-weight: 700; color: var(--text-primary); font-size: 14px; border-bottom: none; }
 .bs-val { font-family: 'Consolas', 'Monaco', monospace; }
-.bs-total { font-weight: 700; color: #4f6ef7; font-size: 14px; border-bottom: 2px solid #eef1ff; padding: 8px 0; }
-.bs-grand-total { font-weight: 800; color: #1d2129; font-size: 16px; border-bottom: none; padding: 10px 0; border-top: 2px solid #1d2129; margin-top: 4px; }
+.bs-total { font-weight: 700; color: var(--primary); font-size: 14px; border-bottom: 2px solid var(--primary-light); padding: 8px 0; }
+.bs-grand-total { font-weight: 800; color: var(--text-primary); font-size: 16px; border-bottom: none; padding: 10px 0; border-top: 2px solid var(--text-primary); margin-top: 4px; }
 </style>

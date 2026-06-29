@@ -14,7 +14,7 @@ import models
 from sqlalchemy import or_
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log, get_or_create_inventory
+from crud.base import _log, get_or_create_inventory
 from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
@@ -175,6 +175,7 @@ class AdjustInventory(Command):
     product_id: int = 0
     quantity: float = 0.0
     adjust_date: Optional[str] = None
+    reason: Optional[str] = None  # 报损原因（减少库存时必填）
 
 
 @register(AdjustInventory)
@@ -197,6 +198,14 @@ class AdjustInventoryHandler(CommandHandler):
         old_qty = inv.quantity
         new_qty = Decimal(str(cmd.quantity))
         delta = new_qty - old_qty
+
+        # 2a. 库存调整（无论增加或减少）必须填写原因
+        if delta != 0 and not cmd.reason:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="库存调整必须填写原因，例如：盘盈、盘亏、损坏、过期、丢失、纠错等",
+                ai_instruction="STOP_RETRYING. 库存调整时 reason 字段必填，请补充调整原因。"
+            )
 
         # 3. 通过 InventoryEngine 创建 StockMove（BR-7 合规）
         if delta != 0 and product and product.track_inventory:
@@ -245,8 +254,9 @@ class AdjustInventoryHandler(CommandHandler):
         else:
             inv.quantity = new_qty
 
-        # 4. 日志
+        # 4. 日志（记录调整原因）
+        log_detail = f"库存盘点: {old_qty}->{cmd.quantity}（原因: {cmd.reason}）"
         _log(db, cmd.account_id, "adjust", "inventory", cmd.product_id,
-             f"库存盘点: {old_qty}->{cmd.quantity}", operator=cmd.operator)
+             log_detail, operator=cmd.operator)
         db.flush()
         return inv

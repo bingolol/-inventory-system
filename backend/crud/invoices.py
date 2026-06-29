@@ -66,16 +66,16 @@ def get_tax_report(db: Session, account_id: int, year: int, quarter: int):
         models.Invoice.issue_date < quarter_end_str
     ).all()
 
-    output_total = sum(_d(inv.amount_without_tax) for inv in out_invoices)
-    output_tax = sum(_d(inv.tax_amount) for inv in out_invoices)
-    input_total = sum(_d(inv.amount_without_tax) for inv in in_invoices)
+    output_total = _d(sum(_d(inv.amount_without_tax) for inv in out_invoices))
+    output_tax = _d(sum(_d(inv.tax_amount) for inv in out_invoices))
+    input_total = _d(sum(_d(inv.amount_without_tax) for inv in in_invoices))
     
     # 进项税额：一般纳税人只计算已认证的专票
     if taxpayer_type == "general":
-        input_tax = sum(_d(inv.tax_amount) for inv in in_invoices 
-                       if inv.certification_status == "certified" and inv.invoice_type == "special")
+        input_tax = _d(sum(_d(inv.tax_amount) for inv in in_invoices 
+                       if inv.certification_status == "certified" and inv.invoice_type == "special"))
     else:
-        input_tax = sum(_d(inv.tax_amount) for inv in in_invoices)
+        input_tax = _d(sum(_d(inv.tax_amount) for inv in in_invoices))
     
     tax_payable = max(output_tax - input_tax, Decimal('0'))
 

@@ -213,21 +213,24 @@ def test_calculate_vat_small_scale_basic(engine):
         total_revenue=Decimal('100000'),
         taxpayer_type='small_scale'
     )
-    # 应纳税额 = 100000 * 1% = 1000
-    assert result.tax_payable == Decimal('1000.00')
+    # 季度≤30万：普票免税，未传 ordinary/special 默认全部为普票 → tax_payable=0
+    assert result.tax_payable == Decimal('0.00')
     assert result.tax_rate == Decimal('0.03')
     assert result.reduction_amount > Decimal('0')
+    assert "免征增值税" in result.reduction_item
 
 
 def test_calculate_vat_small_scale_monthly_exemption(engine):
-    """小规模纳税人：月销售额≤10万免征附加税"""
+    """小规模纳税人：季度销售额≤30万，普票免征增值税"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('300000'),  # 季度30万，月10万
+        total_revenue=Decimal('300000'),  # 季度30万
         taxpayer_type='small_scale'
     )
-    # 月销售额 = 300000 / 3 = 100000 ≤ 100000，附加税免征
+    # 季度≤30万：普票免税 → 应纳税额=0，附加税=0
+    assert result.tax_payable == Decimal('0.00')
     assert result.surcharge_education == Decimal('0')
     assert result.surcharge_local_education == Decimal('0')
+    assert result.surcharge_urban_construction == Decimal('0')
 
 
 def test_calculate_vat_invalid_type(engine):
@@ -282,7 +285,7 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
     # 城市维护建设税 = 5000 * 7% = 350
     # 教育费附加 = 5000 * 3% = 150
     # 地方教育附加 = 5000 * 2% = 100
-    assert result.surcharge_stamp == Decimal('350.00')
+    assert result.surcharge_urban_construction == Decimal('350.00')
     assert result.surcharge_education == Decimal('150.00')
     assert result.surcharge_local_education == Decimal('100.00')
 
@@ -329,7 +332,7 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
     # 城市维护建设税 = 5000 * 7% = 350
     # 教育费附加 = 5000 * 3% = 150
     # 地方教育附加 = 5000 * 2% = 100
-    assert result.surcharge_stamp == Decimal('350.00')
+    assert result.surcharge_urban_construction == Decimal('350.00')
     assert result.surcharge_education == Decimal('150.00')
     assert result.surcharge_local_education == Decimal('100.00')
 
@@ -366,13 +369,18 @@ def test_calculate_income_tax_small_micro_200w(engine):
 
 
 def test_calculate_income_tax_negative_profit(engine):
-    """负利润 → 抛出异常"""
-    with pytest.raises(AccountingError) as exc_info:
-        engine.calculate_income_tax(
-            profit=Decimal('-100000'),
-            taxpayer_type='small_micro'
-        )
-    assert exc_info.value.code == AccountingErrorCode.INCOME_TAX_PROFIT_NEGATIVE
+    """负利润（亏损）→ 不计提所得税，返回0（不抛异常）
+
+    依据：《小企业会计准则》§5.5 亏损不缴税
+    与 engine_tax.py 的 max(cumulative_profit * rate, 0) 逻辑一致
+    """
+    result = engine.calculate_income_tax(
+        profit=Decimal('-100000'),
+        taxpayer_type='small_micro'
+    )
+    assert result.tax_payable == Decimal('0')
+    assert result.actual_tax == Decimal('0')
+    assert "亏损" in result.reduction_item
 
 
 def test_calculate_income_tax_general_25pct(engine):

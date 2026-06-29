@@ -18,10 +18,9 @@ from domain.sale_order import SaleOrderDomain
 from domain.inventory import InventoryDomain
 
 from .base import Command, CommandHandler, register
-from .crud_compat import (
-    _d, _distribute_total_price, _generate_order_no, _log,
-    get_or_create_inventory, get_product, get_sale_order,
-)
+from crud.base import _generate_order_no, _log, get_or_create_inventory
+from crud.products import get_product
+from crud.orders import get_sale_order, _d, _distribute_total_price
 from crud.reversal import reverse_receipts
 from errors import BusinessError, ErrorCode
 from crud.inventory_ops import sale_deduct
@@ -57,10 +56,19 @@ class CreateSaleOrderHandler(CommandHandler):
         if dup_pids:
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
+        # 1a. 业务日期必填（级联到凭证日期和库存移动日期，不能用当前时间兜底）
+        if not cmd.sale_date:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="销售日期不能为空，请提供业务发生日期",
+                ai_instruction="STOP_RETRYING. sale_date 字段必填，请补充销售业务日期（如 2025-06-28）。"
+            )
+
         # 2. 生成订单号
         order_no = _generate_order_no(db, "SO", cmd.sale_date)
 
         # 3. 创建订单头
+        sale_dt = datetime.fromisoformat(cmd.sale_date) if isinstance(cmd.sale_date, str) else cmd.sale_date
         order = models.SaleOrder(
             account_id=cmd.account_id,
             order_no=order_no,
@@ -71,7 +79,7 @@ class CreateSaleOrderHandler(CommandHandler):
             notes=cmd.notes,
             image_url=cmd.image_url,
             total_price=0,
-            sale_date=datetime.fromisoformat(cmd.sale_date) if isinstance(cmd.sale_date, str) else (cmd.sale_date or datetime.now()),
+            sale_date=sale_dt,
         )
         db.add(order)
         db.flush()

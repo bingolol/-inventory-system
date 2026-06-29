@@ -110,26 +110,26 @@ const form = ref(defaultForm())
 const rules = { date: [{ required: true, message: '请选择期初日期', trigger: 'change' }] }
 
 const groups = [
-  { label: '流动资产', color: '#4f6ef7', bg: '#eef1ff', fields: [
+  { label: '流动资产', color: 'var(--primary)', bg: 'var(--primary-light)', fields: [
     { key: 'cash_balance', label: '现金余额' },
     { key: 'bank_balance', label: '银行存款' },
     { key: 'accounts_receivable', label: '应收账款' },
     { key: 'inventory_value', label: '库存价值' },
   ]},
-  { label: '非流动资产', color: '#e6a23c', bg: '#fdf6ec', fields: [
+  { label: '非流动资产', color: 'var(--warning)', bg: 'var(--warning-light)', fields: [
     { key: 'fixed_assets_original', label: '固定资产原值' },
     { key: 'accumulated_depreciation', label: '累计折旧' },
     { key: 'intangible_assets_original', label: '无形资产原值' },
     { key: 'accumulated_amortization', label: '累计摊销' },
   ]},
-  { label: '流动负债', color: '#f56c6c', bg: '#fef0f0', fields: [
+  { label: '流动负债', color: 'var(--danger)', bg: 'var(--danger-light)', fields: [
     { key: 'accounts_payable', label: '应付账款' },
     { key: 'tax_payable', label: '应交税费' },
   ]},
-  { label: '非流动负债', color: '#67c23a', bg: '#f0f9eb', fields: [
+  { label: '非流动负债', color: 'var(--success)', bg: 'var(--success-light)', fields: [
     { key: 'long_term_borrowings', label: '长期借款' },
   ]},
-  { label: '权益', color: '#4f6ef7', bg: '#f4f6ff', fields: [
+  { label: '权益', color: 'var(--primary)', bg: 'var(--primary-light)', fields: [
     { key: 'paid_in_capital', label: '实收资本' },
     { key: 'retained_earnings', label: '未分配利润' },
   ]},
@@ -216,12 +216,12 @@ useAccountAwareData(loadData)
   gap: 12px;
   margin-bottom: 24px;
   padding-bottom: 20px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-lighter);
 }
 .ob-date-label {
   font-size: 14px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-primary);
 }
 
 .ob-groups {
@@ -231,8 +231,8 @@ useAccountAwareData(loadData)
   margin-bottom: 20px;
 }
 .ob-group {
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-lighter);
   border-left: 4px solid;
   border-radius: 12px;
   overflow: hidden;
@@ -261,7 +261,7 @@ useAccountAwareData(loadData)
 }
 .ob-field-label {
   font-size: 13px;
-  color: #4e5969;
+  color: var(--text-regular);
   min-width: 90px;
   flex-shrink: 0;
 }
@@ -276,12 +276,12 @@ useAccountAwareData(loadData)
   font-weight: 500;
 }
 .ob-bar-ok {
-  background: #f0f9eb;
-  color: #67c23a;
+  background: var(--success-light);
+  color: var(--success);
 }
 .ob-bar-err {
-  background: #fef0f0;
-  color: #f56c6c;
+  background: var(--danger-light);
+  color: var(--danger);
 }
 .ob-bar-left {
   display: flex;
@@ -301,19 +301,19 @@ useAccountAwareData(loadData)
 }
 .ob-bar-right span { font-weight: 600; }
 .ob-bar-vs {
-  color: #c9cdd4;
+  color: var(--text-placeholder);
   font-weight: 400 !important;
 }
 
 .ob-history {
   margin-top: 28px;
   padding-top: 24px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-lighter);
 }
 .ob-history-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 </style>

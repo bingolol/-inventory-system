@@ -17,7 +17,7 @@ from uow import unit_of_work
 from commands.base import dispatch
 from commands.invoice_commands import (
     CreateInvoice, UpdateInvoice, DeleteInvoice, CertifyInvoice,
-    CreateInvoiceWithFixedAsset,
+    CreateInvoiceWithFixedAsset, ReverseInvoice,
 )
 from accounting_engine import AccountingEngine
 
@@ -354,6 +354,52 @@ async def certify_invoice_endpoint(
         data={"invoice_id": invoice_id}
     )
     return result.to_dict()
+
+
+@router.post("/{invoice_id}/reverse")
+async def reverse_invoice(
+    invoice_id: int,
+    body: dict = None,
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
+):
+    """红字发票冲红：标记原发票 + 创建红字发票 + 级联冲红凭证和库存
+
+    级联规则：
+    - 销项发票（关联销售单）：冲红收入/应收/税额凭证 + 库存回退
+    - 进项发票（关联采购单）：冲红存货/应付/税额凭证 + 库存退回
+    - 独立发票：仅标记+创建红字发票
+    """
+    reason = (body or {}).get("reason", "")
+    with unit_of_work(db):
+        result = dispatch(ReverseInvoice(
+            account_id=account_id,
+            operator=operator,
+            invoice_id=invoice_id,
+            reason=reason,
+        ), db)
+
+    original = result["original_invoice"]
+    red = result["red_invoice"]
+    cascade = result["cascade"]
+
+    op = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.INVOICE,
+        entity_id=invoice_id,
+        summary=f"红字发票冲红: {original.invoice_no} → {red.invoice_no}",
+        ai_hint=f"原发票已标记冲红，红字发票 {red.invoice_no} 已创建。级联操作: {', '.join(cascade)}",
+        data={
+            "original_invoice_id": invoice_id,
+            "original_invoice_no": original.invoice_no,
+            "red_invoice_id": red.id,
+            "red_invoice_no": red.invoice_no,
+            "red_amount_with_tax": str(red.amount_with_tax),
+            "cascade": cascade,
+        },
+    )
+    return op.to_dict()
 
 
 @router.put("/{invoice_id}")

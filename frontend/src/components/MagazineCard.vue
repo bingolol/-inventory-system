@@ -40,11 +40,11 @@ defineProps({
 
 <style scoped>
 .mg-card {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 24px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-lighter);
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -65,7 +65,7 @@ defineProps({
 .mg-card-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-primary);
   margin-bottom: 16px;
 }
 .mg-card-stat {
@@ -74,7 +74,7 @@ defineProps({
 .mg-card-stat-value {
   font-size: 30px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--text-primary);
   letter-spacing: -0.5px;
   line-height: 1.2;
 }
@@ -88,7 +88,7 @@ defineProps({
   flex-direction: column;
   gap: 8px;
   padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-lighter);
 }
 .mg-card-item {
   display: flex;
@@ -116,7 +116,7 @@ defineProps({
 .mg-skeleton-line {
   height: 14px;
   border-radius: 4px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, var(--border-lighter) 25%, var(--bg-elevated) 50%, var(--border-lighter) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }

@@ -205,9 +205,14 @@ async function resolveCustomerId(name) {
   if (!name?.trim()) return null
   const existing = partners.value.find(c => c.name === name.trim())
   if (existing) return existing.id
-  const created = await partnersApi.createCustomer({ name: name.trim() })
-  partners.value.push(created)
-  return created.id
+  try {
+    const created = await partnersApi.createCustomer({ name: name.trim() })
+    partners.value.push(created)
+    return created.id
+  } catch (e) {
+    ElMessage.error('创建客户失败，请检查网络后重试')
+    return null
+  }
 }
 
 async function handleSave() {

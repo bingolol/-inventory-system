@@ -3,13 +3,40 @@
     <!-- Row 1: 4 metrics -->
     <div class="d-row">
       <div class="d-c">
-        <div class="d-ct"><span class="d-cl">本月净利润</span><span class="d-cup" v-if="profitLoss.net_profit > 0">盈利</span></div>
-        <div class="d-cv" :style="{ color: profitLoss.net_profit >= 0 ? '#67c23a' : '#f56c6c' }">{{ formatMoney(profitLoss.net_profit) }}</div>
-        <div class="d-cs">收入 {{ formatMoney(profitLoss.total_revenue) }} — 成本 {{ formatMoney(profitLoss.total_cost) }} — 费用 {{ formatMoney(profitLoss.total_expenses) }}</div>
+        <div class="d-ct">
+          <span class="d-cl">本月净利润</span>
+          <span class="d-bdg" :class="profitLoss.net_profit > 0 ? 'd-bdg-su' : 'd-bdg-da'" v-if="profitLoss.net_profit !== 0">
+            {{ profitLoss.net_profit > 0 ? '盈利' : '亏损' }}
+          </span>
+        </div>
+        <div class="d-cv" :style="{ color: profitLoss.net_profit >= 0 ? 'var(--success)' : 'var(--danger)' }">{{ formatMoney(profitLoss.net_profit) }}</div>
+        <div class="d-divider"></div>
+        <div class="d-ci"><span class="d-cil">收入</span><span class="d-civ">{{ formatMoney(profitLoss.total_revenue) }}</span></div>
+        <div class="d-ci"><span class="d-cil">成本</span><span class="d-civ">{{ formatMoney(profitLoss.total_cost) }}</span></div>
+        <div class="d-ci"><span class="d-cil">费用</span><span class="d-civ">{{ formatMoney(profitLoss.total_expenses) }}</span></div>
+        <div class="d-ci"><span class="d-cil">毛利</span><span class="d-civ">{{ formatMoney(profitLoss.total_revenue - profitLoss.total_cost) }}</span></div>
       </div>
-      <div class="d-c"><div class="d-cl">别人欠我</div><div class="d-cv" style="color:#4f62c0;">{{ formatMoney(receivable.total_receivable) }}</div><div class="d-cs">{{ receivable.unpaid_customer_count }} 家客户未回款</div></div>
-      <div class="d-c"><div class="d-cl">我欠别人</div><div class="d-cv" style="color:#f56c6c;">{{ formatMoney(receivable.total_payable) }}</div><div class="d-cs">{{ receivable.unpaid_supplier_count }} 家供应商</div></div>
-      <div class="d-c"><div class="d-cl">库存资金</div><div class="d-cv" style="color:#e6a23c;">{{ formatMoney(inventory.total_stock_value) }}</div><div class="d-cs">{{ inventory.total_quantity }} 件 · {{ inventory.product_count }} 种 · {{ inventory.low_stock_count }} 项预警</div></div>
+      <div class="d-c">
+        <div class="d-cl">别人欠我</div>
+        <div class="d-cv" style="color:var(--primary);">{{ formatMoney(receivable.total_receivable) }}</div>
+        <div class="d-divider"></div>
+        <div class="d-ci"><span class="d-cil">未回款客户</span><span class="d-civ">{{ receivable.unpaid_customer_count }} 家</span></div>
+        <div class="d-ci"><span class="d-cil">销售笔数</span><span class="d-civ">{{ profitLoss.sale_count }}</span></div>
+      </div>
+      <div class="d-c">
+        <div class="d-cl">我欠别人</div>
+        <div class="d-cv" style="color:var(--danger);">{{ formatMoney(receivable.total_payable) }}</div>
+        <div class="d-divider"></div>
+        <div class="d-ci"><span class="d-cil">未付供应商</span><span class="d-civ">{{ receivable.unpaid_supplier_count }} 家</span></div>
+      </div>
+      <div class="d-c">
+        <div class="d-cl">库存资金</div>
+        <div class="d-cv" style="color:var(--warning);">{{ formatMoney(inventory.total_stock_value) }}</div>
+        <div class="d-divider"></div>
+        <div class="d-ci"><span class="d-cil">库存总量</span><span class="d-civ">{{ inventory.total_quantity }} 件</span></div>
+        <div class="d-ci"><span class="d-cil">商品种类</span><span class="d-civ">{{ inventory.product_count }} 种</span></div>
+        <div class="d-ci"><span class="d-cil">预警项</span><span class="d-civ" :style="{ color: inventory.low_stock_count > 0 ? 'var(--danger)' : 'var(--text-secondary)' }">{{ inventory.low_stock_count }}</span></div>
+      </div>
     </div>
 
     <!-- Row 2 -->
@@ -27,13 +54,13 @@
           </div>
           <div class="d-bh"><span class="d-bt">业务处理</span></div>
           <div class="d-flow">
-            <div class="d-fstep" @click="router.push('/supply-chain')"><span class="d-ficon" style="background:#f0f9eb;">📦</span><span class="d-fname">采购入库</span></div>
+            <div class="d-fstep" @click="router.push('/supply-chain')"><span class="d-ficon" style="background:var(--success-light);">📦</span><span class="d-fname">采购入库</span></div>
             <span class="d-farrow">→</span>
-            <div class="d-fstep" @click="router.push('/sales-customers')"><span class="d-ficon" style="background:#eef1ff;">📋</span><span class="d-fname">销售开单</span></div>
+            <div class="d-fstep" @click="router.push('/sales-customers')"><span class="d-ficon" style="background:var(--primary-light);">📋</span><span class="d-fname">销售开单</span></div>
             <span class="d-farrow">→</span>
-            <div class="d-fstep" @click="router.push('/expenses')"><span class="d-ficon" style="background:#fef0f0;">💸</span><span class="d-fname">费用/付款</span></div>
+            <div class="d-fstep" @click="router.push('/expenses')"><span class="d-ficon" style="background:var(--danger-light);">💸</span><span class="d-fname">费用/付款</span></div>
             <span class="d-farrow">→</span>
-            <div class="d-fstep" @click="router.push('/invoices')"><span class="d-ficon" style="background:#fdf6ec;">🧾</span><span class="d-fname">录发票</span></div>
+            <div class="d-fstep" @click="router.push('/invoices')"><span class="d-ficon" style="background:var(--warning-light);">🧾</span><span class="d-fname">录发票</span></div>
           </div>
           <div class="d-bh" style="margin-top:14px;"><span class="d-bt">数据查看</span></div>
           <div class="d-acts">
@@ -50,18 +77,18 @@
             <tr><th>商品</th><th>编码</th><th style="width:60px;">库存</th><th style="width:90px;">状态</th></tr>
             <tr v-for="a in alerts.slice(0,5)" :key="a.product_id">
               <td style="font-weight:500;">{{ a.product_name }}</td>
-              <td style="color:#c9cdd4;">{{ a.product_sku }}</td>
-              <td :style="{ color: a.quantity < 0 ? '#f56c6c' : '#e6a23c', fontWeight:600 }">{{ a.quantity }}</td>
+              <td style="color:var(--text-placeholder);">{{ a.product_sku }}</td>
+              <td :style="{ color: a.quantity < 0 ? 'var(--danger)' : 'var(--warning)', fontWeight:600 }">{{ a.quantity }}</td>
               <td><span class="d-bg" :class="a.quantity < 0 ? 'd-bd' : 'd-bw'">{{ a.quantity < 0 ? '负库存' : '低于预警线' }}</span></td>
             </tr>
           </table>
-          <div v-else style="padding:16px 0;text-align:center;color:#c9cdd4;font-size:13px;">暂无预警，库存状况良好</div>
+          <div v-else style="padding:16px 0;text-align:center;color:var(--text-placeholder);font-size:13px;">暂无预警，库存状况良好</div>
         </div>
       </div>
 
       <div class="d-side">
         <div class="d-box" style="height:100%;">
-          <div class="d-bh"><span class="d-bt">收入趋势</span><span style="font-size:11px;color:#c9cdd4;">近30天</span></div>
+          <div class="d-bh"><span class="d-bt">收入趋势</span><span style="font-size:11px;color:var(--text-placeholder);">近30天</span></div>
           <v-chart :option="trendOption" autoresize style="height:calc(100% - 28px);min-height:240px;" />
         </div>
       </div>
@@ -91,11 +118,11 @@ const trendOption = computed(() => {
   return {
     tooltip: { trigger: 'axis', formatter: (p) => `<b>${d[p[0].dataIndex]?.date || ''}</b><br/>${p.map(x => x.marker + ' ' + x.seriesName + ': ¥' + Number(x.value).toLocaleString()).join('<br/>')}` },
     grid: { left: 36, right: 8, top: 6, bottom: 24 },
-    xAxis: { type: 'category', data: d.map(v => { const x = v.date?.split('-'); return x?.length >= 3 ? `${x[1]}/${x[2]}` : v.date }), axisLabel: { fontSize: 9, color: '#c9cdd4' } },
-    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f5f5f5' } }, axisLabel: { fontSize: 9 } },
+    xAxis: { type: 'category', data: d.map(v => { const x = v.date?.split('-'); return x?.length >= 3 ? `${x[1]}/${x[2]}` : v.date }), axisLabel: { fontSize: 9, color: '#b7b5a9' }, axisLine: { lineStyle: { color: '#3d3d3a' } } },
+    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#3d3d3a' } }, axisLabel: { fontSize: 9, color: '#b7b5a9' } },
     series: [
-      { name: '销售', type: 'line', smooth: true, data: d.map(v => v.sale_amount ?? 0), lineStyle: { color: '#4f62c0', width: 2 }, areaStyle: { color: 'rgba(79,98,192,0.05)' }, symbol: 'none' },
-      { name: '采购', type: 'line', smooth: true, data: d.map(v => v.purchase_amount ?? 0), lineStyle: { color: '#e6a23c', width: 2 }, areaStyle: { color: 'rgba(230,162,60,0.05)' }, symbol: 'none' }
+      { name: '销售', type: 'line', smooth: true, data: d.map(v => v.sale_amount ?? 0), lineStyle: { color: '#d97757', width: 2 }, areaStyle: { color: 'rgba(217,119,87,0.08)' }, symbol: 'none' },
+      { name: '采购', type: 'line', smooth: true, data: d.map(v => v.purchase_amount ?? 0), lineStyle: { color: '#9c87f5', width: 2 }, areaStyle: { color: 'rgba(156,135,245,0.08)' }, symbol: 'none' }
     ]
   }
 })
@@ -107,47 +134,52 @@ useAccountAwareData(loadAll)
 .d { animation: df 0.2s ease; }
 @keyframes df { from { opacity: 0; } to { opacity: 1; } }
 
-.d-row { display: flex; gap: 12px; margin-bottom: 16px; }
-.d-c { flex: 1; background: #fff; border: 1px solid #edf0f5; border-radius: 10px; padding: 16px; }
-.d-ct { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-.d-cl { font-size: 12px; color: #4e5969; font-weight: 500; }
-.d-cup { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #f0f9eb; color: #67c23a; font-weight: 500; }
-.d-cv { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; margin-bottom: 2px; }
-.d-cs { font-size: 12px; color: #86909c; }
+.d-row { display: flex; gap: 16px; margin-bottom: 20px; }
+.d-c { flex: 1; background: var(--bg-card); border: 1px solid var(--border-light); border-left: 4px solid var(--primary); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 0; }
+.d-ct { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.d-cl { font-size: 13px; color: var(--primary); font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; font-size: 11px; }
+.d-bdg { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+.d-bdg-su { background: var(--success-light); color: var(--success); }
+.d-bdg-da { background: var(--danger-light); color: var(--danger); }
+.d-cv { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; margin-bottom: 0; font-family: var(--font-mono); }
+.d-divider { height: 1px; background: var(--border-light); margin: 8px 0 6px; }
+.d-ci { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; font-size: 13px; line-height: 1.6; }
+.d-cil { color: var(--text-secondary); }
+.d-civ { font-weight: 600; color: var(--text-regular); font-family: var(--font-mono); }
 
 .d-main { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .d-side { flex: 0 0 360px; }
-.d-box { background: #fff; border: 1px solid #edf0f5; border-radius: 10px; padding: 16px; }
+.d-box { background: var(--bg-card); border: 1px solid var(--border-lighter); border-radius: 12px; padding: 16px; }
 .d-bh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.d-bt { font-size: 13px; font-weight: 600; color: #1d2129; }
-.d-bl { font-size: 12px; color: #86909c; cursor: pointer; }
-.d-bl:hover { color: #4f62c0; }
+.d-bt { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.d-bl { font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.d-bl:hover { color: var(--primary); }
 
 .d-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Summary grid */
 .d-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.d-si { background: #f8f9fa; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
-.d-sil { font-size: 11px; color: #4e5969; }
-.d-siv { font-size: 18px; font-weight: 700; color: #1d2129; font-family: 'Consolas','Monaco',monospace; }
-.d-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid #edf0f5; border-radius: 6px; font-size: 12px; color: #4e5969; cursor: pointer; background: #fff; }
-.d-btn:hover { background: #f5f6f8; border-color: #d0d5dd; }
+.d-si { background: var(--bg-elevated); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.d-sil { font-size: 11px; color: var(--text-secondary); }
+.d-siv { font-size: 18px; font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); }
+.d-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid var(--border-lighter); border-radius: 8px; font-size: 12px; color: var(--text-regular); cursor: pointer; background: var(--bg-card); }
+.d-btn:hover { background: var(--bg-hover); border-color: var(--border-light); }
 
 /* Business flow */
 .d-flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.d-fstep { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #edf0f5; border-radius: 6px; cursor: pointer; background: #fff; }
-.d-fstep:hover { background: #f5f6f8; }
-.d-ficon { width: 24px; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-.d-fname { font-size: 12px; font-weight: 500; color: #1d2129; }
-.d-farrow { color: #d0d5dd; font-size: 14px; }
+.d-fstep { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-lighter); border-radius: 8px; cursor: pointer; background: var(--bg-card); }
+.d-fstep:hover { background: var(--bg-hover); }
+.d-ficon { width: 24px; height: 24px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.d-fname { font-size: 12px; font-weight: 500; color: var(--text-primary); }
+.d-farrow { color: var(--border-light); font-size: 14px; }
 
 .d-tbl { width: 100%; border-collapse: collapse; }
-.d-tbl th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #86909c; border-bottom: 1px solid #f5f6f8; }
-.d-tbl td { padding: 8px 10px; font-size: 13px; color: #4e5969; border-bottom: 1px solid #f8f9fa; }
+.d-tbl th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-lighter); }
+.d-tbl td { padding: 8px 10px; font-size: 13px; color: var(--text-regular); border-bottom: 1px solid var(--border-lighter); }
 .d-tbl tr:last-child td { border: none; }
-.d-tbl tr:hover td { background: #fafbfc; }
+.d-tbl tr:hover td { background: var(--bg-hover); }
 
-.d-bg { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
-.d-bw { background: #fdf6ec; color: #e6a23c; }
-.d-bd { background: #fef0f0; color: #f56c6c; }
+.d-bg { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; font-weight: 500; }
+.d-bw { background: var(--warning-light); color: var(--warning); }
+.d-bd { background: var(--danger-light); color: var(--danger); }
 </style>

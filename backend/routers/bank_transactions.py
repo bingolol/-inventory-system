@@ -12,6 +12,7 @@ from account_dep import get_account_id, get_operator
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.base import _log
+from crud.reversal import reverse_bank_transaction
 from utils import _d
 
 router = APIRouter()
@@ -62,6 +63,16 @@ def create_bank_transaction(
             new_balance = _d(bank_account.balance) + amount
         else:
             new_balance = _d(bank_account.balance) - amount
+            # 余额校验：禁止银行账户透支（防止负资产）
+            if new_balance < 0:
+                raise BusinessError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=f"银行账户余额不足: 当前余额 {bank_account.balance}，"
+                            f"支出金额 {amount}，超额 {abs(new_balance)}",
+                    ai_instruction=f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 "
+                                   f"{bank_account.balance}，不足以支出 {amount}。"
+                                   f"请减少金额或先充值。"
+                )
 
         # 创建银行流水
         transaction = BankTransaction(
@@ -85,3 +96,24 @@ def create_bank_transaction(
 
     db.refresh(transaction)
     return BankTransactionOut.model_validate(transaction)
+
+
+@router.post("/{transaction_id}/reverse")
+def reverse_bank_tx(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+):
+    """红冲银行交易：生成反向凭证 + 反向流水"""
+    with unit_of_work(db):
+        reversal = reverse_bank_transaction(db, account_id, transaction_id)
+        if not reversal:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"银行交易 {transaction_id} 不存在或已冲销",
+            )
+        _log(db, account_id, "reverse", "bank_transaction", transaction_id,
+             f"冲销银行交易 #{transaction_id}: {reversal.description}", operator=operator)
+    db.refresh(reversal)
+    return BankTransactionOut.model_validate(reversal)

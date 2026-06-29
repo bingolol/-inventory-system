@@ -14,7 +14,7 @@ import crud
 from crud.invoice_linkage import bulk_has_invoice, has_invoice as linkage_has_invoice
 from uow import unit_of_work
 from operation_result import OperationResult, EntityType, OperationType
-from finance_integration import post_journal, EXPENSE_ACCOUNT_CODE_MAP
+from finance_integration import post_journal, reverse_journal, EXPENSE_ACCOUNT_CODE_MAP
 
 router = APIRouter()
 
@@ -103,6 +103,8 @@ async def create_expense(
             "bank_account_id": None,
             "partner_id": None,
             "partner_type": None,
+            "source_model": "expense",
+            "source_id": db_expense.id,
         })
 
         crud._log(db, account_id, "create", "expense", db_expense.id,
@@ -180,6 +182,50 @@ async def update_expense(
         summary=f"费用更新成功，类别：{expense.category}，金额 {expense.amount}",
         ai_hint="费用已更新。",
         data={"id": expense.id, "category": expense.category, "amount": float(expense.amount)}
+    )
+    return result.to_dict()
+
+
+@router.post("/{expense_id}/reverse")
+async def reverse_expense(
+    expense_id: int,
+    db: Session = Depends(get_db),
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator)
+):
+    """红冲费用：冲红总账凭证 + 标记费用为已冲红（不物理删除，保留审计轨迹）"""
+    with unit_of_work(db):
+        expense = db.query(Expense).filter(
+            Expense.id == expense_id,
+            Expense.account_id == account_id
+        ).first()
+        if not expense:
+            raise BusinessError(code=ErrorCode.EXPENSE_NOT_FOUND, data={"expense_id": expense_id})
+
+        if getattr(expense, 'is_reversed', False):
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"费用 #{expense_id} 已被冲红，不可重复操作",
+                ai_instruction="STOP_RETRYING. 该费用已冲红。"
+            )
+
+        # 冲红总账凭证（reverse_journal 自带幂等）
+        reverse_journal(db, account_id, "expense", expense_id)
+
+        # 标记已冲红（保留记录，审计可追溯）
+        expense.is_reversed = True
+        expense.reversed_at = datetime.now()
+
+        crud._log(db, account_id, "reverse", "expense", expense_id,
+                  f"红冲费用: {expense.category} {expense.amount}", operator=operator)
+
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.EXPENSE,
+        entity_id=expense_id,
+        summary=f"费用 #{expense_id} 已红冲",
+        ai_hint="费用凭证已冲红，原费用记录保留（审计可追溯）。",
+        data={"expense_id": expense_id, "is_reversed": True}
     )
     return result.to_dict()
 

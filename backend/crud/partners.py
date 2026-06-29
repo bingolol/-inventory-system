@@ -1,6 +1,6 @@
 """供应商 + 客户 读取 CRUD
 
-写操作已迁移至 commands 层（CreateSupplier/UpdateSupplier/DeleteSupplier 等）。
+写操作已迁移至 commands 层（CreatePartner/UpdatePartner/DeletePartner）。
 本模块仅保留 list/get 查询函数，供 routers 直接调用。
 """
 

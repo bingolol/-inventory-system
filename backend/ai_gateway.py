@@ -74,8 +74,10 @@ AI_CAPABILITIES: list[Capability] = [
     # ── 采购 / 销售 ──
     Capability("POST",   "/api/purchases",           "创建采购单（自动入库）", params_hint="supplier_id,items[]"),
     Capability("PUT",    "/api/purchases/{id}",      "更新采购单（含付款状态）"),
+    Capability("POST",   "/api/purchases/{id}/cancel", "取消采购单（冲红凭证+回退库存，保留审计轨迹）"),
     Capability("POST",   "/api/sales",               "创建销售单（自动扣库存）", params_hint="customer_id,items[],deduct_inventory"),
     Capability("PUT",    "/api/sales/{id}",          "更新销售单（含付款状态）"),
+    Capability("POST",   "/api/sales/{id}/cancel",   "取消销售单（冲红凭证+回退库存，保留审计轨迹）"),
     # ── 发票（创建对 AI 只走 /quick，变体已合并）──
     Capability(
         "POST", "/api/invoices/quick", "AI 快捷录发票（规范入口，支持 fixed_asset 嵌套对象）",
@@ -104,8 +106,12 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/receipts",            "创建收款"),
     Capability("POST",   "/api/receipts/{id}/reverse", "红冲收款"),
     Capability("POST",   "/api/payments/{id}/reverse", "红冲付款"),
+    # ── 冲红（危险操作，放行后由 ConfirmMiddleware 二次确认）──
+    Capability("POST",   "/api/invoices/{id}/reverse", "发票红冲（红字发票+级联冲红凭证库存）"),
+    Capability("POST",   "/api/expenses/{id}/reverse", "费用冲红（冲红总账凭证）"),
+    Capability("POST",   "/api/cash-flows/transactions/{id}/reverse", "现金流水冲红"),
     # ── 银行管理 ──
-    Capability("POST",   "/api/bank-accounts",       "创建银行账户", params_hint="account_name,account_number,bank_name"),
+    Capability("POST",   "/api/bank-accounts",       "创建银行账户", params_hint="bank_name,account_number"),
     # ── 月末结账 ──
     Capability("POST",   "/api/finance/month-close", "月末结账（自动算税+生成凭证）", params_hint="period:YYYY-MM"),
     # ── 银行对账 ──
@@ -115,6 +121,7 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/bank/reconciliation/{id}/generate-entry", "生成手续费/利息凭证"),
     Capability("POST",   "/api/bank/reconciliation/{id}/confirm", "确认调节表"),
     Capability("POST",   "/api/bank/entry",         "录入银行利息收入/手续费"),
+    Capability("POST",   "/api/bank/transaction/{id}/reverse", "红冲银行交易"),
     # ── 备份 ──
     Capability("POST",   "/api/backup/hot",          "热备份"),
     # ── 删除类（危险操作，放行后由 ConfirmMiddleware 二次确认）──

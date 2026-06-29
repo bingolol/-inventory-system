@@ -93,7 +93,8 @@ def make_stock_move(db, product_id, qty, unit_cost, move_type="inbound", source_
 
 def make_bank_account(db, account_id, name=None, balance=Decimal("100000")):
     tag = uuid.uuid4().hex[:8]
-    from models import BankAccount
+    from models import BankAccount, BankTransaction
+    from datetime import date
     ba = BankAccount(
         account_id=account_id,
         name=name or f"银行账户-{tag}",
@@ -102,6 +103,18 @@ def make_bank_account(db, account_id, name=None, balance=Decimal("100000")):
     )
     db.add(ba)
     db.flush()
+    if balance > 0:
+        db.add(BankTransaction(
+            account_id=account_id,
+            bank_account_id=ba.id,
+            transaction_type="inflow",
+            amount=balance,
+            balance_after=balance,
+            transaction_date=date.today(),
+            description="期初余额",
+            flow_category="operating",
+        ))
+        db.flush()
     return ba
 
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 import models, schemas
 
-from enums import OrderStatus, PaymentStatus, PaymentMethod, InvoiceDirection, FlowCategory
+from enums import OrderStatus, PaymentStatus, PaymentMethod, InvoiceDirection, InvoiceType, FlowCategory
 from .base import _log
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
@@ -66,43 +66,18 @@ def get_latest_opening_balance(db: Session, account_id: int, date: str = None):
 def _stock_moves_as_of(db: Session, account_id: int, query_end) -> list:
     """获取截至 query_end 的 StockMove。
 
-    move_date 优先（StockMove 自带业务日期），
-    无 move_date 时关联 source 单据查询（向后兼容）：
-    - purchase_order → PurchaseOrder.purchase_date
-    - sale_order → SaleOrder.sale_date
-    - *_reversal → 取原单据日期
+    StockMove.move_date 是业务日期真相源（BR-21 强制采购/销售单必须传业务日期，
+    InventoryEngine 写入 StockMove 时也会回填业务日期）。
+    本函数不再支持 move_date 为 NULL 的兼容分支，所有 StockMove 必须有 move_date。
     """
     moves = db.query(models.StockMove).filter(
         models.StockMove.account_id == account_id,
+        models.StockMove.move_date.isnot(None),
     ).all()
-
-    po_dates = {po.id: po.purchase_date for po in db.query(models.PurchaseOrder).filter(
-        models.PurchaseOrder.account_id == account_id).all()}
-    so_dates = {so.id: so.sale_date for so in db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id).all()}
 
     result = []
     for m in moves:
-        if m.move_date is not None:
-            biz_date = m.move_date
-        else:
-            st = m.source_type
-            if st.endswith("_reversal"):
-                base_type = st[:-len("_reversal")]
-                sid = m.source_id
-                if base_type == "purchase_order" and sid in po_dates:
-                    biz_date = po_dates[sid]
-                elif base_type == "sale_order" and sid in so_dates:
-                    biz_date = so_dates[sid]
-                else:
-                    biz_date = m.created_at
-            elif st == "purchase_order" and m.source_id in po_dates:
-                biz_date = po_dates[m.source_id]
-            elif st == "sale_order" and m.source_id in so_dates:
-                biz_date = so_dates[m.source_id]
-            else:
-                biz_date = m.created_at
-
+        biz_date = m.move_date
         if biz_date is None:
             continue
         if hasattr(biz_date, "hour"):
@@ -301,11 +276,13 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     accounts_payable = _credit_balance("2202").quantize(Q2)
 
     # ── 应交税费 — 纯总账取数（月结后自动体现）──
-    vat_payable = _credit_balance("222107").quantize(Q2)
+    # 一般纳税人：222101→222106→222107 月结后余额在 222107
+    # 小规模纳税人：直接用 222103，不走转出未交增值税机制，余额即应交税金
+    vat_payable = (_credit_balance("222107") + _credit_balance("222103")).quantize(Q2)
     surcharge_liability = _credit_balance("222104").quantize(Q2)
     income_tax_liability = _credit_balance("222105").quantize(Q2)
     tax_payable = (vat_payable + surcharge_liability + income_tax_liability).quantize(Q2)
-    # 留抵 = 应交增值税借方余额（222101+222102+222106，转出后剩余为留抵）
+    # 留抵 = 应交增值税借方余额（一般纳税人：222101+222102+222106，转出后剩余为留抵）
     vat_debit = (_balance("222101") + _balance("222102") + _balance("222106"))
     prepaid_tax = max(vat_debit, Decimal("0")).quantize(Q2)
 
@@ -313,18 +290,21 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     long_term_borrowings = opening_long_term_borrowings
 
     # ── 利润构成（全从总账取，月结后税金自动体现）──
-    period_revenue = _credit_balance("6001").quantize(Q2)
+    period_revenue = (_credit_balance("6001") + _credit_balance("6051")).quantize(Q2)
     period_cogs = _balance("6401").quantize(Q2)
-    period_expenses = _balance("6601").quantize(Q2)
+    period_expenses = (_balance("6601") + _balance("6602") + _balance("6603")).quantize(Q2)
     dep_d, dep_c = _lp(db, ledger, "1602", opening_date, query_end)
-    depreciation_expense = dep_c.quantize(Q2)
-    amortization_expense = Decimal("0")
+    depreciation_expense = dep_c.quantize(Q2)  # 已包含在6601中，此处仅用于报表展示
+    amortization_expense = Decimal("0")  # 摊销已包含在6601中，保留字段兼容前端
     surcharge_expense = _balance("6403").quantize(Q2)
     income_tax_expense = _balance("6801").quantize(Q2)
+    # 营业外收支（6301/6701）+ 资产处置损益（6111/6711）
+    non_operating_income = (_credit_balance("6301") + _credit_balance("6111")).quantize(Q2)
+    non_operating_expense = (_balance("6701") + _balance("6711")).quantize(Q2)
 
     period_profit = (period_revenue - period_cogs - period_expenses
                      - surcharge_expense - income_tax_expense
-                     - amortization_expense)
+                     + non_operating_income - non_operating_expense)
 
     paid_in_capital = _credit_balance("3001").quantize(Q2)
     retained_earnings = opening_retained_earnings + period_profit
@@ -376,6 +356,8 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         "period_expenses": period_expenses.quantize(Q2),
         "depreciation_expense": depreciation_expense.quantize(Q2),
         "amortization_expense": amortization_expense.quantize(Q2),
+        "non_operating_income": non_operating_income.quantize(Q2),
+        "non_operating_expense": non_operating_expense.quantize(Q2),
         "period_profit": period_profit.quantize(Q2),
     }
 
@@ -391,12 +373,15 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     ledger_is = account and db.query(Ledger).filter(Ledger.code == account.code).first()
 
+    # 营业收入 = 主营业务收入(6001) + 其他业务收入(6051)
     rev_d, rev_c = _lp(db, ledger_is, "6001", start_dt, end_dt)
-    revenue = (rev_c - rev_d).quantize(Q2)
+    other_rev_d, other_rev_c = _lp(db, ledger_is, "6051", start_dt, end_dt)
+    revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
     cogs_d, cogs_c = _lp(db, ledger_is, "6401", start_dt, end_dt)
     cost_of_goods_sold = (cogs_d - cogs_c).quantize(Q2)
     administrative_expenses = _pdr(db, ledger_is, "6601", start_dt, end_dt).quantize(Q2)
-    selling_expenses = financial_expenses = Decimal("0")
+    selling_expenses = _pdr(db, ledger_is, "6602", start_dt, end_dt).quantize(Q2)
+    financial_expenses = _pdr(db, ledger_is, "6603", start_dt, end_dt).quantize(Q2)
     depr_d, depr_c = _lp(db, ledger_is, "1602", start_dt, end_dt)
     depreciation_expense = depr_c.quantize(Q2)
     total_operating_expenses = (selling_expenses + administrative_expenses + financial_expenses).quantize(Q2)
@@ -414,7 +399,14 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     operating_profit = gross_profit - total_operating_expenses
 
     # ── 营业外收支 ──
-    non_operating_income = non_operating_expense = Decimal('0')
+    # 营业外收入 = 税收减免(6301) + 资产处置收益(6111)
+    noi_d, noi_c = _lp(db, ledger_is, "6301", start_dt, end_dt)
+    ado_d, ado_c = _lp(db, ledger_is, "6111", start_dt, end_dt)
+    non_operating_income = (noi_c + ado_c).quantize(Q2)
+    # 营业外支出 = 营业外支出(6701) + 资产处置损失(6711)
+    noe_d, noe_c = _lp(db, ledger_is, "6701", start_dt, end_dt)
+    adl_d, adl_c = _lp(db, ledger_is, "6711", start_dt, end_dt)
+    non_operating_expense = (noe_d + adl_d).quantize(Q2)
 
     # ── 利润总额 ──
     gross_profit_total = operating_profit + non_operating_income - non_operating_expense
@@ -780,13 +772,27 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
     ).all()
 
     total_revenue = Decimal('0')
+    ordinary_revenue = Decimal('0')
+    special_revenue = Decimal('0')
+    output_tax = Decimal('0')
     for inv in output_invoices:
-        total_revenue += _d(inv.amount_without_tax)
+        rev = _d(inv.amount_without_tax)
+        total_revenue += rev
+        output_tax += _d(inv.tax_amount)
+        # 按发票类型拆分：普票可享受免税，专票不享受
+        if inv.invoice_type == InvoiceType.SPECIAL:
+            special_revenue += rev
+        else:
+            ordinary_revenue += rev
 
     # 使用 AccountingEngine 计算增值税
+    # 单一真相源：传入从发票明细汇总的 output_tax 和按类型拆分的收入，避免硬编码估算
     vat_result = _engine.calculate_vat(
         total_revenue=total_revenue,
-        taxpayer_type=taxpayer_type
+        taxpayer_type=taxpayer_type,
+        output_tax=output_tax,
+        ordinary_revenue=ordinary_revenue,
+        special_revenue=special_revenue,
     )
 
     # 已预缴税额（从之前的季度申报）
@@ -809,7 +815,7 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "tax_supplement": tax_supplement.quantize(Q2),
         "surcharge_education": vat_result.surcharge_education,
         "surcharge_local_education": vat_result.surcharge_local_education,
-        "surcharge_stamp": vat_result.surcharge_stamp,
+        "surcharge_urban_construction": vat_result.surcharge_urban_construction,
         "surcharge_total": vat_result.surcharge_total,
         "reduction_item": vat_result.reduction_item,
         "reduction_amount": vat_result.reduction_amount,
@@ -835,15 +841,32 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
         start_date = datetime(year, 10, 1)
         end_date = datetime(year, 12, 31, 23, 59, 59)
 
-    # 营业收入
-    operating_revenue = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= start_date,
-        models.SaleOrder.sale_date <= end_date,
-        models.SaleOrder.status == OrderStatus.COMPLETED
+    # 营业收入 = 销项发票不含税金额（发票说话，取消经营口径的含税订单收入）
+    operating_revenue = _d(db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+        models.Invoice.account_id == account_id,
+        models.Invoice.direction == InvoiceDirection.OUT,
+        models.Invoice.issue_date >= start_date,
+        models.Invoice.issue_date <= end_date
     ).scalar())
 
-    # 营业成本
+    # 增值税减免加回收入（财税〔2008〕151号：减免的增值税需计入应纳税所得额）
+    # 从总账 6301（营业外收入-税收减免）贷方发生额获取
+    from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+    ledger = db.query(Ledger).filter(Ledger.code == (db.query(models.Account).filter(
+        models.Account.id == account_id).first().code if db.query(models.Account).filter(
+        models.Account.id == account_id).first() else "")).first()
+    if ledger:
+        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit)).join(
+            LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
+        ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
+            AccountMove.date >= start_date, AccountMove.date <= end_date
+        ).scalar())
+    else:
+        vat_exemption_income = Decimal('0')
+    operating_revenue += vat_exemption_income
+
+    # 营业成本 = Σ(SaleItem.quantity × SaleItem.unit_cost)（移动加权平均出库成本，单一真相源）
     operating_cost = Decimal('0')
     completed_sales = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
@@ -853,12 +876,10 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     ).all()
     for order in completed_sales:
         for item in order.items:
-            product = db.query(models.Product).filter(
-                models.Product.id == item.product_id,
-                models.Product.account_id == account_id,
-            ).first()
-            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
-            operating_cost += Decimal(str(item.quantity)) * purchase_price
+            # 单一真相源：读 SaleItem.unit_cost（出库时锁定的加权平均成本），
+            # 禁止用 Product.purchase_price（主数据静态字段，不反映实际采购成本）
+            unit_cost = Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0')
+            operating_cost += Decimal(str(item.quantity)) * unit_cost
 
     # 营业费用
     operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
@@ -881,9 +902,16 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     actual_profit = gross_profit
 
     # 使用 AccountingEngine 计算企业所得税
+    # 单一真相源：从账本读取纳税人类型和主体类型，禁止硬编码
+    # 所得税纳税人类型映射：VAT 口径 small_scale → 所得税口径 small_micro（5%实际税负：25%×20%）
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    raw_type = account.taxpayer_type if account and account.taxpayer_type else "small_scale"
+    income_tax_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
+    entity_type = account.type if account and account.type else "company"
     tax_result = _engine.calculate_income_tax(
         profit=actual_profit,
-        taxpayer_type='small_micro'
+        taxpayer_type=income_tax_type,
+        entity_type=entity_type,
     )
 
     # 已预缴所得税额

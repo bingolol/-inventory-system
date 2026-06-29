@@ -73,7 +73,7 @@ class FixedAsset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    asset_code = Column(String(50), unique=True, comment="资产编码")
+    asset_code = Column(String(50), comment="资产编码（账本内唯一）")
     name = Column(String(100), nullable=False, comment="资产名称")
     category = Column(String(50), comment="资产类别")
     original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
@@ -87,6 +87,10 @@ class FixedAsset(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     account = relationship("Account", backref="fixed_assets")
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'asset_code', name='uix_account_asset_code'),
+    )
 
 
 # 固定资产折旧流水（真相源）
@@ -113,7 +117,7 @@ class IntangibleAsset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    asset_code = Column(String(50), unique=True, comment="资产编码")
+    asset_code = Column(String(50), comment="资产编码（账本内唯一）")
     name = Column(String(100), nullable=False, comment="资产名称")
     category = Column(String(50), comment="类别(专利/软件/商标等)")
     original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
@@ -125,6 +129,10 @@ class IntangibleAsset(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     account = relationship("Account", backref="intangible_assets")
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'asset_code', name='uix_intangible_account_asset_code'),
+    )
 
 
 class Product(Base):
@@ -426,6 +434,8 @@ class Expense(Base):
     payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True, comment="付款记录ID")
     description = Column(String(500), default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
+    is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
+    reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     payment = relationship("Payment", backref="expense", foreign_keys=[payment_id])
@@ -443,6 +453,8 @@ class CashFlowTransaction(Base):
     transaction_date = Column(DateTime, nullable=False, comment="交易日期")
     related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: sale/purchase/expense/other")
     related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
+    is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
+    reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
     created_at = Column(DateTime, default=datetime.now)
 
     account = relationship("Account", backref="cash_flow_transactions")

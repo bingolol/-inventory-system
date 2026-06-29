@@ -388,7 +388,7 @@ class Test创建销售单:
             )
             expected_surcharge = (vat_payable * Decimal("0.12")).quantize(Decimal("0.01"))
             actual_surcharge = (
-                result.surcharge_stamp + result.surcharge_education + result.surcharge_local_education
+                result.surcharge_urban_construction + result.surcharge_education + result.surcharge_local_education
             ).quantize(Decimal("0.01"))
             assert abs(actual_surcharge - expected_surcharge) <= Decimal("0.01"), \
                 f"附加税错误: 预期{expected_surcharge}(={vat_payable}×12%), 实际{actual_surcharge}"
@@ -399,7 +399,7 @@ class Test创建销售单:
                 input_tax=Decimal("8000"),
             )
             actual_surcharge = (
-                result.surcharge_stamp + result.surcharge_education + result.surcharge_local_education
+                result.surcharge_urban_construction + result.surcharge_education + result.surcharge_local_education
             ).quantize(Decimal("0.01"))
             assert actual_surcharge == Decimal("600.00"), \
                 f"附加税公式校验失败: 预期600.00, 实际{actual_surcharge}"

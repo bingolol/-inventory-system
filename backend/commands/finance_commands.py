@@ -12,7 +12,7 @@ from typing import Any, Optional
 import models
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log
+from crud.base import _log
 from errors import BusinessError, ErrorCode
 from utils import _d
 
@@ -107,6 +107,25 @@ class CreateOpeningBalanceHandler(CommandHandler):
             "source_model": "opening_balance",
             "source_id": opening_balance.id,
         })
+
+        # 5. 同步 BankAccount.balance 与 1002 科目余额
+        #    防止期初余额进总账但 BankAccount.balance 未更新导致后续付款/收款校验出错
+        #    若账本下有多个 BankAccount，按"第一个"作为主账户累计（与日常付款/收款用 BankAccount 一致）
+        bank_balance_val = _d(cmd.bank_balance)
+        if bank_balance_val > 0:
+            bank_account = db.query(models.BankAccount).filter(
+                models.BankAccount.account_id == cmd.account_id,
+            ).order_by(models.BankAccount.id.asc()).first()
+            if bank_account:
+                bank_account.balance = (Decimal(str(bank_account.balance)) + bank_balance_val).quantize(Decimal("0.01"))
+            else:
+                # 没有银行账户时记录日志（不影响期初余额过账本身）
+                import logging
+                logging.getLogger("inventory").warning(
+                    "[OpeningBalance] 账本 %s 期初银行余额 %s 但无关联 BankAccount，"
+                    "请后续手动创建 BankAccount 后通过启动同步对齐",
+                    cmd.account_id, bank_balance_val,
+                )
 
         # 5. 日志
         _log(db, cmd.account_id, "create", "opening_balance", opening_balance.id,

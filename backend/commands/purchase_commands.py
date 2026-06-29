@@ -15,10 +15,9 @@ from enums import OrderStatus, OrderType
 from events import emit
 
 from .base import Command, CommandHandler, register
-from .crud_compat import (
-    _d, _generate_order_no, _log,
-    get_or_create_inventory, get_product, get_purchase_order,
-)
+from crud.base import _generate_order_no, _log, get_or_create_inventory
+from crud.products import get_product
+from crud.orders import get_purchase_order, _d
 from crud.reversal import reverse_payments
 from errors import BusinessError, ErrorCode
 from utils import Q2
@@ -51,8 +50,16 @@ class CreatePurchaseOrderHandler(CommandHandler):
         if dup_pids:
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
+        # 1a. 业务日期必填（级联到凭证日期和库存移动日期，不能用当前时间兜底）
+        if not cmd.purchase_date:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="采购日期不能为空，请提供业务发生日期",
+                ai_instruction="STOP_RETRYING. purchase_date 字段必填，请补充采购业务日期（如 2025-06-28）。"
+            )
+
         # 2. 生成订单号
-        purchase_dt = datetime.fromisoformat(cmd.purchase_date) if isinstance(cmd.purchase_date, str) else (cmd.purchase_date or datetime.now())
+        purchase_dt = datetime.fromisoformat(cmd.purchase_date) if isinstance(cmd.purchase_date, str) else cmd.purchase_date
         order_no = _generate_order_no(db, "PO", purchase_dt)
 
         # 3. 创建订单头
@@ -60,7 +67,7 @@ class CreatePurchaseOrderHandler(CommandHandler):
             account_id=cmd.account_id,
             order_no=order_no,
             supplier_id=cmd.supplier_id,
-            purchase_date=datetime.fromisoformat(cmd.purchase_date) if isinstance(cmd.purchase_date, str) else (cmd.purchase_date or datetime.now()),
+            purchase_date=purchase_dt,
             order_type=OrderType.RETAIL,
             payment_method=cmd.payment_method,
             status=OrderStatus.COMPLETED,

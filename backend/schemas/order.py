@@ -147,3 +147,4 @@ class InventoryOut(BaseModel):
 class InventoryAdjust(BaseModel):
     quantity: int
     adjust_date: Optional[str] = None
+    reason: Optional[str] = None  # 报损原因（减少库存时必填）

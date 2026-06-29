@@ -19,9 +19,30 @@ import json
 import time
 import uuid
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 logger = logging.getLogger("inventory")
+
+
+@contextmanager
+def _bypass_write_guard():
+    """临时放行 ORM/SQL/DDL 写拦截
+
+    ConfirmStore 在以下场景必须直接写 SQL：
+      1. 模块导入时建表（_init_db，DDL）—— 还在 WritePermissionMiddleware 之外
+      2. AIGatewayMiddleware 调用 put() 暂存待确认请求 —— 还在 WritePermissionMiddleware 之外
+      3. confirm 路由调用 remove/cleanup_expired
+
+    DDL（CREATE TABLE）只能由 maintenance_mode 绕过（contextvar 无效），
+    因此统一使用 set_maintenance_mode。操作均为单条短 SQL，影响窗口极小。
+    """
+    from database import set_maintenance_mode
+    set_maintenance_mode(True)
+    try:
+        yield
+    finally:
+        set_maintenance_mode(False)
 
 # ── 配置 ──────────────────────────────────────────────
 
@@ -34,6 +55,13 @@ DANGEROUS_PUT_PATTERNS = (
     "/cancel",        # 取消订单
     "/void",          # 作废
     "/confirm",       # 确认（可能导致后续联动不可逆）
+)
+
+# 需要确认的 POST 路径子串（红冲/冲销/取消等不可逆操作）
+DANGEROUS_POST_PATTERNS = (
+    "/reverse",       # 红冲/冲销
+    "/cancel",        # 取消订单（冲红凭证+回退库存）
+    "/dispose",       # 固定资产处置
 )
 
 # 不需要确认的路径（精确前缀匹配，优先级高于白名单）
@@ -51,44 +79,133 @@ SKIP_PATH_PREFIXES = (
 # ── 待确认请求存储 ────────────────────────────────────
 
 class ConfirmStore:
-    """内存存储待确认请求，单进程内有效"""
+    """SQLite 持久化存储待确认请求
+
+    进程重启或 uvicorn --reload 重启 worker 后 token 不丢失。
+    多 worker 也能共享同一份数据。
+    """
 
     def __init__(self):
-        self._pending: dict[str, dict] = {}
+        self._init_db()
+
+    def _init_db(self):
+        """创建 pending_confirms 表（幂等）"""
+        from database import _engine
+        from sqlalchemy import text
+        with _bypass_write_guard(), _engine.connect() as conn:
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS pending_confirms ("
+                "  token VARCHAR(32) PRIMARY KEY,"
+                "  method VARCHAR(10) NOT NULL,"
+                "  path VARCHAR(500) NOT NULL,"
+                "  summary VARCHAR(500) DEFAULT '',"
+                "  body BLOB,"
+                "  query_string BLOB,"
+                "  headers JSON,"
+                "  created_at REAL NOT NULL"
+                ")"
+            ))
+            conn.commit()
 
     def put(self, token: str, entry: dict):
-        self._pending[token] = entry
+        from database import _engine
+        from sqlalchemy import text
+        with _bypass_write_guard(), _engine.connect() as conn:
+            # 先删除可能存在的同 token 旧记录（幂等）
+            conn.execute(text("DELETE FROM pending_confirms WHERE token = :t"), {"t": token})
+            conn.execute(text(
+                "INSERT INTO pending_confirms "
+                "(token, method, path, summary, body, query_string, headers, created_at) "
+                "VALUES (:token, :method, :path, :summary, :body, :qs, :headers, :ca)"
+            ), {
+                "token": token,
+                "method": entry["method"],
+                "path": entry["path"],
+                "summary": entry.get("summary", ""),
+                "body": entry.get("body", b""),
+                "qs": entry.get("query_string", b""),
+                "headers": json.dumps([
+                    [k.decode("latin-1") if isinstance(k, bytes) else k,
+                     v.decode("latin-1") if isinstance(v, bytes) else v]
+                    for k, v in entry.get("headers", [])
+                ]),
+                "ca": entry["created_at"],
+            })
+            conn.commit()
 
     def get(self, token: str) -> Optional[dict]:
-        entry = self._pending.get(token)
-        if entry is None:
-            return None
-        # 检查是否过期
-        if time.time() - entry["created_at"] > TOKEN_TTL:
-            self.remove(token)
-            return None
-        return entry
+        from database import _engine
+        from sqlalchemy import text
+        with _engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT method, path, summary, body, query_string, headers, created_at "
+                "FROM pending_confirms WHERE token = :t"
+            ), {"t": token}).fetchone()
+            if row is None:
+                return None
+            # 检查是否过期
+            if time.time() - row[6] > TOKEN_TTL:
+                self.remove(token)
+                return None
+            # 还原 headers 格式：[(bytes, bytes), ...]
+            headers_raw = json.loads(row[5]) if row[5] else []
+            headers = [(k.encode("latin-1"), v.encode("latin-1")) for k, v in headers_raw]
+            return {
+                "method": row[0],
+                "path": row[1],
+                "summary": row[2],
+                "body": row[3] if row[3] else b"",
+                "query_string": row[4] if row[4] else b"",
+                "headers": headers,
+                "created_at": row[6],
+            }
 
     def remove(self, token: str):
-        self._pending.pop(token, None)
+        from database import _engine
+        from sqlalchemy import text
+        with _bypass_write_guard(), _engine.connect() as conn:
+            conn.execute(text("DELETE FROM pending_confirms WHERE token = :t"), {"t": token})
+            conn.commit()
 
     def list_pending(self) -> list[dict]:
         """返回所有未过期的待确认请求"""
         now = time.time()
-        expired = [t for t, e in self._pending.items() if now - e["created_at"] > TOKEN_TTL]
-        for t in expired:
-            del self._pending[t]
-        return [
-            {
-                "confirm_token": token,
-                "method": e["method"],
-                "path": e["path"],
-                "summary": e.get("summary", ""),
-                "created_at": e["created_at"],
-                "expires_at": e["created_at"] + TOKEN_TTL,
-            }
-            for token, e in self._pending.items()
-        ]
+        from database import _engine
+        from sqlalchemy import text
+        with _bypass_write_guard(), _engine.connect() as conn:
+            # 先清理过期
+            conn.execute(text(
+                "DELETE FROM pending_confirms WHERE :now - created_at > :ttl"
+            ), {"now": now, "ttl": TOKEN_TTL})
+            conn.commit()
+            rows = conn.execute(text(
+                "SELECT token, method, path, summary, created_at "
+                "FROM pending_confirms ORDER BY created_at ASC"
+            )).fetchall()
+            return [
+                {
+                    "confirm_token": r[0],
+                    "method": r[1],
+                    "path": r[2],
+                    "summary": r[3],
+                    "created_at": r[4],
+                    "expires_at": r[4] + TOKEN_TTL,
+                }
+                for r in rows
+            ]
+
+    def cleanup_expired(self):
+        """启动时清理过期 token"""
+        from database import _engine
+        from sqlalchemy import text
+        now = time.time()
+        with _bypass_write_guard(), _engine.connect() as conn:
+            result = conn.execute(text(
+                "DELETE FROM pending_confirms WHERE :now - created_at > :ttl"
+            ), {"now": now, "ttl": TOKEN_TTL})
+            conn.commit()
+            if result.rowcount > 0:
+                logger.info("[ConfirmStore] 启动时清理了 %d 个过期 token", result.rowcount)
 
 
 # 全局单例
@@ -118,6 +235,12 @@ def _should_confirm(method: str, path: str, operator: str) -> bool:
             if pattern in path:
                 return True
 
+    # POST 只拦截红冲/冲销等不可逆操作
+    if method == "POST":
+        for pattern in DANGEROUS_POST_PATTERNS:
+            if pattern in path:
+                return True
+
     return False
 
 
@@ -137,12 +260,23 @@ def _make_summary(method: str, path: str, body: Optional[bytes]) -> str:
         "income-tax-report": "企业所得税报表", "opening-balances": "期初余额",
         "financial-reports": "财务报表", "cash-flows": "现金流量",
         "reconciliations": "对账记录",
+        "bank": "银行", "transaction": "银行交易",
+        "receipts": "收款", "payments": "付款",
     }
     resource_cn = resource_map.get(resource, resource)
 
     if method == "DELETE":
         res_id = parts[2] if len(parts) > 2 else "?"
         return f"删除 {resource_cn} #{res_id}"
+    elif method == "POST" and "/reverse" in path:
+        res_id = parts[-2] if len(parts) >= 2 else "?"
+        return f"红冲 {resource_cn} #{res_id}"
+    elif method == "POST" and "/cancel" in path:
+        res_id = parts[-2] if len(parts) >= 2 else "?"
+        return f"取消 {resource_cn} #{res_id}"
+    elif method == "POST" and "/dispose" in path:
+        res_id = parts[-2] if len(parts) >= 2 else "?"
+        return f"处置 {resource_cn} #{res_id}"
     elif method == "PUT":
         res_id = parts[2] if len(parts) > 2 else "?"
         if "/cancel" in path:

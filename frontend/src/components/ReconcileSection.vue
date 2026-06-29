@@ -12,10 +12,10 @@
 
     <div v-if="r?.summary" class="rc-stats">
       <div class="rc-stat"><span class="rc-stat-label">对方数量</span><span class="rc-stat-value">{{ r.summary.partner_count }}</span></div>
-      <div class="rc-stat"><span class="rc-stat-label">期初欠款</span><span class="rc-stat-value" style="color:#4f6ef7;">{{ formatMoney(r.summary.total_opening) }}</span></div>
-      <div class="rc-stat"><span class="rc-stat-label">本期发生</span><span class="rc-stat-value" style="color:#e6a23c;">{{ formatMoney(r.summary.total_current) }}</span></div>
-      <div class="rc-stat"><span class="rc-stat-label">已收/已付</span><span class="rc-stat-value" style="color:#67c23a;">{{ formatMoney(r.summary.total_paid) }}</span></div>
-      <div class="rc-stat"><span class="rc-stat-label">期末欠款</span><span class="rc-stat-value" style="color:#f56c6c;">{{ formatMoney(r.summary.total_closing) }}</span></div>
+      <div class="rc-stat"><span class="rc-stat-label">期初欠款</span><span class="rc-stat-value" style="color:var(--primary);">{{ formatMoney(r.summary.total_opening) }}</span></div>
+      <div class="rc-stat"><span class="rc-stat-label">本期发生</span><span class="rc-stat-value" style="color:var(--warning);">{{ formatMoney(r.summary.total_current) }}</span></div>
+      <div class="rc-stat"><span class="rc-stat-label">已收/已付</span><span class="rc-stat-value" style="color:var(--success);">{{ formatMoney(r.summary.total_paid) }}</span></div>
+      <div class="rc-stat"><span class="rc-stat-label">期末欠款</span><span class="rc-stat-value" style="color:var(--danger);">{{ formatMoney(r.summary.total_closing) }}</span></div>
       <div class="rc-stat"><span class="rc-stat-label">发票金额</span><span class="rc-stat-value" style="color:#9b59b6;">{{ formatMoney(r.summary.total_invoice) }}</span></div>
     </div>
 
@@ -31,14 +31,14 @@
         <template #default="{ row }">¥{{ formatMoney(row.paid_amount) }}</template>
       </el-table-column>
       <el-table-column prop="closing_balance" label="期末欠款" min-width="100" align="right">
-        <template #default="{ row }"><span :style="{ color: row.closing_balance > 0 ? '#f56c6c' : '#67c23a', fontWeight:600 }">¥{{ formatMoney(row.closing_balance) }}</span></template>
+        <template #default="{ row }"><span :style="{ color: row.closing_balance > 0 ? 'var(--danger)' : 'var(--success)', fontWeight:600 }">¥{{ formatMoney(row.closing_balance) }}</span></template>
       </el-table-column>
       <el-table-column prop="invoice_amount" label="发票金额" min-width="100" align="right">
         <template #default="{ row }">¥{{ formatMoney(row.invoice_amount) }}</template>
       </el-table-column>
       <el-table-column prop="order_count" label="单据数" min-width="70" align="center" />
       <el-table-column prop="unpaid_orders" label="未结清" min-width="70" align="center">
-        <template #default="{ row }"><span class="status-badge danger" v-if="row.unpaid_orders > 0">{{ row.unpaid_orders }}</span><span v-else style="color:#c9cdd4;">-</span></template>
+        <template #default="{ row }"><span class="status-badge danger" v-if="row.unpaid_orders > 0">{{ row.unpaid_orders }}</span><span v-else style="color:var(--text-placeholder);">-</span></template>
       </el-table-column>
     </el-table>
     <el-empty v-else-if="!loading" description="请选择类型和日期后查询" />
@@ -65,7 +65,7 @@ const loadData = async () => {
 
 <style scoped>
 .rc-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.rc-stat { flex: 1; min-width: 140px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
-.rc-stat-label { font-size: 12px; color: #86909c; font-weight: 500; letter-spacing: 0.5px; }
+.rc-stat { flex: 1; min-width: 140px; background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.rc-stat-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; letter-spacing: 0.5px; }
 .rc-stat-value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
 </style>

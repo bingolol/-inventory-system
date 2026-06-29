@@ -43,10 +43,18 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
     ).all()
 
     output_total = Decimal('0')
+    ordinary_revenue = Decimal('0')
+    special_revenue = Decimal('0')
     output_tax = Decimal('0')
     for inv in out_invoices:
-        output_total += _d(inv.amount_without_tax)
+        rev = _d(inv.amount_without_tax)
+        output_total += rev
         output_tax += _d(inv.tax_amount)
+        # 按发票类型拆分：小规模普票可享受免税，专票不享受
+        if inv.invoice_type == InvoiceType.SPECIAL:
+            special_revenue += rev
+        else:
+            ordinary_revenue += rev
 
     input_total = Decimal('0')
     input_tax = Decimal('0')
@@ -61,10 +69,14 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
         input_tax = Decimal('0')
 
     # 使用 AccountingEngine 计算增值税
+    # 单一真相源：传入从发票明细汇总的 output_tax 和按类型拆分的收入，避免硬编码估算
     vat_result = _engine.calculate_vat(
         total_revenue=output_total,
         taxpayer_type=account.taxpayer_type,
-        input_tax=input_tax
+        input_tax=input_tax,
+        output_tax=output_tax,
+        ordinary_revenue=ordinary_revenue,
+        special_revenue=special_revenue,
     )
     tax_payable = vat_result.tax_payable
 

@@ -110,8 +110,8 @@ useAccountAwareData(() => {
 
 <style scoped>
 .ag-balance {
-  background: linear-gradient(135deg, #f4f6ff, #eef1ff);
-  border: 1px solid #dce0ff;
+  background: linear-gradient(135deg, var(--primary-light), var(--primary-light));
+  border: 1px solid var(--border-light);
   border-radius: 12px;
   padding: 16px 20px;
   display: flex;
@@ -120,11 +120,11 @@ useAccountAwareData(() => {
 }
 .ag-balance-label {
   font-size: 14px;
-  color: #4e5969;
+  color: var(--text-regular);
 }
 .ag-balance-value {
   font-size: 24px;
   font-weight: 700;
-  color: #4f6ef7;
+  color: var(--primary);
 }
 </style>

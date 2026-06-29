@@ -194,8 +194,8 @@ useAccountAwareData(loadReconciliations)
 .rc-stat {
   flex: 1;
   min-width: 140px;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-lighter);
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
@@ -204,7 +204,7 @@ useAccountAwareData(loadReconciliations)
 }
 .rc-stat-label {
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-secondary);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -213,8 +213,8 @@ useAccountAwareData(loadReconciliations)
   font-weight: 700;
   letter-spacing: -0.5px;
 }
-.text-danger { color: #f56c6c; }
-.text-muted { color: #999; }
+.text-danger { color: var(--danger); }
+.text-muted { color: var(--text-placeholder); }
 .detail-summary { margin-bottom: 8px; }
 :deep(.el-table__row) { cursor: pointer; }
 </style>

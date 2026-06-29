@@ -136,6 +136,16 @@ class BankReconcileEngine:
         self._run_combo_n1(unmatched_tx, unmatched_sl, matched_tx_ids, matched_stmt_ids, "in")
         self._run_combo_n1(unmatched_tx, unmatched_sl, matched_tx_ids, matched_stmt_ids, "out")
 
+        # ── 清除旧未达项（只删未冲销的，避免已生成凭证的项被重建导致重入账） ----
+        self.db.query(mb.ReconciliationItem).filter(
+            mb.ReconciliationItem.reconciliation_id == rec.id,
+            mb.ReconciliationItem.resolved == False,
+            mb.ReconciliationItem.item_type.in_([
+                "bank_received_not_book", "bank_paid_not_book",
+                "book_received_not_bank", "book_paid_not_bank",
+            ]),
+        ).delete(synchronize_session=False)
+
         # ── 未达账项 ----
         self._create_unmatched_items(rec, stmt_lines, matched_stmt_ids, bank_txns, matched_tx_ids)
 
@@ -211,8 +221,18 @@ class BankReconcileEngine:
 
     def _create_unmatched_items(self, rec, stmt_lines, matched_stmt_ids, bank_txns, matched_tx_ids):
         mb = self._models_bank
+        # 收集已有未达项的 source_id（避免重复创建）
+        existing = self.db.query(mb.ReconciliationItem).filter(
+            mb.ReconciliationItem.reconciliation_id == rec.id,
+            mb.ReconciliationItem.resolved == False,
+        ).all()
+        existing_sources = set()
+        for item in existing:
+            for sid in (item.source_ids or []):
+                existing_sources.add(str(sid))
         for sl in stmt_lines:
             if sl.id in matched_stmt_ids: continue
+            if str(sl.id) in existing_sources: continue
             amt = abs(Decimal(str(sl.amount)))
             itype = "bank_received_not_book" if Decimal(str(sl.amount)) >= 0 else "bank_paid_not_book"
             self.db.add(mb.ReconciliationItem(
@@ -222,6 +242,7 @@ class BankReconcileEngine:
             ))
         for tx in bank_txns:
             if tx.id in matched_tx_ids: continue
+            if str(tx.id) in existing_sources: continue
             amt = Decimal(str(tx.amount))
             itype = "book_received_not_bank" if tx.transaction_type == "inflow" else "book_paid_not_bank"
             self.db.add(mb.ReconciliationItem(
@@ -321,7 +342,12 @@ class BankReconcileEngine:
             elif it.item_type in ("book_paid_not_bank",):
                 adj_stmt -= amt
             elif it.item_type == "adjustment":
-                adj_book += amt if it.direction == "in" else -amt
+                # adjustment: direction="in" 调整statement（对账单少了收入）
+                #             direction="out" 调整book（系统少了支出）
+                if it.direction == "in":
+                    adj_stmt += amt
+                else:
+                    adj_book -= amt
         rec.adjusted_book = adj_book
         rec.adjusted_statement = adj_stmt
         rec.balanced = abs(adj_book - adj_stmt) <= Decimal("0.01")
@@ -403,7 +429,12 @@ class BankReconcileEngine:
 
     def generate_entries(self, rec_id: int) -> list:
         mb = self._models_bank
-        from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+        from finance_integration import post_journal
+
+        rec = self.db.query(mb.BankReconciliation).filter(
+            mb.BankReconciliation.id == rec_id,
+            mb.BankReconciliation.account_id == self.account_id,
+        ).first()
 
         items = self.db.query(mb.ReconciliationItem).filter(
             mb.ReconciliationItem.reconciliation_id == rec_id,
@@ -411,29 +442,22 @@ class BankReconcileEngine:
             mb.ReconciliationItem.action == "generate_entry",
         ).all()
 
-        # 找总账科目
-        account = self.db.query(self._models.Account).filter(
-            self._models.Account.id == self.account_id).first()
-        ledger = account and self.db.query(Ledger).filter(Ledger.code == account.code).first()
-        ac_1002 = self.db.query(LedgerAccount).filter(
-            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002").first() if ledger else None
-        ac_6603 = self.db.query(LedgerAccount).filter(
-            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6603").first() if ledger else None
-
         generated = []
         for it in items:
-            move = AccountMove(ledger_id=ledger.id, move_type="bank_fee", date=datetime.now(), state="posted")
-            self.db.add(move); self.db.flush()
-            amt = Decimal(str(it.amount))
-            if it.item_type == "bank_paid_not_book":
-                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=amt, credit=0, amount_residual=amt))
-                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=0, credit=amt, amount_residual=amt))
-            elif it.item_type == "bank_received_not_book":
-                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_1002.id, debit=amt, credit=0, amount_residual=amt))
-                self.db.add(AccountMoveLine(move_id=move.id, ledger_account_id=ac_6603.id, debit=0, credit=amt, amount_residual=amt))
+            direction = "out" if it.item_type == "bank_paid_not_book" else "in"
+            post_journal(self.db, self.account_id, "bank_fee_entry", {
+                "amount": abs(it.amount),
+                "direction": direction,
+                "date": self.period + "-15",
+                "source_model": "bank_fee_entry",
+                "source_id": it.id,
+            })
             it.resolved = True
             generated.append(it.id)
         self.db.flush()
+        # 重算调节后余额（已冲销项需要从 balanced 计算中移除）
+        if rec:
+            self._recalc_balances(rec)
         return generated
 
     # ═══════════════════════════════════════════════════

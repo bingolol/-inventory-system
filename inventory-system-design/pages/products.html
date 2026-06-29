@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品管理</title>
+    <style id="theme-vars">
+:root {
+  --dark-primary-foreground: #141413;
+  --dark-accent: #1a1915;
+  --dark-card: #2c2c2b;
+  --dark-secondary-foreground: #30302e;
+  --dark-destructive: #ef4444;
+  --dark-primary: #d97757;
+  --dark-muted-foreground: #b7b5a9;
+  --dark-secondary: #e9e6dc;
+  --dark-card-foreground: #faf9f5;
+  --dark-error-foreground: #ffffff;
+  --brand-brand-50: #3a2a22;
+  --brand-brand-100: #4d3528;
+  --brand-brand-200: #6b4533;
+  --brand-brand-300: #8a5740;
+  --brand-brand-400: #b0683f;
+  --brand-brand-500: #d97757;
+  --brand-brand-600: #e08d6f;
+  --brand-brand-700: #e8a98f;
+  --brand-brand-800: #f0c6b3;
+  --brand-brand-900: #f8e3d8;
+  --text-text-50: #1b1b19;
+  --text-text-100: #2c2c2b;
+  --text-text-200: #46443b;
+  --text-text-300: #6e6d68;
+  --text-text-400: #908e84;
+  --text-text-500: #b7b5a9;
+  --text-text-600: #c3c0b6;
+  --text-text-700: #d8d6cd;
+  --text-text-800: #f1f1ef;
+  --text-text-900: #faf9f5;
+  --icon-icon-50: #1b1b19;
+  --icon-icon-100: #2c2c2b;
+  --icon-icon-200: #46443b;
+  --icon-icon-300: #6e6d68;
+  --icon-icon-400: #908e84;
+  --icon-icon-500: #b7b5a9;
+  --icon-icon-600: #d8d6cd;
+  --icon-icon-700: #f1f1ef;
+  --icon-icon-800: #f8f8f6;
+  --icon-icon-900: #ffffff;
+  --border-border-50: #1f1e1d;
+  --border-border-100: #2c2c2b;
+  --border-border-200: #343430;
+  --border-border-300: #3e3e38;
+  --border-border-400: #4a4a43;
+  --border-border-500: #52514a;
+  --border-border-600: #6e6d68;
+  --border-border-700: #908e84;
+  --border-border-800: #b7b5a9;
+  --border-border-900: #d8d6cd;
+  --success-success-50: #232a1c;
+  --success-success-100: #2e3823;
+  --success-success-200: #3f4d30;
+  --success-success-300: #556640;
+  --success-success-400: #708353;
+  --success-success-500: #8ca06f;
+  --success-success-600: #a3b58a;
+  --success-success-700: #bccaa8;
+  --success-success-800: #d6dfc8;
+  --success-success-900: #edf2e4;
+  --error-error-50: #3a1f1f;
+  --error-error-100: #4d2424;
+  --error-error-200: #6e2c2c;
+  --error-error-300: #93302f;
+  --error-error-400: #c43a39;
+  --error-error-500: #ef4444;
+  --error-error-600: #f26b6b;
+  --error-error-700: #f59292;
+  --error-error-800: #f9b9b9;
+  --error-error-900: #fcdede;
+  --bg-bg-50: #1b1b19;
+  --bg-bg-100: #262624;
+  --bg-bg-200: #2c2c2b;
+  --bg-bg-300: #30302e;
+  --bg-bg-400: #3e3e38;
+  --bg-bg-500: #4a4a43;
+  --bg-bg-600: #52514a;
+  --bg-bg-700: #6e6d68;
+  --bg-bg-800: #908e84;
+  --bg-bg-900: #b7b5a9;
+  --sidebar-sidebar-accent-foreground: #343434;
+  --sidebar-sidebar-foreground: #3d3d3a;
+  --sidebar-sidebar-primary: #c96442;
+  --sidebar-sidebar-ring: #b5b5b5;
+  --sidebar-sidebar-accent: #e9e6dc;
+  --sidebar-sidebar-border: #ebebeb;
+  --sidebar-sidebar: #f5f4ee;
+  --sidebar-sidebar-primary-foreground: #fbfbfb;
+  --chart-chart-3: #1a1915;
+  --chart-chart-4: #2f2b48;
+  --chart-chart-1: #b05730;
+  --chart-chart-5: #b4552d;
+  --chart-chart-2: #9c87f5;
+  --font-font-display: Newsreader, Georgia, ui-serif, serif;
+  --font-font-sans: Poppins, ui-sans-serif, system-ui, sans-serif;
+  --font-font-mono: Geist Mono, ui-monospace, monospace;
+}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  
+  @layer base {
+    body { background: var(--bg-bg-50, #1b1b19); color: var(--text-text-900, #faf9f5); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+        <!-- ===== PROJECT SHELL: Sidebar + Topbar + Content Area ===== -->
+        <div class="flex h-screen overflow-hidden">
+
+            <!-- ===== LEFT SIDEBAR ===== -->
+            <aside class="flex-shrink-0 flex flex-col h-full" style="width:260px; background:var(--bg-bg-100); border-right:1px solid var(--border-border-100);">
+
+                <!-- Brand Logo -->
+                <div class="flex items-center gap-3 px-6 h-16 flex-shrink-0" style="border-bottom:1px solid var(--border-border-100);">
+                    <div class="w-1 h-6 flex-shrink-0" style="background:var(--brand-brand-500); border-radius:2px;"></div>
+                    <span class="text-lg font-semibold whitespace-nowrap" style="font-family:var(--font-font-display); color:var(--text-text-900);">进销存</span>
+                </div>
+
+                <!-- Navigation -->
+                <nav class="flex flex-col gap-1 px-3 py-4 flex-1 overflow-y-auto no-scrollbar">
+
+                    <a href="#" data-dom-id="nav-dashboard" data-nav-key="dashboard" class="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors duration-150" style="color:var(--text-text-500); border-radius:8px;">
+                        <i data-lucide="layout-dashboard" class="w-5 h-5 flex-shrink-0"></i>
+                        <span class="text-sm font-medium whitespace-nowrap">仪表盘</span>
+                    </a>
+
+                    <a href="#" data-dom-id="nav-purchases" data-nav-key="purchases" class="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors duration-150" style="color:var(--text-text-500); border-radius:8px;">
+                        <i data-lucide="shopping-cart" class="w-5 h-5 flex-shrink-0"></i>
+                        <span class="text-sm font-medium whitespace-nowrap">采购管理</span>
+                    </a>
+
+                    <a href="#" data-dom-id="nav-sales" data-nav-key="sales" class="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors duration-150" style="color:var(--text-text-500); border-radius:8px;">
+                        <i data-lucide="receipt" class="w-5 h-5 flex-shrink-0"></i>
+                        <span class="text-sm font-medium whitespace-nowrap">销售管理</span>
+                    </a>
+
+                    <a href="#" data-dom-id="nav-inventory" data-nav-key="inventory" class="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors duration-150" style="color:var(--text-text-500); border-radius:8px;">
+                        <i data-lucide="warehouse" class="w-5 h-5 flex-shrink-0"></i>
+                        <span class="text-sm font-medium whitespace-nowrap">库存管理</span>
+                    </a>
+
+                    <a href="#" data-dom-id="nav-products" data-nav-key="products" data-active="true" class="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors duration-150" style="background:var(--brand-brand-500); color:var(--text-text-900); border-radius:8px;">
+                        <i data-lucide="package" class="w-5 h-5 flex-shrink-0"></i>
+                        <span class="text-sm font-medium whitespace-nowrap">产品管理</span>
+                    </a>
+
+                </nav>
+            </aside>
+
+            <!-- ===== RIGHT AREA (Topbar + Content) ===== -->
+            <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+
+                <!-- Top Bar -->
+                <header class="flex items-center justify-between h-16 px-6 flex-shrink-0" style="background:var(--bg-bg-200); border-bottom:1px solid var(--border-border-100);">
+                    <h1 class="text-lg font-semibold truncate" style="font-family:var(--font-font-sans); color:var(--text-text-900);">产品管理</h1>
+                    <div class="flex items-center gap-4 flex-shrink-0">
+                        <!-- Notification Bell -->
+                        <button class="flex items-center justify-center w-9 h-9 transition-colors duration-150" style="color:var(--text-text-500); border-radius:8px;">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                        </button>
+                        <!-- User Avatar -->
+                        <div class="flex items-center justify-center w-8 h-8 flex-shrink-0" style="background:var(--brand-brand-500); border-radius:9999px;">
+                            <span class="text-xs font-semibold" style="color:var(--text-text-900);">管</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Main Content Area -->
+                <div class="flex-1 overflow-y-auto p-6" style="background:var(--bg-bg-50);">
+
+                    <!-- 1. Action Bar -->
+                    <div class="flex items-center justify-between mb-6">
+                        <span class="text-sm" style="color:var(--text-text-500);">共 256 个产品</span>
+                        <div class="flex items-center gap-2">
+                            <!-- View Toggle -->
+                            <div class="flex items-center" style="border:1px solid var(--border-border-200); border-radius:8px; overflow:hidden;">
+                                <button class="flex items-center justify-center w-9 h-9" style="background:var(--brand-brand-500); color:var(--text-text-900);">
+                                    <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                                </button>
+                                <button class="flex items-center justify-center w-9 h-9" style="background:var(--bg-bg-300); color:var(--text-text-400);">
+                                    <i data-lucide="list" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            <!-- Add Product Button -->
+                            <button class="flex items-center gap-2 px-4 h-9 text-sm font-medium" style="background:var(--brand-brand-500); color:var(--text-text-900); border-radius:12px;">
+                                <i data-lucide="plus" class="w-4 h-4"></i>
+                                <span>添加产品</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Search & Filter Bar -->
+                    <div class="mb-6">
+                        <!-- Search Input -->
+                        <div class="relative mb-3">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style="color:var(--text-text-400);"></i>
+                            <input type="text" placeholder="搜索产品名称、编码、分类..." class="w-full pl-10 pr-4 h-10 text-sm outline-none" style="background:var(--bg-bg-300); border:1px solid var(--border-border-200); border-radius:12px; color:var(--text-text-900);">
+                        </div>
+                        <!-- Category Filter Pills -->
+                        <div class="flex items-center gap-2 flex-nowrap overflow-x-auto no-scrollbar">
+                            <button class="shrink-0 px-4 py-1.5 text-sm font-medium whitespace-nowrap" style="background:var(--brand-brand-500); color:var(--text-text-900); border-radius:9999px;">全部</button>
+                            <button class="shrink-0 px-4 py-1.5 text-sm font-medium whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px; border:1px solid transparent;">电子配件</button>
+                            <button class="shrink-0 px-4 py-1.5 text-sm font-medium whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px; border:1px solid transparent;">五金工具</button>
+                            <button class="shrink-0 px-4 py-1.5 text-sm font-medium whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px; border:1px solid transparent;">办公用品</button>
+                            <button class="shrink-0 px-4 py-1.5 text-sm font-medium whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px; border:1px solid transparent;">建筑材料</button>
+                        </div>
+                    </div>
+
+                    <!-- 3. Product Card Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                        <!-- Product Card 1: 蓝牙耳机 Pro -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="headphones" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">蓝牙耳机 Pro</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-001</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">电子配件</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥299.00</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/个</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--success-success-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 234</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 2: 不锈钢螺丝套装 -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="wrench" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">不锈钢螺丝套装</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-002</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">五金工具</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥45.00</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/套</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--brand-brand-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 12</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 3: A4打印纸(箱) -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="file-text" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">A4打印纸(箱)</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-003</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">办公用品</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥128.00</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/箱</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--success-success-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 89</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 4: USB-C数据线 -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="cable" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">USB-C数据线</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-004</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">电子配件</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥19.90</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/条</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--error-error-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 5</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 5: 电钻套装 -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="drill" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">电钻套装</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-005</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">五金工具</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥368.00</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/套</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--success-success-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 67</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 6: LED灯泡(10个) -->
+                        <div class="overflow-hidden" style="background:var(--bg-bg-200); border:1px solid var(--border-border-200); border-radius:16px; transition:border-color 0.2s ease;">
+                            <div class="flex items-center justify-center" style="aspect-ratio:16/9; background:var(--bg-bg-300);">
+                                <i data-lucide="lightbulb" class="w-10 h-10" style="color:var(--text-text-400);"></i>
+                            </div>
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-semibold truncate" style="color:var(--text-text-900);">LED灯泡(10个)</h3>
+                                </div>
+                                <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400); font-family:var(--font-font-mono);">SKU-008</span>
+                                <span class="inline-flex items-center ml-2 px-2 py-0.5 text-xs whitespace-nowrap" style="background:var(--bg-bg-300); color:var(--text-text-500); border-radius:9999px;">电子配件</span>
+                                <div class="flex items-center justify-between mt-3">
+                                    <div>
+                                        <span class="text-lg font-bold" style="color:var(--brand-brand-500);">¥59.00</span>
+                                        <span class="text-xs ml-1" style="color:var(--text-text-400);">/包</span>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 flex-shrink-0" style="background:var(--brand-brand-500); border-radius:9999px;"></span>
+                                        <span class="text-xs whitespace-nowrap" style="color:var(--text-text-400);">库存: 8</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 4. Pagination -->
+                    <div class="flex items-center justify-between mt-6">
+                        <span class="text-sm" style="color:var(--text-text-400);">显示 1-6 / 共 256 个</span>
+                        <div class="flex items-center gap-1">
+                            <button class="flex items-center justify-center w-8 h-8" style="color:var(--text-text-400); border-radius:8px;" disabled>
+                                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                            </button>
+                            <button class="flex items-center justify-center w-8 h-8 text-sm font-medium" style="background:var(--brand-brand-500); color:var(--text-text-900); border-radius:8px;">1</button>
+                            <button class="flex items-center justify-center w-8 h-8 text-sm" style="color:var(--text-text-500); border-radius:8px;">2</button>
+                            <button class="flex items-center justify-center w-8 h-8 text-sm" style="color:var(--text-text-500); border-radius:8px;">3</button>
+                            <span class="flex items-center justify-center w-8 h-8 text-sm" style="color:var(--text-text-400);">...</span>
+                            <button class="flex items-center justify-center w-8 h-8 text-sm" style="color:var(--text-text-500); border-radius:8px;">43</button>
+                            <button class="flex items-center justify-center w-8 h-8" style="color:var(--text-text-400); border-radius:8px;">
+                                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

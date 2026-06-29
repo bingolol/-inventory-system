@@ -74,7 +74,9 @@ def export_inventory(format: str = "excel", alert_only: bool = False, account_id
         rows.append([inv.id, p.sku if p else "", p.name if p else "", p.category if p else "",
                      p.unit if p else "", qty, p.min_stock if p else 0, status,
                      p.purchase_price if p else 0, p.sale_price if p else 0,
-                     max(qty, 0) * (p.purchase_price if p else 0)])
+                     # 单一真相源：库存价值读 Inventory.total_value（引擎维护的移动加权平均缓存），
+                     # 禁止用 qty × Product.purchase_price（主数据静态字段，不反映实际采购成本）
+                     float(inv.total_value) if inv.total_value is not None else 0])
     filename = "库存清单"
     if format == "csv":
         return _stream_csv(rows, headers, filename)

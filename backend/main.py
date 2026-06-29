@@ -55,8 +55,10 @@ app.add_middleware(
 #   3. ConfirmMiddleware：对危险写操作做二次确认
 from confirm_middleware import ConfirmMiddleware
 from middleware.write_permission import WritePermissionMiddleware
+from middleware.readonly_middleware import ReadonlyMiddleware
 from ai_gateway import AIGatewayMiddleware
 app.add_middleware(ConfirmMiddleware)              # 最内层
+app.add_middleware(ReadonlyMiddleware)             # 只读拦截：阻止 DELETE 历史数据
 app.add_middleware(WritePermissionMiddleware)      # 中间层
 app.add_middleware(AIGatewayMiddleware)            # 最外层
 
@@ -163,14 +165,15 @@ async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
     logger.error(f"未处理异常: {exc}", exc_info=True)
+    err_msg = str(exc) or "未知错误"
     return JSONResponse(status_code=500, content={
         "error": {
             "code": "INTERNAL_ERROR",
-            "message": "服务器内部错误",
-            "action": "contact_admin",
+            "message": err_msg,
+            "action": "none",
             "action_data": {},
-            "data": {},
-            "ai_instruction": "STOP_RETRYING. 系统异常，请稍后重试或联系管理员。"
+            "data": {"exception_type": type(exc).__name__},
+            "ai_instruction": f"系统异常: {err_msg}"
         }
     })
 
@@ -219,6 +222,9 @@ def startup():
     set_maintenance_mode(True)
     init_db()
     set_maintenance_mode(False)
+    # ── 清理过期 confirm token ──
+    from confirm_middleware import confirm_store
+    confirm_store.cleanup_expired()
     # ── EventBus 初始化 ──
     from middleware import register_middleware
     import handlers
@@ -338,8 +344,13 @@ if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
-    is_dev = os.environ.get("ENV") == "development" or os.environ.get("DEV") == "1"
+    is_dev = (
+        os.environ.get("ENV") == "development"
+        or os.environ.get("DEV") == "1"
+        or "--reload" in sys.argv
+    )
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

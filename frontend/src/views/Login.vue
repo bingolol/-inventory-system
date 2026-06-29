@@ -51,7 +51,15 @@ async function handleLogin() {
 <style scoped>
 .login-page {
   display: flex; justify-content: center; align-items: center;
-  height: 100vh; background: #f0f2f5;
+  height: 100vh; background: var(--bg-page);
 }
-.login-card { width: 400px; }
+.login-card {
+  width: 400px;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-lighter) !important;
+}
+.login-card h2 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
 </style>

@@ -188,6 +188,43 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
     return result.to_dict()
 
 
+@router.post("/{sale_id}/cancel")
+def cancel_sale(
+    sale_id: int,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """取消销售单（BR-19：保留审计轨迹+冲红凭证+回退库存，不物理删除）
+
+    取代 DELETE /api/sales/{id}，避免直接删除已完成订单导致总账/库存不一致。
+    内部调用 CancelSaleOrder 命令，与 PUT /{id} (status=cancelled) 走同一逻辑。
+    """
+    with unit_of_work(db):
+        try:
+            order = dispatch(CancelSaleOrder(
+                account_id=account_id,
+                operator=operator,
+                order_id=sale_id,
+            ), db)
+        except ValueError as e:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "取消销售单失败，请检查状态"})
+
+    if not order:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
+    db.refresh(order)
+
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.SALE_ORDER,
+        entity_id=order.id,
+        summary=f"销售单 {order.order_no} 已取消（冲红凭证+回退库存）",
+        ai_hint="销售单已取消，关联凭证和库存已冲红/回退，记录保留以备审计。",
+        data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
+    )
+    return result.to_dict()
+
+
 @router.delete("/{sale_id}")
 def delete_sale(sale_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     order = db.query(SaleOrder).filter(

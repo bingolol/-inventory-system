@@ -67,7 +67,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="adjustVisible" title="库存盘点调整" width="400px" destroy-on-close>
+    <el-dialog v-model="adjustVisible" title="库存盘点调整" width="450px" destroy-on-close>
       <el-form :model="adjustForm" label-width="80px">
         <el-form-item label="商品">
           <span style="font-weight:600;">{{ adjustForm.product_name }}</span>
@@ -78,11 +78,23 @@
         <el-form-item label="新库存量" required>
           <el-input-number v-model="adjustForm.quantity" style="width:100%" />
         </el-form-item>
+        <el-form-item label="调整原因" required>
+          <el-input v-model="adjustForm.reason" type="textarea" :rows="2" placeholder="请填写调整原因，如：盘盈、盘亏、损坏、过期、丢失、纠错等" />
+        </el-form-item>
         <el-alert v-if="adjustForm.quantity < 0" title="注意：将产生负库存" type="warning" :closable="false" show-icon style="margin-top:8px" />
       </el-form>
       <template #footer>
         <el-button @click="adjustVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleAdjust">确认调整</el-button>
+        <el-popconfirm
+          :title="`确认将库存从 ${adjustForm.current_quantity} 调整为 ${adjustForm.quantity}？`"
+          confirm-button-text="确认"
+          cancel-button-text="取消"
+          @confirm="handleAdjust"
+        >
+          <template #reference>
+            <el-button type="primary" :disabled="!adjustForm.reason || adjustForm.quantity === adjustForm.current_quantity">确认调整</el-button>
+          </template>
+        </el-popconfirm>
       </template>
     </el-dialog>
   </div>
@@ -106,7 +118,7 @@ const searchKeyword = ref('')
 const categoryFilter = ref('')
 const categories = ref([])
 const adjustVisible = ref(false)
-const adjustForm = ref({ product_id: null, product_name: '', current_quantity: 0, quantity: 0 })
+const adjustForm = ref({ product_id: null, product_name: '', current_quantity: 0, quantity: 0, reason: '' })
 
 const loadData = async () => {
   try {
@@ -124,14 +136,15 @@ const showAdjust = (row) => {
     product_id: row.product_id,
     product_name: row.product_name,
     current_quantity: Number(row.quantity) || 0,
-    quantity: Number(row.quantity) || 0
+    quantity: Number(row.quantity) || 0,
+    reason: ''
   }
   adjustVisible.value = true
 }
 
 const handleAdjust = async () => {
   try {
-    await productsApi.adjustInventory(adjustForm.value.product_id, { quantity: adjustForm.value.quantity })
+    await productsApi.adjustInventory(adjustForm.value.product_id, { quantity: adjustForm.value.quantity, reason: adjustForm.value.reason })
     ElMessage.success('库存已调整')
     adjustVisible.value = false
     loadData()

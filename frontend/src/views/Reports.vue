@@ -21,7 +21,7 @@
             <div class="rp-stat"><span class="rp-stat-label">商品种类</span><span class="rp-stat-value c-primary">{{ overview.total_products ?? 0 }}</span></div>
             <div class="rp-stat"><span class="rp-stat-label">库存总量</span><span class="rp-stat-value c-success">{{ overview.total_inventory_quantity ?? 0 }} 件</span></div>
             <div class="rp-stat"><span class="rp-stat-label">库存价值</span><span class="rp-stat-value c-warning">¥{{ (overview.total_stock_value ?? 0).toLocaleString() }}</span></div>
-            <div class="rp-stat"><span class="rp-stat-label">库存预警</span><span class="rp-stat-value" :style="{ color: (overview.low_stock_count ?? 0) > 0 ? '#f56c6c' : '#67c23a' }">{{ overview.low_stock_count ?? 0 }}</span></div>
+            <div class="rp-stat"><span class="rp-stat-label">库存预警</span><span class="rp-stat-value" :style="{ color: (overview.low_stock_count ?? 0) > 0 ? 'var(--danger)' : 'var(--success)' }">{{ overview.low_stock_count ?? 0 }}</span></div>
           </div>
         </el-tab-pane>
 
@@ -96,7 +96,7 @@
           <div class="rp-stats" style="margin-top:12px;">
             <div class="rp-stat"><span class="rp-stat-label">销售收入</span><span class="rp-stat-value c-primary">¥{{ formatMoney(profitReport.total_revenue ?? 0) }}</span><span class="rp-stat-sub">{{ profitReport.sale_count ?? 0 }} 单</span></div>
             <div class="rp-stat"><span class="rp-stat-label">商品成本</span><span class="rp-stat-value c-warning">¥{{ formatMoney(profitReport.total_cost ?? 0) }}</span></div>
-            <div class="rp-stat"><span class="rp-stat-label">利润</span><span class="rp-stat-value" :style="{ color: (profitReport.total_profit ?? 0) >= 0 ? '#67c23a' : '#f56c6c' }">¥{{ formatMoney(profitReport.total_profit ?? 0) }}</span></div>
+            <div class="rp-stat"><span class="rp-stat-label">利润</span><span class="rp-stat-value" :style="{ color: (profitReport.total_profit ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }">¥{{ formatMoney(profitReport.total_profit ?? 0) }}</span></div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -183,8 +183,8 @@ useAccountAwareData(loadOverview, loadPurchaseReport, loadSaleReport, loadProfit
 }
 .rp-stat {
   flex: 1;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-lighter);
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
@@ -193,7 +193,7 @@ useAccountAwareData(loadOverview, loadPurchaseReport, loadSaleReport, loadProfit
 }
 .rp-stat-label {
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-secondary);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -204,7 +204,7 @@ useAccountAwareData(loadOverview, loadPurchaseReport, loadSaleReport, loadProfit
 }
 .rp-stat-sub {
   font-size: 12px;
-  color: #c9cdd4;
+  color: var(--text-placeholder);
 }
 .rp-filter {
   margin-bottom: 12px;
@@ -215,6 +215,6 @@ useAccountAwareData(loadOverview, loadPurchaseReport, loadSaleReport, loadProfit
   margin-bottom: 12px;
   font-size: 15px;
   font-weight: 600;
-  color: #4e5969;
+  color: var(--text-regular);
 }
 </style>

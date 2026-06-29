@@ -50,6 +50,27 @@ dist2/
 _*.py
 fix_*.py
 create_*.py
+tmp_*.py
+debug_test.py
+diag_run.py
+test_return.py
+
+# Backend debug/diagnostic scripts
+backend/check_*.py
+backend/chk_*.py
+backend/diag_*.py
+backend/delete_*.py
+backend/modify_*.py
+backend/run_*test.py
+
+# Test artifacts & coverage
+.coverage
+test_output.txt
+test_results.txt
+frontend/test-report.html
+frontend/test-results/
+frontend/e2e-*.png
+frontend/debug-*.png
 
 # PyInstaller
 build/

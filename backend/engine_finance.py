@@ -31,6 +31,12 @@ class FinanceEngine:
 
     @staticmethod
     def _vat_rate(account) -> Decimal:
+        """获取默认增值税税率
+
+        注意：此方法仅提供默认税率，用于小规模纳税人销售价税分离的兜底场景。
+        - 一般纳税人：默认 13%，但实际销售时以行项 item.tax_rate 为准（支持 13%/9%/6% 多税率商品）
+        - 小规模纳税人：法定征收率 3%（减按 1% 征收的优惠在 AccountingEngine.calculate_vat 中处理）
+        """
         if account is None:
             return Decimal("0.03")
         return Decimal("0.13") if account.taxpayer_type == "general" else Decimal("0.03")

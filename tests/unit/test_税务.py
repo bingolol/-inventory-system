@@ -12,17 +12,20 @@ from decimal import Decimal
 
 class FakeInvoiceORM:
     """模拟发票ORM对象"""
-    def __init__(self, amount_without_tax=0, tax_rate=0.03, direction='out'):
+    def __init__(self, amount_without_tax=0, tax_rate=0.03, direction='out', invoice_type='ordinary'):
         self.amount_without_tax = Decimal(str(amount_without_tax))
         self.tax_rate = Decimal(str(tax_rate))
+        self.tax_amount = (self.amount_without_tax * self.tax_rate).quantize(Decimal('0.01'))
         self.direction = direction
+        self.invoice_type = invoice_type
 
 
 class FakeAccountORM:
     """模拟账户ORM对象"""
-    def __init__(self, taxpayer_type='small_scale'):
+    def __init__(self, taxpayer_type='small_scale', type='company'):
         self.id = 1
         self.taxpayer_type = taxpayer_type
+        self.type = type
 
 
 class FakeDBSession:
@@ -86,31 +89,31 @@ class TestVATDeclaration:
         assert result['tax_payable_gross'] == Decimal('124.75')
 
     def test_vat_form_tax_reduction(self):
-        """本期应纳税额减征额 = 124.75 × 2/3 = 83.17"""
+        """本期应纳税额减征额 = 124.75（季度≤30万普票全额免征）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
         result = generate_vat_declaration(db, account_id=1, year=2026, quarter=2)
-        assert result['tax_reduction'] == Decimal('83.17')
+        assert result['tax_reduction'] == Decimal('124.75')
 
     def test_vat_form_tax_payable(self):
-        """应纳税额合计 = 41.58"""
+        """应纳税额合计 = 0（季度≤30万普票免征）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
         result = generate_vat_declaration(db, account_id=1, year=2026, quarter=2)
-        assert result['tax_payable'] == Decimal('41.58')
+        assert result['tax_payable'] == Decimal('0.00')
 
     def test_vat_form_surcharge_stamp(self):
-        """城市维护建设税 = 41.58 × 7% × 50% = 1.46"""
+        """城市维护建设税 = 0（增值税免征，附加税为0）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
         result = generate_vat_declaration(db, account_id=1, year=2026, quarter=2)
-        assert result['surcharge_stamp'] == Decimal('1.46')
+        assert result['surcharge_urban_construction'] == Decimal('0')
 
     def test_vat_form_surcharge_education_exempt(self):
-        """教育费附加 = 0（月销售额≤10万免征）"""
+        """教育费附加 = 0（增值税免征，附加税为0）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
@@ -118,7 +121,7 @@ class TestVATDeclaration:
         assert result['surcharge_education'] == Decimal('0')
 
     def test_vat_form_surcharge_local_education_exempt(self):
-        """地方教育附加 = 0（月销售额≤10万免征）"""
+        """地方教育附加 = 0（增值税免征，附加税为0）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
@@ -126,12 +129,12 @@ class TestVATDeclaration:
         assert result['surcharge_local_education'] == Decimal('0')
 
     def test_vat_form_surcharge_total(self):
-        """附加税费合计 = 1.46"""
+        """附加税费合计 = 0（增值税免征，附加税为0）"""
         from crud.finance import generate_vat_declaration
         invoices = [FakeInvoiceORM(amount_without_tax=4158.42)]
         db = FakeDBSession(invoices)
         result = generate_vat_declaration(db, account_id=1, year=2026, quarter=2)
-        assert result['surcharge_total'] == Decimal('1.46')
+        assert result['surcharge_total'] == Decimal('0')
 
 
 # ========== 企业所得税预缴申报表 ==========

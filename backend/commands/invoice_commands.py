@@ -15,7 +15,8 @@ from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log, delete_old_image
+from crud.base import _log
+from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
 from crud.invoice_linkage import validate_link_target
 
@@ -527,12 +528,163 @@ class UpdateInvoiceWithFixedAssetHandler(CommandHandler):
 
 
 # ═══════════════════════════════════════════════════════════
+# 9. ReverseInvoice — 红字发票冲红
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ReverseInvoice(Command):
+    invoice_id: int = 0
+    reason: str = ""
+
+
+@register(ReverseInvoice)
+class ReverseInvoiceHandler(CommandHandler):
+    def handle(self, cmd: ReverseInvoice, db: Any) -> Any:
+        """红字发票冲红：标记原发票 + 创建红字发票 + 级联冲红凭证和库存
+
+        级联规则：
+        - 关联销售单：reverse_sale（冲红收入/应收/税额凭证）+ InventoryEngine.reverse（库存回退）
+        - 关联采购单：reverse_purchase（冲红存货/应付/税额凭证）+ InventoryEngine.reverse（库存退回）
+        - 无关联订单：仅标记+创建红字发票（独立发票无凭证需冲红）
+        - 固定资产发票：标记+创建红字发票（资产冲红需人工处理）
+        """
+
+        # 1. 查原发票
+        invoice = db.query(models.Invoice).filter(
+            models.Invoice.id == cmd.invoice_id,
+            models.Invoice.account_id == cmd.account_id,
+        ).first()
+        if not invoice:
+            raise BusinessError(
+                code=ErrorCode.INVOICE_NOT_FOUND,
+                data={"invoice_id": cmd.invoice_id}
+            )
+
+        # 2. 幂等：已冲红则报错
+        if invoice.is_reversed:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"发票 {invoice.invoice_no} 已被冲红，不可重复操作",
+                ai_instruction="STOP_RETRYING. 该发票已冲红，无需再次冲红。"
+            )
+
+        # 3. 标记原发票
+        invoice.is_reversed = True
+        invoice.reversed_at = datetime.now()
+
+        # 4. 创建红字发票（负数金额，方向不变）
+        red_invoice_no = f"H-{invoice.invoice_no}"
+        # 确保红字发票号唯一
+        existing_red = db.query(models.Invoice).filter(
+            models.Invoice.account_id == cmd.account_id,
+            models.Invoice.invoice_no == red_invoice_no,
+        ).first()
+        if existing_red:
+            red_invoice_no = f"H-{invoice.invoice_no}-{invoice.id}"
+
+        red_invoice = models.Invoice(
+            account_id=cmd.account_id,
+            invoice_no=red_invoice_no,
+            direction=invoice.direction,
+            invoice_type=invoice.invoice_type,
+            tax_rate=invoice.tax_rate,
+            amount_without_tax=-_d(invoice.amount_without_tax),
+            tax_amount=-_d(invoice.tax_amount),
+            amount_with_tax=-_d(invoice.amount_with_tax),
+            counterparty_name=invoice.counterparty_name,
+            seller_name=invoice.seller_name,
+            buyer_name=invoice.buyer_name,
+            issue_date=datetime.now().date(),
+            related_order_id=invoice.related_order_id,
+            related_order_type=invoice.related_order_type,
+            notes=f"红字发票：冲红原发票 {invoice.invoice_no}(ID:{invoice.id})。原因：{cmd.reason}",
+        )
+        db.add(red_invoice)
+        db.flush()
+
+        # 5. 级联冲红凭证和库存
+        cascade_lines = []
+
+        if invoice.related_order_type == "sale_order" and invoice.related_order_id:
+            # 销项发票 → 冲红销售凭证（收入/应收/税额）
+            from engine_finance import FinanceEngine
+            FinanceEngine(db, cmd.account_id).reverse_sale(invoice.related_order_id)
+            cascade_lines.append("冲红销售凭证")
+
+            # 冲红库存（库存回退）
+            from engine_inventory import InventoryEngine
+            engine_inv = InventoryEngine(db)
+            sale_order = db.query(models.SaleOrder).filter(
+                models.SaleOrder.id == invoice.related_order_id,
+                models.SaleOrder.account_id == cmd.account_id,
+            ).first()
+            if sale_order:
+                for item in sale_order.items:
+                    unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
+                    engine_inv.reverse(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        unit_cost=unit_cost,
+                        source_type="sale_order",
+                        source_id=sale_order.id,
+                        operator=cmd.operator,
+                    )
+                cascade_lines.append(f"库存回退({len(sale_order.items)}项)")
+
+        elif invoice.related_order_type == "purchase_order" and invoice.related_order_id:
+            # 进项发票 → 冲红采购凭证（存货/应付/税额）
+            from engine_finance import FinanceEngine
+            FinanceEngine(db, cmd.account_id).reverse_purchase(invoice.related_order_id)
+            cascade_lines.append("冲红采购凭证")
+
+            # 冲红库存（库存退回）
+            from engine_inventory import InventoryEngine
+            engine_inv = InventoryEngine(db)
+            purchase_order = db.query(models.PurchaseOrder).filter(
+                models.PurchaseOrder.id == invoice.related_order_id,
+                models.PurchaseOrder.account_id == cmd.account_id,
+            ).first()
+            if purchase_order:
+                for item in purchase_order.items:
+                    unit_cost = _d(item.unit_price) if item.unit_price else Decimal('0')
+                    engine_inv.reverse(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        unit_cost=unit_cost,
+                        source_type="purchase_order",
+                        source_id=purchase_order.id,
+                        operator=cmd.operator,
+                    )
+                cascade_lines.append(f"库存退回({len(purchase_order.items)}项)")
+
+        elif invoice.related_order_type == "expense":
+            cascade_lines.append("费用发票（无库存冲红）")
+
+        elif invoice.related_order_type == "fixed_asset":
+            cascade_lines.append("固定资产发票（资产冲红需人工处理）")
+
+        else:
+            cascade_lines.append("独立发票（无级联冲红）")
+
+        # 6. 日志
+        _log(db, cmd.account_id, "reverse", "invoice", invoice.id,
+             f"红字发票冲红: {invoice.invoice_no} → {red_invoice_no}, 级联: {', '.join(cascade_lines)}",
+             operator=cmd.operator)
+        db.flush()
+
+        return {"original_invoice": invoice, "red_invoice": red_invoice,
+                "cascade": cascade_lines}
+
+
+# ═══════════════════════════════════════════════════════════
 # 辅助函数：发票自动生成销售单/采购单
 # ═══════════════════════════════════════════════════════════
 
 def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
     """销项发票联动自动创建销售单：取发票金额，扣库存"""
-    from .crud_compat import _generate_order_no, _log
+    from crud.base import _generate_order_no, _log
     from enums import OrderStatus, OrderType, PaymentStatus
     from crud.inventory_ops import sale_deduct
     from datetime import datetime as dt_mod
@@ -601,7 +753,8 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
     使用 InventoryEngine.inbound() 创建 StockMove（BR-7 合规）。
     按 counterparty_name 匹配已有供应商。
     """
-    from .crud_compat import _generate_order_no, _log, get_product
+    from crud.base import _generate_order_no, _log
+    from crud.products import get_product
     from enums import OrderStatus, OrderType, PaymentMethod
     from engine_inventory import InventoryEngine
     from engine_finance import FinanceEngine

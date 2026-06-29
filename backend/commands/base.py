@@ -71,16 +71,6 @@ def dispatch(cmd: Command, db: Any) -> Any:
     return handler_cls().handle(cmd, db)
 
 
-def register_alias(alias_type: Type[Command], handler_cls: Type[CommandHandler]) -> None:
-    """手动注册命令别名到已有的 handler（用于向后兼容）
-
-    用法::
-
-        register_alias(CreateSupplier, CreatePartnerHandler)
-    """
-    _registry[alias_type] = handler_cls
-
-
 def get_registered_commands() -> Dict[Type[Command], Type[CommandHandler]]:
     """返回注册表浅拷贝（调试用）"""
     return dict(_registry)

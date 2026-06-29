@@ -120,7 +120,7 @@ useAccountAwareData(getReport)
   background: linear-gradient(135deg, #1a1a2e, #16213e);
   border-radius: 16px;
   padding: 24px 28px;
-  color: #fff;
+  color: var(--bg-card);
 }
 .it-hero-top {
   display: flex; justify-content: space-between; align-items: center;
@@ -133,13 +133,13 @@ useAccountAwareData(getReport)
 .it-hero-label { font-size: 13px; color: rgba(255,255,255,0.5); display: block; margin-bottom: 4px; }
 .it-hero-value { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
 .it-hero-rate { font-size: 13px; color: rgba(255,255,255,0.5); padding: 8px 16px; background: rgba(255,255,255,0.06); border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.it-hero-rate strong { font-size: 20px; color: #fff; }
+.it-hero-rate strong { font-size: 20px; color: var(--bg-card); }
 
 .it-waterfall {
   margin-top: 20px;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-lighter);
   padding: 8px 0;
   box-shadow: 0 2px 12px rgba(0,0,0,0.04);
 }
@@ -154,11 +154,11 @@ useAccountAwareData(getReport)
   margin: 0 20px;
   border-radius: 2px;
 }
-.it-step-positive .it-step-line { background: #67c23a; }
-.it-step-negative .it-step-line { background: #f56c6c; }
-.it-step-inter .it-step-line { background: #e6a23c; }
-.it-step-final .it-step-line { background: #4f6ef7; }
-.it-step-result .it-step-line { background: linear-gradient(180deg, #4f6ef7, #6366f1); }
+.it-step-positive .it-step-line { background: var(--success); }
+.it-step-negative .it-step-line { background: var(--danger); }
+.it-step-inter .it-step-line { background: var(--warning); }
+.it-step-final .it-step-line { background: var(--primary); }
+.it-step-result .it-step-line { background: linear-gradient(180deg, var(--primary), #6366f1); }
 
 .it-step-body {
   flex: 1;
@@ -166,23 +166,23 @@ useAccountAwareData(getReport)
   justify-content: space-between;
   align-items: center;
   padding: 14px 20px 14px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--border-lighter);
   font-size: 15px;
 }
 .it-step:last-child .it-step-body { border-bottom: none; }
-.it-step-label { color: #4e5969; }
+.it-step-label { color: var(--text-regular); }
 .it-step-value { font-weight: 700; font-family: 'Consolas', 'Monaco', monospace; }
-.it-step-positive .it-step-value { color: #67c23a; }
-.it-step-negative .it-step-value { color: #f56c6c; }
-.it-step-final .it-step-value { color: #4f6ef7; font-size: 16px; }
-.it-step-result .it-step-value { color: #fff; font-size: 18px; }
-.it-step-result .it-step-body { background: linear-gradient(135deg, #4f6ef7, #6366f1); border-radius: 10px; margin: 4px 4px 4px 0; padding: 16px 20px; }
+.it-step-positive .it-step-value { color: var(--success); }
+.it-step-negative .it-step-value { color: var(--danger); }
+.it-step-final .it-step-value { color: var(--primary); font-size: 16px; }
+.it-step-result .it-step-value { color: var(--bg-card); font-size: 18px; }
+.it-step-result .it-step-body { background: linear-gradient(135deg, var(--primary), #6366f1); border-radius: 10px; margin: 4px 4px 4px 0; padding: 16px 20px; }
 .it-step-result .it-step-label { color: rgba(255,255,255,0.7); }
 
 .it-note {
   text-align: center;
   font-size: 13px;
-  color: #c9cdd4;
+  color: var(--text-placeholder);
   margin-top: 16px;
 }
 </style>

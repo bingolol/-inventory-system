@@ -204,7 +204,7 @@ const categoryChartOption = computed(() => {
     series: [{
       type: 'bar',
       data: data.map(d => d.total),
-      itemStyle: { color: categoryChartType.value === 'income' ? '#67c23a' : '#f56c6c', borderRadius: [0, 4, 4, 0] },
+      itemStyle: { color: categoryChartType.value === 'income' ? '#8ca06f' : '#ef4444', borderRadius: [0, 4, 4, 0] },
       label: { show: true, position: 'right', formatter: params => '¥' + params.value.toLocaleString() }
     }]
   }
@@ -220,7 +220,7 @@ const monthlyChartOption = computed(() => {
     series: [{
       type: 'bar',
       data: data.map(d => d.total),
-      itemStyle: { color: monthlyChartType.value === 'income' ? '#67c23a' : monthlyChartType.value === 'expense' ? '#f56c6c' : '#409eff', borderRadius: [4, 4, 0, 0] },
+      itemStyle: { color: monthlyChartType.value === 'income' ? '#8ca06f' : monthlyChartType.value === 'expense' ? '#ef4444' : '#9c87f5', borderRadius: [4, 4, 0, 0] },
       label: { show: true, position: 'top', formatter: params => '¥' + params.value.toLocaleString() }
     }]
   }
@@ -294,7 +294,7 @@ const showDialog = (row) => {
   } else {
     editingId.value = null
     const today = new Date().toISOString().slice(0, 10)
-    form.value = { type: 'expense', amount: 0, category: '', date: today, description: '' }
+    form.value = { type: 'expense', amount: 0, category: '', date: today, description: '', image_url: '' }
   }
   dialogVisible.value = true
 }

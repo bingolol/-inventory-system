@@ -1,0 +1,69 @@
+{
+  "root": {
+    "nodeId": "gen-project-shell",
+    "kind": "project-shell",
+    "pageIds": ["page-dashboard", "page-purchases", "page-sales", "page-inventory", "page-products"],
+    "output": "partials/project-shell.html",
+    "sharedRegions": ["sidebar", "topbar"],
+    "privateRegions": [],
+    "mutableSlots": ["activeNavItem", "pageTitle"],
+    "status": "planned",
+    "children": [
+      {
+        "nodeId": "gen-page-dashboard",
+        "kind": "page-leaf",
+        "pageIds": ["page-dashboard"],
+        "output": "pages/dashboard.html",
+        "sharedRegions": [],
+        "privateRegions": ["dashboard body"],
+        "mutableSlots": ["activeNavItem", "pageTitle"],
+        "status": "planned",
+        "children": []
+      },
+      {
+        "nodeId": "gen-page-purchases",
+        "kind": "page-leaf",
+        "pageIds": ["page-purchases"],
+        "output": "pages/purchases.html",
+        "sharedRegions": [],
+        "privateRegions": ["purchases body"],
+        "mutableSlots": ["activeNavItem", "pageTitle"],
+        "status": "planned",
+        "children": []
+      },
+      {
+        "nodeId": "gen-page-sales",
+        "kind": "page-leaf",
+        "pageIds": ["page-sales"],
+        "output": "pages/sales.html",
+        "sharedRegions": [],
+        "privateRegions": ["sales body"],
+        "mutableSlots": ["activeNavItem", "pageTitle"],
+        "status": "planned",
+        "children": []
+      },
+      {
+        "nodeId": "gen-page-inventory",
+        "kind": "page-leaf",
+        "pageIds": ["page-inventory"],
+        "output": "pages/inventory.html",
+        "sharedRegions": [],
+        "privateRegions": ["inventory body"],
+        "mutableSlots": ["activeNavItem", "pageTitle"],
+        "status": "planned",
+        "children": []
+      },
+      {
+        "nodeId": "gen-page-products",
+        "kind": "page-leaf",
+        "pageIds": ["page-products"],
+        "output": "pages/products.html",
+        "sharedRegions": [],
+        "privateRegions": ["products body"],
+        "mutableSlots": ["activeNavItem", "pageTitle"],
+        "status": "planned",
+        "children": []
+      }
+    ]
+  }
+}

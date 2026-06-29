@@ -1,9 +1,8 @@
 # ⚠️ 注意：本路由当前仅包含只读操作（GET），不需要 uow 包裹。
 # 如未来新增写操作（POST/PUT/DELETE），务必使用 `with unit_of_work(db):` 包裹。
 #
-# 企业所得税报表 — 支持双口径
-# caliber=tax: 税务口径（发票说话）
-# caliber=operating: 经营口径（订单说话）
+# 企业所得税报表 — 税务口径（发票说话）
+# 取消经营口径（订单说话），统一以发票为准，避免含税/不含税口径不一致
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -13,10 +12,10 @@ from decimal import Decimal
 from typing import Optional
 
 from database import get_db
-from models import Account, Invoice, Expense, SaleOrder, SaleItem, Product
+from models import Account, Invoice, Expense
 from schemas import IncomeTaxReport
 from account_dep import get_account_id
-from enums import InvoiceDirection, OrderStatus
+from enums import InvoiceDirection
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
@@ -90,61 +89,14 @@ def _calc_tax_caliber(db: Session, account_id: int, start_date: datetime, end_da
     }
 
 
-def _calc_operating_caliber(db: Session, account_id: int, start_date: datetime, end_date: datetime):
-    """经营口径计算（订单说话）"""
-    # 营业收入 = SaleOrder.total_price（含税）
-    operating_revenue = _d(db.query(func.sum(SaleOrder.total_price)).filter(
-        SaleOrder.account_id == account_id,
-        SaleOrder.sale_date >= start_date,
-        SaleOrder.sale_date < end_date,
-        SaleOrder.status == OrderStatus.COMPLETED
-    ).scalar())
-
-    # 营业成本 = quantity * purchase_price
-    operating_cost = Decimal('0')
-    completed_sales = db.query(SaleOrder).filter(
-        SaleOrder.account_id == account_id,
-        SaleOrder.sale_date >= start_date,
-        SaleOrder.sale_date < end_date,
-        SaleOrder.status == OrderStatus.COMPLETED
-    ).all()
-    for order in completed_sales:
-        for item in order.items:
-            product = db.query(Product).filter(
-                Product.id == item.product_id,
-                Product.account_id == account_id,
-            ).first()
-            purchase_price = Decimal(str(product.purchase_price)) if product and product.purchase_price else Decimal('0')
-            operating_cost += Decimal(str(item.quantity)) * purchase_price
-
-    # 营业费用 = 所有费用
-    operating_expenses = _d(db.query(func.sum(Expense.amount)).filter(
-        Expense.account_id == account_id,
-        Expense.expense_date >= start_date,
-        Expense.expense_date < end_date
-    ).scalar())
-
-    return {
-        "revenue": operating_revenue,
-        "cost": operating_cost,
-        "expenses": operating_expenses,
-        "non_invoice_expenses": Decimal('0'),  # 经营口径不区分有票无票
-    }
-
-
 @router.get("", response_model=IncomeTaxReport)
 async def get_income_tax_report(
     year: int,
     quarter: Optional[int] = None,
-    caliber: str = Query("tax", pattern="^(tax|operating)$"),
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id)
 ):
-    """获取企业所得税报表（支持双口径）
-
-    caliber=tax: 税务口径（发票说话）— 默认
-    caliber=operating: 经营口径（订单说话）
-    """
+    """获取企业所得税报表（税务口径：发票说话）"""
     # 获取账本信息
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
@@ -152,16 +104,29 @@ async def get_income_tax_report(
 
     start_date, end_date = _get_date_range(year, quarter)
 
-    # 根据 caliber 选择计算逻辑
-    if caliber == "tax":
-        data = _calc_tax_caliber(db, account_id, start_date, end_date)
-    else:
-        data = _calc_operating_caliber(db, account_id, start_date, end_date)
+    # 税务口径（发票说话）
+    data = _calc_tax_caliber(db, account_id, start_date, end_date)
 
     revenue = data["revenue"]
     cost = data["cost"]
     expenses = data["expenses"]
     non_invoice_expenses = data["non_invoice_expenses"]
+
+    # 增值税减免加回收入（财税〔2008〕151号：减免的增值税需计入应纳税所得额）
+    # 从总账 6301（营业外收入-税收减免）贷方发生额获取
+    from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+    from sqlalchemy import func as sqlfunc
+    ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
+    if ledger:
+        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit)).join(
+            LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
+        ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
+            AccountMove.date >= start_date, AccountMove.date <= end_date
+        ).scalar())
+    else:
+        vat_exemption_income = Decimal('0')
+    revenue += vat_exemption_income
 
     # 计算毛利润
     gross_profit = revenue - cost
@@ -172,8 +137,16 @@ async def get_income_tax_report(
         taxable_income = Decimal('0')
 
     # 使用 AccountingEngine 计算所得税
-    taxpayer_type = account.taxpayer_type if account.taxpayer_type else "small_micro"
-    tax_result = _engine.calculate_income_tax(profit=taxable_income, taxpayer_type=taxpayer_type)
+    # 所得税纳税人类型映射：VAT 口径 small_scale → 所得税口径 small_micro（小型微利企业优惠）
+    # 小规模纳税人通常同时也是小型微利企业，适用 5% 实际税负（25%×20%）
+    raw_type = account.taxpayer_type if account.taxpayer_type else "small_scale"
+    taxpayer_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
+    entity_type = account.type if account.type else "company"
+    tax_result = _engine.calculate_income_tax(
+        profit=taxable_income,
+        taxpayer_type=taxpayer_type,
+        entity_type=entity_type,
+    )
 
     # 构建报表
     report = IncomeTaxReport(
@@ -187,9 +160,9 @@ async def get_income_tax_report(
         taxable_income=taxable_income.quantize(Q2),
         tax_rate=tax_result.tax_rate,
         tax_amount=tax_result.tax_payable,
-        invoice_revenue=revenue.quantize(Q2) if caliber == "tax" else Decimal('0').quantize(Q2),
-        invoice_cost=cost.quantize(Q2) if caliber == "tax" else Decimal('0').quantize(Q2),
-        invoiced_expenses=expenses.quantize(Q2) if caliber == "tax" else Decimal('0').quantize(Q2),
+        invoice_revenue=revenue.quantize(Q2),
+        invoice_cost=cost.quantize(Q2),
+        invoiced_expenses=expenses.quantize(Q2),
         non_invoice_expenses=non_invoice_expenses.quantize(Q2),
     )
 

@@ -217,7 +217,7 @@ class VATDeclaration(BaseModel):
     # 三、附加税费
     surcharge_education: Decimal = Decimal('0')      # 教育费附加
     surcharge_local_education: Decimal = Decimal('0') # 地方教育附加
-    surcharge_stamp: Decimal = Decimal('0')           # 城市维护建设税
+    surcharge_urban_construction: Decimal = Decimal('0') # 城市维护建设税（7%）
     surcharge_total: Decimal = Decimal('0')           # 附加税费合计
     # 四、减免税明细
     reduction_item: str = ""  # 减免项目

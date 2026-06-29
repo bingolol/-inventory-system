@@ -6,6 +6,8 @@
 
 ### 0. 调用规则
 
+> ⚠️ **禁止使用脚本操作数据**。所有读写必须通过 API 接口，不得使用 Python 脚本、SQL 直连或数据库工具。脚本绕过 API 会破坏事件总线、审计日志和库存引擎联动。
+
 **所有写操作必须带三个请求头：**
 ```
 
@@ -24,6 +26,8 @@ cd /path/to/inventory-system && python backend/main.py
 
 **写接口受白名单约束。** 未命中白名单返回 `403` + `suggested_endpoint`，收到后**立即 STOP_RETRYING**，改用建议接口。
 
+**红冲/取消/处置等不可逆操作受 `ConfirmMiddleware` 拦截。** POST 路径含 `/reverse`、`/cancel`、`/dispose` 时，系统不直接执行，返回 `202` + `confirm_token`。用户需在前端确认后才放行。AI 可发起请求，但最终由用户确认。前端确认调用：`POST /api/confirm { "token": "..." }`。
+
 **白名单写操作返回包装格式：**
 ```json
 {"ok": true, "entity": {...}, "operation": "created", "state_after": {"inventory": [...], "order": {...}}}
@@ -41,9 +45,9 @@ cd /path/to/inventory-system && python backend/main.py
 ```
 
 用户是"一般纳税人"还是"小规模纳税人"？
-→ 决定税率（13% vs 1%/3%）、收入口径（不含税 vs 含税）
-→ 查：GET /api/accounts → 看 taxpayer_type 字段
-→ 如果系统里没有，问用户："您是一般纳税人还是小规模？"
+→ 决定税率（一般13% / 小规模按季申报：季度≤30万普票免税、超过减按1%，专票始终1%）、收入口径（不含税 vs 含税）
+查：GET /api/accounts → 看 taxpayer_type 字段
+如果系统里没有，问用户："您是一般纳税人还是小规模？"
 ```
 
 **② 是新账本还是老账本**
@@ -131,7 +135,7 @@ POST /api/opening-balances
 - 缺数量 → 问："多少？"
 - 缺金额 → 问："多少钱？"
 - 金额说了一个数但没说含不含税 → 问："这个金额是含税还是不含税？"
-- 没提税率 → 一般纳税人默认 13%，小规模默认 1%
+- 没提税率 → 一般纳税人默认 13%，小规模默认 1%（季度≤30万普票免税由月结时自动计算）
 - 用户说"帮我记个账"没有细节 → 问："请描述一下发生了什么"
 - 用户说"月结/结账"但没说月份 → 问："结哪个月？"
 - 用户说"对账"但没有对账单数据 → 问："有银行对账单吗？期初余额和期末余额是多少？"
@@ -164,7 +168,7 @@ POST /api/opening-balances
 | 税务核对 | 8项全部通过/有差异 | 差异项追查 |
 
 
-> **商品分类**：	rack_inventory 决定是否管理库存。货物类（实物商品）→ 	rue，采购/销售自动出入库。服务类（咨询/劳务/软件）→ alse，不追踪库存，按发票/费用入账。
+> **商品分类**：`track_inventory` 决定是否管理库存。货物类（实物商品）→ `true`，采购/销售自动出入库。服务类（咨询/劳务/软件）→ `false`，不追踪库存，按发票/费用入账。
 
 ---
 
@@ -201,18 +205,27 @@ POST /api/purchases
     {
       "product_id": 1,      # 上一步取的 product_id
       "quantity": 50,
-      "unit_price": 3500,   # 不含税单价
-      "tax_rate": 0.13      # 一般纳税人默认13%，用户未提则问
+      "unit_price": 3500,   # 含税单价
+      "tax_rate": 0.01      # 小规模默认 1%，用户未提则问
     }
   ]
 }
 ```
 
+**响应**：
+```json
+{"status": "ok", "entity": {"id": 1, "order_no": "PO-2026-0001", "total_price": 175000.00}, "operation": "created", "state_after": {"inventory": [{"product_id": 1, "quantity": 50, "unit_cost": 0}]}}
+```
+
 ### 第3步：告知用户结果并建议下一步
+
+从响应取 `order_no`、`total_price`、`state_after.inventory[].quantity`：
 
 ```text
 采购单 {order_no} 已创建，金额 {total_price} 元，{数量} 件商品已入库。
 ▶ 下一步：收到发票 → 去 §3 进项关联；直接付款 → 去 §6
+
+> **取消采购单**：`POST /api/purchases/{id}/cancel`，受 ConfirmMiddleware 拦截。冲红存货/应付/税额凭证 + 库存回退，保留审计轨迹。
 ```
 
 ---
@@ -247,18 +260,27 @@ POST /api/sales
     {
       "product_id": 1,
       "quantity": 10,
-      "unit_price": 4200,           # 含税销售单价
-      "tax_rate": 0.13
+      "unit_price": 4200,           # 不含税销售单价
+      "tax_rate": 0.01              # 小规模默认 1%
     }
   ]
 }
 ```
 
+**响应**：
+```json
+{"status": "ok", "entity": {"id": 1, "order_no": "SO-2026-0001", "total_price": 42000.00}, "state_after": {"inventory": [{"product_id": 1, "quantity": 40}]}}
+```
+
 ### 第3步：告知用户结果并建议下一步
+
+从响应取 `order_no`、`total_price`、`state_after.inventory[].quantity`：
 
 ```text
 销售单 {order_no} 已创建，金额 {total_price} 元，{数量} 件商品已出库。
 ▶ 下一步：开发票 → 去 §3 销项关联；直接收款 → 去 §6
+
+> **取消销售单**：`POST /api/sales/{id}/cancel`，受 ConfirmMiddleware 拦截。冲红收入/应收/税额凭证 + 库存回退，保留审计轨迹。
 ```
 
 ---
@@ -269,7 +291,77 @@ POST /api/sales
 
 > **一般纳税人注意**：发票是本系统创建采购/销售订单的**唯一入口**。不要直接调 §1/§2 创建订单，必须通过发票的 `auto_create` 自动生成。
 
-> 发票 `items[].unit_price` 为**含税单价**。`sale_order_action=auto_create` 或 `purchase_order_action=auto_create` 时，系统自动建单+出入库+生成会计凭证：销项→ dr 1122 cr 6001+222101 + dr 6401 cr 1405。商品需已启用 `track_inventory`。
+### 请求字段
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `invoice_no` | ✅ | str | 发票号码 |
+| `direction` | ✅ | `"in"` / `"out"` | 进项/销项 |
+| `invoice_type` | ✅ | `"ordinary"` / `"special"` | 普票/专票 |
+| `amount_with_tax` | ✅ | Decimal(≥0) | 含税总金额 |
+| `tax_rate` | ✅ | Decimal(0~1) | 税率（一般纳税人 0.13，小规模 0.01） |
+| `counterparty_name` | ✅ | str | 对方名称 |
+| `seller_name` | ✅ | str | 销方名称 |
+| `buyer_name` | ✅ | str | 买方名称 |
+| `issue_date` | ✅ | str | YYYY-MM-DD |
+| `items` | ✅ | list, min_length=1 | 商品明细（见下） |
+| `sale_order_action` | 条件 | `"auto_create"` / `"link_existing"` | **direction="out" 时必填** |
+| `purchase_order_action` | 条件 | `"auto_create"` / `"link_existing"` | **direction="in" 时必填** |
+| `related_order_id` | 条件 | int | `*_action="link_existing"` 时必填 |
+| `related_order_type` | 可选 | str | 见 validater |
+| `image_url` | 可选 | str | 发票图片 |
+| `notes` | 可选 | str | 备注 |
+| `fixed_asset` | 可选 | object | 固定资产嵌套对象 |
+
+**items[] 明细行**：
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `product_id` | ✅ | int | 商品 ID |
+| `quantity` | ✅ | int(>0) | 数量 |
+| `unit_price` | ✅ | Decimal(≥0) | 含税单价 |
+| `tax_rate` | 可选 | Decimal, 默认 0.01 | 行级税率，覆盖发票级税率 |
+
+**fixed_asset 嵌套对象**（发票同时入账固定资产时）：
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `asset_code` | ✅ | str | 资产编码 |
+| `asset_name` | ✅ | str | 资产名称 |
+| `useful_life` | ✅ | int(>0) | 折旧年限（月） |
+| `start_date` | ✅ | str | YYYY-MM-DD |
+| `salvage_rate` | 可选 | Decimal, 默认 0.05 | 残值率 |
+| `depreciation_method` | 可选 | str, 默认"年限平均法" | 折旧方法 |
+| `accumulated_depreciation` | 可选 | Decimal, 默认 0 | 累计折旧（旧资产迁移用） |
+| `asset_status` | 可选 | str, 默认"在用" | 状态 |
+| `category` | 可选 | str | 资产分类 |
+
+**`related_order_type` 合法值**：`sale_order` / `purchase_order` / `expense` / `fixed_asset`
+
+> `items[].unit_price` 为**含税单价**。`sale_order_action=auto_create` 或 `purchase_order_action=auto_create` 时，系统自动建单+出入库+生成会计凭证：销项→ dr 1122 cr 6001+222101 + dr 6401 cr 1405。商品需已启用 `track_inventory`。
+
+**响应字段**（`InvoiceOut`）：
+
+| 字段 | 说明 |
+|------|------|
+| `id` | 发票 ID |
+| `invoice_no` | 发票号码 |
+| `direction` | 方向 |
+| `invoice_type` | 类型 |
+| `amount_with_tax` | 含税金额 |
+| `amount_without_tax` | 不含税金额 |
+| `tax_amount` | 税额 |
+| `tax_rate` | 税率 |
+| `counterparty_name` | 对方名称 |
+| `issue_date` | 开票日期 |
+| `certification_status` | 认证状态 |
+| `related_order_id` | 关联订单 ID |
+| `related_order_type` | 关联订单类型 |
+| `notes` | 备注 |
+| `image_url` | 图片地址 |
+| `created_at` | 创建时间 |
+
+> 红字发票金额为负数，`amount_with_tax`/`amount_without_tax`/`tax_amount` 均带负号。InvoiceOut schema 不限制 `ge=0`（只有 `InvoiceCreate` 限制）。
 
 ### 用户说"给XX客户开了张发票"
 
@@ -342,6 +434,11 @@ POST /api/invoices/quick
 }
 ```
 
+**响应（销项/进项一致）**：
+```json
+{"ok": true, "entity": {"id": 1, "invoice_no": "XS001", "direction": "out", "amount_with_tax": 10100}, "operation": "created"}
+```
+
 **创建进项发票后** → 如果是专票，去认证（见下方）；认证完去 §6 付款。
 
 进项专票必须认证才能抵扣进项税：
@@ -357,23 +454,68 @@ POST /api/invoices/{id}/certify
 
 进项发票认证后，记得提醒用户付采购款。
 
+### 发票冲红：用户说"发票开错了/退票"
+
+```json
+POST /api/invoices/{id}/reverse
+{
+  "reason": "发票信息有误，重新开票"
+}
+```
+
+**级联规则**：
+
+| 关联类型 | 冲红内容 |
+|----------|----------|
+| 销售单（销项发票） | 冲红收入/应收/税额凭证 + 库存回退 |
+| 采购单（进项发票） | 冲红存货/应付/税额凭证 + 库存退回 |
+| 费用 | 费用发票，无库存冲红 |
+| 固定资产 | 资产冲红需人工处理 |
+| 无关联（独立发票） | 无级联冲红 |
+
+**响应**：
+```json
+{
+  "original_invoice_id": 1,
+  "original_invoice_no": "XS001",
+  "red_invoice_id": 2,
+  "red_invoice_no": "H-XS001",
+  "red_amount_with_tax": "-10100.00",
+  "cascade": ["冲红销售凭证", "库存回退(2项)"]
+}
+```
+
+> 幂等：已冲红发票不可重复冲红，返回 422 `发票已被冲红，不可重复操作`。
+> 本端点受 `ConfirmMiddleware` 拦截（POST + `/reverse`），返回 `202` + `confirm_token`，用户在前端确认后才执行。AI 可发起冲红请求，但最终由用户确认放行。
+
 ---
 
 ### 4. 费用：用户说"交了XX费用"
 
+> 以下分类按《小企业会计准则》规范。系统代码对部分类别存在科目映射偏差（见注），agent 按会计准则指引用户，不保证入账科目完全正确。
+
 ```text
 1. 提取：费用类别、金额、日期
-2. 确认 functional_category（决定入哪个会计科目）：
-   - "销售费用" → 6602
-   - "管理费用" → 6601（默认）
-   - "财务费用" → 6603
-   - "税金及附加" → 6403
-3. 如果用户没说 functional_category，根据业务判断：
-   - 房租/办公用品 → 管理费用
-   - 运费/销售提成 → 销售费用
-   - 银行手续费 → 财务费用
-   - 城建税/教育费附加 → 税金及附加
+2. 确认 `category`（合法值固定，见下表）
+3. 确认 `functional_category`（决定入账科目）
 ```
+
+| 用户说 | `category` | 会计准则归属 | 说明 |
+|--------|-----------|-------------|------|
+| 交了房租 | `房租` | 管理费用 | 办公/仓库租金 |
+| 交了水电费 | `水电` | 管理费用 | 日常运营水电 |
+| 发工资了 | `工资` | 管理费用 / 销售费用 | 管理部门管费，销售部门销费 |
+| 买了办公用品/文具 | `办公用品` | 管理费用 | 日常办公 |
+| 买了零星材料/耗材 | `材料` | 管理费用 | **仅限非生产耗材**；生产原料走采购 |
+| 付了运费/快递费 | `运费` | 销售费用 | **销售**运费；**采购**运费应计入存货成本 |
+| 付了维修费 | `维修` | 管理费用 | 日常维修 |
+| 交附加税（城建/教育） | `税金及附加` | 税金及附加 | 月末计提 |
+| 交企业所得税 | `所得税` | 所得税费用 | **不是税金及附加**，利润表单列 |
+| （其他支出） | `其他` | 管理费用 | 兜底 |
+
+> 银行手续费和利息**不走这里**，走 `POST /api/bank/entry`（见 §7）。
+>
+> `functional_category` 合法值：`管理费用`(6601, 默认) / `销售费用`(6602) / `税金及附加`(6403) / `财务费用`(6603)。但当前系统 `EXPENSE_ACCOUNT_CODE_MAP` 只映射了前两个，6403 和 6801 会默认回退到 6601——月末计提已走引擎直入账，日常 expense API 的税费分录科目可能不准。
 
 ```json
 POST /api/expenses
@@ -383,6 +525,11 @@ POST /api/expenses
   "expense_date": "2026-06-01",
   "functional_category": "管理费用"
 }
+```
+
+**响应**：
+```json
+{"ok": true, "entity": {"id": 1, "category": "房租", "amount": 5000, "payment_status": "unpaid"}, "operation": "created"}
 ```
 
 费用创建后自动生成会计凭证（借:费用科目 贷:应付账款）。无需额外操作。
@@ -418,6 +565,8 @@ POST /api/payments
 
 > 计提时系统生成应付职工薪酬凭证。发放时冲减应付。
 
+> **费用录错了**：不要 DELETE，走红冲。`POST /api/expenses/{id}/reverse` 冲红总账凭证并标记 `is_reversed=True`，原记录保留。受 `ConfirmMiddleware` 拦截，用户确认后执行。
+
 ---
 
 ### 5. 固定资产：用户说"买了台设备/电脑"
@@ -441,6 +590,11 @@ POST /api/fixed-assets
 }
 ```
 
+**响应**：
+```json
+{"ok": true, "entity": {"id": 1, "asset_code": "FA-001", "name": "服务器", "original_value": 50000, "status": "in_use"}, "operation": "created"}
+```
+
 **折旧方法**：`年限平均法`（默认）/ `双倍余额递减法` / `年数总和法`
 
 > 折旧规则：当月增加**下月**开始计提。折旧由系统自动按月批量处理。
@@ -458,9 +612,9 @@ POST /api/fixed-assets
 
 ```text
 查：GET /api/bank-accounts
-→ 不存在则创建：POST /api/bank-accounts {"account_name": "基本户", "account_number": "6222****", "balance": 100000}
-→ 记下 bank_account_id
-→ 确认余额充足（balance >= 付款金额）
+ 不存在则创建：POST /api/bank-accounts {"bank_name": "工商银行", "account_number": "6222****", "balance": 0}
+ 记下 bank_account_id
+ 确认余额充足（balance >= 付款金额）
 ```
 
 > 如果用户没有指定银行账户，自动取第一个银行账户。`GET /api/bank-accounts` 返回列表的第一个即为默认账户。
@@ -492,6 +646,11 @@ POST /api/payments
 }
 ```
 
+**响应**：
+```json
+{"status": "ok", "entity": {"id": 1, "amount": 11300, "payment_status": "paid"}}
+```
+
 ### 收销售款
 
 ```text
@@ -512,9 +671,22 @@ POST /api/receipts
 }
 ```
 
+**响应**：
+```json
+{"status": "ok", "entity": {"id": 1, "amount": 11300, "payment_status": "paid"}}
+```
+
 收款/付款完成后，对应订单的 `payment_status` 自动变为 `paid`。`bank_account_id` 和 `receipt_method` 非必填，但填了 bank_account_id 会自动生成 BankTransaction 并更新 1002 余额。
 
-> **财务数据不可直接修改**：收款/付款没有 PUT/DELETE 接口——这是故意设计。如果录错了，走红冲流程（`POST /api/receipts/{id}/reverse` / `POST /api/payments/{id}/reverse`）生成反向分录，原记录保留供审计追溯。红冲接口在白名单中但对 AI **不可调用**，如需红冲请告知用户联系操作员处理。
+> **财务数据不可直接修改**：收款/付款/银行交易没有 PUT/DELETE 接口——这是故意设计。如果录错了，走红冲流程生成反向分录，原记录保留供审计追溯。以下红冲/取消端点已在 AI 白名单中，调用时受 `ConfirmMiddleware` 拦截（POST + `/reverse`/`/cancel`），用户在前端确认后执行：
+> - `POST /api/receipts/{id}/reverse` — 红冲收款
+> - `POST /api/payments/{id}/reverse` — 红冲付款
+> - `POST /api/bank/transaction/{id}/reverse` — 红冲银行交易
+> - `POST /api/invoices/{id}/reverse` — [发票冲红](#发票冲红用户说发票开错了退票)（红字发票+级联冲红凭证库存）
+> - `POST /api/expenses/{id}/reverse` — 费用冲红（冲红总账凭证）
+> - `POST /api/cash-flows/transactions/{id}/reverse` — 现金流水冲红
+> - `POST /api/purchases/{id}/cancel` — 取消采购单（冲红凭证+库存回退）
+> - `POST /api/sales/{id}/cancel` — 取消销售单（冲红凭证+库存回退）
 
 ---
 
@@ -527,17 +699,21 @@ POST /api/receipts
 ```text
 1. 确认账户名称（如"基本户"、"一般户"）
 2. 确认账号（用户提供或问用户）
+3. 账户初始余额必须为 0
 ```
 
 ```json
 POST /api/bank-accounts
 {
-  "account_name": "基本户",
-  "account_number": "6222021234567890",
   "bank_name": "工商银行",
-  "balance": 100000
+  "account_number": "6222021234567890",
+  "balance": 0
 }
 ```
+
+> `balance` 只能传 0（故意设计）。开户时账面余额为 0，然后通过**导入银行对账单 + 对账**来确认期初余额：用户将银行导出的第一份对账单（含期初余额）导入系统，对账后自动确定银行账户的真实余额。这是更规范的会计实践——账户余额来自银行流水而非手动填写，同时也让用户从一开始就熟悉对账流程。如果设 `balance > 0`，系统会拒绝并引导走对账流程。
+>
+> 注意：**总账 1002 期初余额**仍通过 `POST /api/opening-balances` 设定（见[初始化新账本](#初始化新账本)），这与银行账户的实操余额是两套体系。总账期初余额反映科目历年结转数，银行账户余额反映银行流水实际数，两者通过对账保持一致。
 
 ### 查银行流水
 
@@ -550,7 +726,9 @@ POST /api/bank-accounts
 
 ### 银行利息/手续费直录
 
-用户说"银行扣了手续费/给了利息"，不需要走对账流程，直接录入：
+用户说"银行扣了手续费/给了利息"，不需要走对账流程，直接录入。
+
+**请求**:
 
 ```json
 POST /api/bank/entry
@@ -561,16 +739,70 @@ POST /api/bank/entry
 }
 ```
 
-| entry_type | 分录 |
-|-----------|------|
-| `interest_income`（利息收入） | dr 1002 银行存款 cr 6603 财务费用-利息收入 |
-| `bank_fee`（手续费/管理费） | dr 6603 财务费用 cr 1002 银行存款 |
+| 字段 | 说明 | 合法值 |
+|------|------|--------|
+| `entry_type` | 业务类型 | `"interest_income"`（利息收入）或 `"bank_fee"`（手续费） |
+| `amount` | 金额，必须 > 0 | 正数，单位元 |
+| `transaction_date` | 银行流水日期 | `YYYY-MM-DD` |
 
-> 系统同时生成 BankTransaction 流水和会计凭证，无需手动对账。
+**响应**:
+
+```json
+{
+  "status": "ok",
+  "entry_type": "interest_income",
+  "amount": 0.61
+}
+```
+
+> 响应不返回 BankTransaction ID 和会计凭证 ID。如需冲销，通过 `GET /api/bank-transactions?bank_account_id=X` 按日期和金额定位流水。
+
+**生成的分录**:
+
+| entry_type | system 自动处理 |
+|-----------|----------------|
+| `interest_income`（利息收入） | 借 1002 银行存款 / 贷 6603 财务费用（inflow，增加银行余额） |
+| `bank_fee`（手续费/管理费） | 借 6603 财务费用 / 贷 1002 银行存款（outflow，减少银行余额） |
+
+系统同时生成 BankTransaction 流水和会计凭证，无需手动对账。
+
+> ⚠️ `entry_type` 只接受 `"interest_income"` 和 `"bank_fee"` 两个值。传 `"interest"`、`"利息"` 或其他值会返回 **422**，响应格式:
+> ```json
+> {"detail": [{"type": "literal_error", "msg": "...", "input": "interest"}]}
+> ```
+> Pydantic Literal 校验在请求层拦截，不会错误入账。
+
+**幂等**：BankTransaction ID 作为会计凭证的 `source_id`，红冲时通过 `reverse_journal` 借贷互换红冲原始凭证，不会生成重复记录。
+
+**🔍 常见错误排查**（按出现频率排列）:
+
+| 报错 | 原因 | 排查 |
+|------|------|------|
+| **422** `literal_error` | `entry_type` 不是 `"interest_income"` 或 `"bank_fee"` | 检查拼写，用对合法值 |
+| **422** `type_error` | `amount` 不是数字或 < 0 | 确认金额 > 0 |
+| `科目编码不存在: 1002/6603` | 账本科目表未初始化 | `GET /api/finance/trial-balance` → 空表则调 [`POST /api/bootstrap`](#初始化新账本) |
+| `不是叶子科目` | 科目被标记为父科目 | `GET /api/finance/trial-balance` 看结构，如自定义科目层级导致需设 is_leaf=True |
+| `借贷不平衡` | 凭证自身不平（极罕见，bank_fee_entry 是双行分录） | 报告开发 |
+
+如果利息/手续费是在期末对账时才发现（银行已扣但系统未记），走对账流程处理：
+
+1. **导入对账单** → `POST /api/bank/statement`
+2. **执行对账** → `POST /api/bank/reconcile?period=YYYY-MM`（响应含 `id`，即下一步的 `{rec_id}`）
+3. **生成凭证** → `POST /api/bank/reconciliation/{rec_id}/generate-entry`（只生成会计凭证，不产生银行流水）
+4. **确认调节表** → `POST /api/bank/reconciliation/{rec_id}/confirm`
+
+直录与对账流程的选择取决于记账时机：平时见一笔记一笔用直录，期末统一处理用对账。
+
+> ⚠️ **录错了怎么办**：不要 DELETE 或修改，用红字冲销。由于 Pydantic Literal 校验已拦截非法 `entry_type`，不会再发生"利息被误记为支出"的错误。但仍然可能因 **金额或日期填错** 需要冲销：
+> - 记了不该记的 → `POST /api/bank/transaction/{tx_id}/reverse` 冲销
+> - 记少了 → 先冲销原记录，再重新录入正确金额
+> - 记多了 → 同上
+>
+> 冲销后原记录保留，审计痕迹完整。
 
 ### 创建现金流水
 
-> 银行流水（BankTransaction）不允许 AI 直接创建。所有银行流水必须通过业务操作自动生成：付款（`POST /api/payments`）、收款（`POST /api/receipts`）、利息/手续费直录（`POST /api/bank/entry`）、对账补录（`POST /api/bank/reconciliation/{id}/generate-entry`）。直接创建流水会破坏账务一致性，导致对账不平。
+> 银行流水（BankTransaction）不允许 AI 直接创建。所有银行流水必须通过业务操作自动生成：付款（`POST /api/payments`）、收款（`POST /api/receipts`）、利息/手续费直录（`POST /api/bank/entry`）。期初余额（`POST /api/opening-balances`）过账到总账 1002 但不产生 BankTransaction。直接创建流水会破坏账务一致性，导致对账不平。对账流程的 `generate-entry` 只生成会计凭证，不产生银行流水。
 
 用户说"有一笔银行转账/现金收入"：
 
@@ -615,6 +847,13 @@ PUT /api/inventory/{product_id}
 
 > `quantity` 正值=入库，负值=出库。
 
+**响应**：
+```json
+{"ok": true, "entity": {"product_id": 1, "quantity": 100, "unit_cost": 35.50}}
+```
+
+**错误**：`INVENTORY_INSUFFICIENT`（出库量 > 当前库存）。不必问用户，直接把库存量和想出库的数告诉用户，由用户决策。
+
 ---
 
 ### 9. 个人流水：用户说"记一笔个人账"
@@ -637,6 +876,11 @@ POST /api/personal
 收入分类：`工资`/`兼职`/`理财`/`其他`
 支出分类：`餐饮`/`日用`/`交通`/`娱乐`/`医疗`/`烟酒`/`其他`
 
+**响应**：
+```json
+{"id": 1, "type": "expense", "amount": 50, "category": "餐饮", "date": "2026-06-26", "status": "created"}
+```
+
 ---
 
 ## 第四部分：查询与报表
@@ -653,7 +897,7 @@ POST /api/personal
 | "客户欠我多少钱" | `GET /api/finance/receivable/partner/{id}?partner_type=customer` |
 | "库存值多少钱" | `GET /api/inventory` |
 
-> 利润表 `revenue`：一般纳税人取不含税金额，小规模取含税金额。`cost_of_goods_sold` 使用出库时锁定的移动加权平均成本。
+> 利润表 `revenue`：一般纳税人和小规模均取不含税金额（系统内部做价税分离）。`cost_of_goods_sold` 使用出库时锁定的移动加权平均成本（`SaleItem.unit_cost`）。
 
 ---
 
@@ -676,6 +920,13 @@ POST /api/finance/month-close
    ```
 
 2. 系统会自动拉取 Account 的 `taxpayer_type` 来判断税率（一般 25% / 小微 5%）。
+
+3. **亏损不缴所得税**：累计利润为负时，系统自动跳过所得税计提（`tax_payable=0`），不报错。利润回升时自动补提，利润下降时自动冲回多提部分。
+
+4. **个体工商户不缴企业所得税**：系统读取 `Account.type` 字段区分主体类型：
+   - `type = "company"`（公司/有限责任公司）→ 缴企业所得税（5%/25%）
+   - `type = "personal"`（个体工商户）→ 不计提企业所得税（`tax_payable=0`），个体户缴纳经营所得个人所得税（系统不处理个税）
+   查：GET /api/accounts → 看 `type` 字段
 
 ### 月结返回解读
 
@@ -759,8 +1010,6 @@ POST /api/bank/statement
 > 每笔 line 的 `amount`：正数=银行收到，负数=银行支出。同系统 BankTransaction 的方向一致。
 >
 > ⚠️ **`opening_balance` 必须与银行对账单上的期初余额一致**，填错会导致所有未达项计算偏移，整张调节表作废。如果发现对账结果异常，先检查期初余额和 seed 参数是否正确。
->
-> ⚠️ 如果导入返回 500 "数据库操作失败"，说明银行对账相关数据库表尚未创建。请告知开发人员在 `backend/database.py:120` 添加 `import models_bank` 后重启系统。
 
 **第2步：执行自动对账**
 
@@ -890,7 +1139,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | 核对项 | 申报表 | 账面取数 | 含义 |
 |--------|--------|----------|------|
 | 销售额 | `sales` | 6001+6051 贷方发生额 | 收入口径 |
-| 销项税额 | `output_vat` | 222101 贷方发生额 | 开票销项 |
+| 销项税额 | `output_vat` | 一般纳税人 222101 / 小规模 222103 贷方发生额 | 开票销项 |
 | 进项税额 | `input_vat` | 222102 借方发生额 | 认证进项 |
 | 未交增值税 | `unpaid_vat` | 222107 累计贷方余额 | 期末欠税（**累计值，非当月**） |
 | 所得税费用 | `income_tax` | 6801 借方-贷方发生额 | 当期计提 |
@@ -927,6 +1176,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 
 | 你收到 | 原因 | 你应该 |
 |--------|------|--------|
+| **202** `confirm_token: "..."` | POST 路径含 `/reverse`/`/cancel`/`/dispose` | 不可逆操作被 ConfirmMiddleware 拦截，用户在前端确认后才执行 |
 | `403 ENDPOINT_NOT_ALLOWED_FOR_AI` | 调了白名单外的接口 | **立即停止**，按 `suggested_endpoint` 改用规范接口 |
 | `404` | 资源不存在 | 先 `GET` 查询确认 ID 正确 |
 | `409` 编码重复 | 商品编码或发票号码冲突 | 修改后重试 |
@@ -938,7 +1188,7 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | `DATA_INTEGRITY_ERROR` | 数据受保护不可修改 | 需通过红冲/调整单合规操作 |
 | `SECURITY_VIOLATION` | 操作被安全策略拦截 | 请走合规 API |
 | `INVALID_OPERATION` | 尝试修改不可变数据 | 这是系统保护，需通过红冲流程处理 |
-| **用户说"刚才那笔录错了要改"** | 收款/付款/发票已生成不可直接改 | 走红冲：`POST /api/receipts/{id}/reverse` 或 `/api/payments/{id}/reverse`（AI 不可调，告知用户联系操作员） |
+| **用户说"刚才那笔录错了要改"** | 业务数据已生成不可直接改 | 走红冲/取消（受 ConfirmMiddleware 拦截，需用户前端确认）：收款→`POST /api/receipts/{id}/reverse`、付款→`POST /api/payments/{id}/reverse`、银行交易→`POST /api/bank/transaction/{id}/reverse`、发票→`POST /api/invoices/{id}/reverse`、费用→`POST /api/expenses/{id}/reverse`、现金流水→`POST /api/cash-flows/transactions/{id}/reverse`、采购单→`POST /api/purchases/{id}/cancel`、销售单→`POST /api/sales/{id}/cancel` |
 
 ---
 
@@ -955,6 +1205,8 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 | `POST /api/finance/month-close` | 计算 VAT → 转出未交增值税 → 计提附加税 → 计提所得税 → 自动税务核对 |
 | `POST /api/bank/reconcile` | 4轮匹配(1:1+N:1) + 跨期滚动 + 费用扫描 + 调节后余额计算 |
 | `POST /api/bank/reconciliation/{id}/generate-entry` | 生成未达项分录：手续费 dr 6603 cr 1002，结息 dr 1002 cr 6603 |
+| `POST /api/*/{id}/reverse`（红冲） | 反向分录 + 标记 `is_reversed=True` + 保留原记录；发票/采购/销售额外回退库存 |
+| `POST /api/*/{id}/cancel`（取消） | 冲红凭证 + 回退库存 + 保留审计轨迹 |
 
 **以下数据不可修改**：StockMove（库存流水）、FixedAssetDepreciation（折旧流水）、AccountMove（会计凭证）。出错只能通过红冲/调整。
 
@@ -983,4 +1235,4 @@ GET /api/tax/check?period=2025-06&sales=3500&output_vat=455&input_vat=228&unpaid
 
 ---
 
-*财务Agent 操作手册 v5.0 | 2026-06-28*
+*财务Agent 操作手册 v5.1 | 2026-06-29*

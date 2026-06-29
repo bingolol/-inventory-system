@@ -92,6 +92,17 @@ def create_payment(
             # 计算交易后余额
             new_balance = _d(bank_account.balance) - _d(data.amount)
 
+            # 余额校验：禁止银行账户透支（防止负资产）
+            if new_balance < 0:
+                raise BusinessError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=f"银行账户余额不足: 当前余额 {bank_account.balance}，"
+                            f"付款金额 {data.amount}，超额 {abs(new_balance)}",
+                    ai_instruction=f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 "
+                                   f"{bank_account.balance}，不足以支付 {data.amount}。"
+                                   f"请减少付款金额或先充值。"
+                )
+
             # 创建银行流水
             bank_transaction = BankTransaction(
                 account_id=account_id,

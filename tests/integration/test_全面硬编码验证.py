@@ -414,30 +414,17 @@ def test_income_statement(client):
 
 
 # ═══════════════════════════════════════════════════════════════
-# 11. 双口径验证
+# 11. 所得税报表验证（取消经营口径，统一税务口径）
 # ═══════════════════════════════════════════════════════════════
-def test_dual_caliber(client):
-    """验证双口径差异"""
-    # 经营口径
-    resp_ops = client.get("/api/income-tax-report", params={"year": 2026, "quarter": 1, "caliber": "operating"}, headers=HEADERS)
-    # 税务口径
-    resp_tax = client.get("/api/income-tax-report", params={"year": 2026, "quarter": 1, "caliber": "tax"}, headers=HEADERS)
-    
-    if resp_ops.status_code == 200 and resp_tax.status_code == 200:
-        ops_revenue = round2(Decimal(str(resp_ops.json().get("total_revenue", 0))))
-        tax_revenue = round2(Decimal(str(resp_tax.json().get("total_revenue", 0))))
-        
-        # 硬编码计算公式
-        diff = abs(ops_revenue - tax_revenue)
-        
-        # 验证
-        print(f"\n=== 双口径验证 ===")
-        print(f"经营口径收入: {ops_revenue}")
+def test_income_tax_report(client):
+    """验证所得税报表（税务口径：发票说话）"""
+    resp = client.get("/api/income-tax-report", params={"year": 2026, "quarter": 1}, headers=HEADERS)
+
+    if resp.status_code == 200:
+        tax_revenue = round2(Decimal(str(resp.json().get("total_revenue", 0))))
+
+        print(f"\n=== 所得税报表验证 ===")
         print(f"税务口径收入: {tax_revenue}")
-        print(f"差异: {diff}")
-        
-        # 差异应该大于0（因为含税vs不含税）
-        assert diff > 0, f"双口径应该有差异: {diff}"
 
 
 # ═══════════════════════════════════════════════════════════════

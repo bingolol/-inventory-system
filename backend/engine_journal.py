@@ -2,7 +2,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from models import Product
+from models import Product, StockMove
 from models_finance import (
     LedgerAccount, AccountMove, AccountMoveLine, AccountJournal,
     generate_voucher_number,
@@ -82,6 +82,8 @@ class JournalEngine:
             "tax_income":              self._build_tax_income,
             "tax_income_reversal":     self._build_tax_income_reversal,
             "vat_transfer_out":        self._build_vat_transfer_out,
+            "vat_exemption":           self._build_vat_exemption,
+            "bank_fee_entry":          self._build_bank_fee_entry,
         }
         builder = builders.get(move_type)
         if not builder:
@@ -116,11 +118,19 @@ class JournalEngine:
         for item in source["items"]:
             quantity = Decimal(str(item.get("quantity", 0)))
             unit_cost = item.get("unit_cost")
-            if unit_cost is None:
-                product = self.db.query(Product).filter(
-                    Product.id == item["product_id"]
+            # 单一真相源：unit_cost 为空时从 StockMove 获取实际出库成本，
+            # 禁止用 Product.purchase_price 兜底（主数据静态字段，不反映实际采购成本）
+            if unit_cost is None or Decimal(str(unit_cost)) == 0:
+                move = self.db.query(StockMove).filter(
+                    StockMove.source_type == "sale_order",
+                    StockMove.source_id == source.get("source_id", 0),
+                    StockMove.product_id == item["product_id"],
                 ).first()
-                unit_cost = product.purchase_price if product else Decimal("0")
+                if move and move.unit_cost:
+                    unit_cost = move.unit_cost
+                else:
+                    # 非追踪库存商品（track_inventory=False）无 StockMove，成本为 0
+                    unit_cost = Decimal("0")
             total_cost += quantity * Decimal(str(unit_cost))
 
         if total_cost > 0:
@@ -328,6 +338,38 @@ class JournalEngine:
             {"account_code": "222106", "debit": amount, "credit": Decimal("0")},
             {"account_code": "222107", "debit": Decimal("0"), "credit": amount},
         ], "VAT", {"balance_check": True}
+
+    def _build_vat_exemption(self, source):
+        """增值税减免结转：dr:222103(应交增值税-小规模) cr:6301(营业外收入-税收减免)
+
+        依据：财税〔2008〕151号 — 直接减免的增值税属于财政性资金，
+        需计入当年收入总额缴纳企业所得税。
+        实务分录：借 应交税费-应交增值税 贷 营业外收入-增值税减免
+        """
+        self._check_required(source, ["amount"])
+        amount = Decimal(str(source["amount"]))
+        return [
+            {"account_code": "222103", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "6301", "debit": Decimal("0"), "credit": amount},
+        ], "VAT", {"balance_check": True}
+
+    def _build_bank_fee_entry(self, source):
+        """银行手续费/利息: dr 6603 cr 1002 或 dr 1002 cr 6603"""
+        self._check_required(source, ["amount", "direction"])
+        if source["direction"] not in ("in", "out"):
+            raise AccountingError(AccountingErrorCode.VALIDATION_ERROR,
+                f"direction 必须是 'in' 或 'out', 收到 '{source['direction']}'")
+        amt = Decimal(str(source["amount"]))
+        if source["direction"] == "out":
+            return [
+                {"account_code": "6603", "debit": amt, "credit": Decimal("0")},
+                {"account_code": "1002", "debit": Decimal("0"), "credit": amt},
+            ], "BNK", {"balance_check": True}
+        else:
+            return [
+                {"account_code": "1002", "debit": amt, "credit": Decimal("0")},
+                {"account_code": "6603", "debit": Decimal("0"), "credit": amt},
+            ], "BNK", {"balance_check": True}
 
     def _validate(self, lines: list, validation: dict):
         if validation.get("balance_check"):

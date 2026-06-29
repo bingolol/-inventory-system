@@ -33,6 +33,7 @@ class EntityType(str, Enum):
     INVOICE = "invoice"
     OPENING_BALANCE = "opening_balance"
     FIXED_ASSET = "fixed_asset"
+    BANK_ENTRY = "bank_entry"
 
 
 @dataclass

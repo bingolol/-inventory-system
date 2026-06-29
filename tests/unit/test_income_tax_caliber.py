@@ -1,8 +1,9 @@
-"""所得税引擎测试 — caliber 参数切换口径
+"""所得税引擎测试 — 税务口径（发票说话）
 
-测试 routers/income_tax.py 的 caliber 参数：
-- caliber=tax: 税务口径（发票说话）
-- caliber=operating: 经营口径（订单说话）
+测试 routers/income_tax.py 和 crud/finance.py 的所得税计算：
+- 收入取销项发票不含税金额
+- 成本取 SaleItem.unit_cost（移动加权平均出库成本，单一真相源）
+- 费用区分有票/无票
 """
 import pytest
 from decimal import Decimal
@@ -21,7 +22,7 @@ def seed_data(db):
     )
     db.add(account)
 
-    # 销售单（经营口径用）
+    # 销售单
     sale = models.SaleOrder(
         id=100, account_id=1, order_no="SO-001",
         total_price=Decimal("11300"),  # 含税
@@ -45,7 +46,7 @@ def seed_data(db):
     )
     db.add(product)
 
-    # 发票（税务口径用）
+    # 销项发票（收入取数来源）
     invoice_out = models.Invoice(
         account_id=1, invoice_no="INV-OUT-001", direction="out",
         invoice_type="ordinary", tax_rate=Decimal("0.13"),
@@ -97,19 +98,19 @@ class TestIncomeTaxCaliber:
         import asyncio
 
         report = asyncio.run(get_income_tax_report(
-            year=2026, quarter=None, caliber="tax", db=db, account_id=1
+            year=2026, quarter=None, db=db, account_id=1
         ))
         # 收入 = 销项发票不含税 = 10000
         assert report.total_revenue == Decimal("10000.00")
         # 成本 = 进项发票不含税 = 1886.79（费用发票 direction=in 被计入）
         assert report.total_cost == Decimal("1886.79")
 
-    def test_operating_caliber_uses_orders(self, db, seed_data):
-        """经营口径：收入取订单金额（含税）"""
+    def test_prepayment_revenue_uses_invoices(self, db, seed_data):
+        """预缴表：收入取销项发票不含税金额（取消经营口径后统一发票说话）"""
         result = generate_income_tax_prepayment(db, 1, 2026, 1)
-        # 营业收入 = SaleOrder.total_price = 11300
-        assert result["operating_revenue"] == Decimal("11300.00")
-        # 营业成本 = quantity * purchase_price = 10 * 500 = 5000
+        # 营业收入 = 销项发票不含税 = 10000
+        assert result["operating_revenue"] == Decimal("10000.00")
+        # 营业成本 = quantity * unit_cost = 10 * 500 = 5000
         assert result["operating_cost"] == Decimal("5000.00")
 
     def test_tax_caliber_expenses_only_invoiced(self, db, seed_data):
@@ -118,7 +119,7 @@ class TestIncomeTaxCaliber:
         import asyncio
 
         report = asyncio.run(get_income_tax_report(
-            year=2026, quarter=None, caliber="tax", db=db, account_id=1
+            year=2026, quarter=None, db=db, account_id=1
         ))
         # 有票费用 = 2000
         assert report.invoiced_expenses == Decimal("2000.00")
@@ -127,8 +128,8 @@ class TestIncomeTaxCaliber:
         # operating_expenses = 有票费用 = 2000
         assert report.operating_expenses == Decimal("2000.00")
 
-    def test_operating_caliber_all_expenses(self, db, seed_data):
-        """经营口径：所有费用都计入"""
+    def test_prepayment_all_expenses(self, db, seed_data):
+        """预缴表：所有费用都计入"""
         result = generate_income_tax_prepayment(db, 1, 2026, 1)
         # 营业费用 = 所有费用 = 2000 + 500 = 2500
         assert result["operating_expenses"] == Decimal("2500.00")

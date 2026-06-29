@@ -7,20 +7,20 @@
     <div v-if="financialSummary" class="fs-body">
       <div class="fs-cards">
         <div class="fs-card">
-          <div class="fs-card-title" style="color:#4f6ef7;">资产状况</div>
+          <div class="fs-card-title" style="color:var(--primary);">资产状况</div>
           <div class="fs-row"><span class="fs-label">货币资金</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.monetary_funds) }}</span></div>
           <div class="fs-row"><span class="fs-label">应收账款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.accounts_receivable) }}</span></div>
           <div class="fs-row"><span class="fs-label">库存价值</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.inventory) }}</span></div>
           <div class="fs-row fs-total"><span class="fs-label">资产总计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_assets) }}</span></div>
         </div>
         <div class="fs-card">
-          <div class="fs-card-title" style="color:#e6a23c;">负债状况</div>
+          <div class="fs-card-title" style="color:var(--warning);">负债状况</div>
           <div class="fs-row"><span class="fs-label">应付账款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.accounts_payable) }}</span></div>
           <div class="fs-row"><span class="fs-label">应交税费</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.tax_payable) }}</span></div>
           <div class="fs-row fs-total"><span class="fs-label">负债合计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_liabilities) }}</span></div>
         </div>
         <div class="fs-card">
-          <div class="fs-card-title" style="color:#67c23a;">权益状况</div>
+          <div class="fs-card-title" style="color:var(--success);">权益状况</div>
           <div class="fs-row"><span class="fs-label">未分配利润</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.retained_earnings) }}</span></div>
           <div class="fs-row fs-total"><span class="fs-label">权益合计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_equity) }}</span></div>
         </div>
@@ -30,17 +30,17 @@
         <div class="fs-health-cards">
           <div class="fs-h-item">
             <span class="fs-h-label">资产负债率</span>
-            <span class="fs-h-value" :style="{ color: debtRatio < 50 ? '#67c23a' : debtRatio < 70 ? '#e6a23c' : '#f56c6c' }">{{ debtRatio.toFixed(1) }}%</span>
+            <span class="fs-h-value" :style="{ color: debtRatio < 50 ? 'var(--success)' : debtRatio < 70 ? 'var(--warning)' : 'var(--danger)' }">{{ debtRatio.toFixed(1) }}%</span>
             <span class="fs-h-tag" :class="debtRatio < 50 ? 'good' : debtRatio < 70 ? 'mid' : 'bad'">{{ debtRatio < 50 ? '健康' : debtRatio < 70 ? '注意' : '风险' }}</span>
           </div>
           <div class="fs-h-item">
             <span class="fs-h-label">流动比率</span>
-            <span class="fs-h-value" :style="{ color: currentRatio > 2 ? '#67c23a' : currentRatio > 1 ? '#e6a23c' : '#f56c6c' }">{{ currentRatio.toFixed(2) }}</span>
+            <span class="fs-h-value" :style="{ color: currentRatio > 2 ? 'var(--success)' : currentRatio > 1 ? 'var(--warning)' : 'var(--danger)' }">{{ currentRatio.toFixed(2) }}</span>
             <span class="fs-h-tag" :class="currentRatio > 2 ? 'good' : currentRatio > 1 ? 'mid' : 'bad'">{{ currentRatio > 2 ? '良好' : currentRatio > 1 ? '一般' : '紧张' }}</span>
           </div>
           <div class="fs-h-item">
             <span class="fs-h-label">权益比率</span>
-            <span class="fs-h-value" :style="{ color: equityRatio > 50 ? '#67c23a' : equityRatio > 30 ? '#e6a23c' : '#f56c6c' }">{{ equityRatio.toFixed(1) }}%</span>
+            <span class="fs-h-value" :style="{ color: equityRatio > 50 ? 'var(--success)' : equityRatio > 30 ? 'var(--warning)' : 'var(--danger)' }">{{ equityRatio.toFixed(1) }}%</span>
             <span class="fs-h-tag" :class="equityRatio > 50 ? 'good' : equityRatio > 30 ? 'mid' : 'bad'">{{ equityRatio > 50 ? '稳健' : equityRatio > 30 ? '一般' : '偏低' }}</span>
           </div>
           <div class="fs-h-item">
@@ -104,23 +104,23 @@ useAccountAwareData(loadFinancialSummary)
 .fs-body { animation: fsFade 0.3s ease; }
 @keyframes fsFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .fs-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
-.fs-card { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px; }
-.fs-card-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #f0f0f0; }
+.fs-card { background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-radius: 12px; padding: 20px; }
+.fs-card-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid var(--border-lighter); }
 .fs-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
-.fs-label { color: #86909c; }
-.fs-value { font-weight: 600; color: #4e5969; font-family: 'Consolas', 'Monaco', monospace; }
-.fs-total { border-top: 2px solid #e0e0e0; margin-top: 10px; padding-top: 12px; }
-.fs-total .fs-label { font-weight: 700; color: #1d2129; font-size: 14px; }
-.fs-total .fs-value { font-weight: 800; color: #1d2129; font-size: 17px; }
+.fs-label { color: var(--text-secondary); }
+.fs-value { font-weight: 600; color: var(--text-regular); font-family: 'Consolas', 'Monaco', monospace; }
+.fs-total { border-top: 2px solid var(--border-light); margin-top: 10px; padding-top: 12px; }
+.fs-total .fs-label { font-weight: 700; color: var(--text-primary); font-size: 14px; }
+.fs-total .fs-value { font-weight: 800; color: var(--text-primary); font-size: 17px; }
 
-.fs-health { background: #fff; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px; }
-.fs-health-title { font-size: 15px; font-weight: 600; color: #1d2129; margin-bottom: 16px; }
+.fs-health { background: var(--bg-card); border: 1px solid var(--border-lighter); border-radius: 12px; padding: 20px; }
+.fs-health-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
 .fs-health-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .fs-h-item { display: flex; flex-direction: column; gap: 6px; }
-.fs-h-label { font-size: 12px; color: #86909c; font-weight: 500; }
+.fs-h-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 .fs-h-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
 .fs-h-tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; width: fit-content; }
-.fs-h-tag.good { background: #f0f9eb; color: #67c23a; }
-.fs-h-tag.mid { background: #fdf6ec; color: #e6a23c; }
-.fs-h-tag.bad { background: #fef0f0; color: #f56c6c; }
+.fs-h-tag.good { background: var(--success-light); color: var(--success); }
+.fs-h-tag.mid { background: var(--warning-light); color: var(--warning); }
+.fs-h-tag.bad { background: var(--danger-light); color: var(--danger); }
 </style>

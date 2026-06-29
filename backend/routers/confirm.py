@@ -30,6 +30,7 @@ def get_status(token: str):
     entry = confirm_store.get(token)
     if entry is None:
         return {"status": "not_found", "detail": "确认令牌不存在或已过期"}
+    from confirm_middleware import TOKEN_TTL
     return {
         "status": "pending",
         "confirm_token": token,
@@ -37,7 +38,7 @@ def get_status(token: str):
         "path": entry["path"],
         "summary": entry.get("summary", ""),
         "created_at": entry["created_at"],
-        "expires_at": entry["created_at"] + confirm_store._pending.get(token, {}).get("ttl", 300) if token in confirm_store._pending else entry["created_at"] + 300,
+        "expires_at": entry["created_at"] + TOKEN_TTL,
     }
 
 

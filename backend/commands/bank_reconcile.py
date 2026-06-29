@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log
+from crud.base import _log
 from engine_bank_reconcile import BankReconcileEngine
 from errors import BusinessError, ErrorCode
 

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>进销存 — Demo</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f8f9fa;color:#1d2129;-webkit-font-smoothing:antialiased}
+a{cursor:pointer}
+.app{display:flex;height:100vh;overflow:hidden}
+.side{width:200px;flex-shrink:0;background:#fff;border-right:1px solid #edf0f5;display:flex;flex-direction:column}
+.side-hd{padding:20px 16px 14px;border-bottom:1px solid #f5f6f8}
+.side-nm{font-size:15px;font-weight:700;color:#1d2129}
+.side-sub{font-size:11px;color:#86909c;margin-top:1px}
+.side-nav{padding:4px 6px;flex:1;overflow-y:auto}
+.sgt{font-size:10px;font-weight:600;color:#86909c;padding:10px 10px 3px;letter-spacing:1px}
+.si{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:13px;color:#4e5969;cursor:pointer}
+.si:hover{background:#f5f6f8;color:#1d2129}
+.si.active{background:#f0f2f5;color:#1d2129;font-weight:600}
+.si-ic{font-size:14px;width:18px;text-align:center}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:48px;flex-shrink:0;background:#fff;border-bottom:1px solid #edf0f5;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.top-l{display:flex;align-items:center;gap:10px}
+.top-title{font-size:14px;font-weight:600;color:#1d2129}
+.top-desc{font-size:12px;color:#c9cdd4}
+.top-date{font-size:12px;color:#86909c;background:#f5f6f8;padding:2px 10px;border-radius:4px}
+.ctx{flex:1;padding:20px 24px;overflow-y:auto}
+.row{display:flex;gap:12px;margin-bottom:16px}
+.c4{flex:1}
+.c{background:#fff;border:1px solid #edf0f5;border-radius:10px;padding:16px}
+.cl{font-size:12px;color:#4e5969;font-weight:500;margin-bottom:6px}
+.cup{font-size:11px;padding:1px 6px;border-radius:4px;background:#f0f9eb;color:#67c23a;font-weight:500;float:right}
+.cv{font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.1;margin-bottom:2px}
+.cs{font-size:12px;color:#86909c}
+.main-col{flex:1;display:flex;flex-direction:column;gap:12px}
+.side-col{flex:0 0 360px}
+.box{background:#fff;border:1px solid #edf0f5;border-radius:10px;padding:16px}
+.bh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.bt{font-size:13px;font-weight:600;color:#1d2129}
+.bl{font-size:12px;color:#86909c;cursor:pointer}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;color:#86909c;border-bottom:1px solid #f5f6f8}
+.tbl td{padding:8px 10px;font-size:13px;color:#4e5969;border-bottom:1px solid #f8f9fa}
+.tbl tr:last-child td{border:none}
+.tbl tr:hover td{background:#fafbfc}
+.bg{display:inline-block;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.bw{background:#fdf6ec;color:#e6a23c}
+.bd{background:#fef0f0;color:#f56c6c}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid #edf0f5;border-radius:6px;font-size:12px;color:#4e5969;cursor:pointer;background:#fff}
+.btn:hover{background:#f5f6f8;border-color:#d0d5dd}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.si-box{background:#f8f9fa;border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.si-l{font-size:11px;color:#4e5969}
+.si-v{font-size:18px;font-weight:700;color:#1d2129;font-family:'Consolas','Monaco',monospace}
+</style>
+</head>
+<body>
+<div id="app">
+<div class="app">
+  <div class="side">
+    <div class="side-hd"><div class="side-nm">进销存</div><div class="side-sub">v2.0</div></div>
+    <div class="side-nav">
+      <div class="sgt">业务</div>
+      <a class="si active"><span class="si-ic">◉</span>仪表盘</a>
+      <a class="si"><span class="si-ic">◻</span>销售管理</a>
+      <a class="si"><span class="si-ic">◻</span>供应链管理</a>
+      <div class="sgt">财务</div>
+      <a class="si"><span class="si-ic">◉</span>财务总览</a>
+      <a class="si"><span class="si-ic">◻</span>银行账户</a>
+      <a class="si"><span class="si-ic">◻</span>费用管理</a>
+      <div class="sgt">报表</div>
+      <a class="si"><span class="si-ic">◻</span>财务报表</a>
+      <a class="si"><span class="si-ic">◻</span>税务报表</a>
+    </div>
+  </div>
+  <div class="main">
+    <div class="top">
+      <div class="top-l"><span class="top-title">仪表盘</span><span class="top-desc">经营核心指标</span></div>
+      <span class="top-date">2026年6月28日</span>
+    </div>
+    <div class="ctx">
+      <div class="row">
+        <div class="c4"><div class="c"><div class="cl">本月净利润<span class="cup">盈利</span></div><div class="cv" style="color:#67c23a;">¥27,800</div><div class="cs">收入 ¥128,600 — 成本 ¥85,200 — 费用 ¥15,600</div></div></div>
+        <div class="c4"><div class="c"><div class="cl">别人欠我</div><div class="cv" style="color:#4f62c0;">¥156,800</div><div class="cs">15 家客户未回款</div></div></div>
+        <div class="c4"><div class="c"><div class="cl">我欠别人</div><div class="cv" style="color:#f56c6c;">¥98,200</div><div class="cs">9 家供应商 · 税费 ¥15,200</div></div></div>
+        <div class="c4"><div class="c"><div class="cl">库存资金</div><div class="cv" style="color:#e6a23c;">¥368,500</div><div class="cs">2,450 件 · 128 种 · 8 项预警</div></div></div>
+      </div>
+      <div class="row">
+        <div class="main-col">
+          <div class="box">
+            <div class="bh"><span class="bt">业务概要</span></div>
+            <div class="summary">
+              <div class="si-box"><span class="si-l">本月收入</span><span class="si-v">¥128,600</span></div>
+              <div class="si-box"><span class="si-l">本月成本</span><span class="si-v">¥85,200</span></div>
+              <div class="si-box"><span class="si-l">本月费用</span><span class="si-v">¥15,600</span></div>
+              <div class="si-box"><span class="si-l">销售笔数</span><span class="si-v">86</span></div>
+              <div class="si-box"><span class="si-l">商品种类</span><span class="si-v">128</span></div>
+              <div class="si-box"><span class="si-l">库存总量</span><span class="si-v">2,450</span></div>
+            </div>
+            <div class="bh" style="margin-top:12px;"><span class="bt">快捷操作</span></div>
+            <div class="acts">
+              <span class="btn">＋ 新建销售</span>
+              <span class="btn">＋ 新建采购</span>
+              <span class="btn">＋ 录费用</span>
+              <span class="btn">📊 财务总览</span>
+            </div>
+          </div>
+          <div class="box">
+            <div class="bh"><span class="bt">库存预警</span><span class="bl">全部 →</span></div>
+            <table class="tbl">
+              <tr><th style="width:38%;">商品</th><th style="width:22%;">编码</th><th style="width:18%;">库存</th><th style="width:22%;">状态</th></tr>
+              <tr><td style="font-weight:500;">机械键盘青轴</td><td style="color:#c9cdd4;">KB-001</td><td style="font-weight:600;color:#e6a23c;">3</td><td><span class="bg bw">低于预警线</span></td></tr>
+              <tr><td style="font-weight:500;">无线鼠标静音版</td><td style="color:#c9cdd4;">MS-003</td><td style="font-weight:600;color:#f56c6c;">-2</td><td><span class="bg bd">负库存</span></td></tr>
+              <tr><td style="font-weight:500;">USB-C 数据线 2M</td><td style="color:#c9cdd4;">CB-008</td><td style="font-weight:600;color:#e6a23c;">12</td><td><span class="bg bw">低于预警线</span></td></tr>
+            </table>
+          </div>
+        </div>
+        <div class="side-col">
+          <div class="box" style="height:100%;">
+            <div class="bh"><span class="bt">收入趋势</span><span style="font-size:11px;color:#c9cdd4;">近30天</span></div>
+            <div ref="chart" style="height:calc(100% - 28px);min-height:240px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+const {createApp,onMounted,nextTick}=Vue
+const app=createApp({setup(){function draw(){nextTick(()=>{const el=document.querySelector('[ref="chart"]');if(!el)return;const c=echarts.init(el);c.setOption({tooltip:{trigger:'axis'},grid:{left:36,right:8,top:6,bottom:24},xAxis:{type:'category',data:Array.from({length:30},(_,i)=>`${i+1}日`),axisLabel:{fontSize:9,color:'#c9cdd4'}},yAxis:{type:'value',splitLine:{lineStyle:{color:'#f5f5f5'}},axisLabel:{fontSize:9}},series:[{name:'销售',type:'line',smooth:true,data:Array.from({length:30},()=>Math.round(4000+Math.random()*5000)),lineStyle:{color:'#4f62c0',width:2},areaStyle:{color:'rgba(79,98,192,0.05)'},symbol:'none'},{name:'采购',type:'line',smooth:true,data:Array.from({length:30},()=>Math.round(3000+Math.random()*4000)),lineStyle:{color:'#e6a23c',width:2},areaStyle:{color:'rgba(230,162,60,0.05)'},symbol:'none'}]})}});onMounted(draw);return{}}})
+app.mount('#app')
+</script>
+</body>
+</html>

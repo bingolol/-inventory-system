@@ -246,6 +246,7 @@ const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
 import { resolveImageUrl, handleError } from '../api/index'
 import { formatMoney, formatDate } from '../utils/format'
+import { calculateInvoiceAmounts } from '../utils/invoiceCalc'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -381,22 +382,15 @@ const resetFilter = () => {
 // 保存发票
 const saveInvoice = async () => {
   try {
-    // 计算税额
-    if (amountInputType.value === '价税合计') {
-      const amountWithTax = invoiceForm.value.amount_with_tax
-      const taxRate = invoiceForm.value.tax_rate
-      const amountWithoutTax = amountWithTax / (1 + taxRate)
-      const taxAmount = amountWithTax - amountWithoutTax
-      invoiceForm.value.amount_without_tax = parseFloat(amountWithoutTax.toFixed(2))
-      invoiceForm.value.tax_amount = parseFloat(taxAmount.toFixed(2))
-    } else {
-      const amountWithoutTax = invoiceForm.value.amount_without_tax
-      const taxRate = invoiceForm.value.tax_rate
-      const taxAmount = amountWithoutTax * taxRate
-      const amountWithTax = amountWithoutTax + taxAmount
-      invoiceForm.value.tax_amount = parseFloat(taxAmount.toFixed(2))
-      invoiceForm.value.amount_with_tax = parseFloat(amountWithTax.toFixed(2))
-    }
+    const result = calculateInvoiceAmounts(
+      invoiceForm.value.amount_with_tax,
+      invoiceForm.value.amount_without_tax,
+      invoiceForm.value.tax_rate,
+      amountInputType.value,
+    )
+    invoiceForm.value.amount_without_tax = result.amount_without_tax
+    invoiceForm.value.tax_amount = result.tax_amount
+    invoiceForm.value.amount_with_tax = result.amount_with_tax
 
     if (dialogType.value === 'create') {
       await invoicesApi.createInvoice(invoiceForm.value)
@@ -538,8 +532,9 @@ enumsStore.fetchEnums()
 }
 .inv-stat-item {
   flex: 1;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--primary);
   border-radius: 12px;
   padding: 16px;
   display: flex;
@@ -548,7 +543,7 @@ enumsStore.fetchEnums()
 }
 .inv-stat-label {
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-secondary);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -560,20 +555,20 @@ enumsStore.fetchEnums()
 .inv-total {
   margin-top: 12px;
   padding: 10px 16px;
-  background: #fafafa;
+  background: var(--bg-elevated);
   border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 24px;
   font-size: 14px;
-  color: #86909c;
+  color: var(--text-secondary);
 }
 .inv-total-item {
   font-weight: 600;
-  color: #4e5969;
+  color: var(--text-regular);
 }
 .inv-total-highlight {
   font-weight: 700;
-  color: #4f6ef7;
+  color: var(--primary);
 }
 </style>

@@ -183,8 +183,8 @@ useAccountAwareData(fetchData)
   font-size: 13px;
   font-weight: 600;
 }
-.vat-taxpayer.small { background: #f4f6ff; color: #4f6ef7; }
-.vat-taxpayer.general { background: #fef0f0; color: #f56c6c; }
+.vat-taxpayer.small { background: var(--primary-light); color: var(--primary); }
+.vat-taxpayer.general { background: var(--danger-light); color: var(--danger); }
 
 .vat-report {
   animation: vatFade 0.3s ease;
@@ -199,20 +199,20 @@ useAccountAwareData(fetchData)
   align-items: center;
   font-size: 16px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--text-primary);
   margin: 16px 0;
   padding-bottom: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-lighter);
 }
 .vat-period {
   font-size: 13px;
   font-weight: 400;
-  color: #86909c;
+  color: var(--text-secondary);
 }
 
 .vat-item {
   font-size: 14px;
-  color: #4e5969;
+  color: var(--text-regular);
   padding: 4px 0;
   display: flex;
   align-items: center;
@@ -220,36 +220,36 @@ useAccountAwareData(fetchData)
 }
 .vat-header {
   font-weight: 700;
-  color: #1d2129;
+  color: var(--text-primary);
   font-size: 15px;
 }
 .vat-total {
   font-weight: 800;
-  color: #4f6ef7;
+  color: var(--primary);
   font-size: 17px;
-  background: #f4f6ff;
+  background: var(--primary-light);
   margin: 4px -12px;
   padding: 6px 12px;
   border-radius: 8px;
 }
 .vat-indent {
   padding-left: 24px;
-  color: #86909c;
+  color: var(--text-secondary);
 }
 .vat-bullet {
-  color: #4f6ef7;
+  color: var(--primary);
   font-size: 12px;
 }
 .vat-amount {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 14px;
-  color: #4e5969;
+  color: var(--text-regular);
 }
 .vat-amount-total {
   font-weight: 800;
   font-size: 17px;
-  color: #4f6ef7;
-  background: #f4f6ff;
+  color: var(--primary);
+  background: var(--primary-light);
   padding: 2px 10px;
   border-radius: 6px;
   display: inline-block;
@@ -258,12 +258,12 @@ useAccountAwareData(fetchData)
 .vat-invoice-summary {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-lighter);
 }
 .vat-inv-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 .vat-inv-row {
@@ -272,8 +272,8 @@ useAccountAwareData(fetchData)
 }
 .vat-inv-card {
   flex: 1;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-lighter);
   border-radius: 12px;
   padding: 16px;
   display: flex;
@@ -282,31 +282,31 @@ useAccountAwareData(fetchData)
 }
 .vat-inv-link {
   cursor: pointer;
-  background: linear-gradient(135deg, #f4f6ff, #eef1ff);
-  border-color: #dce0ff;
+  background: linear-gradient(135deg, var(--primary-light), var(--primary-light));
+  border-color: var(--border-light);
   justify-content: center;
   align-items: center;
   text-align: center;
 }
 .vat-inv-link:hover {
-  border-color: #4f6ef7;
+  border-color: var(--primary);
 }
 .vat-inv-label {
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 .vat-inv-count {
   font-size: 18px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--text-primary);
 }
 .vat-inv-amount {
   font-size: 13px;
-  color: #4e5969;
+  color: var(--text-regular);
 }
 .vat-inv-link .vat-inv-label {
-  color: #4f6ef7;
+  color: var(--primary);
   font-weight: 600;
   font-size: 13px;
 }

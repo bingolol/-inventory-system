@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
 import schemas, crud
-from commands import dispatch, CreateCustomer, UpdateCustomer, DeleteCustomer
+from commands import dispatch, CreatePartner, UpdatePartner, DeletePartner
 from uow import unit_of_work
 from operation_result import OperationResult, EntityType, OperationType
 
@@ -21,9 +21,10 @@ def list_customers(page: int = 1, page_size: int = 20, search: str = None, accou
 @router.post("")
 def create_customer(data: schemas.CustomerCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
-        c = dispatch(CreateCustomer(
+        c = dispatch(CreatePartner(
             account_id=account_id,
             operator=operator,
+            partner_type="customer",
             name=data.name,
             contact=data.contact,
             phone=data.phone,
@@ -54,10 +55,11 @@ def get_customer(customer_id: int, account_id: int = Depends(get_account_id), db
 @router.put("/{customer_id}")
 def update_customer(customer_id: int, data: schemas.CustomerUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
-        c = dispatch(UpdateCustomer(
+        c = dispatch(UpdatePartner(
             account_id=account_id,
             operator=operator,
-            customer_id=customer_id,
+            partner_type="customer",
+            partner_id=customer_id,
             name=data.name,
             contact=data.contact,
             phone=data.phone,
@@ -87,10 +89,11 @@ def delete_customer(customer_id: int, account_id: int = Depends(get_account_id),
         raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
     
     with unit_of_work(db):
-        if not dispatch(DeleteCustomer(
+        if not dispatch(DeletePartner(
             account_id=account_id,
             operator=operator,
-            customer_id=customer_id,
+            partner_type="customer",
+            partner_id=customer_id,
         ), db):
             raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
     

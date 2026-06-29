@@ -2,7 +2,7 @@
   <div>
     <div class="is-top">
       <el-date-picker v-model="s" type="date" placeholder="开始日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="load" style="width:150px" />
-      <span style="color:#86909c;">至</span>
+      <span style="color:var(--text-secondary);">至</span>
       <el-date-picker v-model="e" type="date" placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="load" style="width:150px" />
       <el-button type="primary" @click="load" :loading="loading">查询</el-button>
     </div>
@@ -15,7 +15,7 @@
         </div>
         <div class="is-hero-result">
           <div class="is-hero-label">净利润</div>
-          <div class="is-hero-value" :style="{ color: d.net_profit >= 0 ? '#67c23a' : '#f56c6c' }">{{ formatMoney(d.net_profit) }}</div>
+          <div class="is-hero-value" :style="{ color: d.net_profit >= 0 ? 'var(--success)' : 'var(--danger)' }">{{ formatMoney(d.net_profit) }}</div>
         </div>
       </div>
 
@@ -101,7 +101,7 @@ useAccountAwareData(load)
 
 .is-hero {
   background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border-radius: 14px; padding: 20px 24px; color: #fff;
+  border-radius: 14px; padding: 20px 24px; color: var(--bg-card);
   display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;
 }
 .is-hero-title { font-size: 20px; font-weight: 700; }
@@ -111,30 +111,30 @@ useAccountAwareData(load)
 .is-hero-value { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
 
 .is-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-.is-card { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 12px; padding: 16px; }
-.is-card-hl { background: #f4f6ff; border-color: #dce0ff; }
-.is-card-header { font-size: 13px; font-weight: 600; color: #1d2129; margin-bottom: 6px; }
+.is-card { background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-radius: 12px; padding: 16px; }
+.is-card-hl { background: var(--primary-light); border-color: var(--border-light); }
+.is-card-header { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
 .is-card-value { font-size: 22px; font-weight: 700; margin-bottom: 6px; font-family: 'Consolas', 'Monaco', monospace; }
-.is-card-formula { font-size: 12px; color: #86909c; }
+.is-card-formula { font-size: 12px; color: var(--text-secondary); }
 
 .is-breakdown { margin-bottom: 16px; }
-.is-breakdown-title { font-size: 14px; font-weight: 600; color: #1d2129; margin-bottom: 8px; }
+.is-breakdown-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
 .is-breakdown-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .is-bd-item {
-  background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px;
+  background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-radius: 8px;
   padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
 }
-.is-bd-label { font-size: 12px; color: #86909c; }
-.is-bd-value { font-size: 16px; font-weight: 700; color: #f56c6c; font-family: 'Consolas', 'Monaco', monospace; }
-.is-bd-total { background: #fef0f0; border-color: #fce4e4; }
+.is-bd-label { font-size: 12px; color: var(--text-secondary); }
+.is-bd-value { font-size: 16px; font-weight: 700; color: var(--danger); font-family: 'Consolas', 'Monaco', monospace; }
+.is-bd-total { background: var(--danger-light); border-color: #fce4e4; }
 .is-bd-total .is-bd-value { font-size: 18px; }
 
 .is-formula-chain { display: flex; flex-direction: column; gap: 8px; }
 .is-fc-step {
-  background: #fff; border: 1px solid #f0f0f0; border-radius: 10px;
+  background: var(--bg-card); border: 1px solid var(--border-lighter); border-radius: 10px;
   padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.02);
 }
-.is-fc-expr { font-size: 13px; color: #86909c; margin-bottom: 4px; font-family: 'Consolas', 'Monaco', monospace; }
-.is-fc-num { font-size: 15px; color: #4e5969; font-family: 'Consolas', 'Monaco', monospace; }
-.is-fc-num strong { color: #4f6ef7; font-size: 17px; }
+.is-fc-expr { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+.is-fc-num { font-size: 15px; color: var(--text-regular); font-family: 'Consolas', 'Monaco', monospace; }
+.is-fc-num strong { color: var(--primary); font-size: 17px; }
 </style>

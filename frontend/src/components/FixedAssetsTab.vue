@@ -42,9 +42,9 @@
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑固定资产' : '新增固定资产'" width="680px" destroy-on-close>
       <el-form :model="form" label-width="0">
-        <div class="fa-group" style="border-left-color:#4f6ef7;">
+        <div class="fa-group" style="border-left-color:var(--primary);">
           <div class="fa-group-header">
-            <span class="fa-group-tag" style="background:#eef1ff;color:#4f6ef7;">基本信息</span>
+            <span class="fa-group-tag" style="background:var(--primary-light);color:var(--primary);">基本信息</span>
           </div>
           <div class="fa-group-body">
             <div class="fa-field"><span class="fa-label" style="min-width:80px;">资产编码</span><el-input v-model="form.asset_code" placeholder="如 FA-001" /></div>
@@ -52,9 +52,9 @@
             <div class="fa-field"><span class="fa-label" style="min-width:80px;">资产类别</span><el-input v-model="form.category" placeholder="如 电子设备" /></div>
           </div>
         </div>
-        <div class="fa-group" style="border-left-color:#e6a23c;">
+        <div class="fa-group" style="border-left-color:var(--warning);">
           <div class="fa-group-header">
-            <span class="fa-group-tag" style="background:#fdf6ec;color:#e6a23c;">财务参数</span>
+            <span class="fa-group-tag" style="background:var(--warning-light);color:var(--warning);">财务参数</span>
           </div>
           <div class="fa-group-body">
             <div class="fa-field"><span class="fa-label" style="min-width:100px;">原值</span><el-input-number v-model="form.original_value" :min="0" :precision="2" style="width:100%" controls-position="right" /></div>
@@ -63,9 +63,9 @@
             <div class="fa-field"><span class="fa-label" style="min-width:100px;">折旧方法</span><el-select v-model="form.depreciation_method" style="width:100%"><el-option label="年限平均法" value="年限平均法" /></el-select></div>
           </div>
         </div>
-        <div class="fa-group" style="border-left-color:#67c23a;">
+        <div class="fa-group" style="border-left-color:var(--success);">
           <div class="fa-group-header">
-            <span class="fa-group-tag" style="background:#f0f9eb;color:#67c23a;">时间状态</span>
+            <span class="fa-group-tag" style="background:var(--success-light);color:var(--success);">时间状态</span>
           </div>
           <div class="fa-group-body">
             <div class="fa-field"><span class="fa-label" style="min-width:100px;">开始折旧日</span><el-date-picker v-model="form.start_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:100%" /></div>
@@ -166,10 +166,10 @@ useAccountAwareData(loadData)
 
 <style scoped>
 .fixed-assets-tab { padding: 0; }
-.fa-group { background: #fafafa; border: 1px solid #f0f0f0; border-left: 4px solid; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+.fa-group { background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-left: 4px solid; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
 .fa-group-header { padding: 12px 16px 4px; }
 .fa-group-tag { display: inline-block; padding: 2px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
 .fa-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .fa-field { display: flex; align-items: center; gap: 12px; }
-.fa-label { font-size: 13px; color: #4e5969; flex-shrink: 0; }
+.fa-label { font-size: 13px; color: var(--text-regular); flex-shrink: 0; }
 </style>

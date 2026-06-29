@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span class="page-title">会计凭证</span>
-          <span style="font-size:12px;color:#c9cdd4;">由业务单据自动生成</span>
+          <span style="font-size:12px;color:var(--text-placeholder);">由业务单据自动生成</span>
         </div>
       </template>
 
@@ -41,7 +41,7 @@
       </el-table>
 
       <div class="pagination-bar">
-        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="load" />
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="() => load(1)" />
       </div>
     </el-card>
 
@@ -156,9 +156,9 @@ useAccountAwareData(() => load(1))
 
 <style scoped>
 .jm-table { cursor: pointer; }
-.jm-empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #86909c; }
-.jm-detail-top { display: flex; flex-direction: column; gap: 8px; background: #fafafa; border-radius: 10px; padding: 14px 16px; }
+.jm-empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-secondary); }
+.jm-detail-top { display: flex; flex-direction: column; gap: 8px; background: var(--bg-elevated); border-radius: 10px; padding: 14px 16px; }
 .jm-detail-row { display: flex; align-items: center; gap: 12px; font-size: 14px; }
-.jm-detail-label { font-size: 12px; color: #86909c; font-weight: 500; min-width: 70px; }
+.jm-detail-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; min-width: 70px; }
 </style>
 

@@ -11,9 +11,9 @@ class InvoiceBase(BaseModel):
     direction: str = Field(..., pattern="^(in|out)$")
     invoice_type: str = Field(..., pattern="^(ordinary|special)$")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
-    amount_without_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
-    tax_amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
-    amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    amount_without_tax: Decimal = Field(..., max_digits=12, decimal_places=2)
+    tax_amount: Decimal = Field(..., max_digits=12, decimal_places=2)
+    amount_with_tax: Decimal = Field(..., max_digits=12, decimal_places=2)
     counterparty_name: str = Field(..., max_length=200)
     issue_date: datetime
     pdf_path: Optional[str] = None
@@ -26,7 +26,10 @@ class InvoiceBase(BaseModel):
 
 
 class InvoiceCreate(InvoiceBase):
-    pass
+    # 创建发票时金额必须非负（红字发票由系统 reverse 流程生成，不走此 schema）
+    amount_without_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    tax_amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
 
 
 class InvoiceUpdate(BaseModel):

@@ -9,6 +9,9 @@ from commands.base import dispatch
 from commands.finance_commands import (
     CreateCashFlowTransaction, UpdateCashFlowTransaction, DeleteCashFlowTransaction,
 )
+from finance_integration import reverse_journal
+from operation_result import OperationResult, EntityType, OperationType
+from datetime import datetime
 
 router = APIRouter()
 
@@ -99,6 +102,50 @@ def update_cash_transaction(
         raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新现金流水失败，请检查输入数据"})
     db.refresh(transaction)
     return transaction
+
+@router.post("/transactions/{transaction_id}/reverse")
+def reverse_cash_transaction(
+    transaction_id: int,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db)
+):
+    """红冲现金流水：冲红总账凭证 + 标记为已冲红（不物理删除，保留审计轨迹）"""
+    import models
+    with unit_of_work(db):
+        transaction = db.query(models.CashFlowTransaction).filter(
+            models.CashFlowTransaction.id == transaction_id,
+            models.CashFlowTransaction.account_id == account_id,
+        ).first()
+        if not transaction:
+            raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
+
+        if transaction.is_reversed:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"现金流水 #{transaction_id} 已被冲红，不可重复操作",
+                ai_instruction="STOP_RETRYING. 该现金流水已冲红。"
+            )
+
+        # 冲红总账凭证（reverse_journal 自带幂等）
+        reverse_journal(db, account_id, "cash_flow", transaction_id)
+
+        # 标记已冲红
+        transaction.is_reversed = True
+        transaction.reversed_at = datetime.now()
+
+        crud._log(db, account_id, "reverse", "cash_flow", transaction_id,
+                  f"红冲现金流水: {transaction.type} {transaction.amount}", operator=operator)
+
+    op = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.EXPENSE,
+        entity_id=transaction_id,
+        summary=f"现金流水 #{transaction_id} 已红冲",
+        ai_hint="现金流水凭证已冲红，原记录保留（审计可追溯）。",
+        data={"transaction_id": transaction_id, "is_reversed": True}
+    )
+    return op.to_dict()
 
 @router.delete("/transactions/{transaction_id}")
 def delete_cash_transaction(

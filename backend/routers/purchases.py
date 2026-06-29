@@ -188,6 +188,43 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
     return result.to_dict()
 
 
+@router.post("/{purchase_id}/cancel")
+def cancel_purchase(
+    purchase_id: int,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """取消采购单（BR-19：保留审计轨迹+冲红凭证+回退库存，不物理删除）
+
+    取代 DELETE /api/purchases/{id}，避免直接删除已完成订单导致总账/库存不一致。
+    内部调用 CancelPurchaseOrder 命令。
+    """
+    with unit_of_work(db):
+        try:
+            order = dispatch(CancelPurchaseOrder(
+                account_id=account_id,
+                operator=operator,
+                order_id=purchase_id,
+            ), db)
+        except ValueError as e:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "取消采购单失败，请检查状态"})
+
+    if not order:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
+    db.refresh(order)
+
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.PURCHASE_ORDER,
+        entity_id=order.id,
+        summary=f"采购单 {order.order_no} 已取消（冲红凭证+回退库存）",
+        ai_hint="采购单已取消，关联凭证和库存已冲红/回退，记录保留以备审计。",
+        data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
+    )
+    return result.to_dict()
+
+
 @router.delete("/{purchase_id}")
 def delete_purchase(purchase_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     order = db.query(PurchaseOrder).filter(

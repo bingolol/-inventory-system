@@ -92,7 +92,7 @@ const handleUpload = async ({ file }) => {
 const handleRemove = async () => {
   try {
     if (imageUrl.value) {
-      await uploadApi.deleteImage(resolveImageUrl(imageUrl.value))
+      await uploadApi.deleteImage(imageUrl.value)
     }
   } catch (e) { /* 即使删文件失败也清空URL */ }
   const oldUrl = imageUrl.value

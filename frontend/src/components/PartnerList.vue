@@ -35,8 +35,8 @@
 
     <el-dialog v-model="dialogVisible" :title="editingId ? editTitle : addTitle" width="500px" destroy-on-close>
       <el-form :model="form" label-width="0">
-        <div class="pl-group" style="border-left-color:#4f6ef7;">
-          <div class="pl-group-header"><span class="pl-group-tag" style="background:#eef1ff;color:#4f6ef7;">联系信息</span></div>
+        <div class="pl-group" style="border-left-color:var(--primary);">
+          <div class="pl-group-header"><span class="pl-group-tag" style="background:var(--primary-light);color:var(--primary);">联系信息</span></div>
           <div class="pl-group-body">
             <div class="pl-field"><span class="pl-label" style="min-width:70px;">名称</span><el-input v-model="form.name" /></div>
             <div class="pl-field"><span class="pl-label" style="min-width:70px;">联系人</span><el-input v-model="form.contact" /></div>
@@ -123,10 +123,10 @@ useAccountAwareData(loadData)
 </script>
 
 <style scoped>
-.pl-group { background: #fafafa; border: 1px solid #f0f0f0; border-left: 4px solid; border-radius: 12px; overflow: hidden; }
+.pl-group { background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-left: 4px solid; border-radius: 12px; overflow: hidden; }
 .pl-group-header { padding: 12px 16px 4px; }
 .pl-group-tag { display: inline-block; padding: 2px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
 .pl-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .pl-field { display: flex; align-items: center; gap: 12px; }
-.pl-label { font-size: 13px; color: #4e5969; flex-shrink: 0; }
+.pl-label { font-size: 13px; color: var(--text-regular); flex-shrink: 0; }
 </style>

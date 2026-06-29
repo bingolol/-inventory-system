@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from .base import Command, CommandHandler, register
-from .crud_compat import _log
+from crud.base import _log
 from engine_tax import TaxAccrualEngine
 from engine_tax_check import TaxCheckEngine
 from errors import BusinessError, ErrorCode
@@ -38,8 +38,14 @@ class MonthEndCloseHandler(CommandHandler):
                             f"调节表状态为 {rec.status}，请先完成银行对账并确认"
                 )
 
+        # ── 折旧计提（影响利润 → 影响所得税）──
+        from engine_fixed_asset import FixedAssetEngine
+        depreciations = FixedAssetEngine(db, cmd.account_id).batch_depreciate(cmd.period)
+
         engine = TaxAccrualEngine(db)
         result = engine.execute(cmd.account_id, cmd.period, cmd.taxpayer_type)
+
+        result["depreciation_count"] = len(depreciations)
 
         _log(db, cmd.account_id, "close", "month_end", cmd.account_id,
              f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",

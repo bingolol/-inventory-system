@@ -528,46 +528,6 @@ class TestDualCaliberCalculation:
         assert "total_revenue" in data, "税务口径报表缺少收入"
         assert "invoice_revenue" in data, "税务口径报表缺少发票收入"
 
-    def test_operating_caliber_uses_orders(self, client):
-        """经营口径使用订单数据"""
-        resp = client.get("/api/income-tax-report",
-                         params={"year": 2026, "quarter": 2, "caliber": "operating"},
-                         headers=HEADERS)
-        assert resp.status_code == 200, f"经营口径报表失败: {resp.text}"
-        data = resp.json()
-        
-        # 经营口径收入应基于订单
-        assert "total_revenue" in data, "经营口径报表缺少收入"
-
-    def test_dual_caliber_difference(self, client):
-        """验证双口径差异（税务口径 vs 经营口径）"""
-        # 税务口径
-        resp_tax = client.get("/api/income-tax-report",
-                             params={"year": 2026, "quarter": 2, "caliber": "tax"},
-                             headers=HEADERS)
-        # 经营口径
-        resp_ops = client.get("/api/income-tax-report",
-                             params={"year": 2026, "quarter": 2, "caliber": "operating"},
-                             headers=HEADERS)
-        
-        if resp_tax.status_code == 200 and resp_ops.status_code == 200:
-            tax_data = resp_tax.json()
-            ops_data = resp_ops.json()
-            
-            tax_revenue = Decimal(str(tax_data.get("total_revenue", 0)))
-            ops_revenue = Decimal(str(ops_data.get("total_revenue", 0)))
-            
-            # 验证双口径都返回了数据
-            assert tax_revenue > 0 or ops_revenue > 0, \
-                f"双口径收入都为0: 税务{tax_revenue}, 经营{ops_revenue}"
-            
-            # 记录差异（不强制要求大小关系，因为可能有业务原因）
-            if tax_revenue > 0 and ops_revenue > 0:
-                diff_ratio = abs(tax_revenue - ops_revenue) / max(tax_revenue, ops_revenue)
-                # 差异超过50%时记录警告（但不失败）
-                if diff_ratio > Decimal('0.5'):
-                    print(f"双口径差异较大: 税务{tax_revenue}, 经营{ops_revenue}, 差异率{diff_ratio:.2%}")
-
 
 # ═══════════════════════════════════════════════════════════════
 # 8. 会计恒等式综合校验

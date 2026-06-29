@@ -8,6 +8,7 @@
 
 from decimal import Decimal
 from datetime import datetime
+from typing import Optional
 from sqlalchemy.orm import Session
 
 import models
@@ -228,6 +229,65 @@ def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> mod
         if sale:
             sale.payment_status = "unpaid"
 
+    db.flush()
+    return reversal
+
+
+def reverse_bank_transaction(db: Session, account_id: int, tx_id: int) -> Optional[models.BankTransaction]:
+    """红冲单笔银行交易：reverse_journal 红冲原始凭证 → 反向流水
+
+    凭证锚点设计：BankTransaction.id 即原始凭证的 source_id，
+    reverse_journal(source_model="bank_entry", source_id=tx_id) 借贷互换红冲原始凭证。
+    旧数据（source_id 为纳秒时间戳）找不到原始凭证时，reverse_journal 返回 None，
+    不影响银行余额回滚，只是总账中凭证不会被红冲（合理降级）。
+    """
+
+    tx = db.query(models.BankTransaction).filter(
+        models.BankTransaction.id == tx_id,
+        models.BankTransaction.account_id == account_id,
+    ).first()
+    if not tx:
+        return None
+
+    original_amount = _d(tx.amount)
+    if original_amount <= 0:
+        return None
+
+    # 幂等：已冲销过则直接返回旧记录
+    existing = db.query(models.BankTransaction).filter(
+        models.BankTransaction.related_entity_type == "reversal",
+        models.BankTransaction.related_entity_id == tx_id,
+        models.BankTransaction.account_id == account_id,
+    ).first()
+    if existing:
+        return existing
+
+    bank = db.query(models.BankAccount).filter(
+        models.BankAccount.id == tx.bank_account_id,
+        models.BankAccount.account_id == account_id,
+    ).with_for_update().first()
+    if not bank:
+        return None
+
+    # 红冲原始凭证：借贷互换（reverse_journal 自带幂等，已红冲过返回 None）
+    from finance_integration import reverse_journal
+    reverse_journal(db, account_id, "bank_entry", tx_id)
+
+    # 反向流水
+    reversal = models.BankTransaction(
+        account_id=account_id,
+        bank_account_id=tx.bank_account_id,
+        transaction_type="outflow" if tx.transaction_type == "inflow" else "inflow",
+        amount=original_amount,
+        balance_after=_d(bank.balance) + (original_amount if tx.transaction_type == "outflow" else -original_amount),
+        transaction_date=datetime.now(),
+        description=f"冲销银行交易 #{tx.id}",
+        flow_category=tx.flow_category,
+        related_entity_type="reversal",
+        related_entity_id=tx_id,
+    )
+    db.add(reversal)
+    bank.balance = reversal.balance_after
     db.flush()
     return reversal
 

@@ -1,5 +1,6 @@
 """银行账户路由"""
 
+from decimal import Decimal
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -38,17 +39,31 @@ def create_bank_account(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """创建银行账户"""
+    """创建银行账户
+
+    开户时不自动生成期初余额，期初余额统一走 OpeningBalance 流程过账到总账 1002。
+    原因：开户时自动生成 BankTransaction 但无对应 AccountMove，会导致银行账户余额
+    与总账 1002 科目不一致（资产负债表货币资金取数自总账）。
+    """
+    if data.balance is not None and data.balance > 0:
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="开户时不支持直接录入期初余额。请先创建银行账户（余额为0），"
+                    "再通过「期初余额」功能录入银行存款期初，系统会自动过账到总账 1002 科目。",
+            ai_instruction="STOP_RETRYING. 期初余额必须走 OpeningBalance 流程，不能在开户时直接录入。"
+        )
+
     with unit_of_work(db):
         bank_account = BankAccount(
             account_id=account_id,
             bank_name=data.bank_name,
             account_number=data.account_number,
-            balance=data.balance,
+            balance=Decimal('0'),
             description=data.description
         )
         db.add(bank_account)
         db.flush()
+
         _log(db, account_id, "create", "bank_account", bank_account.id,
              f"创建银行账户: {data.bank_name} {data.account_number}", operator=operator)
     db.refresh(bank_account)

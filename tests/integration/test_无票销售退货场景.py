@@ -329,41 +329,30 @@ class TestBusinessRules:
             calculation="无票销售不进入增值税销项"
         )
 
-    def test_br2_dual_caliber(self, client, setup_data):
-        """BR-2: 经营口径与税务口径"""
+    def test_br2_tax_caliber(self, client, setup_data):
+        """BR-2: 税务口径（发票说话）"""
         print(f"\n=== BR-2规则验证 ===")
-        print(f"规则: 经营口径与税务口径")
-        print(f"经营口径: 收入=订单金额（含税），用于利润表、内部经营分析")
-        print(f"税务口径: 收入=发票金额（不含税），用于增值税报表、企业所得税申报")
-        
-        # 查询经营口径
-        resp_ops = client.get("/api/income-tax-report",
-                             params={"year": 2026, "quarter": 1, "caliber": "operating"},
-                             headers=HEADERS)
-        
+        print(f"规则: 税务口径（取消经营口径后统一发票说话）")
+        print(f"收入=销项发票不含税金额，用于增值税报表、企业所得税申报")
+
         # 查询税务口径
         resp_tax = client.get("/api/income-tax-report",
-                             params={"year": 2026, "quarter": 1, "caliber": "tax"},
+                             params={"year": 2026, "quarter": 1},
                              headers=HEADERS)
-        
-        if resp_ops.status_code == 200 and resp_tax.status_code == 200:
-            ops_data = resp_ops.json()
+
+        if resp_tax.status_code == 200:
             tax_data = resp_tax.json()
-            
-            ops_revenue = Decimal(str(ops_data.get("total_revenue", 0)))
             tax_revenue = Decimal(str(tax_data.get("total_revenue", 0)))
-            
-            print(f"经营口径收入: {ops_revenue}")
+
             print(f"税务口径收入: {tax_revenue}")
-            print(f"差异: {abs(ops_revenue - tax_revenue)}")
-            
+
             # 记录数据变化
             record_change(
                 module="财务",
                 operation="BR-2规则验证",
-                before=f"经营口径={ops_revenue}, 税务口径={tax_revenue}",
-                after=f"差异={abs(ops_revenue - tax_revenue)}",
-                calculation="经营口径（含税）与税务口径（不含税）天然不同"
+                before="税务口径（发票不含税）",
+                after=f"收入={tax_revenue}",
+                calculation="收入取销项发票不含税金额"
             )
 
 
