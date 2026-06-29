@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 import models, schemas
 
-from enums import OrderStatus, PaymentStatus, PaymentMethod, InvoiceDirection, InvoiceType, FlowCategory
+from enums import (OrderStatus, PaymentStatus, PaymentMethod, InvoiceDirection,
+                   InvoiceType, FlowCategory, CertificationStatus, TaxpayerType)
 from .base import _log
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
@@ -745,56 +746,102 @@ def delete_intangible_asset(db: Session, account_id: int, asset_id: int, operato
 
 # ── 增值税纳税申报表 ──
 
-def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: int):
-    """生成增值税纳税申报表"""
-    # 获取账本的纳税人类型
-    account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    taxpayer_type = account.taxpayer_type if account else "small_scale"
+def _quarter_range(year: int, quarter: int):
+    """返回季度 [start_date, end_date_exclusive)（左闭右开，覆盖属期最后一天全天）。
 
-    # 确定季度日期范围
-    if quarter == 1:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 3, 31, 23, 59, 59)
-    elif quarter == 2:
-        start_date = datetime(year, 4, 1)
-        end_date = datetime(year, 6, 30, 23, 59, 59)
-    elif quarter == 3:
-        start_date = datetime(year, 7, 1)
-        end_date = datetime(year, 9, 30, 23, 59, 59)
+    统一使用左闭右开区间，避免 23:59:59 与 <next_start 两种写法在 DateTime 字段上
+    产生边界漂移。返回的 end_date 为下一季度首日 00:00:00。
+    """
+    start_month = (quarter - 1) * 3 + 1
+    start_date = datetime(year, start_month, 1)
+    if quarter == 4:
+        end_date = datetime(year + 1, 1, 1)
     else:
-        start_date = datetime(year, 10, 1)
-        end_date = datetime(year, 12, 31, 23, 59, 59)
+        end_date = datetime(year, quarter * 3 + 1, 1)
+    return start_date, end_date
 
-    # 销项发票
-    output_invoices = db.query(models.Invoice).filter(
+
+def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, end_date_exclusive: datetime):
+    """汇总一个增值税属期内的发票数据（销项 + 进项抵扣）—— 单一真相源。
+
+    被 routers/tax.py（报表页）与 generate_vat_declaration（申报表）共用，
+    避免双轨计算导致一般纳税人进项抵扣在某一路径遗漏（历史 bug：
+    generate_vat_declaration 未传 input_tax，造成一般纳税人应纳税额虚高、
+    附加税虚高，并经 generate_income_tax_prepayment 传播至所得税）。
+
+    日期边界：左闭右开 [start_date, end_date_exclusive)。
+    进项抵扣规则：仅一般纳税人，且仅已认证的增值税专用发票可抵扣。
+    """
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    if not account:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本", "order_id": account_id})
+
+    out_invoices = db.query(models.Invoice).filter(
         models.Invoice.account_id == account_id,
         models.Invoice.direction == InvoiceDirection.OUT,
         models.Invoice.issue_date >= start_date,
-        models.Invoice.issue_date <= end_date
+        models.Invoice.issue_date < end_date_exclusive,
     ).all()
 
-    total_revenue = Decimal('0')
+    output_total = Decimal('0')
     ordinary_revenue = Decimal('0')
     special_revenue = Decimal('0')
     output_tax = Decimal('0')
-    for inv in output_invoices:
+    for inv in out_invoices:
         rev = _d(inv.amount_without_tax)
-        total_revenue += rev
+        output_total += rev
         output_tax += _d(inv.tax_amount)
-        # 按发票类型拆分：普票可享受免税，专票不享受
+        # 按发票类型拆分：小规模普票可享受免税，专票不享受
         if inv.invoice_type == InvoiceType.SPECIAL:
             special_revenue += rev
         else:
             ordinary_revenue += rev
 
-    # 使用 AccountingEngine 计算增值税
-    # 单一真相源：传入从发票明细汇总的 output_tax 和按类型拆分的收入，避免硬编码估算
+    input_total = Decimal('0')
+    input_tax = Decimal('0')
+    in_invoices = []
+    if account.taxpayer_type == TaxpayerType.GENERAL:
+        in_invoices = db.query(models.Invoice).filter(
+            models.Invoice.account_id == account_id,
+            models.Invoice.direction == InvoiceDirection.IN,
+            models.Invoice.issue_date >= start_date,
+            models.Invoice.issue_date < end_date_exclusive,
+        ).all()
+        for inv in in_invoices:
+            # 进项抵扣：仅已认证的增值税专用发票
+            if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status == CertificationStatus.CERTIFIED:
+                input_total += _d(inv.amount_without_tax)
+                input_tax += _d(inv.tax_amount)
+
+    return {
+        "account": account,
+        "out_invoices": out_invoices,
+        "in_invoices": in_invoices,
+        "output_total": output_total,
+        "ordinary_revenue": ordinary_revenue,
+        "special_revenue": special_revenue,
+        "output_tax": output_tax,
+        "input_total": input_total,
+        "input_tax": input_tax,
+    }
+
+
+def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: int):
+    """生成增值税纳税申报表"""
+    start_date, end_date_exclusive = _quarter_range(year, quarter)
+
+    agg = aggregate_vat_invoices(db, account_id, start_date, end_date_exclusive)
+    account = agg["account"]
+    taxpayer_type = account.taxpayer_type if account else "small_scale"
+
+    # 使用 AccountingEngine 计算增值税（单一真相源：传入销项+进项，避免硬编码估算）
     vat_result = _engine.calculate_vat(
-        total_revenue=total_revenue,
+        total_revenue=agg["output_total"],
         taxpayer_type=taxpayer_type,
-        output_tax=output_tax,
-        ordinary_revenue=ordinary_revenue,
-        special_revenue=special_revenue,
+        input_tax=agg["input_tax"],
+        output_tax=agg["output_tax"],
+        ordinary_revenue=agg["ordinary_revenue"],
+        special_revenue=agg["special_revenue"],
     )
 
     # 已预缴税额（从之前的季度申报）
@@ -807,7 +854,7 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "year": year,
         "quarter": quarter,
         "period_start": start_date.strftime("%Y-%m-%d"),
-        "period_end": end_date.strftime("%Y-%m-%d"),
+        "period_end": (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d"),
         "total_revenue": vat_result.total_revenue.quantize(Q2),
         "tax_rate": vat_result.tax_rate,
         "tax_payable_gross": vat_result.tax_payable_gross,
@@ -821,7 +868,7 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "surcharge_total": vat_result.surcharge_total,
         "reduction_item": vat_result.reduction_item,
         "reduction_amount": vat_result.reduction_amount,
-        "invoice_list": output_invoices
+        "invoice_list": agg["out_invoices"]
     }
 
 
@@ -829,26 +876,15 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
 
 def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quarter: int):
     """生成企业所得税预缴申报表"""
-    # 确定季度日期范围
-    if quarter == 1:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 3, 31, 23, 59, 59)
-    elif quarter == 2:
-        start_date = datetime(year, 4, 1)
-        end_date = datetime(year, 6, 30, 23, 59, 59)
-    elif quarter == 3:
-        start_date = datetime(year, 7, 1)
-        end_date = datetime(year, 9, 30, 23, 59, 59)
-    else:
-        start_date = datetime(year, 10, 1)
-        end_date = datetime(year, 12, 31, 23, 59, 59)
+    # 确定季度日期范围（左闭右开，与 VAT 申报一致）
+    start_date, end_date_exclusive = _quarter_range(year, quarter)
 
     # 营业收入 = 销项发票不含税金额（发票说话，取消经营口径的含税订单收入）
     operating_revenue = _d(db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
         models.Invoice.account_id == account_id,
         models.Invoice.direction == InvoiceDirection.OUT,
         models.Invoice.issue_date >= start_date,
-        models.Invoice.issue_date <= end_date
+        models.Invoice.issue_date < end_date_exclusive
     ).scalar())
 
     # 增值税减免加回收入（财税〔2008〕151号：减免的增值税需计入应纳税所得额）
@@ -862,7 +898,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
-            AccountMove.date >= start_date, AccountMove.date <= end_date
+            AccountMove.date >= start_date, AccountMove.date < end_date_exclusive
         ).scalar())
     else:
         vat_exemption_income = Decimal('0')
@@ -873,7 +909,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     completed_sales = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
         models.SaleOrder.sale_date >= start_date,
-        models.SaleOrder.sale_date <= end_date,
+        models.SaleOrder.sale_date < end_date_exclusive,
         models.SaleOrder.status == OrderStatus.COMPLETED
     ).all()
     for order in completed_sales:
@@ -887,14 +923,13 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
         models.Expense.account_id == account_id,
         models.Expense.expense_date >= start_date,
-        models.Expense.expense_date <= end_date
+        models.Expense.expense_date < end_date_exclusive
     ).scalar())
 
     # 税金及附加（增值税附加税）
-    # 从增值税申报表获取附加税金额
+    # 从增值税申报表获取附加税金额（quarter 已是入参，无需从日期反推）
     from crud.finance import generate_vat_declaration
-    quarter_num = 1 if end_date.month <= 3 else (2 if end_date.month <= 6 else (3 if end_date.month <= 9 else 4))
-    vat_data = generate_vat_declaration(db, account_id, year, quarter_num)
+    vat_data = generate_vat_declaration(db, account_id, year, quarter)
     tax_and_surcharge = vat_data['surcharge_total']
 
     # 利润总额 = 营业收入 - 营业成本 - 税金及附加 - 营业费用
@@ -926,7 +961,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
         "year": year,
         "quarter": quarter,
         "period_start": start_date.strftime("%Y-%m-%d"),
-        "period_end": end_date.strftime("%Y-%m-%d"),
+        "period_end": (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d"),
         "operating_revenue": operating_revenue.quantize(Q2),
         "operating_cost": operating_cost.quantize(Q2),
         "tax_and_surcharge": tax_and_surcharge.quantize(Q2),

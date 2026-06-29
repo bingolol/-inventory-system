@@ -214,33 +214,59 @@ class AdjustInventoryHandler(CommandHandler):
         if delta != 0 and product and product.track_inventory:
             adj_id = int(time.time() * 1000)
             engine = InventoryEngine(db)
-            # 优先级：显式 unit_cost（盘盈估值）> average_cost（已有库存）> purchase_price（兜底）
-            # 修复：原代码兜底到 purchase_price=0 时会零成本入库，污染 StockMove.total_cost
-            # 和后续 COGS。现拦截实物商品盘盈入库零成本场景。
-            if cmd.unit_cost is not None and cmd.unit_cost > 0:
-                unit_cost = Decimal(str(cmd.unit_cost))
-            elif inv.average_cost and inv.average_cost > 0:
-                unit_cost = inv.average_cost
-            else:
-                unit_cost = Decimal(str(product.purchase_price or 0))
+            # 盘盈/盘亏的成本取值必须遵循移动加权平均法：
+            # - 盘盈入库（delta>0）：需估值成本，优先显式 unit_cost > average_cost > purchase_price（兜底估值）
+            # - 盘亏出库（delta<0）：必须按账面 average_cost 结转，禁止用 purchase_price 兜底
+            #   原因：StockMove.total_cost 由 _record_outbound 按 average_cost 计算（engine_inventory.py），
+            #   若此处 journal 用 purchase_price，会造成明细账与总账背离、inventory.total_value 穿负。
+            if delta > 0:
+                if cmd.unit_cost is not None and cmd.unit_cost > 0:
+                    unit_cost = Decimal(str(cmd.unit_cost))
+                elif inv.average_cost and inv.average_cost > 0:
+                    unit_cost = inv.average_cost
+                else:
+                    unit_cost = Decimal(str(product.purchase_price or 0))
 
-            # 实物商品盘盈入库（delta>0）零成本拦截
-            # 服务类商品（track_inventory=False）不走此分支，不受影响
-            if delta > 0 and unit_cost <= Decimal("0"):
-                raise BusinessError(
-                    code=ErrorCode.VALIDATION_ERROR,
-                    message=(
-                        f"实物商品盘盈入库需要指定成本：商品 {product.name} 的 average_cost 和 purchase_price 均为 0。"
-                        f"请先通过采购单建立商品成本，或在 adjust-inventory 接口提供 unit_cost 参数。"
-                    ),
-                    ai_instruction=(
-                        "STOP_RETRYING. 实物商品盘盈入库需要非零成本。"
-                        "（1）先创建采购单建立商品成本；或"
-                        "（2）在 adjust-inventory 接口显式提供 unit_cost 参数。"
-                        "服务类商品请将 track_inventory 设为 False 后再调整。"
-                    ),
-                    data={"product_id": cmd.product_id, "product_name": product.name, "delta": float(delta)}
-                )
+                # 实物商品盘盈入库（delta>0）零成本拦截
+                # 服务类商品（track_inventory=False）不走此分支，不受影响
+                if unit_cost <= Decimal("0"):
+                    raise BusinessError(
+                        code=ErrorCode.VALIDATION_ERROR,
+                        message=(
+                            f"实物商品盘盈入库需要指定成本：商品 {product.name} 的 average_cost 和 purchase_price 均为 0。"
+                            f"请先通过采购单建立商品成本，或在 adjust-inventory 接口提供 unit_cost 参数。"
+                        ),
+                        ai_instruction=(
+                            "STOP_RETRYING. 实物商品盘盈入库需要非零成本。"
+                            "（1）先创建采购单建立商品成本；或"
+                            "（2）在 adjust-inventory 接口显式提供 unit_cost 参数。"
+                            "服务类商品请将 track_inventory 设为 False 后再调整。"
+                        ),
+                        data={"product_id": cmd.product_id, "product_name": product.name, "delta": float(delta)}
+                    )
+            else:
+                # 盘亏出库：只能用账面平均成本（移动加权平均法下的结转成本）
+                unit_cost = inv.average_cost or Decimal("0")
+                if unit_cost <= Decimal("0"):
+                    # average_cost=0 表示库存无有效账面价值（通常因未通过采购建立成本）。
+                    # 此处拦截而非兜底 purchase_price，避免明细账/总账背离与 total_value 穿负。
+                    raise BusinessError(
+                        code=ErrorCode.VALIDATION_ERROR,
+                        message=(
+                            f"盘亏出库需要有效账面成本：商品 {product.name} 的 average_cost 为 0，"
+                            f"库存无有效账面价值。请先通过采购单建立商品成本，或核对库存数据后再调整。"
+                        ),
+                        ai_instruction=(
+                            "STOP_RETRYING. 盘亏出库需要非零的账面平均成本（移动加权平均法）。"
+                            "average_cost 为 0 表示库存无成本基础，请先采购入库建立成本后再调整。"
+                        ),
+                        data={
+                            "product_id": cmd.product_id,
+                            "product_name": product.name,
+                            "delta": float(delta),
+                            "average_cost": float(unit_cost),
+                        },
+                    )
             move_date = None
             if cmd.adjust_date:
                 move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d")

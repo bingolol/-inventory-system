@@ -3,19 +3,16 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import Optional
 from datetime import datetime, timedelta
-from decimal import Decimal
 
 from database import get_db
-from models import Account, Invoice
 from schemas import TaxReport, TaxReportMonth, InvoiceOut
 from account_dep import get_account_id
-from enums import InvoiceDirection, InvoiceType, CertificationStatus, TaxpayerType
-from utils import _d, Q2
+from utils import Q2
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
+from crud.finance import aggregate_vat_invoices
 
 router = APIRouter()
 
@@ -24,64 +21,27 @@ _engine = AccountingEngine()
 
 
 def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_date: datetime):
-    account = db.query(Account).filter(Account.id == account_id).first()
-    if not account:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本", "order_id": account_id})
+    """汇总增值税属期数据（销项+进项抵扣）并计算应纳税额。
 
-    out_invoices = db.query(Invoice).filter(
-        Invoice.account_id == account_id,
-        Invoice.direction == InvoiceDirection.OUT,
-        Invoice.issue_date >= start_date,
-        Invoice.issue_date < end_date
-    ).all()
-
-    in_invoices = db.query(Invoice).filter(
-        Invoice.account_id == account_id,
-        Invoice.direction == InvoiceDirection.IN,
-        Invoice.issue_date >= start_date,
-        Invoice.issue_date < end_date
-    ).all()
-
-    output_total = Decimal('0')
-    ordinary_revenue = Decimal('0')
-    special_revenue = Decimal('0')
-    output_tax = Decimal('0')
-    for inv in out_invoices:
-        rev = _d(inv.amount_without_tax)
-        output_total += rev
-        output_tax += _d(inv.tax_amount)
-        # 按发票类型拆分：小规模普票可享受免税，专票不享受
-        if inv.invoice_type == InvoiceType.SPECIAL:
-            special_revenue += rev
-        else:
-            ordinary_revenue += rev
-
-    input_total = Decimal('0')
-    input_tax = Decimal('0')
-
-    if account.taxpayer_type == TaxpayerType.GENERAL:
-        for inv in in_invoices:
-            if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status == CertificationStatus.CERTIFIED:
-                input_total += _d(inv.amount_without_tax)
-                input_tax += _d(inv.tax_amount)
-    else:
-        input_total = Decimal('0')
-        input_tax = Decimal('0')
+    发票汇总复用 crud.finance.aggregate_vat_invoices（单一真相源），
+    与 generate_vat_declaration 共用同一套进项抵扣逻辑，避免双轨漂移。
+    日期边界：左闭右开 [start_date, end_date)。
+    """
+    agg = aggregate_vat_invoices(db, account_id, start_date, end_date)
+    account = agg["account"]
 
     # 使用 AccountingEngine 计算增值税
-    # 单一真相源：传入从发票明细汇总的 output_tax 和按类型拆分的收入，避免硬编码估算
     vat_result = _engine.calculate_vat(
-        total_revenue=output_total,
+        total_revenue=agg["output_total"],
         taxpayer_type=account.taxpayer_type,
-        input_tax=input_tax,
-        output_tax=output_tax,
-        ordinary_revenue=ordinary_revenue,
-        special_revenue=special_revenue,
+        input_tax=agg["input_tax"],
+        output_tax=agg["output_tax"],
+        ordinary_revenue=agg["ordinary_revenue"],
+        special_revenue=agg["special_revenue"],
     )
-    tax_payable = vat_result.tax_payable
 
     invoice_outs = []
-    for invoice in out_invoices + in_invoices:
+    for invoice in agg["out_invoices"] + agg["in_invoices"]:
         invoice_out = InvoiceOut(
             id=invoice.id,
             invoice_no=invoice.invoice_no,
@@ -105,11 +65,11 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
 
     return {
         "account": account,
-        "output_total": output_total.quantize(Q2),
-        "output_tax": output_tax.quantize(Q2),
-        "input_total": input_total.quantize(Q2),
-        "input_tax": input_tax.quantize(Q2),
-        "tax_payable": tax_payable.quantize(Q2),
+        "output_total": agg["output_total"].quantize(Q2),
+        "output_tax": agg["output_tax"].quantize(Q2),
+        "input_total": agg["input_total"].quantize(Q2),
+        "input_tax": agg["input_tax"].quantize(Q2),
+        "tax_payable": vat_result.tax_payable.quantize(Q2),
         "invoice_list": invoice_outs,
         "period_start": start_date.strftime("%Y-%m-%d"),
         "period_end": (end_date - timedelta(days=1)).strftime("%Y-%m-%d"),

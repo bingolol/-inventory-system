@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, Query
-from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
@@ -14,12 +13,14 @@ def get_balance_sheet(
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """生成资产负债表"""
-    try:
-        balance_sheet = crud.generate_balance_sheet(db, account_id, date)
-        return balance_sheet
-    except Exception as e:
-        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"生成资产负债表失败: {str(e)}")
+    """生成资产负债表
+
+    异常处理：不在路由层吞没异常。crud 层可能抛出 BusinessError（如日期格式非法）
+    或 AccountingError（如科目余额不平衡），由 main.py 的全局 exception_handler
+    统一映射为正确的 HTTP 状态码与错误码。原 try/except 会把这些异常统一包成
+    INTERNAL_ERROR，掩盖真实错误类型并误导前端处理。
+    """
+    return crud.generate_balance_sheet(db, account_id, date)
 
 
 @router.get("/income-statement")
@@ -29,12 +30,8 @@ def get_income_statement(
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """生成利润表"""
-    try:
-        income_statement = crud.generate_income_statement(db, account_id, start_date, end_date)
-        return income_statement
-    except Exception as e:
-        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"生成利润表失败: {str(e)}")
+    """生成利润表（异常交由全局 handler 处理，不在路由层吞没）"""
+    return crud.generate_income_statement(db, account_id, start_date, end_date)
 
 
 @router.get("/financial-summary")
@@ -43,18 +40,12 @@ def get_financial_summary(
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """获取财务汇总信息"""
-    try:
-        # 获取资产负债表
-        balance_sheet = crud.generate_balance_sheet(db, account_id, date)
-        
-        # 获取期初余额信息
-        opening_balance = crud.get_latest_opening_balance(db, account_id, date)
-        
-        return {
-            "balance_sheet": balance_sheet,
-            "opening_balance_exists": opening_balance is not None,
-            "opening_balance_date": opening_balance.date.isoformat() if opening_balance else None
-        }
-    except Exception as e:
-        raise BusinessError(code=ErrorCode.INTERNAL_ERROR, message=f"获取财务汇总失败: {str(e)}")
+    """获取财务汇总信息（异常交由全局 handler 处理，不在路由层吞没）"""
+    balance_sheet = crud.generate_balance_sheet(db, account_id, date)
+    opening_balance = crud.get_latest_opening_balance(db, account_id, date)
+
+    return {
+        "balance_sheet": balance_sheet,
+        "opening_balance_exists": opening_balance is not None,
+        "opening_balance_date": opening_balance.date.isoformat() if opening_balance else None
+    }

@@ -288,7 +288,7 @@ class Inventory(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Integer, default=0, comment="当前库存(允许负数)")
+    quantity = Column(Integer, default=0, comment="当前库存，业务层禁止为负")
     average_cost = Column(Numeric(14, 6), default=Decimal('0'), comment="移动加权平均成本")
     total_value = Column(Numeric(14, 2), default=Decimal('0'), comment="库存总金额")
     last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)

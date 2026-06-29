@@ -203,7 +203,13 @@ class InventoryEngine:
     def force_outbound(self, account_id: int, product_id: int, quantity: int,
                        source_type: str, source_id: int,
                        operator: str = "user") -> Decimal:
-        """强制出库（跳过幂等检查），用于 RestoreOrderHandler 等场景"""
+        """强制出库（跳过幂等检查），用于 RestoreOrderHandler / 明细更新重建等场景。
+
+        注意：此处的 "force" 仅指跳过 (source_type, source_id) 的幂等检查，
+        **并非跳过非负校验**。底层 _record_outbound 仍会校验
+        inv.quantity < quantity 并在库存不足时抛 BusinessError。
+        因此本方法不会产生负库存——与 outbound 的非负约束一致。
+        """
         return self._record_outbound(account_id, product_id, quantity,
                                      source_type, source_id, operator)
 

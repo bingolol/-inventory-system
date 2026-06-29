@@ -1,0 +1,73 @@
+{
+  "account_id": 23,
+  "total_checks": 6,
+  "passed": 3,
+  "failed": 3,
+  "bugs": [
+    {
+      "label": "采购退货后商品A库存",
+      "expected": "5.00",
+      "actual": "0.00",
+      "diff": "5.00",
+      "pass": false
+    },
+    {
+      "label": "销售取消后商品A库存",
+      "expected": "15.00",
+      "actual": "0.00",
+      "diff": "15.00",
+      "pass": false
+    },
+    {
+      "label": "管理费用(冲红后)",
+      "expected": "0.00",
+      "actual": "10000.00",
+      "diff": "10000.00",
+      "pass": false
+    }
+  ],
+  "steps": [
+    {
+      "label": "采购退货后商品A库存",
+      "expected": "5.00",
+      "actual": "0.00",
+      "diff": "5.00",
+      "pass": false
+    },
+    {
+      "label": "销售取消后商品A库存",
+      "expected": "15.00",
+      "actual": "0.00",
+      "diff": "15.00",
+      "pass": false
+    },
+    {
+      "label": "管理费用(冲红后)",
+      "expected": "0.00",
+      "actual": "10000.00",
+      "diff": "10000.00",
+      "pass": false
+    },
+    {
+      "label": "二次月结VAT一致",
+      "expected": "2340.00",
+      "actual": "2340.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "二次月结所得税一致",
+      "expected": "1929.80",
+      "actual": "1929.80",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "最终BS平衡",
+      "expected": "0.00",
+      "actual": "0.00",
+      "diff": "0.00",
+      "pass": true
+    }
+  ]
+}

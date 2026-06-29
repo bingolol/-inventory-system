@@ -24,8 +24,10 @@ class InventoryDomain(DomainModel["Inventory"]):
     - account_id: 所属账本ID
     - product_id: 商品ID
 
-    注意：ORM 层注释"允许负数"，但领域层 enforce 非负。
-    超卖场景应由业务逻辑在扣减前校验，而非在数据层允许负库存。
+    注意：ORM 层 comment 已修正为"业务层禁止为负"，与领域层一致。
+    超卖场景应由业务逻辑在扣减前校验（engine_inventory._record_outbound
+    已校验 inv.quantity < quantity），DB 层不额外加 CHECK 约束以兼容
+    历史数据迁移；写路径均经 InventoryEngine，保证不产生负库存。
     """
 
     id: int = 0
