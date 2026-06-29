@@ -78,15 +78,16 @@ class FinanceEngine:
         post_journal(self.db, self.account_id, "purchase_order", source, force=force)
 
     def record_sale(self, order, force: bool = False) -> None:
-        is_small_scale = self.account and self.account.taxpayer_type == "small_scale"
+        # 修复 #10：移除小规模 3% 覆盖逻辑，直接用行项 item.tax_rate
+        # 原代码 is_small_scale 时用 _vat_rate() 返回 3% 覆盖 item.tax_rate(默认1%)，
+        # 导致 1122 应收账款永久虚高 2%（季末免税只冲 222103 不调 1122）。
+        # 正确做法：小规模 item.tax_rate 默认 0.01（减按1%），一般纳税人按商品行税率。
         total_without_tax = Decimal('0')
         tax_amount = Decimal('0')
         for item in order.items:
             line_total = Decimal(str(item.total_price))
             total_without_tax += line_total
             rate = item.tax_rate
-            if is_small_scale and rate and rate > 0:
-                rate = self._vat_rate(self.account)
             if rate:
                 tax_amount += (line_total * Decimal(str(rate))).quantize(Q2)
         tax_amount = tax_amount.quantize(Q2)

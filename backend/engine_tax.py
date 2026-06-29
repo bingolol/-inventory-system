@@ -82,8 +82,10 @@ class TaxAccrualEngine:
             taxpayer_type = account.taxpayer_type if account else "small_scale"
 
         closed = self._has_closed(ledger, period)
-        if closed["surcharge"] and closed["income_tax"]:
-            return {"status": "skipped", "msg": f"期 {period} 已结账", "detail": closed}
+        # 修复 #1：移除顶层"已结账则跳过"守卫，改为允许补提差额
+        # 原代码 closed["surcharge"] and closed["income_tax"] 都为 True 时直接 skip，
+        # 导致后续利润变动后无法补提所得税/附加税差额。
+        # 现在改为：不在此处 skip，由后续各税种的 delta 判断决定是否需要补提。
 
         result_lines = []
 
@@ -107,28 +109,42 @@ class TaxAccrualEngine:
 
             curr_vat = max(output_vat - carry_forward - input_vat, Decimal("0"))
 
-        if curr_vat > Decimal("0") and not closed["surcharge"]:
-            surcharge_amt = (curr_vat * Decimal("0.12")).quantize(Q2)
-            if surcharge_amt > 0:
+        if curr_vat > Decimal("0"):
+            # 修复 #1：附加税用 delta 模式，避免已计提后补提失效
+            # 原代码 not closed["surcharge"] 守卫导致首次计提后无法补提差额。
+            target_surcharge = (curr_vat * Decimal("0.12")).quantize(Q2)
+            posted_surcharge = _crd(self.db, ledger, "222104", close_dt)
+            surcharge_delta = target_surcharge - posted_surcharge
+
+            if surcharge_delta > Decimal("0.01"):
                 post_journal(self.db, account_id, "tax_surcharge", {
-                    "amount": surcharge_amt,
+                    "amount": surcharge_delta,
                     "date": close_dt,
                     "source_model": "tax_surcharge",
                     "source_id": _period_hash(period, "surcharge"),
-                })
-                result_lines.append(f"附加税: +{surcharge_amt}")
-                logger.info(f"月结 {period} 计提附加税: {surcharge_amt}")
+                }, force=closed["surcharge"])
+                result_lines.append(f"附加税: +{surcharge_delta}")
+                logger.info(f"月结 {period} 计提附加税: {surcharge_delta}")
 
             # VAT 结转：仅一般纳税人执行（222101→222106→222107）
             # 小规模纳税人 222103 本身就是应交增值税，无需结转
+            # 修复 #1：移除对 closed["surcharge"] 的依赖，VAT 结转用自身幂等
             if taxpayer_type != "small_scale":
-                post_journal(self.db, account_id, "vat_transfer_out", {
-                    "amount": curr_vat,
-                    "date": close_dt,
-                    "source_model": "vat_transfer_out",
-                    "source_id": _period_hash(period, "vat_xfer"),
-                })
-                logger.info(f"月结 {period} 转出未交增值税: {curr_vat}")
+                # 检查是否已结转过（避免重复）
+                vat_xfer_exists = self.db.query(AccountMove).filter(
+                    AccountMove.ledger_id == ledger.id,
+                    AccountMove.source_model == "vat_transfer_out",
+                    AccountMove.date >= period_start,
+                    AccountMove.date <= close_dt,
+                ).first() is not None
+                if not vat_xfer_exists:
+                    post_journal(self.db, account_id, "vat_transfer_out", {
+                        "amount": curr_vat,
+                        "date": close_dt,
+                        "source_model": "vat_transfer_out",
+                        "source_id": _period_hash(period, "vat_xfer"),
+                    })
+                    logger.info(f"月结 {period} 转出未交增值税: {curr_vat}")
 
         # 小规模纳税人减免税结转（季度末月：3/6/9/12）
         # 依据：财税〔2008〕151号 — 减免的增值税需计入营业外收入缴企业所得税
@@ -158,12 +174,32 @@ class TaxAccrualEngine:
 
                 QUARTERLY_EXEMPTION = Decimal("300000")
                 if quarterly_revenue <= QUARTERLY_EXEMPTION:
-                    # 季度≤30万：全额免征（普票免税，专票减按1%）
-                    # 简化：按全额减免处理（专票部分实际需缴纳，此处取减征额）
-                    exemption_amt = quarter_output_vat  # 全额减免
+                    # 修复 #4：区分普票和专票
+                    # 原代码 exemption_amt = quarter_output_vat（全额免），
+                    # 导致专票部分也被全额免税（应减按1%缴纳）。
+                    # 正确：普票全额免，专票减按1%（减免2%）
+                    from enums import InvoiceType
+                    ordinary_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+                        models.Invoice.account_id == account_id,
+                        models.Invoice.direction == InvoiceDirection.OUT,
+                        models.Invoice.invoice_type == InvoiceType.ORDINARY,
+                        models.Invoice.issue_date >= q_start,
+                        models.Invoice.issue_date <= close_dt,
+                    ).scalar())
+                    special_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+                        models.Invoice.account_id == account_id,
+                        models.Invoice.direction == InvoiceDirection.OUT,
+                        models.Invoice.invoice_type == InvoiceType.SPECIAL,
+                        models.Invoice.issue_date >= q_start,
+                        models.Invoice.issue_date <= close_dt,
+                    ).scalar())
+
+                    # 普票全额免：已记的1%销项税转出至营业外收入
+                    exemption_amt = (ordinary_rev * Decimal("0.01")).quantize(Q2)
                 else:
-                    # 超过30万：减按1%征收，减免2%
-                    exemption_amt = (quarterly_revenue * Decimal("0.02")).quantize(Q2)
+                    # 超过30万：全部减按1%征收
+                    # 销售时已按1%记销项税，实际就是应缴税额，无需减免结转
+                    exemption_amt = Decimal("0")
 
                 if exemption_amt > 0:
                     post_journal(self.db, account_id, "vat_exemption", {
@@ -220,23 +256,33 @@ class TaxAccrualEngine:
         posted_tax = _crd(self.db, ledger, "222105", close_dt)
         delta = target_tax - posted_tax
 
-        if abs(delta) > Decimal("0.01") and not closed["income_tax"]:
+        if abs(delta) > Decimal("0.01"):
+            # 修复 #1：移除 not closed["income_tax"] 守卫，允许补提差额
+            # 原代码在已存在 tax_income 凭证时跳过补提，导致跨期补录利润变动后
+            # 所得税永久漏提。现在：首次用普通过账（幂等），后续用 force=True 补提差额。
             if delta > Decimal("0"):
                 post_journal(self.db, account_id, "tax_income", {
                     "amount": delta,
                     "date": close_dt,
                     "source_model": "tax_income",
                     "source_id": _period_hash(period, "income"),
-                })
+                }, force=closed["income_tax"])
                 result_lines.append(f"所得税: +{delta}")
                 logger.info(f"月结 {period} 计提所得税: +{delta}")
             else:
+                # 冲回分支也需要 force，否则第二次冲回被幂等拦截
+                income_rev_exists = self.db.query(AccountMove).filter(
+                    AccountMove.ledger_id == ledger.id,
+                    AccountMove.source_model == "tax_income_reversal",
+                    AccountMove.date >= period_start,
+                    AccountMove.date <= close_dt,
+                ).first() is not None
                 post_journal(self.db, account_id, "tax_income_reversal", {
                     "amount": abs(delta),
                     "date": close_dt,
                     "source_model": "tax_income_reversal",
                     "source_id": _period_hash(period, "income_rev"),
-                })
+                }, force=income_rev_exists)
                 result_lines.append(f"所得税: -{abs(delta)} (冲回)")
                 logger.info(f"月结 {period} 冲回所得税: {abs(delta)}")
 
@@ -278,8 +324,9 @@ def _parse_period(period: str):
 
 
 def _period_hash(period: str, tag: str) -> int:
+    # 修复 #3：扩展哈希空间从 31 位到 63 位，降低碰撞风险
     h = 0
     for c in f"{period}_{tag}":
         h = ((h << 5) - h) + ord(c)
-        h &= 0x7FFFFFFF
+        h &= 0x7FFFFFFFFFFFFFFF  # 63 位空间（2^63-1 ≈ 9.2×10^18）
     return h

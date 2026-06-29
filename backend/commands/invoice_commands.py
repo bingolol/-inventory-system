@@ -603,34 +603,145 @@ class ReverseInvoiceHandler(CommandHandler):
         db.flush()
 
         # 5. 级联冲红凭证和库存
+        # 修复 #12：检查已有部分退货，冲红剩余部分而非整单
+        # 原代码对已部分退货的销售单仍调用 reverse_sale 整单冲红，
+        # 导致已退货部分被重复冲红（收入/应收/税额/库存全部错乱）。
         cascade_lines = []
 
         if invoice.related_order_type == "sale_order" and invoice.related_order_id:
-            # 销项发票 → 冲红销售凭证（收入/应收/税额）
             from engine_finance import FinanceEngine
-            FinanceEngine(db, cmd.account_id).reverse_sale(invoice.related_order_id)
-            cascade_lines.append("冲红销售凭证")
-
-            # 冲红库存（库存回退）
             from engine_inventory import InventoryEngine
-            engine_inv = InventoryEngine(db)
+            from enums import OrderStatus
+            from sqlalchemy import func as sqlfunc
+            import time as _time
+
             sale_order = db.query(models.SaleOrder).filter(
                 models.SaleOrder.id == invoice.related_order_id,
                 models.SaleOrder.account_id == cmd.account_id,
             ).first()
-            if sale_order:
+
+            if sale_order and sale_order.status == OrderStatus.CANCELLED:
+                # 订单已取消（凭证和库存已整单冲红），无需重复操作
+                cascade_lines.append("销售单已取消（凭证库存已冲红，跳过）")
+
+            elif sale_order and sale_order.status == OrderStatus.COMPLETED:
+                # 计算已部分退货数量（通过 ref_source_id 关联到原销售单）
+                reversed_qty_map = {}
+                reversal_moves = db.query(
+                    models.StockMove.product_id,
+                    sqlfunc.sum(models.StockMove.quantity).label('rev_qty')
+                ).filter(
+                    models.StockMove.source_type == "sale_order_reversal",
+                    models.StockMove.account_id == cmd.account_id,
+                    models.StockMove.ref_source_id == sale_order.id,
+                ).group_by(models.StockMove.product_id).all()
+
+                for row in reversal_moves:
+                    reversed_qty_map[row.product_id] = abs(int(row.rev_qty))
+
+                # 计算剩余需冲红数量
+                remaining_items = []
                 for item in sale_order.items:
-                    unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
-                    engine_inv.reverse(
-                        account_id=cmd.account_id,
-                        product_id=item.product_id,
-                        quantity=item.quantity,
-                        unit_cost=unit_cost,
-                        source_type="sale_order",
-                        source_id=sale_order.id,
-                        operator=cmd.operator,
-                    )
-                cascade_lines.append(f"库存回退({len(sale_order.items)}项)")
+                    already_reversed = reversed_qty_map.get(item.product_id, 0)
+                    remaining_qty = item.quantity - already_reversed
+                    if remaining_qty > 0:
+                        remaining_items.append((item, remaining_qty))
+
+                if not remaining_items:
+                    # 全部已退货，只需冲红销售凭证（库存已全部回退）
+                    FinanceEngine(db, cmd.account_id).reverse_sale(sale_order.id)
+                    cascade_lines.append("冲红销售凭证（库存已全部退货）")
+                else:
+                    # 有剩余部分需冲红
+                    # 检查是否已有部分退货（决定用 reverse_sale 还是 sale_return）
+                    has_partial_return = any(v > 0 for v in reversed_qty_map.values())
+
+                    if has_partial_return:
+                        # 已有部分退货 → 用 sale_return 凭证冲红剩余部分
+                        # 避免 reverse_sale 整单冲红导致已退货部分重复冲减
+                        from finance_integration import post_journal
+                        account = db.query(models.Account).filter(
+                            models.Account.id == cmd.account_id
+                        ).first()
+                        taxpayer_type = account.taxpayer_type if account else "general"
+
+                        total_wt_ret = Decimal("0")
+                        total_wot_ret = Decimal("0")
+                        tax_ret = Decimal("0")
+                        cost_ret = Decimal("0")
+                        eng_inv = InventoryEngine(db)
+                        red_return_id = int(_time.time() * 1000)
+
+                        for item, rem_qty in remaining_items:
+                            product = db.query(models.Product).filter(
+                                models.Product.id == item.product_id,
+                                models.Product.account_id == cmd.account_id,
+                            ).first()
+                            if product and product.track_inventory:
+                                eng_inv.reverse(
+                                    account_id=cmd.account_id,
+                                    product_id=item.product_id,
+                                    quantity=rem_qty,
+                                    unit_cost=Decimal("0"),
+                                    source_type="sale_order",
+                                    source_id=sale_order.id,
+                                    operator=cmd.operator,
+                                    source_id_override=red_return_id,
+                                )
+                                move = db.query(models.StockMove).filter(
+                                    models.StockMove.source_type == "sale_order",
+                                    models.StockMove.source_id == sale_order.id,
+                                    models.StockMove.product_id == item.product_id,
+                                ).first()
+                                uc = move.unit_cost if move and move.unit_cost else Decimal("0")
+                                cost_ret += (Decimal(str(rem_qty)) * uc).quantize(Q2)
+
+                            line_total = Decimal(str(item.total_price))
+                            ratio = Decimal(str(rem_qty)) / Decimal(str(item.quantity))
+                            rev_ret = (line_total * ratio).quantize(Q2)
+                            rate = item.tax_rate
+                            if taxpayer_type == "small_scale" and rate and rate > 0:
+                                rate = Decimal("0.01")
+                            t_ret = (rev_ret * Decimal(str(rate))).quantize(Q2) if rate else Decimal("0")
+
+                            total_wot_ret += rev_ret
+                            tax_ret += t_ret
+                            total_wt_ret += (rev_ret + t_ret).quantize(Q2)
+
+                        post_journal(db, cmd.account_id, "sale_return", {
+                            "partner_id": sale_order.customer_id or 0,
+                            "total_with_tax": total_wt_ret.quantize(Q2),
+                            "total_without_tax": total_wot_ret.quantize(Q2),
+                            "tax_amount": tax_ret.quantize(Q2),
+                            "cost_return": cost_ret.quantize(Q2),
+                            "taxpayer_type": taxpayer_type,
+                            "source_model": "sale_return",
+                            "source_id": red_return_id,
+                            "date": red_invoice.issue_date,
+                        })
+                        cascade_lines.append(
+                            f"冲红剩余销售部分({len(remaining_items)}项，已扣减部分退货)"
+                        )
+                    else:
+                        # 无部分退货 → 整单冲红
+                        FinanceEngine(db, cmd.account_id).reverse_sale(sale_order.id)
+                        cascade_lines.append("冲红销售凭证")
+
+                        eng_inv = InventoryEngine(db)
+                        for item in sale_order.items:
+                            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
+                            engine_inv_res = eng_inv.reverse(
+                                account_id=cmd.account_id,
+                                product_id=item.product_id,
+                                quantity=item.quantity,
+                                unit_cost=unit_cost,
+                                source_type="sale_order",
+                                source_id=sale_order.id,
+                                operator=cmd.operator,
+                            )
+                        cascade_lines.append(f"库存回退({len(sale_order.items)}项)")
+            else:
+                cascade_lines.append("销售单状态异常，跳过级联冲红")
 
         elif invoice.related_order_type == "purchase_order" and invoice.related_order_id:
             # 进项发票 → 冲红采购凭证（存货/应付/税额）

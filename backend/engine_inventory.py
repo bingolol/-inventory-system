@@ -269,7 +269,15 @@ class InventoryEngine:
         rev_cost = (rev_qty * effective_unit_cost).quantize(Q2)
 
         # 反转方向：原始正→冲销负，原始负→冲销正
-        is_inbound = original is None or original.quantity > 0
+        # 修复 #6：original 为 None 时抛异常，而非默认按入库红冲
+        # 原代码 is_inbound = original is None or original.quantity > 0
+        # 在 original 缺失时默认按入库方向处理，可能导致方向反转错误。
+        if original is None:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                data={"details": f"找不到原始库存流水: source_type={source_type}, source_id={source_id}, product_id={product_id}"},
+            )
+        is_inbound = original.quantity > 0
         sign = Decimal("-1") if is_inbound else Decimal("1")
         move = models.StockMove(
             product_id=product_id,
@@ -279,6 +287,7 @@ class InventoryEngine:
             total_cost=rev_cost,
             source_type=rev_source_type,
             source_id=actual_sid,
+            ref_source_id=source_id if source_id_override is not None else None,
             move_date=self._get_move_date(source_type, source_id),
         )
         self.db.add(move)

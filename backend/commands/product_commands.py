@@ -267,14 +267,16 @@ class AdjustInventoryHandler(CommandHandler):
                 from datetime import date
                 journal_date = cmd.adjust_date if cmd.adjust_date else date.today().isoformat()
                 if delta < 0:
+                    # 修复 #8：盘亏先挂 1901 待处理财产损溢，查明原因后再转入费用
                     lines = [
-                        {"account_code": "6601", "debit": value, "credit": Decimal("0")},
+                        {"account_code": "1901", "debit": value, "credit": Decimal("0")},
                         {"account_code": "1405", "debit": Decimal("0"), "credit": value},
                     ]
                 else:
+                    # 修复 #8：盘盈先挂 1901 待处理财产损溢，查明原因后再转入收入
                     lines = [
                         {"account_code": "1405", "debit": value, "credit": Decimal("0")},
-                        {"account_code": "6601", "debit": Decimal("0"), "credit": value},
+                        {"account_code": "1901", "debit": Decimal("0"), "credit": value},
                     ]
                 post_journal(db, cmd.account_id, "opening_balance", {
                     "date": journal_date,

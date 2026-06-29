@@ -311,6 +311,7 @@ class StockMove(Base):
     total_cost = Column(Numeric(14, 2), default=Decimal('0'), comment="行总金额")
     source_type = Column(String(50), nullable=False, comment="来源类型: purchase_order/sale_order/adjustment/reversal")
     source_id = Column(Integer, nullable=False, comment="来源单据ID")
+    ref_source_id = Column(Integer, nullable=True, index=True, comment="原始单据ID（部分退货时记录原销售/采购单ID，用于关联）")
     move_date = Column(DateTime, nullable=True, comment="业务日期（取自源单据）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 

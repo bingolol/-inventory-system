@@ -164,7 +164,8 @@ class TestRecordDisposal:
         """报废（处置价格=0）→ 借:6711 营业外支出"""
         asset = _create_asset(db, accumulated_depreciation=Decimal("100000"))
         eng = FixedAssetEngine(db, account_id=1)
-        eng.record_disposal(asset.id, disposal_price=Decimal("0"))
+        eng.record_disposal(asset.id, disposal_price=Decimal("0"),
+                            disposal_date=date(2025, 6, 30))
         db.refresh(asset)
         assert asset.status == "报废"
 
@@ -174,7 +175,8 @@ class TestRecordDisposal:
                               asset_code="FA-PROFIT")
         # 净值 = 120000 - 100000 = 20000，卖 30000，赚 10000
         eng = FixedAssetEngine(db, account_id=1)
-        eng.record_disposal(asset.id, disposal_price=Decimal("30000"))
+        eng.record_disposal(asset.id, disposal_price=Decimal("30000"),
+                            disposal_date=date(2025, 6, 30))
         db.refresh(asset)
         assert asset.status == "报废"
 
@@ -184,7 +186,8 @@ class TestRecordDisposal:
                               asset_code="FA-LOSS")
         # 净值 = 20000，卖 5000，亏 15000
         eng = FixedAssetEngine(db, account_id=1)
-        eng.record_disposal(asset.id, disposal_price=Decimal("5000"))
+        eng.record_disposal(asset.id, disposal_price=Decimal("5000"),
+                            disposal_date=date(2025, 6, 30))
         db.refresh(asset)
         assert asset.status == "报废"
 
@@ -194,6 +197,7 @@ class TestRecordDisposal:
                               asset_code="FA-BREAK")
         # 净值 = 20000，卖 20000，不赚不亏
         eng = FixedAssetEngine(db, account_id=1)
-        eng.record_disposal(asset.id, disposal_price=Decimal("20000"))
+        eng.record_disposal(asset.id, disposal_price=Decimal("20000"),
+                            disposal_date=date(2025, 6, 30))
         db.refresh(asset)
         assert asset.status == "报废"

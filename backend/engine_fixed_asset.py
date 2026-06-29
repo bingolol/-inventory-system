@@ -160,7 +160,15 @@ class FixedAssetEngine:
         disposal_price = Decimal(str(disposal_price))
         diff = disposal_price - net_value
 
-        disposal_date = disposal_date or date.today()
+        # 修复 #7：强制要求 disposal_date，避免跨月补录时凭证日期为 today
+        # 原代码 disposal_date or date.today() 导致跨月处置时 BS 不平。
+        # 与 sale_date/return_date 一致，要求显式传入业务日期。
+        if disposal_date is None:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="处置日期不能为空，请提供业务发生日期",
+                ai_instruction="STOP_RETRYING. disposal_date 必填，请提供处置业务日期（如 2025-06-28）。"
+            )
         source = {
             "original_value": original,
             "accumulated_depreciation": accumulated,

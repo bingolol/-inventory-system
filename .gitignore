@@ -94,3 +94,5 @@ nul
 
 # Backend legacy test dir (use root tests/ instead)
 backend/tests/
+# WorkBuddy workspace data (memory, sessions, skills)
+.workbuddy/

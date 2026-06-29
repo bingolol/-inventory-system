@@ -135,7 +135,7 @@ def batch_depreciate_fixed_assets(
 def dispose_fixed_asset(
     asset_id: int,
     disposal_price: Decimal = Query(Decimal("0"), description="处置价格"),
-    disposal_date: Optional[str] = Query(None, description="处置业务日期 YYYY-MM-DD（不传则用今天）"),
+    disposal_date: str = Query(..., description="处置业务日期 YYYY-MM-DD（必填）"),
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),

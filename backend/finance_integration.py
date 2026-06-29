@@ -37,6 +37,7 @@ CHART_OF_ACCOUNTS = [
     ("1602", "累计折旧", "asset_contra"),
     ("1701", "无形资产", "asset"),
     ("1702", "累计摊销", "asset_contra"),
+    ("1901", "待处理财产损溢", "asset"),  # 盘盈盘亏中转科目（修复 #8）
     # 负债类
     ("2001", "短期借款", "liability"),
     ("2202", "应付账款", "liability_payable"),
