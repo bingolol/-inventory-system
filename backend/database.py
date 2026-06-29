@@ -314,9 +314,11 @@ def _sync_bank_account_balance_from_ledger():
 
             updated = 0
             for r in rows:
-                bank_account_id = r[0]
-                ledger_balance = Decimal(str(r[2] or 0)).quantize(Decimal("0.01"))
-                current_balance = Decimal(str(r[3] or 0)).quantize(Decimal("0.01"))
+                bank_account_id = r._mapping["bank_account_id"]
+                # 注意 SQL 里列顺序：bank_account_id, account_id, bank_name, ledger_balance, current_balance
+                # 不能用 r[2]——那是 bank_name 字符串，会抛 decimal.ConversionSyntax
+                ledger_balance = Decimal(str(r._mapping["ledger_balance"] or 0)).quantize(Decimal("0.01"))
+                current_balance = Decimal(str(r._mapping["current_balance"] or 0)).quantize(Decimal("0.01"))
                 if ledger_balance != current_balance:
                     conn.execute(text(
                         "UPDATE bank_accounts SET balance = :bal WHERE id = :id"

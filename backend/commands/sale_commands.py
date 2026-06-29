@@ -1,10 +1,11 @@
-"""销售单 Command + Handler — 6个命令覆盖销售单全部业务操作
+"""销售单 Command + Handler — 7个命令覆盖销售单全部业务操作
 
 v7 改造后：移除项目模块
   所有销售单均为零售型，deduct_inventory=True
   不再关联项目、不再创建项目收入
 """
 
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,15 +16,13 @@ import models
 from enums import OrderStatus, OrderType, PaymentStatus
 from events import emit
 from domain.sale_order import SaleOrderDomain
-from domain.inventory import InventoryDomain
 
 from .base import Command, CommandHandler, register
-from crud.base import _generate_order_no, _log, get_or_create_inventory
+from crud.base import _generate_order_no, _log
 from crud.products import get_product
 from crud.orders import get_sale_order, _d, _distribute_total_price
 from crud.reversal import reverse_receipts
 from errors import BusinessError, ErrorCode
-from crud.inventory_ops import sale_deduct
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
@@ -215,6 +214,144 @@ class CancelSaleOrderHandler(CommandHandler):
 
 
 # ═══════════════════════════════════════════════════════════
+# 2b. ReturnSaleOrder — 销售退货（部分冲红，保留原单）
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ReturnSaleOrder(Command):
+    order_id: int = 0
+    return_date: str = ""
+    reason: str = ""
+    items: List[dict] = field(default_factory=list)  # [{product_id, quantity}]
+
+
+@register(ReturnSaleOrder)
+class ReturnSaleOrderHandler(CommandHandler):
+    def handle(self, cmd: ReturnSaleOrder, db: Any) -> Any:
+        from finance_integration import post_journal
+        # StockMove 定义在 models.py（库存真相源），不在 models_finance.py
+        StockMove = models.StockMove
+
+        order = get_sale_order(db, cmd.account_id, cmd.order_id)
+        if not order:
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND,
+                                data={"order_type": "销售单", "order_id": cmd.order_id})
+        if order.status != OrderStatus.COMPLETED:
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE,
+                                data={"status": order.status, "action": "退货"})
+
+        if not cmd.return_date:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message="退货日期不能为空，请提供业务发生日期",
+                                ai_instruction="STOP_RETRYING. return_date 字段必填。")
+        if not cmd.items:
+            raise BusinessError(code=ErrorCode.ORDER_EMPTY_ITEMS,
+                                data={"order_type": "销售退货单"})
+
+        # 1. 校验退货数量不超原销售数量
+        original_qty_map = {item.product_id: item.quantity for item in order.items}
+        for ret in cmd.items:
+            pid = ret['product_id']
+            if pid not in original_qty_map:
+                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND,
+                                    data={"product_id": pid, "details": "商品不在原销售单中"})
+            if ret['quantity'] > original_qty_map[pid]:
+                raise BusinessError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=f"退货数量 {ret['quantity']} 超过原销售数量 {original_qty_map[pid]}",
+                    ai_instruction=f"STOP_RETRYING. 商品 ID={pid} 原销售 {original_qty_map[pid]} 件，退货不能超过此数量。"
+                )
+
+        # 2. 获取账本配置
+        account = db.query(models.Account).filter(models.Account.id == cmd.account_id).first()
+        taxpayer_type = account.taxpayer_type if account else "general"
+
+        # 3. 库存回补 + 按行计算退货金额
+        total_with_tax_ret = Decimal("0")
+        total_without_tax_ret = Decimal("0")
+        tax_amount_ret = Decimal("0")
+        cost_return = Decimal("0")
+        eng = InventoryEngine(db)
+        return_id = int(time.time() * 1000)  # 部分退货唯一标识，支持多次部分退货
+
+        for ret in cmd.items:
+            pid = ret['product_id']
+            qty_ret = Decimal(str(ret['quantity']))
+            # 找到原销售明细
+            orig_item = next((it for it in order.items if it.product_id == pid), None)
+            if not orig_item:
+                continue
+
+            # 3a. 库存回补（InventoryEngine.reverse 自动从原 StockMove 取 unit_cost）
+            product = db.query(models.Product).filter(
+                models.Product.id == pid,
+                models.Product.account_id == cmd.account_id,
+            ).first()
+            if product and product.track_inventory:
+                eng.reverse(
+                    account_id=cmd.account_id,
+                    product_id=pid,
+                    quantity=int(qty_ret),
+                    unit_cost=Decimal("0"),  # 自动从原 StockMove 取
+                    source_type="sale_order",
+                    source_id=order.id,
+                    operator=cmd.operator,
+                    source_id_override=return_id,  # 避免与整单冲销的幂等冲突
+                )
+                # 取 unit_cost 计算成本冲红
+                move = db.query(StockMove).filter(
+                    StockMove.source_type == "sale_order",
+                    StockMove.source_id == order.id,
+                    StockMove.product_id == pid,
+                ).first()
+                unit_cost = move.unit_cost if move and move.unit_cost else Decimal("0")
+                cost_return += (qty_ret * unit_cost).quantize(Q2)
+
+            # 3b. 收入/税额按比例计算
+            line_total = Decimal(str(orig_item.total_price))
+            ratio = qty_ret / Decimal(str(orig_item.quantity))
+            revenue_ret = (line_total * ratio).quantize(Q2)
+
+            # 税额：小规模纳税人按账本税率，一般纳税人按行税率
+            rate = orig_item.tax_rate
+            if taxpayer_type == "small_scale" and rate and rate > 0:
+                # 小规模实际征收率
+                rate = Decimal("0.01")  # 小规模 1% 征收率
+            tax_ret = (revenue_ret * Decimal(str(rate))).quantize(Q2) if rate else Decimal("0")
+
+            total_without_tax_ret += revenue_ret
+            tax_amount_ret += tax_ret
+            total_with_tax_ret += (revenue_ret + tax_ret).quantize(Q2)
+
+        total_with_tax_ret = total_with_tax_ret.quantize(Q2)
+        total_without_tax_ret = total_without_tax_ret.quantize(Q2)
+        tax_amount_ret = tax_amount_ret.quantize(Q2)
+        cost_return = cost_return.quantize(Q2)
+
+        # 4. 过账部分冲红凭证（return_id 已在上方生成，作 source_id 避免幂等冲突，支持多次部分退货）
+        post_journal(db, cmd.account_id, "sale_return", {
+            "partner_id": order.customer_id or 0,
+            "total_with_tax": total_with_tax_ret,
+            "total_without_tax": total_without_tax_ret,
+            "tax_amount": tax_amount_ret,
+            "cost_return": cost_return,
+            "taxpayer_type": taxpayer_type,
+            "source_model": "sale_return",
+            "source_id": return_id,
+            "date": cmd.return_date,
+        })
+
+        # 5. 事件 + 日志
+        emit("sale_order.returned", db=db, account_id=cmd.account_id, order=order,
+             operator=cmd.operator, return_amount=total_with_tax_ret)
+        _log(db, cmd.account_id, "return", "sale_order", cmd.order_id,
+             f"销售退货 {order.order_no}: 退货金额={total_with_tax_ret}, 原因={cmd.reason or '未提供'}",
+             operator=cmd.operator)
+        db.flush()
+        return order
+
+
+# ═══════════════════════════════════════════════════════════
 # 3. RestoreSaleOrder — 恢复销售单（取消→完成）
 # ═══════════════════════════════════════════════════════════
 
@@ -243,8 +380,26 @@ class RestoreSaleOrderHandler(CommandHandler):
         domain.transition_to(OrderStatus.COMPLETED)
         order.status = domain.status
 
-        # 显式联动：扣库存
-        sale_deduct(db, cmd.account_id, order, operator=cmd.operator)
+        # 显式联动：InventoryEngine 出库 + 生成会计凭证（BR-7/BR-8）
+        # 使用 force_outbound 跳过幂等（source_id 复用原单，cancel 时已有出库流水）
+        # record_sale(force=True) 同理跳过幂等，重建销售凭证
+        # 弃用 sale_deduct（直接改 inv.quantity，不写 StockMove，违背 BR-7）
+        eng = InventoryEngine(db)
+        for item in order.items:
+            product = get_product(db, cmd.account_id, item.product_id)
+            if product.track_inventory:
+                unit_cost = eng.force_outbound(
+                    account_id=cmd.account_id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    source_type="sale_order",
+                    source_id=order.id,
+                    operator=cmd.operator,
+                )
+                item.set_calculated_cost(unit_cost)
+            else:
+                item.set_calculated_cost(Decimal("0"))
+        FinanceEngine(db, cmd.account_id).record_sale(order, force=True)
 
         # 事件（仅日志）
         emit("sale_order.restored", db=db, account_id=cmd.account_id, order=order,
@@ -340,26 +495,37 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
 
         old_status = order.status
 
-        # 记录旧行数据
+        # 记录旧行数据（含 unit_cost，用于红冲）
         old_items = [
-            {'product_id': item.product_id, 'quantity': item.quantity}
+            {'product_id': item.product_id, 'quantity': item.quantity,
+             'unit_cost': Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0')}
             for item in order.items
         ]
+
+        # 旧行冲红：InventoryEngine 红冲 + FinanceEngine 冲红凭证（BR-7/BR-8）
+        # force=True：跳过幂等检查 + 取最近正向流水/凭证，支持反复更新
+        if old_status == OrderStatus.COMPLETED:
+            eng = InventoryEngine(db)
+            for item_data in old_items:
+                eng.reverse(
+                    account_id=cmd.account_id,
+                    product_id=item_data['product_id'],
+                    quantity=item_data['quantity'],
+                    unit_cost=item_data['unit_cost'],
+                    source_type="sale_order",
+                    source_id=order.id,
+                    operator=cmd.operator,
+                    force=True,
+                )
+            FinanceEngine(db, cmd.account_id).reverse_sale(order.id, force=True)
 
         # 删除旧行
         for item in order.items[:]:
             db.delete(item)
         db.flush()
 
-        # 新 items 为空 → 删除整个销售单
+        # 新 items 为空 → 删除整个销售单（旧行已在上文冲红）
         if len(cmd.items) == 0:
-            if old_status == OrderStatus.COMPLETED:
-                for item_data in old_items:
-                    inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
-                    violations = InventoryDomain.from_orm(inv).validate()
-                    if violations:
-                        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存数据校验失败: {'; '.join(violations)}"})
-                    inv.quantity += item_data['quantity']
             _log(db, cmd.account_id, "delete", "sale_order", cmd.order_id,
                  f"删除销售单 {order.order_no}（商品行数归零自动删除）", operator=cmd.operator)
             db.delete(order)
@@ -402,16 +568,26 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
 
         db.flush()
 
-        # 显式联动：旧行回补 + 新行扣减
-        if old_status == OrderStatus.COMPLETED:
-            for item_data in old_items:
-                inv = get_or_create_inventory(db, cmd.account_id, item_data['product_id'])
-                violations = InventoryDomain.from_orm(inv).validate()
-                if violations:
-                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"库存数据校验失败: {'; '.join(violations)}"})
-                inv.quantity += item_data['quantity']
+        # 新行扣减：InventoryEngine 出库 + 生成会计凭证（BR-7/BR-8）
+        # 旧行已在删除前通过 InventoryEngine.reverse + reverse_sale 冲红
+        # 新行使用 force_outbound 跳过幂等（source_id 复用原单），record_sale 同理
         if order.status == OrderStatus.COMPLETED:
-            sale_deduct(db, cmd.account_id, order, operator=cmd.operator)
+            eng = InventoryEngine(db)
+            for item in order.items:
+                product = get_product(db, cmd.account_id, item.product_id)
+                if product.track_inventory:
+                    unit_cost = eng.force_outbound(
+                        account_id=cmd.account_id,
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        source_type="sale_order",
+                        source_id=order.id,
+                        operator=cmd.operator,
+                    )
+                    item.set_calculated_cost(unit_cost)
+                else:
+                    item.set_calculated_cost(Decimal("0"))
+            FinanceEngine(db, cmd.account_id).record_sale(order, force=True)
 
         # 事件（仅日志）
         emit("sale_order.items_updated", db=db, account_id=cmd.account_id, order=order,

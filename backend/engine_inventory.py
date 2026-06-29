@@ -45,7 +45,8 @@ class InventoryEngine:
                 unit_price: Decimal, source_type: str, source_id: int,
                 tax_rate: Decimal = None,
                 operator: str = "user",
-                move_date: datetime = None) -> dict:
+                move_date: datetime = None,
+                force: bool = False) -> dict:
         """采购入库/调整入库
 
         unit_price 是不含税单价（API 约定）。
@@ -87,7 +88,7 @@ class InventoryEngine:
             models.StockMove.source_id == source_id,
             models.StockMove.product_id == product_id,
         ).first()
-        if existing:
+        if existing and not force:
             return {"product_id": product_id, "quantity": quantity,
                     "total_cost": total_cost, "tax_amount": tax_amount,
                     "total_amount": total_amount}
@@ -206,33 +207,63 @@ class InventoryEngine:
         return self._record_outbound(account_id, product_id, quantity,
                                      source_type, source_id, operator)
 
+    def force_inbound(self, account_id: int, product_id: int, quantity: int,
+                      unit_price: Decimal, source_type: str, source_id: int,
+                      tax_rate: Decimal = None,
+                      operator: str = "user",
+                      move_date: datetime = None) -> dict:
+        """强制入库（跳过幂等检查），用于订单恢复/明细全量替换后重建库存流水
+
+        与 force_outbound 对称：当同一 source_id 已有入库流水（如订单被取消后恢复、
+        明细全量替换后重建）时，普通 inbound 会因幂等直接返回而不写新流水，
+        导致库存与实际业务脱节。此方法跳过幂等检查，始终写入新的 StockMove。
+        """
+        return self.inbound(account_id, product_id, quantity, unit_price,
+                            source_type, source_id, tax_rate=tax_rate,
+                            operator=operator, move_date=move_date, force=True)
+
     def reverse(self, account_id: int, product_id: int, quantity: int,
                 unit_cost: Decimal, source_type: str, source_id: int,
-                operator: str = "user") -> None:
-        """红冲库存移动（用于取消订单）
+                operator: str = "user",
+                source_id_override: Optional[int] = None,
+                force: bool = False) -> None:
+        """红冲库存移动（用于取消订单 / 部分退货 / 明细更新冲红）
 
         写一条方向相反的 StockMove，更新缓存。
+
+        - 整单取消：不传 source_id_override，使用 (source_type_reversal, source_id) 做幂等检查
+        - 部分退货：传 source_id_override=return_id（纳秒时间戳），
+          StockMove.source_id 字段使用 return_id 避免与整单冲销的幂等冲突；
+          但 _get_move_date 仍用原 source_id 取业务日期，确保 StockMove.move_date 与原单日期一致。
+        - 明细更新冲红：传 force=True 跳过幂等检查，并取最近一次正向流水作为冲红基准
+          （同一 source_id 经过"冲红+重建"后会有多条正向流水，需冲红最近一条而非最早一条）。
         """
         product = self._get_product(account_id, product_id)
         if not product.track_inventory:
             return
 
         rev_source_type = f"{source_type}_reversal"
+        actual_sid = source_id_override if source_id_override is not None else source_id
         existing = self.db.query(models.StockMove).filter(
             models.StockMove.source_type == rev_source_type,
-            models.StockMove.source_id == source_id,
+            models.StockMove.source_id == actual_sid,
             models.StockMove.product_id == product_id,
         ).first()
-        if existing:
+        if existing and not force:
             return
 
         # 自动从原始 StockMove 获取正确成本（处理价税分离后的差异）
         # 同时判断原始方向：正数=入库(采购)，负数=出库(销售)
-        original = self.db.query(models.StockMove).filter(
+        # force 模式下取最近一条正向流水（"冲红+重建"后有多条，需冲红最近一条）
+        orig_query = self.db.query(models.StockMove).filter(
             models.StockMove.source_type == source_type,
             models.StockMove.source_id == source_id,
             models.StockMove.product_id == product_id,
-        ).first()
+        )
+        if force:
+            original = orig_query.order_by(models.StockMove.id.desc()).first()
+        else:
+            original = orig_query.first()
         effective_unit_cost = original.unit_cost if original else Decimal(str(unit_cost))
         rev_qty = Decimal(str(quantity))
         rev_cost = (rev_qty * effective_unit_cost).quantize(Q2)
@@ -247,7 +278,7 @@ class InventoryEngine:
             unit_cost=effective_unit_cost,
             total_cost=rev_cost,
             source_type=rev_source_type,
-            source_id=source_id,
+            source_id=actual_sid,
             move_date=self._get_move_date(source_type, source_id),
         )
         self.db.add(move)

@@ -135,14 +135,24 @@ def batch_depreciate_fixed_assets(
 def dispose_fixed_asset(
     asset_id: int,
     disposal_price: Decimal = Query(Decimal("0"), description="处置价格"),
+    disposal_date: Optional[str] = Query(None, description="处置业务日期 YYYY-MM-DD（不传则用今天）"),
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),
 ):
     """处置（报废/出售）固定资产"""
+    from datetime import datetime as _dt
+    parsed_date = None
+    if disposal_date:
+        try:
+            # date 类没有 strptime，必须用 datetime.strptime 再 .date()
+            parsed_date = _dt.strptime(disposal_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message=f"disposal_date 格式错误: {disposal_date}，应为 YYYY-MM-DD")
     with unit_of_work(db):
         eng = FixedAssetEngine(db, account_id)
-        eng.record_disposal(asset_id, disposal_price)
+        eng.record_disposal(asset_id, disposal_price, disposal_date=parsed_date)
     return {"message": "固定资产已处置"}
 
 

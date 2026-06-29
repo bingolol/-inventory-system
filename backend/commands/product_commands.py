@@ -176,6 +176,9 @@ class AdjustInventory(Command):
     quantity: float = 0.0
     adjust_date: Optional[str] = None
     reason: Optional[str] = None  # 报损原因（减少库存时必填）
+    # 盘盈入库时若商品无 average_cost 且无 purchase_price，必须显式提供 unit_cost
+    # 否则零成本入库会污染 StockMove.total_cost 和后续 COGS
+    unit_cost: Optional[float] = None
 
 
 @register(AdjustInventory)
@@ -211,7 +214,33 @@ class AdjustInventoryHandler(CommandHandler):
         if delta != 0 and product and product.track_inventory:
             adj_id = int(time.time() * 1000)
             engine = InventoryEngine(db)
-            unit_cost = inv.average_cost if inv.average_cost and inv.average_cost > 0 else Decimal(str(product.purchase_price or 0))
+            # 优先级：显式 unit_cost（盘盈估值）> average_cost（已有库存）> purchase_price（兜底）
+            # 修复：原代码兜底到 purchase_price=0 时会零成本入库，污染 StockMove.total_cost
+            # 和后续 COGS。现拦截实物商品盘盈入库零成本场景。
+            if cmd.unit_cost is not None and cmd.unit_cost > 0:
+                unit_cost = Decimal(str(cmd.unit_cost))
+            elif inv.average_cost and inv.average_cost > 0:
+                unit_cost = inv.average_cost
+            else:
+                unit_cost = Decimal(str(product.purchase_price or 0))
+
+            # 实物商品盘盈入库（delta>0）零成本拦截
+            # 服务类商品（track_inventory=False）不走此分支，不受影响
+            if delta > 0 and unit_cost <= Decimal("0"):
+                raise BusinessError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=(
+                        f"实物商品盘盈入库需要指定成本：商品 {product.name} 的 average_cost 和 purchase_price 均为 0。"
+                        f"请先通过采购单建立商品成本，或在 adjust-inventory 接口提供 unit_cost 参数。"
+                    ),
+                    ai_instruction=(
+                        "STOP_RETRYING. 实物商品盘盈入库需要非零成本。"
+                        "（1）先创建采购单建立商品成本；或"
+                        "（2）在 adjust-inventory 接口显式提供 unit_cost 参数。"
+                        "服务类商品请将 track_inventory 设为 False 后再调整。"
+                    ),
+                    data={"product_id": cmd.product_id, "product_name": product.name, "delta": float(delta)}
+                )
             move_date = None
             if cmd.adjust_date:
                 move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d")

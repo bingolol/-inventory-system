@@ -11,7 +11,7 @@ from commands.base import dispatch
 from commands.purchase_commands import (
     CreatePurchaseOrder, CancelPurchaseOrder,
     DeletePurchaseOrder, UpdatePurchaseOrderItems,
-    UpdatePurchaseOrderFields,
+    UpdatePurchaseOrderFields, ReturnPurchaseOrder,
 )
 from enums import OrderStatus, OrderType
 from operation_result import OperationResult, EntityType, OperationType
@@ -220,6 +220,48 @@ def cancel_purchase(
         entity_id=order.id,
         summary=f"采购单 {order.order_no} 已取消（冲红凭证+回退库存）",
         ai_hint="采购单已取消，关联凭证和库存已冲红/回退，记录保留以备审计。",
+        data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
+    )
+    return result.to_dict()
+
+
+@router.post("/{purchase_id}/return")
+def return_purchase(
+    purchase_id: int,
+    data: schemas.PurchaseReturnCreate,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """采购退货（部分冲红，保留原单状态）
+
+    支持多次部分退货：每次退货生成独立的冲红凭证 + 反向 StockMove。
+
+    - 库存：InventoryEngine.reverse 退回指定数量（自动取原采购 unit_cost）
+    - 凭证：按退货比例计算应付/库存/进项税额转出（move_type=purchase_return）
+    - 付款：不自动冲销（如需退款，调用 /api/payments/{id}/reverse）
+    """
+    items = [{"product_id": it.product_id, "quantity": it.quantity} for it in data.items]
+    with unit_of_work(db):
+        order = dispatch(ReturnPurchaseOrder(
+            account_id=account_id,
+            operator=operator,
+            order_id=purchase_id,
+            return_date=data.return_date,
+            reason=data.reason,
+            items=items,
+        ), db)
+
+    if not order:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单", "order_id": purchase_id})
+    db.refresh(order)
+
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.PURCHASE_ORDER,
+        entity_id=order.id,
+        summary=f"采购单 {order.order_no} 部分退货 {len(items)} 项",
+        ai_hint="采购退货已记账，原单状态保留。库存退回 + 应付冲减 + 进项税额转出已生成。",
         data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
     )
     return result.to_dict()

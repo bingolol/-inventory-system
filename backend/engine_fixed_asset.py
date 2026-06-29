@@ -127,7 +127,8 @@ class FixedAssetEngine:
                 results.append(dep)
         return results
 
-    def record_disposal(self, asset_id: int, disposal_price: Decimal = Decimal("0")) -> None:
+    def record_disposal(self, asset_id: int, disposal_price: Decimal = Decimal("0"),
+                        disposal_date: Optional[date] = None) -> None:
         """处置（报废/出售）固定资产
 
         1. 更新资产状态为"报废"
@@ -136,6 +137,9 @@ class FixedAssetEngine:
         处置价格 > 账面净值 → 资产处置收益（6111）
         处置价格 < 账面净值 → 营业外支出（6711）
         处置价格 = 账面净值 → 无损益
+
+        BR-22: disposal_date 默认用今天，但允许调用方传入业务日期，
+        避免 BS 按 cutoff 过滤时资产处置凭证被排除（与 reverse_journal 同类问题）。
         """
         asset = self.db.query(models.FixedAsset).filter(
             models.FixedAsset.id == asset_id,
@@ -156,7 +160,7 @@ class FixedAssetEngine:
         disposal_price = Decimal(str(disposal_price))
         diff = disposal_price - net_value
 
-        disposal_date = date.today()
+        disposal_date = disposal_date or date.today()
         source = {
             "original_value": original,
             "accumulated_depreciation": accumulated,

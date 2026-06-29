@@ -9,7 +9,7 @@ from .base import (
 )
 from .products import (
     list_products, get_product,
-    list_inventory, adjust_inventory, get_stock_alerts,
+    list_inventory, get_stock_alerts,
 )
 from .partners import (
     list_suppliers, get_supplier,

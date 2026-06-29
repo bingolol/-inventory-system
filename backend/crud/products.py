@@ -53,16 +53,6 @@ def list_inventory(db: Session, account_id: int, skip: int = 0, limit: int = 100
     return total, items
 
 
-def adjust_inventory(db: Session, account_id: int, product_id: int, data: schemas.InventoryAdjust, operator: str = "user"):
-    inv = get_or_create_inventory(db, account_id, product_id)
-    old_qty = inv.quantity
-    inv.quantity = data.quantity
-    from .base import _log
-    _log(db, account_id, "adjust", "inventory", product_id, f"库存盘点: {old_qty}->{data.quantity}", operator=operator)
-    db.flush()
-    return inv
-
-
 def get_stock_alerts(db: Session, account_id: int):
     return db.query(models.Inventory).join(models.Product).filter(
         models.Inventory.account_id == account_id,

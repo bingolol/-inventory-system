@@ -20,6 +20,7 @@ from .order import (
     SaleItemCreate, SaleItemOut,
     SaleOrderCreate, SaleOrderUpdate, SaleOrderOut,
     InventoryOut, InventoryAdjust,
+    ReturnItemCreate, SaleReturnCreate, PurchaseReturnCreate,
 )
 
 from .invoice import (
@@ -65,6 +66,7 @@ __all__ = [
     "SaleItemCreate", "SaleItemOut",
     "SaleOrderCreate", "SaleOrderUpdate", "SaleOrderOut",
     "InventoryOut", "InventoryAdjust",
+    "ReturnItemCreate", "SaleReturnCreate", "PurchaseReturnCreate",
     # invoice
     "InvoiceBase", "InvoiceCreate", "InvoiceUpdate", "InvoiceOut",
     "InvoiceQuickCreate", "InvoiceList", "InvoiceWithFixedAssetCreate",

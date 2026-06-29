@@ -128,15 +128,17 @@ def post_journal(
     account_id: int,
     move_type: str,
     source: dict,
+    force: bool = False,
 ) -> AccountMove:
     """过账（带重复过账防御）
 
     若相同 source_model + source_id 且非冲红的凭证已存在，直接返回旧凭证。
+    force=True 时跳过此防御，用于冲红后重建凭证（如订单明细更新、状态恢复）。
     会计错误转为 BusinessError 保证事务回滚。
     """
     sm = source.get("source_model")
     si = source.get("source_id")
-    if sm and si is not None:
+    if sm and si is not None and not force:
         existing = db.query(AccountMove).filter(
             AccountMove.source_model == sm,
             AccountMove.source_id == si,
@@ -163,35 +165,47 @@ def reverse_journal(
     source_model: str,
     source_id: int,
     reversal_date: Optional[date] = None,
+    force: bool = False,
 ) -> Optional[AccountMove]:
     """冲红原凭证（带幂等防御）
 
     查找相同 source_model + source_id 的原凭证，借贷互换生成冲红凭证。
     已冲红过 → 返回 None；无原凭证 → 返回 None。
+
+    force=True 时跳过幂等检查，并取最近一条 is_reversal=False 的凭证作为冲红基准
+    （用于"冲红+重建"反复执行的场景：同一 source_id 有多条正向凭证，需冲红最近一条）。
     """
     existing_reversal = db.query(AccountMove).filter(
         AccountMove.source_model == source_model,
         AccountMove.source_id == source_id,
         AccountMove.is_reversal == True,
     ).first()
-    if existing_reversal:
+    if existing_reversal and not force:
         return None
 
-    original = db.query(AccountMove).filter(
+    orig_query = db.query(AccountMove).filter(
         AccountMove.source_model == source_model,
         AccountMove.source_id == source_id,
         AccountMove.is_reversal == False,
-    ).first()
+    )
+    if force:
+        original = orig_query.order_by(AccountMove.id.desc()).first()
+    else:
+        original = orig_query.first()
     if not original:
         return None
 
     engine = JournalEngine(db)
 
+    # BR-22: 默认用原凭证日期作为冲红日期，与 InventoryEngine.reverse 的 StockMove
+    # 反向流水 move_date（也是从原单据取业务日期）保持一致。否则 BS 报表按 cutoff
+    # 过滤时，StockMove 反向流水会进表但 AccountMove 反向凭证不会进表，
+    # 造成"库存值包含冲回、利润不含冲回"的资产与权益错配（典型 diff=40000 不平）。
     reversal = AccountMove(
         ledger_id=original.ledger_id,
         name=f"冲红-{original.name}",
         move_type=original.move_type,
-        date=reversal_date or date.today(),
+        date=reversal_date or original.date,
         state="posted",
         source_model=source_model,
         source_id=source_id,

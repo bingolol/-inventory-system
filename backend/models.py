@@ -7,7 +7,7 @@ from enums import OrderStatus, PaymentStatus, PaymentMethod, CertificationStatus
 
 
 # 用户表：支持登录认证
-class User(Base, JSON):
+class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)

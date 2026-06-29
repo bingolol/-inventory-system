@@ -11,7 +11,7 @@ from commands.base import dispatch
 from commands.sale_commands import (
     CreateSaleOrder, CancelSaleOrder, RestoreSaleOrder,
     DeleteSaleOrder, UpdateSaleOrderItems,
-    UpdateSaleOrderFields,
+    UpdateSaleOrderFields, ReturnSaleOrder,
 )
 from crud.invoice_linkage import has_invoice as linkage_has_invoice, bulk_has_invoice
 from enums import OrderStatus, OrderType
@@ -220,6 +220,49 @@ def cancel_sale(
         entity_id=order.id,
         summary=f"销售单 {order.order_no} 已取消（冲红凭证+回退库存）",
         ai_hint="销售单已取消，关联凭证和库存已冲红/回退，记录保留以备审计。",
+        data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
+    )
+    return result.to_dict()
+
+
+@router.post("/{sale_id}/return")
+def return_sale(
+    sale_id: int,
+    data: schemas.SaleReturnCreate,
+    account_id: int = Depends(get_account_id),
+    operator: str = Depends(get_operator),
+    db: Session = Depends(get_db),
+):
+    """销售退货（部分冲红，保留原单状态）
+
+    支持多次部分退货：每次退货生成独立的冲红凭证 + 反向 StockMove，
+    使用纳秒时间戳作 source_id 避免幂等冲突。
+
+    - 库存：InventoryEngine.reverse 回补指定数量（自动取原销售 unit_cost）
+    - 凭证：按退货比例计算收入/税额/成本冲红（move_type=sale_return）
+    - 收款：不自动冲销（如需退款，调用 /api/receipts/{id}/reverse）
+    """
+    items = [{"product_id": it.product_id, "quantity": it.quantity} for it in data.items]
+    with unit_of_work(db):
+        order = dispatch(ReturnSaleOrder(
+            account_id=account_id,
+            operator=operator,
+            order_id=sale_id,
+            return_date=data.return_date,
+            reason=data.reason,
+            items=items,
+        ), db)
+
+    if not order:
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
+    db.refresh(order)
+
+    result = OperationResult(
+        operation=OperationType.UPDATE,
+        entity_type=EntityType.SALE_ORDER,
+        entity_id=order.id,
+        summary=f"销售单 {order.order_no} 部分退货 {len(items)} 项",
+        ai_hint="销售退货已记账，原单状态保留。库存回补 + 收入/成本冲红已生成。",
         data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
     )
     return result.to_dict()

@@ -75,9 +75,11 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/purchases",           "创建采购单（自动入库）", params_hint="supplier_id,items[]"),
     Capability("PUT",    "/api/purchases/{id}",      "更新采购单（含付款状态）"),
     Capability("POST",   "/api/purchases/{id}/cancel", "取消采购单（冲红凭证+回退库存，保留审计轨迹）"),
+    Capability("POST",   "/api/purchases/{id}/return", "采购退货（部分冲红+库存退回，支持多次部分退货）", params_hint="return_date,reason,items[{product_id,quantity}]"),
     Capability("POST",   "/api/sales",               "创建销售单（自动扣库存）", params_hint="customer_id,items[],deduct_inventory"),
     Capability("PUT",    "/api/sales/{id}",          "更新销售单（含付款状态）"),
     Capability("POST",   "/api/sales/{id}/cancel",   "取消销售单（冲红凭证+回退库存，保留审计轨迹）"),
+    Capability("POST",   "/api/sales/{id}/return",   "销售退货（部分冲红+库存回补，支持多次部分退货）", params_hint="return_date,reason,items[{product_id,quantity}]"),
     # ── 发票（创建对 AI 只走 /quick，变体已合并）──
     Capability(
         "POST", "/api/invoices/quick", "AI 快捷录发票（规范入口，支持 fixed_asset 嵌套对象）",

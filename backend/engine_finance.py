@@ -48,7 +48,8 @@ class FinanceEngine:
             "vat_rate": self._vat_rate(self.account),
         }
 
-    def record_purchase(self, order, calculated_data: List[dict] = None) -> None:
+    def record_purchase(self, order, calculated_data: List[dict] = None,
+                        force: bool = False) -> None:
         if calculated_data is not None:
             total_with_tax = Decimal(sum(Decimal(str(i["total_amount"])) for i in calculated_data)).quantize(Q2)
             total_without_tax = Decimal(sum(Decimal(str(i["total_cost"])) for i in calculated_data)).quantize(Q2)
@@ -74,9 +75,9 @@ class FinanceEngine:
             "date": order.purchase_date,
             "account_config": self._account_config(),
         }
-        post_journal(self.db, self.account_id, "purchase_order", source)
+        post_journal(self.db, self.account_id, "purchase_order", source, force=force)
 
-    def record_sale(self, order) -> None:
+    def record_sale(self, order, force: bool = False) -> None:
         is_small_scale = self.account and self.account.taxpayer_type == "small_scale"
         total_without_tax = Decimal('0')
         tax_amount = Decimal('0')
@@ -109,12 +110,12 @@ class FinanceEngine:
             "date": order.sale_date,
             "account_config": self._account_config(),
         }
-        post_journal(self.db, self.account_id, "sale_order", source)
+        post_journal(self.db, self.account_id, "sale_order", source, force=force)
 
-    def reverse_purchase(self, order_id: int) -> None:
+    def reverse_purchase(self, order_id: int, force: bool = False) -> None:
         """冲红采购凭证"""
-        reverse_journal(self.db, self.account_id, "purchase_order", order_id)
+        reverse_journal(self.db, self.account_id, "purchase_order", order_id, force=force)
 
-    def reverse_sale(self, order_id: int) -> None:
+    def reverse_sale(self, order_id: int, force: bool = False) -> None:
         """冲红销售凭证"""
-        reverse_journal(self.db, self.account_id, "sale_order", order_id)
+        reverse_journal(self.db, self.account_id, "sale_order", order_id, force=force)

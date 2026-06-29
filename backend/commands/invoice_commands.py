@@ -683,10 +683,15 @@ class ReverseInvoiceHandler(CommandHandler):
 # ═══════════════════════════════════════════════════════════
 
 def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
-    """销项发票联动自动创建销售单：取发票金额，扣库存"""
+    """销项发票联动自动创建销售单：取发票金额，扣库存
+
+    使用 InventoryEngine.outbound() 创建 StockMove + set_calculated_cost 锁定成本（BR-7 合规），
+    弃用直接改 inv.quantity 的 sale_deduct。
+    """
     from crud.base import _generate_order_no, _log
     from enums import OrderStatus, OrderType, PaymentStatus
-    from crud.inventory_ops import sale_deduct
+    from engine_inventory import InventoryEngine
+    from crud.products import get_product
     from datetime import datetime as dt_mod
 
     issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
@@ -734,7 +739,23 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
         db.add(item)
 
     db.flush()
-    sale_deduct(db, account_id, order, operator=operator)
+
+    # 出库写 StockMove + 锁定 unit_cost 到 SaleItem（BR-7 合规）
+    eng = InventoryEngine(db)
+    for item in order.items:
+        product = get_product(db, account_id, item.product_id)
+        if product and product.track_inventory:
+            unit_cost = eng.outbound(
+                account_id=account_id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                source_type="sale_order",
+                source_id=order.id,
+                operator=operator,
+            )
+            item.set_calculated_cost(unit_cost)
+        else:
+            item.set_calculated_cost(Decimal("0"))
 
     # 生成会计凭证: dr 1122, cr 6001+222101 + dr 6401, cr 1405
     from engine_finance import FinanceEngine

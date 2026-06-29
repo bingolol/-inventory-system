@@ -200,8 +200,23 @@ class TaxAccrualEngine:
                 "lines": result_lines,
             }
 
-        income_tax_rate = Decimal("0.25") if taxpayer_type == "general" else Decimal("0.05")
-        target_tax = max(cumulative_profit * income_tax_rate, Decimal("0")).quantize(Q2)
+        # 调用 AccountingEngine.calculate_income_tax 计算所得税（与所得税报表同一真相源）
+        # 修复：原代码直接将 VAT 口径 taxpayer_type 映射为所得税率，绕过了小型微利企业的
+        # 利润门槛判断（≤300万 → 5%，>300万 → 25%），导致小规模+利润>300万少计提80%。
+        # 类型映射规则（与 routers/income_tax.py:142-143 一致）：
+        #   VAT small_scale → 所得税 small_micro
+        #   VAT general → 所得税 general
+        # 注：calculate_income_tax 内部已处理 entity_type=personal → 不计提、profit<0 → 0 的兜底
+        from accounting_engine import AccountingEngine
+        income_tax_type = "small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"
+        income_tax_result = AccountingEngine().calculate_income_tax(
+            profit=cumulative_profit,
+            taxpayer_type=income_tax_type,
+            entity_type=entity_type,
+        )
+        target_tax = income_tax_result.tax_payable
+        if income_tax_result.reduction_item:
+            result_lines.append(f"所得税减免说明: {income_tax_result.reduction_item}")
         posted_tax = _crd(self.db, ledger, "222105", close_dt)
         delta = target_tax - posted_tax
 

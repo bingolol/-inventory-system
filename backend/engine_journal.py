@@ -78,6 +78,8 @@ class JournalEngine:
             "fixed_asset_purchase":    self._build_fixed_asset_purchase,
             "opening_balance":         self._build_opening_balance,
             "cash_flow":               self._build_cash_flow,
+            "sale_return":             self._build_sale_return,
+            "purchase_return":         self._build_purchase_return,
             "tax_surcharge":           self._build_tax_surcharge,
             "tax_income":              self._build_tax_income,
             "tax_income_reversal":     self._build_tax_income_reversal,
@@ -370,6 +372,89 @@ class JournalEngine:
                 {"account_code": "1002", "debit": amt, "credit": Decimal("0")},
                 {"account_code": "6603", "debit": Decimal("0"), "credit": amt},
             ], "BNK", {"balance_check": True}
+
+    def _build_sale_return(self, source):
+        """销售退货部分冲红（与原 sale_order 借贷互换，按退货比例生成红字凭证）
+
+        原销售凭证：
+          借 1122 应收账款 (total_with_tax)
+          贷 6001 主营业务收入 (total_without_tax)
+          贷 222101/222103 销项税额 (tax_amount)
+          借 6401 主营业务成本 (cost)
+          贷 1405 库存商品 (cost)
+
+        退货冲红（借贷互换）：
+          借 6001 (revenue_return)        ← 冲减收入
+          借 222101/222103 (tax_return)   ← 冲减销项税
+          贷 1122 (total_with_tax_return) ← 冲减应收
+          借 1405 (cost_return)           ← 库存回补
+          贷 6401 (cost_return)           ← 冲减成本
+        """
+        self._check_required(source, ["partner_id", "total_with_tax",
+                                       "total_without_tax", "tax_amount",
+                                       "cost_return", "taxpayer_type"])
+
+        total_with_tax = Decimal(str(source["total_with_tax"]))
+        total_without_tax = Decimal(str(source["total_without_tax"]))
+        tax_amount = Decimal(str(source["tax_amount"]))
+        cost_return = Decimal(str(source["cost_return"]))
+        taxpayer_type = source.get("taxpayer_type", "general")
+        tax_code = "222103" if taxpayer_type == "small_scale" else "222101"
+
+        lines = [
+            # 冲减收入：借 6001
+            {"account_code": "6001", "debit": total_without_tax, "credit": Decimal("0")},
+            # 冲减销项税：借 222101/222103
+            {"account_code": tax_code, "debit": tax_amount, "credit": Decimal("0")},
+            # 冲减应收：贷 1122
+            {"account_code": "1122", "debit": Decimal("0"), "credit": total_with_tax,
+             "partner_id": source["partner_id"], "partner_type": "customer"},
+        ]
+        # 库存回补 + 冲减成本
+        if cost_return > 0:
+            lines.append({"account_code": "1405", "debit": cost_return, "credit": Decimal("0")})
+            lines.append({"account_code": "6401", "debit": Decimal("0"), "credit": cost_return})
+
+        return lines, "SRET", {"balance_check": True}
+
+    def _build_purchase_return(self, source):
+        """采购退货部分冲红（与原 purchase_order 借贷互换，按退货比例生成红字凭证）
+
+        原采购凭证（一般纳税人）：
+          借 1405 库存商品 (total_without_tax)
+          借 222102 进项税额 (tax_amount)
+          贷 2202 应付账款 (total_with_tax)
+
+        原采购凭证（小规模）：
+          借 1405 库存商品 (total_with_tax)  ← 价税合计进成本
+          贷 2202 应付账款 (total_with_tax)
+
+        退货冲红：
+          借 2202 (total_with_tax_return)   ← 冲减应付
+          贷 1405 (inventory_cost_return)    ← 库存退回
+          贷 222102 (tax_return)              ← 进项税额转出（仅一般纳税人）
+        """
+        self._check_required(source, ["partner_id", "total_with_tax",
+                                       "inventory_cost_return",
+                                       "enable_vat_deduction"])
+
+        total_with_tax = Decimal(str(source["total_with_tax"]))
+        inventory_cost_return = Decimal(str(source["inventory_cost_return"]))
+        enable_vat_deduction = source.get("enable_vat_deduction", True)
+        tax_return = Decimal(str(source.get("tax_return", "0")))
+
+        lines = [
+            # 冲减应付：借 2202
+            {"account_code": "2202", "debit": total_with_tax, "credit": Decimal("0"),
+             "partner_id": source["partner_id"], "partner_type": "supplier"},
+            # 库存退回：贷 1405
+            {"account_code": "1405", "debit": Decimal("0"), "credit": inventory_cost_return},
+        ]
+        # 进项税额转出（仅一般纳税人）
+        if enable_vat_deduction and tax_return > 0:
+            lines.append({"account_code": "222102", "debit": Decimal("0"), "credit": tax_return})
+
+        return lines, "PRET", {"balance_check": True}
 
     def _validate(self, lines: list, validation: dict):
         if validation.get("balance_check"):
