@@ -76,6 +76,7 @@ class JournalEngine:
             "depreciation":            self._build_depreciation,
             "asset_disposal":          self._build_asset_disposal,
             "fixed_asset_purchase":    self._build_fixed_asset_purchase,
+            "intangible_asset_purchase": self._build_intangible_asset_purchase,
             "opening_balance":         self._build_opening_balance,
             "cash_flow":               self._build_cash_flow,
             "sale_return":             self._build_sale_return,
@@ -274,6 +275,15 @@ class JournalEngine:
         original = Decimal(str(source["original_value"]))
         return [
             {"account_code": "1601", "debit": original, "credit": Decimal("0")},
+            {"account_code": "2202", "debit": Decimal("0"), "credit": original},
+        ], "GEN", {"balance_check": True}
+
+    def _build_intangible_asset_purchase(self, source):
+        """无形资产入账：借:1701（无形资产）贷:2202（应付账款）"""
+        self._check_required(source, ["original_value", "asset_id"])
+        original = Decimal(str(source["original_value"]))
+        return [
+            {"account_code": "1701", "debit": original, "credit": Decimal("0")},
             {"account_code": "2202", "debit": Decimal("0"), "credit": original},
         ], "GEN", {"balance_check": True}
 

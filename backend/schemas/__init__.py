@@ -25,7 +25,7 @@ from .order import (
 
 from .invoice import (
     InvoiceBase, InvoiceCreate, InvoiceUpdate, InvoiceOut,
-    InvoiceQuickCreate, InvoiceList, InvoiceWithFixedAssetCreate, InvoiceWithFixedAssetUpdate,
+    InvoiceQuickCreate, InvoiceList, InvoiceWithFixedAssetCreate,
     FixedAssetBlock,
 )
 
@@ -70,7 +70,7 @@ __all__ = [
     # invoice
     "InvoiceBase", "InvoiceCreate", "InvoiceUpdate", "InvoiceOut",
     "InvoiceQuickCreate", "InvoiceList", "InvoiceWithFixedAssetCreate",
-    "InvoiceWithFixedAssetUpdate", "FixedAssetBlock",
+    "InvoiceWithFixedAssetCreate", "FixedAssetBlock",
     # expense
     "ExpenseBase", "ExpenseCreate", "ExpenseUpdate", "ExpenseOut",
     # personal

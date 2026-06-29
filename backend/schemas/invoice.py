@@ -146,22 +146,3 @@ class InvoiceWithFixedAssetCreate(BaseModel):
     start_date: str  # YYYY-MM-DD
     accumulated_depreciation: Decimal = Field(default=Decimal('0'), ge=0)
     asset_status: str = Field(default="在用")
-
-
-class InvoiceWithFixedAssetUpdate(BaseModel):
-    """发票 + 固定资产联合更新（联动）"""
-    # 发票可更新字段
-    amount_with_tax: Optional[Decimal] = Field(None, ge=0, max_digits=12, decimal_places=2)
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=1, max_digits=12, decimal_places=2)
-    counterparty_name: Optional[str] = None
-    issue_date: Optional[str] = None
-    notes: Optional[str] = None
-
-    # 资产可更新字段
-    asset_name: Optional[str] = None
-    category: Optional[str] = None
-    salvage_rate: Optional[Decimal] = None
-    useful_life: Optional[int] = None
-    depreciation_method: Optional[str] = None
-    start_date: Optional[str] = None
-    asset_status: Optional[str] = None
