@@ -69,6 +69,7 @@ class TestPurchaseCreateTriggersAccounting:
             account_id=account.id,
             operator="test",
             supplier_id=1,
+            purchase_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
                 "quantity": 10,
@@ -122,6 +123,7 @@ class TestPurchaseCreateTriggersAccounting:
             account_id=account.id,
             operator="test",
             supplier_id=1,
+            purchase_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
                 "quantity": 5,
@@ -167,6 +169,7 @@ class TestSmallScaleTaxpayerPurchase:
             account_id=acc.id,
             operator="test",
             supplier_id=1,
+            purchase_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": prod.id,
                 "quantity": 10,
@@ -207,6 +210,7 @@ class TestCancelPurchaseTriggersReversal:
             account_id=account.id,
             operator="test",
             supplier_id=1,
+            purchase_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
                 "quantity": 10,

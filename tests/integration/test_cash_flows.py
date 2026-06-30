@@ -16,7 +16,7 @@ def _create_tx(client, **overrides):
     payload.update(overrides)
     resp = client.post("/api/cash-flows/transactions", json=payload, headers=HEADERS)
     assert resp.status_code == 200, resp.text
-    return resp.json()
+    return resp.json().get("data", resp.json())
 
 
 class TestCashFlowStatement:
@@ -43,7 +43,7 @@ class TestCreateCashFlowTransaction:
 
     def test_create_with_related_entity(self, client):
         tx = _create_tx(client, related_entity_type="sale_order", related_entity_id=1)
-        assert tx.get("related_entity_type") == "sale_order"
+        assert tx["related_entity_type"] == "sale_order"
 
     def test_create_invalid_type(self, client):
         resp = client.post("/api/cash-flows/transactions", json={
@@ -84,7 +84,7 @@ class TestUpdateCashFlowTransaction:
         tid = tx["id"]
         resp = client.put(f"/api/cash-flows/transactions/{tid}", json={"amount": 2000.00}, headers=HEADERS)
         assert resp.status_code == 200
-        assert float(resp.json()["amount"]) == 2000.0
+        assert float(resp.json().get("data", resp.json())["amount"]) == 2000.0
 
     def test_update_not_found(self, client):
         resp = client.put("/api/cash-flows/transactions/99999", json={"amount": 100}, headers=HEADERS)
@@ -95,7 +95,7 @@ class TestUpdateCashFlowTransaction:
         tid = tx["id"]
         resp = client.put(f"/api/cash-flows/transactions/{tid}", json={"description": "已更新"}, headers=HEADERS)
         assert resp.status_code == 200
-        assert resp.json()["description"] == "已更新"
+        assert resp.json().get("data", resp.json())["description"] == "已更新"
 
 
 class TestDeleteCashFlowTransaction:

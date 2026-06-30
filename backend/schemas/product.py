@@ -12,6 +12,7 @@ class ProductBase(BaseModel):
     purchase_price: Decimal = Field(default=Decimal('0'), max_digits=12, decimal_places=2)
     sale_price: Decimal = Field(default=Decimal('0'), max_digits=12, decimal_places=2)
     min_stock: int = 0
+    track_inventory: bool = True
     description: str = ""
 
 
@@ -27,6 +28,7 @@ class ProductUpdate(BaseModel):
     purchase_price: Optional[Decimal] = None
     sale_price: Optional[Decimal] = None
     min_stock: Optional[int] = None
+    track_inventory: Optional[bool] = None
     description: Optional[str] = None
 
 

@@ -64,11 +64,11 @@ class Test创建固定资产:
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         asset_id = r.json().get("entity_id") or r.json().get("data", {}).get("id") or r.json().get("id")
-        r2 = client.post(f"/api/fixed-assets/{asset_id}/dispose?reason=报废测试", headers=HEADERS)
+        r2 = client.post(f"/api/fixed-assets/{asset_id}/dispose?disposal_date=2026-12-31&disposal_price=0", headers=HEADERS)
         assert r2.status_code == 200, r2.text
 
     def test_dispose_nonexistent_returns_404(self, client):
-        r = client.post("/api/fixed-assets/999999/dispose", headers=HEADERS)
+        r = client.post("/api/fixed-assets/999999/dispose?disposal_date=2026-12-31", headers=HEADERS)
         assert r.status_code == 404
 
     def test_readonly_middleware_blocks_delete(self, client):
@@ -91,7 +91,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商A",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-001"),
@@ -118,7 +118,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商B",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-002"),
@@ -149,7 +149,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商C",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-ROLLBACK"),
@@ -171,7 +171,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商D",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-ROLLBACK-2"),
@@ -206,7 +206,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商E",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-DUP"),
@@ -226,7 +226,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商F",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-DUP-2"),
@@ -254,7 +254,7 @@ class Test发票关联固定资产:
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
             "notes": "测试完整信息",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-COMPLETE"),
@@ -299,7 +299,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商H",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-UPD"),
@@ -335,7 +335,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商I",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-DEL"),
@@ -377,7 +377,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商J",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-SYNC"),
@@ -413,7 +413,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商K",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-CLEAR"),
@@ -458,7 +458,7 @@ class Test发票关联固定资产:
             "seller_name": "供应商L",
             "buyer_name": "测试公司",
             "issue_date": "2026-06-19",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
             "purchase_order_action": "auto_create",
             "fixed_asset": {
                 "asset_code": uniq("FA-ENGINE"),

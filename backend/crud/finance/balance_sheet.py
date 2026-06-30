@@ -151,6 +151,8 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     # ── 流动负债 ── 从总账
     accounts_payable = _credit_balance("2202").quantize(Q2)
     salaries_payable = _credit_balance("2211").quantize(Q2)  # 应付职工薪酬
+    # 其他应付款 2241 — 个人垫付余额（含老板/员工替公司垫付形成的负债）
+    other_payable = _credit_balance("2241").quantize(Q2)
 
     # ── 应交税费 — 纯总账取数（月结后自动体现）──
     # 一般纳税人：222101→222106→222107 月结后余额在 222107
@@ -193,7 +195,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
                             + _balance("1901").quantize(Q2))  # 待处理财产损溢
     total_assets = total_current_assets + total_non_current_assets
     total_non_current_liabilities = long_term_borrowings
-    total_current_liabilities = accounts_payable + salaries_payable + tax_payable
+    total_current_liabilities = accounts_payable + salaries_payable + tax_payable + other_payable
     total_liabilities = total_current_liabilities + total_non_current_liabilities
 
     diff = total_assets - (total_liabilities + total_equity)
@@ -219,6 +221,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         "total_assets": total_assets.quantize(Q2),
         # 负债和所有者权益
         "accounts_payable": accounts_payable.quantize(Q2),
+        "other_payable": other_payable.quantize(Q2),
         "tax_payable": tax_payable.quantize(Q2),
         "total_current_liabilities": total_current_liabilities.quantize(Q2),
         "long_term_borrowings": long_term_borrowings.quantize(Q2),

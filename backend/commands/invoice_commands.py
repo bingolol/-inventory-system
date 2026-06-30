@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, Optional, List
 
 import models
-from enums import InvoiceDirection, InvoiceType
+from enums import InvoiceDirection, InvoiceType, CertificationStatus
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 
@@ -22,6 +22,16 @@ from crud.invoice_linkage import validate_link_target
 
 # 全局 AccountingEngine 实例
 _engine = AccountingEngine()
+
+
+def _date_iso(value) -> str:
+    """规范化日期为 YYYY-MM-DD（兼容 date / datetime / 字符串）"""
+    if value is None:
+        from datetime import date as _date
+        return _date.today().isoformat()
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+    return str(value)[:10]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -354,6 +364,8 @@ class CreateInvoiceWithFixedAsset(Command):
     buyer_name: str = ""
     issue_date: Any = None
     notes: str = ""
+    items: List[dict] = field(default_factory=list)  # 发票商品明细行
+    purchase_order_action: Optional[str] = None  # 固定资产场景一般留空，直接过账 1601/222102/2202
 
     # 固定资产字段
     asset_code: str = ""
@@ -398,17 +410,55 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             issue_date=issue_date,
             notes=cmd.notes,
             related_order_type="fixed_asset",
+            # 默认 n_a，下方根据纳税人类型 + 发票类型 + 是否抵扣决定是否自动认证
         )
         db.add(db_invoice)
         db.flush()
 
-        # 创建固定资产（原值 = 发票含税金额）
+        # 5.1 保存发票商品明细行（与 CreateInvoiceHandler 一致）
+        for it in cmd.items:
+            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+            inv_item = models.InvoiceItem(
+                invoice_id=db_invoice.id,
+                product_id=it['product_id'],
+                quantity=it['quantity'],
+                unit_price=it['unit_price'],
+                tax_rate=it.get('tax_rate', cmd.tax_rate),
+                total_price=line_total,
+            )
+            db.add(inv_item)
+
+        # 判断进项税抵扣：需同时满足「一般纳税人」+「增值税专用发票」
+        # 会计实务：普票（普通发票）即使一般纳税人也不能抵扣进项税，全额进资产成本。
+        # - 小规模 / 普票：全额进资产（不抵扣进项税）
+        # - 一般纳税人 + 专票：不含税金额进资产 + 税额进 222102 抵扣
+        from finance_integration import post_journal
+        from engine_finance import FinanceEngine
+        fe = FinanceEngine(db, cmd.account_id)
+        acct_conf = fe._account_config()
+        enable_vat_deduction = acct_conf["enable_vat_deduction"] and cmd.invoice_type == InvoiceType.SPECIAL
+        # 覆盖 account_config 中的标志，确保凭证模板 _build_fixed_asset_purchase
+        # 使用修正后的口径（否则一般纳税人普票会错误地拆分进项税）
+        acct_conf["enable_vat_deduction"] = enable_vat_deduction
+        asset_original_value = amount_with_tax if not enable_vat_deduction else amount_without_tax
+
+        # 自动认证：一般纳税人 + 专票 + 实际抵扣进项税 → 发票即抵扣即认证
+        # 会计实务：固定资产采购专票在入账抵扣时同步认证（无独立认证流程）。
+        # 数据一致性：dr 222102 已在下方分录中申报抵扣，发票表 certification_status
+        # 必须同步为 "certified"，否则 crud/invoices.py 与 crud/finance/tax_declarations.py
+        # 按 "certified" 过滤会漏掉这笔税额 → 申报 input_vat 与 222102 总账不一致。
+        if enable_vat_deduction:
+            db_invoice.certification_status = CertificationStatus.CERTIFIED
+            db_invoice.certification_date = datetime.combine(issue_date, datetime.min.time())
+            db.flush()
+
+        # 创建固定资产（原值口径与总账分录保持一致，确保 BS 平衡）
         db_asset = models.FixedAsset(
             account_id=cmd.account_id,
             asset_code=cmd.asset_code,
             name=cmd.asset_name,
             category=cmd.category,
-            original_value=amount_with_tax,
+            original_value=asset_original_value,
             salvage_rate=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
             useful_life=cmd.useful_life,
             depreciation_method=cmd.depreciation_method,
@@ -422,6 +472,30 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         # 回写关联ID
         db_invoice.related_order_id = db_asset.id
         db.flush()
+
+        # 5.2 总账过账：dr 1601(不含税或价税合计) / dr 222102(进项税额) / cr 2202(价税合计)
+        # source_model + source_id 提供幂等防御（重复提交不会重复过账）
+        # 按 counterparty_name 匹配供应商作为 partner_id（与 _auto_generate_purchase_order 一致）
+        supplier_id = None
+        if cmd.counterparty_name:
+            supplier = db.query(models.Supplier).filter(
+                models.Supplier.account_id == cmd.account_id,
+                models.Supplier.name == cmd.counterparty_name,
+            ).first()
+            if supplier:
+                supplier_id = supplier.id
+
+        post_journal(db, cmd.account_id, "fixed_asset_purchase", {
+            "original_value": asset_original_value,
+            "tax_amount": tax_amount if enable_vat_deduction else Decimal("0"),
+            "amount_with_tax": amount_with_tax,
+            "asset_id": db_asset.id,
+            "partner_id": supplier_id,
+            "date": _date_iso(issue_date),
+            "source_model": "fixed_asset_purchase",
+            "source_id": db_asset.id,
+            "account_config": acct_conf,
+        })
 
         _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
              f"创建固定资产发票: {db_invoice.invoice_no}", operator=cmd.operator)
@@ -455,7 +529,8 @@ class ReverseInvoiceHandler(CommandHandler):
         - 关联销售单：reverse_sale（冲红收入/应收/税额凭证）+ InventoryEngine.reverse（库存回退）
         - 关联采购单：reverse_purchase（冲红存货/应付/税额凭证）+ InventoryEngine.reverse（库存退回）
         - 无关联订单：仅标记+创建红字发票（独立发票无凭证需冲红）
-        - 固定资产发票：标记+创建红字发票（资产冲红需人工处理）
+        - 固定资产发票：reverse_journal("fixed_asset_purchase") + 资产卡片 status="已冲红"
+          （不物理删除，资产处置走单独流程）
         """
 
         # 1. 查原发票
@@ -683,7 +758,26 @@ class ReverseInvoiceHandler(CommandHandler):
             cascade_lines.append("费用发票（无库存冲红）")
 
         elif invoice.related_order_type == "fixed_asset":
-            cascade_lines.append("固定资产发票（资产冲红需人工处理）")
+            # 固定资产发票冲红：
+            # 1. 冲红总账凭证（dr 负 1601 / dr 负 222102 / cr 负 2202）—— 反向应付/资产/进项税
+            # 2. 资产卡片 status 改为 "已冲红"（停止折旧，保留审计轨迹；不物理删除，因为
+            #    资产处置涉及"固定资产清理 + 营业外收支"等单独流程，不应在发票冲红时一并处理）
+            asset_id = invoice.related_order_id
+            asset = db.query(models.FixedAsset).filter(
+                models.FixedAsset.id == asset_id,
+                models.FixedAsset.account_id == cmd.account_id,
+            ).first()
+            if asset:
+                if asset.status == "已冲红":
+                    cascade_lines.append("资产卡片已冲红，跳过")
+                else:
+                    # 冲红原固定资产入账凭证（reverse_journal 自带幂等）
+                    from finance_integration import reverse_journal
+                    reverse_journal(db, cmd.account_id, "fixed_asset_purchase", asset_id)
+                    asset.status = "已冲红"
+                    cascade_lines.append(f"冲红固定资产凭证 + 资产卡片 #{asset_id} 标记已冲红")
+            else:
+                cascade_lines.append(f"资产卡片 #{asset_id} 不存在，跳过")
 
         else:
             cascade_lines.append("独立发票（无级联冲红）")
@@ -910,6 +1004,7 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
         # 3. 更新资产原值（如果传了）
         if cmd.original_value is not None:
             original_value = _d(cmd.original_value)
+            old_value = _d(asset.original_value)
             asset.original_value = original_value
 
             # 联动：发票金额同步（使用 AccountingEngine）
@@ -921,6 +1016,49 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                 invoice.amount_without_tax = amounts.amount_without_tax
                 invoice.tax_amount = amounts.tax_amount
                 invoice.amount_with_tax = amounts.amount_with_tax
+
+                # 同步总账：原值变更必须冲红原 fixed_asset_purchase 凭证 + 按新金额重过账
+                # 否则 BS 上 1601 余额与资产卡片原值不一致（资产卡片改了总账没改）
+                if original_value != old_value:
+                    from finance_integration import reverse_journal, post_journal
+                    from engine_finance import FinanceEngine
+                    fe = FinanceEngine(db, cmd.account_id)
+                    acct_conf = fe._account_config()
+                    # 进项税抵扣需同时满足「一般纳税人」+「专票」（与创建时口径一致）
+                    enable_vat_deduction = acct_conf["enable_vat_deduction"] and invoice.invoice_type == InvoiceType.SPECIAL
+                    acct_conf["enable_vat_deduction"] = enable_vat_deduction
+                    # 新原值口径：小规模/普票含税 / 一般纳税人专票不含税（与创建时一致）
+                    new_asset_value = amounts.amount_with_tax if not enable_vat_deduction else amounts.amount_without_tax
+
+                    # 1. 冲红旧凭证（force=True 跳过幂等：允许反复"冲红+重过"）
+                    reverse_journal(db, cmd.account_id, "fixed_asset_purchase", asset.id, force=True)
+
+                    # 2. 修正资产卡片原值口径（若与新计算口径不一致则覆盖）
+                    if asset.original_value != new_asset_value:
+                        asset.original_value = new_asset_value
+
+                    # 3. 按 new_asset_value 重新过账（force=True：跳过幂等防御创建新正向凭证）
+                    # 按 counterparty_name 匹配供应商
+                    supplier_id = None
+                    if invoice.counterparty_name:
+                        supplier = db.query(models.Supplier).filter(
+                            models.Supplier.account_id == cmd.account_id,
+                            models.Supplier.name == invoice.counterparty_name,
+                        ).first()
+                        if supplier:
+                            supplier_id = supplier.id
+
+                    post_journal(db, cmd.account_id, "fixed_asset_purchase", {
+                        "original_value": new_asset_value,
+                        "tax_amount": amounts.tax_amount if enable_vat_deduction else Decimal("0"),
+                        "amount_with_tax": amounts.amount_with_tax,
+                        "asset_id": asset.id,
+                        "partner_id": supplier_id,
+                        "date": _date_iso(invoice.issue_date),
+                        "source_model": "fixed_asset_purchase",
+                        "source_id": asset.id,
+                        "account_config": acct_conf,
+                    }, force=True)
 
         # 4. 更新其他资产字段
         if cmd.name is not None:

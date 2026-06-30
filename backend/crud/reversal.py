@@ -18,11 +18,16 @@ from utils import _d
 def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
     """冲销销售单关联的所有收款记录。
 
-    1. 查找该销售单的所有收款记录
+    1. 查找该销售单的所有正向收款记录
     2. 为每笔收款生成反向收款（负金额）
     3. 生成反向银行流水（outflow）
     4. 回滚银行余额
     5. 重置销售单付款状态为 unpaid
+
+    幂等性：通过 description 前缀 "冲销收款 #{原receipt.id}" 判断原 Receipt
+    是否已被红冲过，避免重复冲红（与 reverse_bank_transaction 的幂等设计一致）。
+    场景：先调用 /api/receipts/{id}/reverse 红冲单笔收款，
+    后续 /api/sales/{id}/cancel 取消整单时不应再次冲红同一笔收款。
     """
     receipts = db.query(models.Receipt).filter(
         models.Receipt.account_id == account_id,
@@ -31,8 +36,19 @@ def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
     ).all()
 
     for receipt in receipts:
-        # 跳过已冲销的（负金额）
+        # 跳过已冲销的反向收款（负金额）
         if _d(receipt.amount) < 0:
+            continue
+
+        # 幂等检查：原 Receipt 是否已被红冲过（description 匹配 "冲销收款 #{原id}"）
+        existing_reversal = db.query(models.Receipt).filter(
+            models.Receipt.account_id == account_id,
+            models.Receipt.related_entity_type == "sale_order",
+            models.Receipt.related_entity_id == sale_order_id,
+            models.Receipt.amount < 0,
+            models.Receipt.description == f"冲销收款 #{receipt.id}",
+        ).first()
+        if existing_reversal:
             continue
 
         original_amount = _d(receipt.amount)
@@ -93,11 +109,14 @@ def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
 def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> None:
     """冲销采购单关联的所有付款记录。
 
-    1. 查找该采购单的所有付款记录
+    1. 查找该采购单的所有正向付款记录
     2. 为每笔付款生成反向付款（负金额）
     3. 生成反向银行流水（inflow）
     4. 回滚银行余额
     5. 重置采购单付款状态为 unpaid
+
+    幂等性：通过 description 匹配 "冲销付款 #{原payment.id}" 判断原 Payment
+    是否已被红冲过，避免重复冲红（与 reverse_receipts 一致）。
     """
     payments = db.query(models.Payment).filter(
         models.Payment.account_id == account_id,
@@ -106,8 +125,19 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
     ).all()
 
     for payment in payments:
-        # 跳过已冲销的（负金额）
+        # 跳过已冲销的反向付款（负金额）
         if _d(payment.amount) < 0:
+            continue
+
+        # 幂等检查：原 Payment 是否已被红冲过（description 匹配 "冲销付款 #{原id}"）
+        existing_reversal = db.query(models.Payment).filter(
+            models.Payment.account_id == account_id,
+            models.Payment.related_entity_type == "purchase_order",
+            models.Payment.related_entity_id == purchase_order_id,
+            models.Payment.amount < 0,
+            models.Payment.description == f"冲销付款 #{payment.id}",
+        ).first()
+        if existing_reversal:
             continue
 
         original_amount = _d(payment.amount)
@@ -166,7 +196,13 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
 
 
 def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> models.Receipt:
-    """红冲单笔收款：生成反向收款 + 反向银行流水 + 回滚余额"""
+    """红冲单笔收款：生成反向收款 + 反向银行流水 + 回滚余额
+
+    幂等性：通过 description 匹配 "冲销收款 #{原receipt.id}" 判断原 Receipt
+    是否已被红冲过，避免重复冲红（与 reverse_receipts 一致）。
+    场景：先调用 /api/sales/{id}/cancel 取消整单（级联红冲收款），
+    后续 /api/receipts/{id}/reverse 红冲同一笔收款时不应再次冲红。
+    """
 
     receipt = db.query(models.Receipt).filter(
         models.Receipt.id == receipt_id,
@@ -178,6 +214,15 @@ def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> mod
     original_amount = _d(receipt.amount)
     if original_amount <= 0:
         return None  # already reversed
+
+    # 幂等检查：原 Receipt 是否已被红冲过（description 匹配 "冲销收款 #{原id}"）
+    existing_reversal = db.query(models.Receipt).filter(
+        models.Receipt.account_id == account_id,
+        models.Receipt.amount < 0,
+        models.Receipt.description == f"冲销收款 #{receipt.id}",
+    ).first()
+    if existing_reversal:
+        return existing_reversal
 
     reversal = models.Receipt(
         account_id=account_id,
@@ -293,7 +338,11 @@ def reverse_bank_transaction(db: Session, account_id: int, tx_id: int) -> Option
 
 
 def reverse_single_payment(db: Session, account_id: int, payment_id: int) -> models.Payment:
-    """红冲单笔付款：生成反向付款 + 反向银行流水 + 回滚余额"""
+    """红冲单笔付款：生成反向付款 + 反向银行流水 + 回滚余额
+
+    幂等性：通过 description 匹配 "冲销付款 #{原payment.id}" 判断原 Payment
+    是否已被红冲过，避免重复冲红（与 reverse_single_receipt 一致）。
+    """
 
     payment = db.query(models.Payment).filter(
         models.Payment.id == payment_id,
@@ -305,6 +354,15 @@ def reverse_single_payment(db: Session, account_id: int, payment_id: int) -> mod
     original_amount = _d(payment.amount)
     if original_amount <= 0:
         return None
+
+    # 幂等检查：原 Payment 是否已被红冲过（description 匹配 "冲销付款 #{原id}"）
+    existing_reversal = db.query(models.Payment).filter(
+        models.Payment.account_id == account_id,
+        models.Payment.amount < 0,
+        models.Payment.description == f"冲销付款 #{payment.id}",
+    ).first()
+    if existing_reversal:
+        return existing_reversal
 
     reversal = models.Payment(
         account_id=account_id,

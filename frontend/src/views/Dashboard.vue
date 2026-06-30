@@ -56,18 +56,37 @@
           <div class="d-flow">
             <div class="d-fstep" @click="router.push('/supply-chain')"><span class="d-ficon" style="background:var(--success-light);">📦</span><span class="d-fname">采购入库</span></div>
             <span class="d-farrow">→</span>
+            <div class="d-fstep" @click="router.push('/invoices')"><span class="d-ficon" style="background:var(--warning-light);">🧾</span><span class="d-fname">进项发票</span></div>
+            <span class="d-farrow">→</span>
+            <div class="d-fstep" @click="router.push('/funds/transactions?tab=payment')"><span class="d-ficon" style="background:var(--danger-light);">💳</span><span class="d-fname">采购付款</span></div>
+          </div>
+          <div class="d-flow" style="margin-top:8px;">
             <div class="d-fstep" @click="router.push('/sales-customers')"><span class="d-ficon" style="background:var(--primary-light);">📋</span><span class="d-fname">销售开单</span></div>
             <span class="d-farrow">→</span>
-            <div class="d-fstep" @click="router.push('/expenses')"><span class="d-ficon" style="background:var(--danger-light);">💸</span><span class="d-fname">费用/付款</span></div>
+            <div class="d-fstep" @click="router.push('/invoices')"><span class="d-ficon" style="background:var(--warning-light);">🧾</span><span class="d-fname">销项发票</span></div>
             <span class="d-farrow">→</span>
-            <div class="d-fstep" @click="router.push('/invoices')"><span class="d-ficon" style="background:var(--warning-light);">🧾</span><span class="d-fname">录发票</span></div>
+            <div class="d-fstep" @click="router.push('/funds/transactions')"><span class="d-ficon" style="background:var(--success-light);">💰</span><span class="d-fname">收款</span></div>
+          </div>
+          <div class="d-flow" style="margin-top:8px;">
+            <div class="d-fstep" @click="router.push('/expense-outlay')"><span class="d-ficon" style="background:var(--danger-light);">💸</span><span class="d-fname">费用</span></div>
+            <span class="d-farrow">→</span>
+            <div class="d-fstep" @click="router.push('/funds/transactions?tab=payment')"><span class="d-ficon" style="background:var(--danger-light);">💳</span><span class="d-fname">付款</span></div>
+            <span class="d-farrow">→</span>
+            <div class="d-fstep" @click="router.push('/bank-reconcile')"><span class="d-ficon" style="background:var(--warning-light);">🏦</span><span class="d-fname">银行对账</span></div>
+            <span class="d-farrow">→</span>
+            <div class="d-fstep" @click="router.push('/period-end-tax?tab=close')"><span class="d-ficon" style="background:var(--primary-light);">🔒</span><span class="d-fname">月结</span></div>
           </div>
           <div class="d-bh" style="margin-top:14px;"><span class="d-bt">数据查看</span></div>
           <div class="d-acts">
             <span class="d-btn" @click="router.push('/financial-overview')">📊 财务总览</span>
             <span class="d-btn" @click="router.push('/bank-accounts')">🏦 银行账户</span>
             <span class="d-btn" @click="router.push('/financial-reports')">📄 财务报表</span>
-            <span class="d-btn" @click="router.push('/tax-report')">🏛️ 税务报表</span>
+            <span class="d-btn" @click="router.push('/period-end-tax')">🏛️ 期末税务</span>
+            <span class="d-btn" @click="router.push('/bank-reconcile')">🏦 银行对账</span>
+            <span class="d-btn" @click="router.push('/funds/transactions')">💰 收款管理</span>
+            <span class="d-btn" @click="router.push('/funds/transactions?tab=payment')">💳 付款管理</span>
+            <span class="d-btn" @click="router.push('/fixed-assets')">🏗️ 固定资产</span>
+            <span class="d-btn" @click="router.push('/period-end-tax?tab=close')">🔒 期末处理</span>
           </div>
         </div>
 

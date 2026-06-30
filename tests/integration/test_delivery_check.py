@@ -273,7 +273,6 @@ class TestCostLocking:
         sale_item = db.query(SaleItem).join(SaleOrder).filter(
             SaleItem.product_id == pid,
             SaleOrder.status == OrderStatus.COMPLETED,
-            SaleOrder.is_deleted == False,
         ).order_by(SaleItem.id.desc()).first()
         assert sale_item is not None, "应有 SaleItem"
         locked_cost = Decimal(str(sale_item.unit_cost)) if sale_item.unit_cost else Decimal("0")
@@ -287,7 +286,6 @@ class TestCostLocking:
         # 只统计状态为 completed 且未删除的订单
         items = db.query(SaleItem).join(SaleOrder).filter(
             SaleOrder.status == OrderStatus.COMPLETED,
-            SaleOrder.is_deleted == False,
         ).all()
         expected_cogs = Decimal("0")
         for item in items:
@@ -320,7 +318,6 @@ class TestReceivableReconciliation:
             SaleOrder.account_id == 1,
             SaleOrder.status == OrderStatus.COMPLETED,
             SaleOrder.payment_status == "unpaid",
-            SaleOrder.is_deleted == False
         ).scalar() or Decimal("0")
 
         if unpaid_total == 0:

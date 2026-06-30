@@ -24,7 +24,7 @@ def setup_db(monkeypatch):
     url = f"sqlite:///{path}"
     eng = create_engine(url, connect_args={"check_same_thread": False})
     sess = sessionmaker(autocommit=False, autoflush=False, bind=eng)
-    monkeypatch.setattr(database, 'engine', eng)
+    monkeypatch.setattr(database, '_engine', eng)
     monkeypatch.setattr(database, 'SessionLocal', sess)
     Base.metadata.create_all(bind=eng)
     init_db()
@@ -43,7 +43,9 @@ def setup_db(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 ACCT_ID = 1
@@ -143,6 +145,7 @@ class TestXingWangQ1:
                 {"product_id": s["products"]["CB"], "quantity": 500, "unit_price": 10},
             ],
             "payment_method": "company",
+            "purchase_date": "2026-01-05T10:00:00",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["orders"]["purchase1"] = r.json()["entity_id"]

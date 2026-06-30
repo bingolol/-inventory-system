@@ -87,28 +87,36 @@ class ConfirmStore:
     """
 
     def __init__(self):
-        self._init_db()
+        # 不在此处建表 — 表由 database.init_db() 在系统启动时统一创建。
+        # 避免模块导入时（main→confirm_middleware）触发 DDL 拦截。
+        # 首次操作（put/remove/cleanup_expired）前若表不存在会自动创建。
+        self._table_checked = False
 
-    def _init_db(self):
-        """创建 pending_confirms 表（幂等）"""
+    def _ensure_table(self):
+        """确保 pending_confirms 表存在（幂等懒建表）"""
+        if self._table_checked:
+            return
         from database import _engine
-        from sqlalchemy import text
+        from sqlalchemy import inspect, text
         with _bypass_write_guard(), _engine.connect() as conn:
-            conn.execute(text(
-                "CREATE TABLE IF NOT EXISTS pending_confirms ("
-                "  token VARCHAR(32) PRIMARY KEY,"
-                "  method VARCHAR(10) NOT NULL,"
-                "  path VARCHAR(500) NOT NULL,"
-                "  summary VARCHAR(500) DEFAULT '',"
-                "  body BLOB,"
-                "  query_string BLOB,"
-                "  headers JSON,"
-                "  created_at REAL NOT NULL"
-                ")"
-            ))
-            conn.commit()
+            if not inspect(conn).has_table("pending_confirms"):
+                conn.execute(text(
+                    "CREATE TABLE IF NOT EXISTS pending_confirms ("
+                    "  token VARCHAR(32) PRIMARY KEY,"
+                    "  method VARCHAR(10) NOT NULL,"
+                    "  path VARCHAR(500) NOT NULL,"
+                    "  summary VARCHAR(500) DEFAULT '',"
+                    "  body BLOB,"
+                    "  query_string BLOB,"
+                    "  headers JSON,"
+                    "  created_at REAL NOT NULL"
+                    ")"
+                ))
+                conn.commit()
+        self._table_checked = True
 
     def put(self, token: str, entry: dict):
+        self._ensure_table()
         from database import _engine
         from sqlalchemy import text
         with _bypass_write_guard(), _engine.connect() as conn:
@@ -135,6 +143,7 @@ class ConfirmStore:
             conn.commit()
 
     def get(self, token: str) -> Optional[dict]:
+        self._ensure_table()
         from database import _engine
         from sqlalchemy import text
         with _engine.connect() as conn:
@@ -162,6 +171,7 @@ class ConfirmStore:
             }
 
     def remove(self, token: str):
+        self._ensure_table()
         from database import _engine
         from sqlalchemy import text
         with _bypass_write_guard(), _engine.connect() as conn:
@@ -170,6 +180,7 @@ class ConfirmStore:
 
     def list_pending(self) -> list[dict]:
         """返回所有未过期的待确认请求"""
+        self._ensure_table()
         now = time.time()
         from database import _engine
         from sqlalchemy import text
@@ -197,6 +208,7 @@ class ConfirmStore:
 
     def cleanup_expired(self):
         """启动时清理过期 token"""
+        self._ensure_table()
         from database import _engine
         from sqlalchemy import text
         now = time.time()

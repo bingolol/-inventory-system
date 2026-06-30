@@ -23,6 +23,7 @@
         </el-select>
         <el-button type="primary" @click="getExpenses">查询</el-button>
         <el-button @click="resetFilter">重置</el-button>
+        <el-button size="small" @click="$router.push('/funds/transactions?tab=payment')" style="margin-left:auto;"><el-icon><Plus /></el-icon> 付款管理</el-button>
       </div>
       <el-table :data="expenses" stripe style="width:100%" v-loading="loading">
         <template #empty>
@@ -31,25 +32,30 @@
         <el-table-column prop="expense_date" label="日期" min-width="110">
           <template #default="{ row }">{{ formatDate(row.expense_date) }}</template>
         </el-table-column>
-        <el-table-column label="类别" min-width="120">
-          <template #default="{ row }">
-            <el-tag size="small">{{ row.category }}</el-tag>
-          </template>
+        <el-table-column label="类别" min-width="100">
+          <template #default="{ row }"><el-tag size="small">{{ row.category }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="功能分类" min-width="100">
+          <template #default="{ row }"><span class="status-badge primary">{{ row.functional_category || '管理费用' }}</span></template>
         </el-table-column>
         <el-table-column label="金额" min-width="120" align="right">
           <template #default="{ row }">
             <span class="money" style="color:var(--danger);">-{{ formatMoney(row.amount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="200">
+        <el-table-column label="付款状态" min-width="90" align="center">
+          <template #default="{ row }"><span class="status-badge" :class="row.payment_status==='paid'?'success':'warning'">{{ row.payment_status==='paid'?'已付款':'未付款' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="160">
           <template #default="{ row }">{{ row.description || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="editExpense(row)">编辑</el-button>
-            <el-popconfirm title="确定删除？" @confirm="deleteExpense(row.id)">
+            <el-button v-if="row.payment_status==='unpaid'" size="small" link type="danger" @click="openPaymentDialog(row)">付款</el-button>
+            <el-popconfirm title="确定冲红此费用？" @confirm="handleReverse(row)">
               <template #reference>
-                <el-button size="small" link type="danger">删除</el-button>
+                <el-button size="small" link type="danger">冲红</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -64,12 +70,29 @@
           <div class="fgb">
             <div class="ff"><span class="fl" style="min-width:70px;">日期</span><el-date-picker v-model="expenseForm.expense_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
             <div class="ff"><span class="fl" style="min-width:70px;">类别</span><el-input v-model="expenseForm.category" placeholder="如 办公用品" /></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">功能分类</span><el-select v-model="expenseForm.functional_category" style="width:100%"><el-option label="管理费用" value="管理费用" /><el-option label="销售费用" value="销售费用" /><el-option label="财务费用" value="财务费用" /><el-option label="税金及附加" value="税金及附加" /></el-select></div>
             <div class="ff"><span class="fl" style="min-width:70px;">金额</span><el-input v-model.number="expenseForm.amount" /></div>
             <div class="ff"><span class="fl" style="min-width:70px;">描述</span><el-input v-model="expenseForm.description" type="textarea" :rows="2" /></div>
           </div>
         </div>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="saveExpense">{{ dialogType==='create'?'保存':'更新' }}</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="paymentDialogVisible" title="费用付款" width="460px">
+      <el-form :model="paymentForm" label-width="0" v-if="paymentTarget">
+        <div class="fg" style="border-left-color:var(--danger);">
+          <div class="fgh"><span class="fgt" style="background:var(--danger-light);color:var(--danger);">费用 {{ paymentTarget.category }}, 金额 ¥{{ formatMoney(paymentTarget.amount) }}</span></div>
+          <div class="fgb">
+            <div class="ff"><span class="fl" style="min-width:70px;">付款金额</span><el-input v-model.number="paymentForm.amount" /></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">付款日期</span><el-date-picker v-model="paymentForm.payment_date" type="date" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%;" /></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">方式</span><el-select v-model="paymentForm.payment_method" style="width:100%"><el-option label="公司账户" value="company" /><el-option label="个人垫付" value="private_advance" /></el-select></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">银行账户</span><el-select v-model="paymentForm.bank_account_id" clearable style="width:100%" placeholder="选填"><el-option v-for="ba in bankAccounts" :key="ba.id" :label="ba.bank_name" :value="ba.id" /></el-select></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">描述</span><el-input v-model="paymentForm.description" /></div>
+          </div>
+        </div>
+      </el-form>
+      <template #footer><el-button @click="paymentDialogVisible=false">取消</el-button><el-button type="danger" @click="confirmPayment">确认付款</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -79,6 +102,8 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import expensesApi from '../api/expenses'
+import paymentsApi from '../api/payments'
+import bankAccountsApi from '../api/bankAccounts'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
@@ -90,7 +115,12 @@ const years = ref([])
 const dialogVisible = ref(false)
 const dialogType = ref('create')
 const currentExpenseId = ref(null)
-const expenseForm = ref({ category:'', amount:0, expense_date:'', description:'' })
+const expenseForm = ref({ category:'', functional_category:'管理费用', amount:0, expense_date:'', description:'' })
+
+const bankAccounts = ref([])
+const paymentDialogVisible = ref(false)
+const paymentTarget = ref(null)
+const paymentForm = ref({ amount: 0, payment_date: '', payment_method: 'company', bank_account_id: null, description: '' })
 
 for (let i = new Date().getFullYear()-2; i <= new Date().getFullYear(); i++) years.value.push(i)
 
@@ -113,9 +143,9 @@ const getExpenses = async () => {
 
 const resetFilter = () => { filterForm.value = { year: '' }; getExpenses() }
 
-const openCreateDialog = () => { dialogType.value='create'; currentExpenseId.value=null; expenseForm.value={category:'',amount:0,expense_date:'',description:''}; dialogVisible.value=true }
+const openCreateDialog = () => { dialogType.value='create'; currentExpenseId.value=null; expenseForm.value={category:'',functional_category:'管理费用',amount:0,expense_date:'',description:''}; dialogVisible.value=true }
 
-const editExpense = (e) => { dialogType.value='edit'; currentExpenseId.value=e.id; expenseForm.value={category:e.category,amount:e.amount,expense_date:e.expense_date,description:e.description||''}; dialogVisible.value=true }
+const editExpense = (e) => { dialogType.value='edit'; currentExpenseId.value=e.id; expenseForm.value={category:e.category,functional_category:e.functional_category||'管理费用',amount:e.amount,expense_date:e.expense_date,description:e.description||''}; dialogVisible.value=true }
 
 const saveExpense = async () => {
   try {
@@ -125,9 +155,35 @@ const saveExpense = async () => {
   } catch (e) { handleError(e, { defaultMsg:'保存失败' }) }
 }
 
-const deleteExpense = async (id) => {
-  try { await expensesApi.deleteExpense(id); ElMessage.success('已删除'); getExpenses() }
-  catch (e) { handleError(e, { defaultMsg:'删除失败' }) }
+const handleReverse = async (row) => {
+  try { await expensesApi.reverseExpense(row.id); ElMessage.success('费用已冲红'); getExpenses() }
+  catch (e) { handleError(e, { defaultMsg:'冲红失败' }) }
+}
+
+const openPaymentDialog = async (row) => {
+  paymentTarget.value = row
+  paymentForm.value = {
+    amount: Number(row.amount) || 0,
+    payment_date: new Date().toISOString().replace('Z', ''),
+    payment_method: 'company',
+    bank_account_id: null,
+    description: `费用 ${row.category} 付款`
+  }
+  try { const r = await bankAccountsApi.getBankAccounts(); bankAccounts.value = r?.items || [] } catch (e) { /* ignore */ }
+  paymentDialogVisible.value = true
+}
+
+const confirmPayment = async () => {
+  try {
+    await paymentsApi.createPayment({
+      payment_type: 'expense', related_entity_type: 'expense',
+      related_entity_id: paymentTarget.value.id,
+      ...paymentForm.value
+    })
+    ElMessage.success('付款成功')
+    paymentDialogVisible.value = false
+    getExpenses()
+  } catch (e) { handleError(e, { defaultMsg: '付款失败' }) }
 }
 
 useAccountAwareData(getExpenses)

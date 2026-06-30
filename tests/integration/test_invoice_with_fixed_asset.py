@@ -27,6 +27,7 @@ from main import app
 from database import get_db, Base
 import database
 import models
+from helpers import get_entity_id
 from accounting_engine import AccountingEngine
 
 
@@ -95,7 +96,9 @@ def disable_readonly_middleware(monkeypatch):
 @pytest.fixture
 def client():
     """测试客户端"""
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 # ── 辅助函数 ──
@@ -106,7 +109,7 @@ def _create_product(client):
         "unit": "个", "purchase_price": 100, "sale_price": 200,
     }, headers={"X-Account-ID": "1"})
     assert resp.status_code == 200
-    return resp.json()["entity_id"]
+    return get_entity_id(resp.json())
 
 
 # ── Behavior 1: 发票含税金额 = 资产原值（Critical）──
@@ -423,7 +426,7 @@ def test_delete_invoice_cascades_to_asset(client):
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
     cr_data = create_resp.json()["data"]
-    invoice_id = cr_data["id"]
+    invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
     delete_resp = client.delete(f"/api/invoices/{invoice_id}", headers={"X-Account-ID": "1"})
@@ -510,7 +513,7 @@ def test_delete_asset_clears_invoice_link(client):
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
     cr_data = create_resp.json()["data"]
-    invoice_id = cr_data["id"]
+    invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
     delete_resp = client.delete(f"/api/fixed-assets/{asset_id}", headers={"X-Account-ID": "1"})

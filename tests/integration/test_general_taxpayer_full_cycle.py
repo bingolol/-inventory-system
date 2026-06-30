@@ -37,7 +37,7 @@ _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
-    monkeypatch.setattr(database, 'engine', _engine)
+    monkeypatch.setattr(database, '_engine', _engine)
     monkeypatch.setattr(database, 'SessionLocal', _SessionLocal)
     Base.metadata.create_all(bind=_engine)
     init_db()
@@ -66,7 +66,9 @@ def setup_db(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 ACCT_ID = 1
@@ -140,6 +142,7 @@ class TestGeneralTaxpayerFullCycle:
                 "unit_price": 113,
                 "tax_rate": 0.13,
             }],
+            "purchase_date": "2026-01-05T10:00:00",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["purchase_id"] = r.json()["entity_id"]
@@ -241,7 +244,7 @@ class TestGeneralTaxpayerFullCycle:
             "description": "办公室房租",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
-        s["expense_id"] = r.json()["data"]["id"]
+        s["expense_id"] = r.json().get("data", r.json())["id"]
 
         # 付款
         r = c.post("/api/payments", json={

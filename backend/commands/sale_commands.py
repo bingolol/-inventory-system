@@ -13,7 +13,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, List, Optional
 
 import models
-from enums import OrderStatus, OrderType, PaymentStatus
+from enums import OrderStatus, OrderType, PaymentStatus, InvoiceDirection, CertificationStatus
 from events import emit
 from domain.sale_order import SaleOrderDomain
 
@@ -336,6 +336,49 @@ class ReturnSaleOrderHandler(CommandHandler):
             "source_id": return_id,
             "date": cmd.return_date,
         })
+
+        # 4b. 创建红字销项发票（amount<0，冲减当期销项税额）
+        # 按会计实务：销售退货应开具红字增值税发票，红字发票税额直接冲减当期销项税额
+        # 季度税务报表查询发票表时自动扣除（正发票 - 红字发票 = 净额）
+        original_invoice = db.query(models.Invoice).filter(
+            models.Invoice.account_id == cmd.account_id,
+            models.Invoice.related_order_type == "sale_order",
+            models.Invoice.related_order_id == order.id,
+            models.Invoice.direction == InvoiceDirection.OUT,
+            models.Invoice.is_reversed == False,
+        ).first()
+
+        if original_invoice:
+            # 继承原发票类型和税率，金额取负
+            red_invoice_no = f"RED-{original_invoice.invoice_no}-{return_id}"
+            # 检查是否已存在相同 return_id 的红字发票（幂等：支持多次部分退货各自一张红字发票）
+            existing_red = db.query(models.Invoice).filter(
+                models.Invoice.account_id == cmd.account_id,
+                models.Invoice.invoice_no == red_invoice_no,
+            ).first()
+            if not existing_red:
+                # 解析退货日期
+                ret_dt = datetime.fromisoformat(cmd.return_date) if isinstance(cmd.return_date, str) else cmd.return_date
+                red_invoice = models.Invoice(
+                    account_id=cmd.account_id,
+                    invoice_no=red_invoice_no,
+                    direction=InvoiceDirection.OUT,
+                    invoice_type=original_invoice.invoice_type,
+                    tax_rate=original_invoice.tax_rate,
+                    amount_without_tax=-total_without_tax_ret,
+                    tax_amount=-tax_amount_ret,
+                    amount_with_tax=-total_with_tax_ret,
+                    counterparty_name=order.customer.name if order.customer else (original_invoice.counterparty_name or ""),
+                    seller_name=original_invoice.seller_name,
+                    buyer_name=original_invoice.buyer_name,
+                    issue_date=ret_dt,
+                    certification_status=CertificationStatus.N_A,  # 销项发票不需认证
+                    related_order_id=order.id,
+                    related_order_type="sale_order",
+                    notes=f"红字销项发票（销售退货）: {cmd.reason or '未提供'}",
+                )
+                db.add(red_invoice)
+                db.flush()
 
         # 5. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("sale_order.returned", db=db, account_id=cmd.account_id, order=order,

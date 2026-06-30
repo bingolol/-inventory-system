@@ -8,7 +8,6 @@ from database import get_db
 from account_dep import get_account_id
 import schemas, crud
 from utils import _d, Q2
-from errors import BusinessError, ErrorCode
 
 router = APIRouter()
 
@@ -74,12 +73,5 @@ def get_profit_report(start_date: str = None, end_date: str = None, account_id: 
 @router.get("/trend")
 def get_trend(days: int = 7, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     return crud.get_trend(db, account_id, days)
-
-
-@router.get("/tax-report", response_model=schemas.TaxReport)
-def get_tax_report(year: int, quarter: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    if quarter < 1 or quarter > 4:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="季度必须在 1-4 之间")
-    return crud.get_tax_report(db, account_id, year, quarter)
 
 

@@ -20,7 +20,7 @@ from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, gen
 from enums import ALL_ENUMS, ENUM_LABELS
 from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances
 
 logging.basicConfig(
     level=logging.INFO,
@@ -194,6 +194,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["报表统计"])
 app.include_router(export.router, prefix="/api/export", tags=["数据导出"])
 app.include_router(logs.router, prefix="/api/logs", tags=["操作日志"])
 app.include_router(personal.router, prefix="/api/personal", tags=["个人流水账"])
+app.include_router(personal_advances.router, prefix="/api/personal-advances", tags=["其他应付款/个人垫付"])
 app.include_router(opening_balances.router, prefix="/api/opening-balances", tags=["期初余额"])
 app.include_router(financial_reports.router, prefix="/api/financial-reports", tags=["财务报表"])
 app.include_router(cash_flows.router, prefix="/api/cash-flows", tags=["现金流量"])
@@ -222,6 +223,9 @@ def startup():
     set_maintenance_mode(True)
     init_db()
     set_maintenance_mode(False)
+    # ── 硬约束：Truth Source Bypass 静态扫描 + 不变量测试 ──
+    # 启动时强制跑，ERROR/测试失败 → sys.exit(1) 拒绝启动
+    _run_truth_source_hard_constraints()
     # ── 清理过期 confirm token ──
     from confirm_middleware import confirm_store
     confirm_store.cleanup_expired()
@@ -234,6 +238,100 @@ def startup():
     from utils.audit import register_listeners
     register_listeners()
     logger.info("进销存管理系统启动完成")
+
+
+def _load_truth_source_scanner():
+    """从 tests/invariants/check_truth_source.py 加载模块（不污染 sys.path）"""
+    import importlib.util
+    scanner_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "tests", "invariants", "check_truth_source.py")
+    )
+    spec = importlib.util.spec_from_file_location("_truth_source_scanner", scanner_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _run_truth_source_hard_constraints():
+    """启动硬约束检查：
+    1. 静态扫描 backend/ 源码（毫秒级）
+       - ERROR 级别违规 → sys.exit(1) 拒绝启动
+       - WARNING 级别违规 → 打日志警告
+    2. 不变量测试 tests/invariants/test_truth_source_invariants.py（约 2-3 秒）
+       - 任意测试失败 → sys.exit(1) 拒绝启动
+    """
+    # ── 1. 静态扫描 ──
+    try:
+        scanner = _load_truth_source_scanner()
+        violations = scanner.scan()
+    except Exception as e:
+        logger.error(f"❌ Truth Source 扫描器加载失败：{e}")
+        sys.exit(1)
+        return
+
+    errors = [v for v in violations if v["severity"] == "ERROR"]
+    warnings = [v for v in violations if v["severity"] == "WARNING"]
+
+    for v in warnings:
+        logger.warning(
+            f"[{v['rule_id']}] {v['file']}:{v['line']} - {v['message']} (修复: {v['fix_hint']})"
+        )
+
+    if errors:
+        logger.error(
+            f"❌ 启动检查失败：检测到 {len(errors)} 处 Truth Source Bypass ERROR 违规，拒绝启动："
+        )
+        for v in errors:
+            logger.error(f"  [{v['rule_id']}] {v['file']}:{v['line']}")
+            logger.error(f"    代码: {v['code']}")
+            logger.error(f"    问题: {v['message']}")
+            logger.error(f"    修复: {v['fix_hint']}")
+        sys.exit(1)
+
+    logger.info(
+        f"✅ Truth Source 静态扫描通过（{len(warnings)} warning, 0 error）"
+    )
+
+    # ── 2. 不变量测试 ──
+    import subprocess
+    import re as _re
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    test_file = os.path.join(
+        project_root, "tests", "invariants", "test_truth_source_invariants.py"
+    )
+    if not os.path.exists(test_file):
+        logger.warning(f"不变量测试文件不存在: {test_file}，跳过")
+        return
+
+    logger.info("⏳ 跑不变量测试套件（约 2-3 秒）...")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", test_file,
+             "-q", "--tb=line", "--no-header", "--color=no"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("❌ 不变量测试超时（>60s），拒绝启动")
+        sys.exit(1)
+        return
+    except FileNotFoundError:
+        logger.error("❌ 找不到 pytest，请安装：pip install pytest")
+        sys.exit(1)
+        return
+
+    if result.returncode != 0:
+        logger.error("❌ 不变量测试失败，拒绝启动：")
+        logger.error(result.stdout)
+        if result.stderr:
+            logger.error(result.stderr)
+        sys.exit(1)
+
+    m = _re.search(r"(\d+) passed", result.stdout)
+    n = m.group(1) if m else "?"
+    logger.info(f"✅ 不变量测试通过（{n} 个）")
 
 
 # ── 图片上传API ──

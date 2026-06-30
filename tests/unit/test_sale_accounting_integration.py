@@ -65,6 +65,7 @@ class TestSaleCreateTriggersAccounting:
             account_id=1,
             operator="test",
             customer_id=1,
+            sale_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": 1,
                 "quantity": 10,

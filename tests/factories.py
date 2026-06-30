@@ -156,10 +156,11 @@ def api_create_supplier(client, headers, **overrides):
 def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_price=10.00):
     """创建采购单并完成入库"""
     tag = uniq("PO")
+    now_str = datetime.now().strftime("%Y-%m-%d")
     resp = client.post("/api/purchases", json={
         "order_no": f"PO-{tag}", "supplier_id": 1,
         "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price}],
-        "order_date": datetime.now().strftime("%Y-%m-%d"),
+        "purchase_date": now_str,
     }, headers=headers)
     assert resp.status_code in (200, 201), f"创建采购单失败: {resp.text}"
     purchase_id = get_entity_id(resp.json())
@@ -171,10 +172,11 @@ def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_pr
 
 def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=20.00, has_invoice=False):
     tag = uniq("SO")
+    now_str = datetime.now().strftime("%Y-%m-%d")
     resp = client.post("/api/sales", json={
         "order_no": f"SO-{tag}", "customer_id": customer_id,
         "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price}],
-        "order_date": datetime.now().strftime("%Y-%m-%d"),
+        "sale_date": now_str,
         "has_invoice": has_invoice,
     }, headers=headers)
     assert resp.status_code in (200, 201), f"创建销售单失败: {resp.text}"

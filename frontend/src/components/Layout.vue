@@ -89,8 +89,8 @@ const currentTitle = computed(() => route.meta.title ?? '仪表盘')
 const currentDesc = computed(() => route.meta.desc ?? '')
 
 const iconMap = {
-  DataAnalysis: '◉', Sell: '◻', Box: '◻', DataBoard: '◉', Wallet: '◻',
-  TrendCharts: '◻', Ticket: '◻', Files: '◻', Document: '◻', DocumentChecked: '◻',
+  DataAnalysis: '◉', Sell: '◉', Box: '◻', DataBoard: '◉', Wallet: '◻',
+  TrendCharts: '◉', Ticket: '◻', Files: '◻', Document: '◻', DocumentChecked: '◻',
   DataLine: '◻', Goods: '◻', OfficeBuilding: '◻', User: '◻', ShoppingCart: '◻',
   FolderChecked: '◻'
 }

@@ -137,8 +137,38 @@ def init_db():
         _migrate_asset_code_unique_to_account_scoped()
         _sync_bank_account_balance_from_ledger()
         _create_immutable_triggers()
+        _init_pending_confirms_table()
     finally:
         set_maintenance_mode(False)
+
+
+def _init_pending_confirms_table():
+    """创建 pending_confirms 表（幂等），confirm_middleware 依赖此表"""
+    prev = _maintenance_mode
+    set_maintenance_mode(True)
+    try:
+        from sqlalchemy import text
+        with _engine.connect() as conn:
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS pending_confirms ("
+                "  token VARCHAR(32) PRIMARY KEY,"
+                "  method VARCHAR(10) NOT NULL,"
+                "  path VARCHAR(500) NOT NULL,"
+                "  summary VARCHAR(500) DEFAULT '',"
+                "  body BLOB,"
+                "  query_string BLOB,"
+                "  headers JSON,"
+                "  created_at REAL NOT NULL"
+                ")"
+            ))
+            conn.commit()
+    finally:
+        set_maintenance_mode(prev)
+
+    # confirm_middleware 模块级初始化（在导入 main.py 时发生）
+    # 也会通过 ConfirmStore.__init__ 尝试建表，已移除 __init__
+    # 中的 _init_db 调用，改为懒建表（首次 put/remove 时自动创建）。
+    # 此处提前创建好，confirm_store 后续操作不再触达 DDL。
 
 
 def _create_immutable_triggers():
@@ -166,6 +196,7 @@ def _create_immutable_triggers():
     ]
 
     # 进入维护模式绕过 DDL 拦截
+    prev = _maintenance_mode
     set_maintenance_mode(True)
     try:
         with _engine.connect() as conn:
@@ -181,7 +212,7 @@ def _create_immutable_triggers():
             conn.commit()
         print(f"[ImmutableTriggers] 已创建 {len(triggers)} 个真相源表 UPDATE 触发器")
     finally:
-        set_maintenance_mode(False)
+        set_maintenance_mode(prev)
 
 
 def _auto_migrate_columns():

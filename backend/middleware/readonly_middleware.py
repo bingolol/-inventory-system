@@ -8,6 +8,7 @@
   DELETE     /api/cash-flows/transactions/* → 403 现金流水通过 reverse 红冲
   DELETE     /api/sales/*                 → 403 销售单通过 POST /{id}/cancel 取消
   DELETE     /api/purchases/*             → 403 采购单通过 POST /{id}/cancel 取消
+  DELETE     /api/personal-advances/*     → 403 个人垫付单通过 reverse 红冲
 """
 
 import re
@@ -26,6 +27,8 @@ BLOCKED_DELETE = [
     (re.compile(r"^/api/cash-flows/transactions/\d+$"), "现金流水已过账，请通过 POST /api/cash-flows/transactions/{id}/reverse 红冲"),
     (re.compile(r"^/api/sales/\d+$"), "销售单已锁定，请通过 POST /api/sales/{id}/cancel 取消（保留审计轨迹+冲红凭证库存）"),
     (re.compile(r"^/api/purchases/\d+$"), "采购单已锁定，请通过 POST /api/purchases/{id}/cancel 取消（保留审计轨迹+冲红凭证库存）"),
+    (re.compile(r"^/api/personal-advances/\d+$"), "个人垫付单已过账，请通过 POST /api/personal-advances/{id}/reverse 红冲（冲红总账凭证+保留审计轨迹）"),
+    (re.compile(r"^/api/personal-advances/\d+/repayments/\d+$"), "偿还记录已过账，请通过 POST /api/personal-advances/{id}/repayments/{rid}/reverse 红冲"),
 ]
 
 

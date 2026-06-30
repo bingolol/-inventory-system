@@ -72,7 +72,9 @@ def auto_create_account_ledger(setup_db):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 # ═══════════════════════════════════════════════════════════
@@ -256,9 +258,10 @@ def test_create_expense_accrual(client):
     assert data["success"] is True
     assert data["operation"] == "create"
     assert data["entity_type"] == "expense"
-    assert data["data"]["category"] == "房租"
-    assert data["data"]["amount"] == 10000.0
-    assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：费用发生时未付款
+    inner = data.get("data", data)
+    assert inner["category"] == "房租"
+    assert inner["amount"] == 10000.0
+    assert inner["payment_status"] == "unpaid"  # 权责发生制：费用发生时未付款
     assert "ai_hint" in data
 
 
@@ -285,7 +288,7 @@ def test_pay_expense(client):
         "payment_method": "company",
         "description": "6月房租"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
     # 费用付款
     payment_resp = client.post("/api/payments", json={
@@ -301,7 +304,7 @@ def test_pay_expense(client):
 
     assert payment_resp.status_code == 200
     payment_data = payment_resp.json()
-    assert payment_data["data"]["amount"] == 10000.0
+    assert payment_data.get("data", payment_data)["amount"] == 10000.0
 
     # 验证：费用状态已更新
     expense_list = client.get("/api/expenses", headers={"X-Account-ID": "1"})
@@ -338,12 +341,14 @@ def test_create_purchase_accrual(client):
     response = client.post("/api/purchases", json={
         "supplier_id": 1,
         "items": [{"product_id": 1, "quantity": 100, "unit_price": 100}],
-        "payment_method": "company"
+        "payment_method": "company",
+        "purchase_date": "2026-06-19"
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
     data = response.json()
-    assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：采购发生时未付款
+    inner = data.get("data", data)
+    assert inner["payment_status"] == "unpaid"  # 权责发生制：采购发生时未付款
 
 
 # ═══════════════════════════════════════════════════════════
@@ -366,7 +371,8 @@ def test_pay_purchase(client):
         "contact": "王五",
         "phone": "13700137000"
     }, headers={"X-Account-ID": "1"})
-    supplier_id = supplier_resp.json()["data"]["id"]
+    _sd = supplier_resp.json()
+    supplier_id = _sd.get("data", _sd)["id"]
 
     # 创建商品
     product_resp = client.post("/api/products", json={
@@ -386,7 +392,8 @@ def test_pay_purchase(client):
     }, headers={"X-Account-ID": "1"})
 
     assert purchase_resp.status_code == 200
-    purchase_id = purchase_resp.json()["data"]["id"]
+    _pd = purchase_resp.json()
+    purchase_id = _pd.get("data", _pd)["id"]
 
     # 采购付款
     payment_resp = client.post("/api/payments", json={
@@ -451,7 +458,7 @@ def test_create_sale_accrual(client):
 
     assert response.status_code == 200
     data = response.json()
-    assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：销售发生时未收款
+    assert data.get("data", data)["payment_status"] == "unpaid"  # 权责发生制：销售发生时未收款
 
 
 # ═══════════════════════════════════════════════════════════
@@ -506,7 +513,8 @@ def test_receive_sale(client):
     }, headers={"X-Account-ID": "1"})
 
     assert sale_resp.status_code == 200
-    sale_id = sale_resp.json()["data"]["id"]
+    _sd2 = sale_resp.json()
+    sale_id = _sd2.get("data", _sd2)["id"]
 
     # 销售收款
     receipt_resp = client.post("/api/receipts", json={
@@ -691,7 +699,7 @@ def test_payment_exceeds_expense_amount(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
     # 尝试付款金额超过费用金额
     payment_resp = client.post("/api/payments", json={
@@ -725,7 +733,7 @@ def test_bank_account_not_found(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
     # 尝试使用不存在的银行账户付款
     payment_resp = client.post("/api/payments", json={
@@ -760,10 +768,10 @@ def test_duplicate_payment(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
-    # 第一次付款
-    payment1_resp = client.post("/api/payments", json={
+    # 尝试使用不存在的银行账户付款
+    payment_resp = client.post("/api/payments", json={
         "payment_type": "expense",
         "related_entity_type": "expense",
         "related_entity_id": expense_id,
@@ -813,7 +821,7 @@ def test_payment_with_bank_account(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
     # 付款时指定银行账户
     payment_resp = client.post("/api/payments", json={
@@ -855,7 +863,7 @@ def test_payment_rollback_on_bank_account_not_found(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json())["id"]
 
     # 尝试使用不存在的银行账户付款
     payment_resp = client.post("/api/payments", json={
@@ -913,7 +921,8 @@ def test_full_business_flow(client):
         "phone": "13800138000"
     }, headers={"X-Account-ID": "1"})
     assert supplier_resp.status_code == 200
-    supplier_id = supplier_resp.json()["data"]["id"]
+    _supd = supplier_resp.json()
+    supplier_id = _supd.get("data", _supd)["id"]
 
     customer_resp = client.post("/api/customers", json={
         "name": "客户A",
@@ -921,7 +930,8 @@ def test_full_business_flow(client):
         "phone": "13900139000"
     }, headers={"X-Account-ID": "1"})
     assert customer_resp.status_code == 200
-    customer_id = customer_resp.json()["data"]["id"]
+    _custd = customer_resp.json()
+    customer_id = _custd.get("data", _custd)["id"]
 
     # ── 4. 创建商品 ──
     product_resp = client.post("/api/products", json={
@@ -941,8 +951,10 @@ def test_full_business_flow(client):
         "purchase_date": "2026-06-10"
     }, headers={"X-Account-ID": "1"})
     assert purchase_resp.status_code == 200
-    purchase_id = purchase_resp.json()["data"]["id"]
-    assert purchase_resp.json()["data"]["payment_status"] == "unpaid"
+    _pd2 = purchase_resp.json()
+    _pdata = _pd2.get("data", _pd2)
+    purchase_id = _pdata["id"]
+    assert _pdata["payment_status"] == "unpaid"
 
     # ── 6. 采购付款 ──
     purchase_payment_resp = client.post("/api/payments", json={
@@ -964,8 +976,10 @@ def test_full_business_flow(client):
         "sale_date": "2026-06-20"
     }, headers={"X-Account-ID": "1"})
     assert sale_resp.status_code == 200
-    sale_id = sale_resp.json()["data"]["id"]
-    assert sale_resp.json()["data"]["payment_status"] == "unpaid"
+    _sd3 = sale_resp.json()
+    _sdata = _sd3.get("data", _sd3)
+    sale_id = _sdata["id"]
+    assert _sdata["payment_status"] == "unpaid"
 
     # ── 8. 销售收款 ──
     sale_receipt_resp = client.post("/api/receipts", json={
@@ -990,8 +1004,10 @@ def test_full_business_flow(client):
         "description": "6月房租"
     }, headers={"X-Account-ID": "1"})
     assert expense_resp.status_code == 200
-    expense_id = expense_resp.json()["data"]["id"]
-    assert expense_resp.json()["data"]["payment_status"] == "unpaid"
+    _ed = expense_resp.json()
+    _edata = _ed.get("data", _ed)
+    expense_id = _edata["id"]
+    assert _edata["payment_status"] == "unpaid"
 
     # ── 10. 费用付款 ──
     expense_payment_resp = client.post("/api/payments", json={

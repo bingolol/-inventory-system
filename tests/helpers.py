@@ -7,12 +7,20 @@ from models import Account
 
 
 def get_entity_id(resp_json):
-    """从 API 响应中提取实体 ID（支持 OperationResult + 传统格式）"""
+    """从 API 响应中提取实体 ID（支持 AI Gateway 包装格式 + OperationResult + 传统格式）"""
     if isinstance(resp_json, dict):
+        # AI Gateway 格式: {ok, entity: {success, entity_id, data: {id, ...}}}
+        if "entity" in resp_json and isinstance(resp_json["entity"], dict):
+            ent = resp_json["entity"]
+            if "entity_id" in ent:
+                return ent["entity_id"]
+            if "data" in ent and isinstance(ent["data"], dict) and "id" in ent["data"]:
+                return ent["data"]["id"]
+            if "id" in ent:
+                return ent["id"]
+        # 传统 OperationResult: {success, entity_id, data: {id, ...}}
         if "entity_id" in resp_json:
             return resp_json["entity_id"]
-        if "entity" in resp_json and isinstance(resp_json["entity"], dict) and "id" in resp_json["entity"]:
-            return resp_json["entity"]["id"]
         if "data" in resp_json and isinstance(resp_json["data"], dict) and "id" in resp_json["data"]:
             return resp_json["data"]["id"]
         if "id" in resp_json:

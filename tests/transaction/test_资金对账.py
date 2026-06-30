@@ -35,7 +35,7 @@ def _create_tx(client, **overrides):
     payload.update(overrides)
     resp = client.post("/api/cash-flows/transactions", json=payload, headers=HEADERS)
     assert resp.status_code == 200, resp.text
-    return resp.json()
+    return resp.json().get("data", resp.json())
 
 
 class Test银行流水:
@@ -100,14 +100,16 @@ class Test银行流水:
         tid = tx["id"]
         resp = client.put(f"/api/cash-flows/transactions/{tid}", json={"amount": 2000.00}, headers=HEADERS)
         assert resp.status_code == 200
-        assert float(resp.json()["amount"]) == 2000.0
+        updated = resp.json().get("data", resp.json())
+        assert float(updated["amount"]) == 2000.0
 
     def test_update_description(self, client):
         tx = _create_tx(client)
         tid = tx["id"]
         resp = client.put(f"/api/cash-flows/transactions/{tid}", json={"description": "已更新"}, headers=HEADERS)
         assert resp.status_code == 200
-        assert resp.json()["description"] == "已更新"
+        updated = resp.json().get("data", resp.json())
+        assert updated["description"] == "已更新"
 
     def test_update_not_found(self, client):
         resp = client.put("/api/cash-flows/transactions/99999", json={"amount": 100}, headers=HEADERS)

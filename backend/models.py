@@ -82,7 +82,7 @@ class FixedAsset(Base):
     depreciation_method = Column(String(20), default="年限平均法", comment="折旧方法")
     start_date = Column(Date, nullable=False, comment="开始折旧日期")
     accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
-    status = Column(String(20), default="在用", comment="在用/停用/报废")
+    status = Column(String(20), default="在用", comment="在用/停用/报废/已冲红")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -544,6 +544,79 @@ class Receipt(Base):
     account = relationship("Account", backref="receipts")
     bank_account = relationship("BankAccount", backref="receipts")
     bank_transaction = relationship("BankTransaction", backref="receipt")
+
+
+# 其他应付款/个人垫付（公司账本专用，与 personal_transactions 个人流水不同）
+# 业务场景：老板/员工用个人资金替公司垫付费用，公司形成一笔对个人的"其他应付款"负债（2241）
+class PersonalAdvance(Base):
+    """个人垫付记录（其他应付款）
+
+    生成凭证：dr debit_account_code(默认6601管理费用) cr 2241 其他应付款
+    偿还时由 PersonalAdvanceRepayment 记录，生成 dr 2241 cr 1002/1001 反向分录。
+    """
+    __tablename__ = "personal_advances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    advance_no = Column(String(30), index=True, comment="垫付单号 PA-YYYY-0001")
+    advancer_name = Column(String(100), nullable=False, comment="垫付人姓名（自由填写）")
+    amount = Column(Numeric(12, 2), nullable=False, comment="垫付金额")
+    advance_date = Column(DateTime, nullable=False, comment="垫付日期")
+
+    # 借方科目编码：默认 6601 管理费用，可选 1405 库存商品 / 1601 固定资产 / 6602 销售费用 等
+    # 由 PERSONAL_ADVANCE_DEBIT_ACCOUNTS 白名单校验（enums.py 单一真相源）
+    debit_account_code = Column(String(20), nullable=False, default="6601", comment="借方科目编码")
+
+    description = Column(String(500), default="", comment="用途说明")
+    image_url = Column(String(500), default="", comment="附件图片URL")
+
+    # 还款状态与已还金额（paid_amount 用于多次部分偿还累计）
+    repayment_status = Column(String(20), nullable=False, default="unpaid", comment="还款状态: unpaid/partial/paid")
+    paid_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="已偿还金额")
+
+    is_reversed = Column(Boolean, default=False, comment="是否已冲红")
+    reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    account = relationship("Account", backref="personal_advances")
+    repayments = relationship("PersonalAdvanceRepayment", back_populates="advance",
+                               cascade="all, delete-orphan",
+                               foreign_keys="PersonalAdvanceRepayment.advance_id")
+
+    @property
+    def remaining_amount(self):
+        """未偿还余额 = 垫付金额 - 已偿还金额（冲红的垫付单余额为0）"""
+        if self.is_reversed:
+            return Decimal('0')
+        return (Decimal(str(self.amount)) - Decimal(str(self.paid_amount or 0))).quantize(Decimal('0.01'))
+
+
+class PersonalAdvanceRepayment(Base):
+    """个人垫付偿还记录
+
+    每次偿还生成一笔：dr 2241 其他应付款 cr 1002 银行存款 / 1001 库存现金
+    支持部分偿还，多次累计。带 bank_account_id 时自动生成 BankTransaction。
+    """
+    __tablename__ = "personal_advance_repayments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
+    advance_id = Column(Integer, ForeignKey("personal_advances.id"), nullable=False, index=True, comment="关联垫付单")
+    amount = Column(Numeric(12, 2), nullable=False, comment="偿还金额")
+    repayment_date = Column(DateTime, nullable=False, comment="偿还日期")
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
+    bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
+    description = Column(String(500), default="", comment="描述")
+    is_reversed = Column(Boolean, default=False, comment="是否已冲红")
+    reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
+    created_at = Column(DateTime, default=datetime.now)
+
+    advance = relationship("PersonalAdvance", back_populates="repayments",
+                           foreign_keys=[advance_id])
+    bank_account = relationship("BankAccount", foreign_keys=[bank_account_id])
+    bank_transaction = relationship("BankTransaction", foreign_keys=[bank_transaction_id])
 
 
 # ═══════════════════════════════════════════════════════════

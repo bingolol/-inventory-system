@@ -22,12 +22,17 @@ from .orders import (
 )
 from .invoices import (
     list_invoices, get_invoice,
-    get_tax_report,
 )
 from .personal import (
     list_personal_transactions,
     get_personal_summary,
     get_personal_category_summary, get_personal_monthly_summary,
+)
+from .personal_advances import (
+    generate_advance_no,
+    list_personal_advances, get_personal_advance,
+    list_repayments_by_advance, get_repayment,
+    get_personal_advance_summary, get_personal_advance_totals,
 )
 from .finance import (
     get_opening_balance, get_opening_balance_by_date,

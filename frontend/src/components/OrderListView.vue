@@ -72,13 +72,25 @@
             <el-button size="small" link type="primary" @click="showEdit(row)">编辑</el-button>
             <el-dropdown v-if="row.status==='pending'" style="margin-left:4px">
               <el-button size="small" link type="primary">状态<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-              <template #dropdown><el-dropdown-menu><el-dropdown-item @click="orderForm.changeStatus(row.id,'completed')">完成</el-dropdown-item><el-dropdown-item @click="orderForm.changeStatus(row.id,'cancelled')">取消</el-dropdown-item></el-dropdown-menu></template>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item @click="orderForm.changeStatus(row.id,'completed')">完成</el-dropdown-item><el-dropdown-item v-if="!onCancel" @click="orderForm.changeStatus(row.id,'cancelled')">取消</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
-            <el-dropdown v-else-if="row.status==='completed'" style="margin-left:4px">
+            <el-dropdown v-else-if="row.status==='completed' && !onCancel" style="margin-left:4px">
               <el-button size="small" link type="primary">状态<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
               <template #dropdown><el-dropdown-menu><el-dropdown-item @click="orderForm.changeStatus(row.id,'cancelled')">取消(退回库存)</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
-            <el-popconfirm :title="deleteConfirmText" @confirm="orderForm.handleDelete(row.id)"><template #reference><el-button size="small" link type="danger" style="margin-left:4px">删除</el-button></template></el-popconfirm>
+            <el-popconfirm v-if="row.status==='completed' && onCancel" title="确定取消此订单？（库存和凭证将自动回退）" @confirm="onCancel(row)">
+              <template #reference><el-button size="small" link type="warning" style="margin-left:4px">取消</el-button></template>
+            </el-popconfirm>
+            <el-popconfirm v-if="row.status==='completed' && onReturn" title="确定退货？（按商品数量部分退回）" @confirm="onReturn(row)">
+              <template #reference><el-button size="small" link type="warning" style="margin-left:4px">退货</el-button></template>
+            </el-popconfirm>
+            <template v-for="ra in rowActions" :key="ra.label">
+              <el-popconfirm v-if="ra.condition(row) && ra.confirm" :title="ra.confirm" @confirm="ra.handler(row)">
+                <template #reference><el-button size="small" link :type="ra.type||'primary'" style="margin-left:4px">{{ ra.label }}</el-button></template>
+              </el-popconfirm>
+              <el-button v-else-if="ra.condition(row)" size="small" link :type="ra.type||'primary'" style="margin-left:4px" @click="ra.handler(row)">{{ ra.label }}</el-button>
+            </template>
+            <el-popconfirm v-if="!isDeleteBlocked(row)" :title="deleteConfirmText" @confirm="orderForm.handleDelete(row.id)"><template #reference><el-button size="small" link type="danger" style="margin-left:4px">删除</el-button></template></el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -164,8 +176,19 @@ const props = defineProps({
   deleteConfirmText: { type: String, default: '确定删除？' },
   showKeywordSearch: { type: Boolean, default: false },
   defaultForm: { type: Object, default: () => ({}) },
-  autoFillPrice: { type: Boolean, default: false }
+  autoFillPrice: { type: Boolean, default: false },
+  onCancel: { type: Function, default: null },
+  onReturn: { type: Function, default: null },
+  onCustomAction: { type: Function, default: null },
+  rowActions: { type: Array, default: () => [] }
 })
+
+const isDeleteBlocked = (row) => {
+  if (props.orderType === 'sale' || props.orderType === 'purchase') {
+    return row.status === 'completed' || row.status === 'cancelled'
+  }
+  return false
+}
 
 const {
   list, loading, keyword, dateRange, statusFilter, pagination,

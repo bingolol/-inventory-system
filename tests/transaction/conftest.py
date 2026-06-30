@@ -47,5 +47,6 @@ def client(db):
     from main import app
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
         yield c
     app.dependency_overrides.clear()

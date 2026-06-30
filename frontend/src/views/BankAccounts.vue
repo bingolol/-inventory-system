@@ -15,10 +15,13 @@
       <div class="c4"><div class="c"><div class="cl">本期支出</div><div class="cv c-danger">{{ formatMoney(periodOutflow) }}</div><div class="cs">期间内付款合计</div></div></div>
     </div>
 
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <el-button size="small" @click="$router.push('/bank-reconcile')">银行对账</el-button>
+    </div>
     <div class="box">
       <div class="bh"><span class="bt">银行流水</span><span style="font-size:11px;color:var(--text-placeholder);">由业务自动生成</span></div>
       <table class="tbl" v-if="transactions.length">
-        <tr><th>日期</th><th>流水号</th><th style="width:60px;">类型</th><th style="width:120px;">金额</th><th style="width:120px;">余额</th><th>描述</th></tr>
+        <tr><th>日期</th><th>流水号</th><th style="width:60px;">类型</th><th style="width:120px;">金额</th><th style="width:120px;">余额</th><th>描述</th><th style="width:60px;">操作</th></tr>
         <tr v-for="t in transactions" :key="t.id">
           <td>{{ formatDate(t.transaction_date) }}</td>
           <td style="color:var(--text-secondary);">{{ t.reference_no }}</td>
@@ -26,6 +29,7 @@
           <td :style="{ color:t.transaction_type==='inflow'?'var(--success)':'var(--danger)', fontWeight:600 }">{{ t.transaction_type==='inflow'?'+':'-' }}{{ formatMoney(t.amount) }}</td>
           <td style="font-family:'Consolas','Monaco',monospace;">{{ formatMoney(t.balance_after) }}</td>
           <td style="color:var(--text-secondary);">{{ t.description||'-' }}</td>
+          <td><el-popconfirm title="确定冲红？" @confirm="handleReverseTx(t)"><template #reference><el-button size="small" link type="danger">冲红</el-button></template></el-popconfirm></td>
         </tr>
       </table>
       <div v-else style="padding:24px 0;text-align:center;color:var(--text-placeholder);font-size:13px;">暂无流水记录</div>
@@ -114,6 +118,11 @@ const saveAccount = async () => {
 const deleteAccount = async (id) => {
   try { await bankAccountsApi.deleteBankAccount(id); ElMessage.success('已删除'); loadAccounts() }
   catch (e) { handleError(e, { defaultMsg:'删除失败' }) }
+}
+
+const handleReverseTx = async (row) => {
+  try { await bankTxApi.reverseBankTransaction(row.id); ElMessage.success('流水已冲红'); loadTransactions() }
+  catch (e) { handleError(e, { defaultMsg:'冲红失败' }) }
 }
 
 useAccountAwareData(async () => { await loadAccounts(); if (currentAccountId.value) await loadTransactions() })

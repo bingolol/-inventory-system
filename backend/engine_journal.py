@@ -87,6 +87,8 @@ class JournalEngine:
             "vat_transfer_out":        self._build_vat_transfer_out,
             "vat_exemption":           self._build_vat_exemption,
             "bank_fee_entry":          self._build_bank_fee_entry,
+            "personal_advance":        self._build_personal_advance,
+            "personal_advance_repay":  self._build_personal_advance_repay,
         }
         builder = builders.get(move_type)
         if not builder:
@@ -234,7 +236,7 @@ class JournalEngine:
         return lines, "GEN", {"balance_check": True}
 
     def _build_depreciation(self, source):
-        """折旧凭证：借:6602（管理费用—折旧费）贷:1602（累计折旧）"""
+        """折旧凭证：借:6601（管理费用）贷:1602（累计折旧）"""
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
         return [
@@ -270,22 +272,60 @@ class JournalEngine:
         return lines, "FA", {"balance_check": True}
 
     def _build_fixed_asset_purchase(self, source):
-        """固定资产入账：借:1601（固定资产）贷:2202（应付账款）"""
+        """固定资产入账：借:1601（固定资产，不含税）借:222102（进项税额）贷:2202（应付账款，价税合计）
+
+        小规模纳税人：全额进资产（价税合计），不抵扣进项税。
+        一般纳税人：不含税金额进资产，税额单列 222102 抵扣。
+        """
         self._check_required(source, ["original_value", "asset_id"])
         original = Decimal(str(source["original_value"]))
-        return [
-            {"account_code": "1601", "debit": original, "credit": Decimal("0")},
-            {"account_code": "2202", "debit": Decimal("0"), "credit": original},
-        ], "GEN", {"balance_check": True}
+        tax_amount = Decimal(str(source.get("tax_amount", 0)))
+        total_with_tax = Decimal(str(source.get("amount_with_tax", original + tax_amount)))
+        partner_id = source.get("partner_id")
+
+        acct_conf = source.get("account_config", {})
+        enable_vat_deduction = acct_conf.get("enable_vat_deduction", True) if "account_config" in source else True
+
+        # 小规模：全额进资产；一般纳税人：不含税进资产
+        asset_cost = total_with_tax if not enable_vat_deduction else original
+
+        lines = [
+            {"account_code": "1601", "debit": asset_cost, "credit": Decimal("0")},
+            {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
+             "partner_id": partner_id, "partner_type": "supplier"},
+        ]
+        if enable_vat_deduction and tax_amount > 0:
+            lines.insert(1, {"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
+
+        return lines, "GEN", {"balance_check": True}
 
     def _build_intangible_asset_purchase(self, source):
-        """无形资产入账：借:1701（无形资产）贷:2202（应付账款）"""
+        """无形资产入账：借:1701（无形资产，不含税）借:222102（进项税额）贷:2202（应付账款，价税合计）
+
+        小规模纳税人：全额进资产（价税合计），不抵扣进项税。
+        一般纳税人：不含税金额进资产，税额单列 222102 抵扣。
+        """
         self._check_required(source, ["original_value", "asset_id"])
         original = Decimal(str(source["original_value"]))
-        return [
-            {"account_code": "1701", "debit": original, "credit": Decimal("0")},
-            {"account_code": "2202", "debit": Decimal("0"), "credit": original},
-        ], "GEN", {"balance_check": True}
+        tax_amount = Decimal(str(source.get("tax_amount", 0)))
+        total_with_tax = Decimal(str(source.get("amount_with_tax", original + tax_amount)))
+        partner_id = source.get("partner_id")
+
+        acct_conf = source.get("account_config", {})
+        enable_vat_deduction = acct_conf.get("enable_vat_deduction", True) if "account_config" in source else True
+
+        # 小规模：全额进资产；一般纳税人：不含税进资产
+        asset_cost = total_with_tax if not enable_vat_deduction else original
+
+        lines = [
+            {"account_code": "1701", "debit": asset_cost, "credit": Decimal("0")},
+            {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
+             "partner_id": partner_id, "partner_type": "supplier"},
+        ]
+        if enable_vat_deduction and tax_amount > 0:
+            lines.insert(1, {"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
+
+        return lines, "GEN", {"balance_check": True}
 
     def _build_opening_balance(self, source):
         """期初余额过账：动态科目，按传入的 lines 生成"""
@@ -382,6 +422,37 @@ class JournalEngine:
                 {"account_code": "1002", "debit": amt, "credit": Decimal("0")},
                 {"account_code": "6603", "debit": Decimal("0"), "credit": amt},
             ], "BNK", {"balance_check": True}
+
+    def _build_personal_advance(self, source):
+        """个人垫付（其他应付款）：dr 借方科目(默认6601) cr 2241 其他应付款
+
+        业务场景：老板/员工用个人资金替公司垫付费用，公司形成一笔对个人的负债。
+        借方科目由 debit_account_code 决定用途（费用/存货/资产）。
+        """
+        self._check_required(source, ["amount", "debit_account_code"])
+        amt = Decimal(str(source["amount"]))
+        debit_code = source["debit_account_code"]
+        return [
+            {"account_code": debit_code, "debit": amt, "credit": Decimal("0")},
+            {"account_code": "2241", "debit": Decimal("0"), "credit": amt,
+             "partner_id": source.get("partner_id"), "partner_type": source.get("partner_type", "advancer")},
+        ], "GEN", {"balance_check": True}
+
+    def _build_personal_advance_repay(self, source):
+        """偿还个人垫付：dr 2241 其他应付款 cr 1002 银行存款 / 1001 库存现金
+
+        带银行账户 → 贷 1002（同时由调用方生成 BankTransaction）
+        不带银行账户 → 贷 1001 库存现金
+        """
+        self._check_required(source, ["amount"])
+        amt = Decimal(str(source["amount"]))
+        bank_account_id = source.get("bank_account_id")
+        credit_code = "1002" if bank_account_id is not None else "1001"
+        return [
+            {"account_code": "2241", "debit": amt, "credit": Decimal("0"),
+             "partner_id": source.get("partner_id"), "partner_type": source.get("partner_type", "advancer")},
+            {"account_code": credit_code, "debit": Decimal("0"), "credit": amt},
+        ], "BNK", {"balance_check": True}
 
     def _build_sale_return(self, source):
         """销售退货部分冲红（与原 sale_order 借贷互换，按退货比例生成红字凭证）

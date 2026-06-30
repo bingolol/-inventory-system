@@ -16,7 +16,8 @@ echo [%date% %time%] Services starting... >> "%LOG%"
 echo ======================================== >> "%LOG%"
 
 cd /d "%BACKEND_DIR%"
-echo [%time%] [BACKEND] Starting python main.py... >> "%BE_LOG%"
+echo [%time%] [BACKEND] Starting python main.py (DEV=1 reload)... >> "%BE_LOG%"
+set DEV=1
 start /B cmd /c python main.py >> "%BE_LOG%" 2>&1
 
 cd /d "%FRONTEND_DIR%"

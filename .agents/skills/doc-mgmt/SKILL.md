@@ -10,10 +10,27 @@ description: >-
 
 ```
 for each .md file:
-  classify → stale? → deletable? → loss if deleted?
+  check doc-type → classify stale? → deletable? → loss if deleted?
 ```
 
 ## Core workflow
+
+### 0. Check `doc-type` header
+
+Every doc should have a YAML front matter with `doc-type`:
+
+```yaml
+---
+doc-type: catalog     # 目录索引 — 代码变则更新
+doc-type: snapshot    # 代码快照 — 代码变则重验
+doc-type: reference   # 参考/约定 — 不需同步
+---
+```
+
+- Missing `doc-type` → flag as **needs header** (add one)
+- `catalog` out of sync with code → flag as **update needed** (must fix)
+- `snapshot` stale → flag as **reverify needed** (affected chapters)
+- `reference` → no sync action needed, but check if still accurate
 
 ### 1. Inventory every `.md` file
 
@@ -41,9 +58,11 @@ Decision matrix:
 
 | Class | Default action | Keep if |
 |-------|---------------|---------|
-| C (historical) | Keep in `docs/archive/` | Valuable record, no replacement |
+| C (historical) | **Delete** — history lives in git | External compliance requirement |
 | D (orphaned) | Ask user to delete | External links exist, or content unique |
 | E (superseded) | Delete after confirming no inbound links | Inbound links exist (update links first) |
+
+> **v2 change**: Historical records (class C) now default to **delete** instead of archive. Git history preserves everything; docs/ is for current knowledge.
 
 ### 4. Cross-reference health (for remaining A/B files)
 
@@ -53,19 +72,49 @@ Decision matrix:
 - Stale anchors (`#section` mismatch)
 - Obsolete references to deleted files
 - Missing entries in `INDEX.md` or `文件索引.md`
+- `doc-type` missing or mismatched with content
+- Content references entities (files/classes/functions/routes) that no longer exist
+
+### 5. Apply doc-type headers
+
+Files without `doc-type` header need one added. Rules:
+
+- INDEX.md, 文件索引.md → `catalog`
+- 代码调用逻辑图.md, 数据因果链.md → `snapshot`
+- All other reference/guide docs → `reference`
+
+### 6. Enforce sync rule after code changes
+
+Search `docs/` for mentions of the changed **entity** (filename / class / function / route / ORM model / enum):
+
+- In `catalog` docs → **must update**
+- In `snapshot` docs → **affected chapters must reverify**
+- New entity → check if `INDEX.md` + `文件索引.md` need new entry
 
 ## Report format
 
 ```
-### [filename] — [Class: A/B/C/D/E]
+### [filename] — [Class: A/B/C/D/E] — [doc-type: catalog/snapshot/reference/missing]
 - Stale?: yes/no — [what's outdated]
 - Deletable?: yes/no — [any inbound links?]
 - Loss if deleted: [high/medium/low] — [what would be lost]
-- Action: [keep / update / archive / delete]
+- Action: [keep / update / delete / add-header]
 ```
+
+## Doc rot speed reference
+
+| Document type | Rot speed | Why |
+|--------------|-----------|-----|
+| API routes / file index | 🚀 Fast | New endpoints added frequently |
+| Refactor plans / tracking | 🚀 Fast | Status changes but nobody updates marks |
+| Call graphs / causality chains | 🐢 Medium | Stale from small cumulative changes |
+| Business rules / BRs | 🐌 Slow | Confirmed decisions, rarely change |
+| Coding conventions | 🐌 Slow | Team consensus, stable |
 
 ## References
 
-- `docs/INDEX.md` — master document index
-- `docs/文件索引.md` — full file inventory
+- `docs/INDEX.md` — master document index (`catalog`)
+- `docs/文件索引.md` — full file inventory (`catalog`)
+- `docs/开发速查表.md#文档分类` — doc-type classification table
+- `docs/开发速查表.md#文档同步规则` — sync rules after code change
 - `CONTEXT.md` — project context & business rules

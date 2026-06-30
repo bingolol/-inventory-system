@@ -18,6 +18,10 @@ export const getCashFlowTransactions = (params) => api.get('/cash-flows/transact
 export const createCashFlowTransaction = (data) => api.post('/cash-flows/transactions', data)
 export const updateCashFlowTransaction = (id, data) => api.put(`/cash-flows/transactions/${id}`, data)
 export const deleteCashFlowTransaction = (id) => api.delete(`/cash-flows/transactions/${id}`)
+export const reverseCashFlowTransaction = (id) => api.post(`/cash-flows/transactions/${id}/reverse`)
+
+// Month Close
+export const monthClose = (period) => api.post('/finance/month-close', { period })
 
 // Opening Balance
 export const getOpeningBalances = () => api.get('/opening-balances')
@@ -39,5 +43,6 @@ export default {
   getBalanceSheet, getIncomeStatement, getFinancialSummary,
   getCashFlowStatement, getCashFlowTransactions, createCashFlowTransaction, updateCashFlowTransaction, deleteCashFlowTransaction,
   getOpeningBalances, getOpeningBalance, createOpeningBalance, updateOpeningBalance, deleteOpeningBalance, getLatestOpeningBalance,
-  getTrialBalance, getAccountChart, getJournalMoves, getJournalMove, getPartnerReceivable
+  getTrialBalance, getAccountChart, getJournalMoves, getJournalMove, getPartnerReceivable,
+  reverseCashFlowTransaction, monthClose
 }

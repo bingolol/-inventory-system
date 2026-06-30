@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any, List, Optional
 
 import models
-from enums import OrderStatus, OrderType
+from enums import OrderStatus, OrderType, InvoiceDirection, CertificationStatus
 from events import emit
 
 from .base import Command, CommandHandler, register
@@ -258,20 +258,15 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                     operator=cmd.operator,
                     source_id_override=return_id,
                 )
-                # 取原 StockMove 的 unit_cost 计算库存退回金额
-                move = db.query(StockMove).filter(
-                    StockMove.source_type == "purchase_order",
-                    StockMove.source_id == order.id,
-                    StockMove.product_id == pid,
-                ).first()
-                unit_cost = move.unit_cost if move and move.unit_cost else Decimal("0")
+                # 取原采购单明细单价计算库存退回金额
+                # ⚠️ 必须用 orig_item.unit_price（原发票不含税单价），不能用 StockMove.unit_cost
+                # （unit_cost 是移动加权平均成本，会让贷方库存与借方应付账款不一致 → 借贷不平衡）
+                orig_unit_price = Decimal(str(orig_item.unit_price))
                 # 一般纳税人：不含税金额进成本；小规模：价税合计进成本
                 if enable_vat_deduction:
-                    # unit_cost 是不含税单价，total_cost = qty * unit_cost
-                    inventory_cost_ret += (qty_ret * unit_cost).quantize(Q2)
+                    inventory_cost_ret += (qty_ret * orig_unit_price).quantize(Q2)
                 else:
-                    # unit_cost 视为含税单价（小规模全额进成本）
-                    inventory_cost_ret += (qty_ret * unit_cost).quantize(Q2)
+                    inventory_cost_ret += (qty_ret * orig_unit_price).quantize(Q2)
 
             # 退货的税额/价税合计计算（按纳税人类型区分）
             # - 一般纳税人：unit_price 不含税，total_with_tax = qty*price*(1+rate)
@@ -305,6 +300,53 @@ class ReturnPurchaseOrderHandler(CommandHandler):
             "source_id": return_id,
             "date": cmd.return_date,
         })
+
+        # 4b. 创建红字进项发票（amount<0，冲减当期进项税额）
+        # 按会计实务：采购退货应开具红字增值税发票，红字发票税额直接冲减当期进项税额
+        # 季度税务报表查询发票表时自动扣除（正发票 - 红字发票 = 净额）
+        original_invoice = db.query(models.Invoice).filter(
+            models.Invoice.account_id == cmd.account_id,
+            models.Invoice.related_order_type == "purchase_order",
+            models.Invoice.related_order_id == order.id,
+            models.Invoice.direction == InvoiceDirection.IN,
+            models.Invoice.is_reversed == False,
+        ).first()
+
+        if original_invoice:
+            # 继承原发票类型和税率，金额取负
+            red_invoice_no = f"RED-{original_invoice.invoice_no}-{return_id}"
+            # 检查是否已存在相同 return_id 的红字发票（幂等：支持多次部分退货各自一张红字发票）
+            existing_red = db.query(models.Invoice).filter(
+                models.Invoice.account_id == cmd.account_id,
+                models.Invoice.invoice_no == red_invoice_no,
+            ).first()
+            if not existing_red:
+                # 解析退货日期
+                ret_dt = datetime.fromisoformat(cmd.return_date) if isinstance(cmd.return_date, str) else cmd.return_date
+                # 红字进项发票：若原发票已认证，红字发票也设为 certified（让 get_tax_report 自动扣除进项税）
+                red_cert_status = original_invoice.certification_status if (
+                    enable_vat_deduction and original_invoice.invoice_type == "special"
+                ) else CertificationStatus.N_A
+                red_invoice = models.Invoice(
+                    account_id=cmd.account_id,
+                    invoice_no=red_invoice_no,
+                    direction=InvoiceDirection.IN,
+                    invoice_type=original_invoice.invoice_type,
+                    tax_rate=original_invoice.tax_rate,
+                    amount_without_tax=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
+                    tax_amount=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
+                    amount_with_tax=-total_with_tax_ret,
+                    counterparty_name=order.supplier.name if order.supplier else (original_invoice.counterparty_name or ""),
+                    seller_name=original_invoice.seller_name,
+                    buyer_name=original_invoice.buyer_name,
+                    issue_date=ret_dt,
+                    certification_status=red_cert_status,
+                    related_order_id=order.id,
+                    related_order_type="purchase_order",
+                    notes=f"红字进项发票（采购退货）: {cmd.reason or '未提供'}",
+                )
+                db.add(red_invoice)
+                db.flush()
 
         # 5. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
         emit("purchase_order.returned", db=db, account_id=cmd.account_id, order=order,

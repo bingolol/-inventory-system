@@ -1,7 +1,7 @@
 {
-  "account_id": 1,
-  "total_checks": 23,
-  "passed": 23,
+  "account_id": 22,
+  "total_checks": 26,
+  "passed": 26,
   "failed": 0,
   "bugs": [],
   "steps": [
@@ -76,6 +76,27 @@
       "pass": true
     },
     {
+      "label": "个人垫付未还余额",
+      "expected": "2000.00",
+      "actual": "2000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "资产原值=不含税金额(一般纳税人抵扣进项税)",
+      "expected": "6000.00",
+      "actual": "6000.00",
+      "diff": "0.00",
+      "pass": true
+    },
+    {
+      "label": "固定资产发票自动认证",
+      "expected": "certified",
+      "actual": "certified",
+      "diff": "N/A",
+      "pass": true
+    },
+    {
       "label": "营业收入",
       "expected": "198000.00",
       "actual": "198000.00",
@@ -112,8 +133,8 @@
     },
     {
       "label": "月结所得税",
-      "expected": "5017.50",
-      "actual": "5017.50",
+      "expected": "3767.50",
+      "actual": "3767.50",
       "diff": "0.00",
       "pass": true
     },
@@ -140,8 +161,8 @@
     },
     {
       "label": "净利润",
-      "expected": "14932.50",
-      "actual": "14932.50",
+      "expected": "11182.50",
+      "actual": "11182.50",
       "diff": "0.00",
       "pass": true
     },
@@ -154,15 +175,15 @@
     },
     {
       "label": "季度销项税",
-      "expected": "26780.00",
-      "actual": "26780.00",
+      "expected": "25740.00",
+      "actual": "25740.00",
       "diff": "0.00",
       "pass": true
     },
     {
       "label": "季度进项税",
-      "expected": "26000.00",
-      "actual": "26000.00",
+      "expected": "26780.00",
+      "actual": "26780.00",
       "diff": "0.00",
       "pass": true
     }
@@ -171,9 +192,13 @@
     "revenue": "198000",
     "cogs": "135000",
     "vat": "0",
-    "profit": "20070",
-    "income_tax": "5017.50",
+    "profit": "15070",
+    "income_tax": "3767.50",
     "output_vat": "25740",
-    "input_vat": "26000"
-  }
+    "input_vat": "26780"
+  },
+  "added_features": [
+    "personal_advance(5000, repaid_3000)",
+    "fixed_asset_with_invoice(printer_6780)"
+  ]
 }

@@ -21,7 +21,7 @@ _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
-    monkeypatch.setattr(database, 'engine', _engine)
+    monkeypatch.setattr(database, '_engine', _engine)
     monkeypatch.setattr(database, 'SessionLocal', _SessionLocal)
     Base.metadata.create_all(bind=_engine)
     init_db()
@@ -40,7 +40,9 @@ def setup_db(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 ACCT_ID = 1

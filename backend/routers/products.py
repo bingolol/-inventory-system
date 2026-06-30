@@ -21,7 +21,7 @@ def list_products(page: int = 1, page_size: int = 20, search: str = None, sku: s
         result.append(schemas.ProductOut(
             id=p.id, name=p.name, sku=p.sku, category=p.category,
             unit=p.unit, purchase_price=p.purchase_price, sale_price=p.sale_price,
-            min_stock=p.min_stock, description=p.description,
+            min_stock=p.min_stock, track_inventory=p.track_inventory, description=p.description,
             created_at=p.created_at, updated_at=p.updated_at,
             current_stock=inv.quantity if inv else 0
         ))
@@ -41,6 +41,7 @@ def create_product(data: schemas.ProductCreate, account_id: int = Depends(get_ac
             purchase_price=data.purchase_price,
             sale_price=data.sale_price,
             min_stock=data.min_stock,
+            track_inventory=data.track_inventory,
             description=data.description,
             initial_stock=data.initial_stock,
         ), db)
@@ -57,7 +58,8 @@ def create_product(data: schemas.ProductCreate, account_id: int = Depends(get_ac
         data={
             "id": product.id, "name": product.name, "sku": product.sku, "category": product.category,
             "unit": product.unit, "purchase_price": float(product.purchase_price), "sale_price": float(product.sale_price),
-            "min_stock": product.min_stock, "description": product.description,
+            "min_stock": product.min_stock, "track_inventory": product.track_inventory,
+            "description": product.description,
             "created_at": product.created_at.isoformat() if product.created_at else None,
             "updated_at": product.updated_at.isoformat() if product.updated_at else None,
             "current_stock": inv.quantity if inv else 0
@@ -86,7 +88,7 @@ def get_product(product_id: int, account_id: int = Depends(get_account_id), db: 
     return schemas.ProductOut(
         id=p.id, name=p.name, sku=p.sku, category=p.category,
         unit=p.unit, purchase_price=p.purchase_price, sale_price=p.sale_price,
-        min_stock=p.min_stock, description=p.description,
+        min_stock=p.min_stock, track_inventory=p.track_inventory, description=p.description,
         created_at=p.created_at, updated_at=p.updated_at,
         current_stock=inv.quantity if inv else 0
     )
@@ -106,6 +108,7 @@ def update_product(product_id: int, data: schemas.ProductUpdate, account_id: int
             purchase_price=data.purchase_price,
             sale_price=data.sale_price,
             min_stock=data.min_stock,
+            track_inventory=data.track_inventory,
             description=data.description,
         ), db)
     if not p:

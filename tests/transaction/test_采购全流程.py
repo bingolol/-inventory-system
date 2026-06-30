@@ -54,6 +54,7 @@ class Test创建采购单:
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 3, "unit_price": 15}],
             "notes": "测试采购单",
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
         data = resp.json()
@@ -90,6 +91,7 @@ class Test查询采购单:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 5, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
         purchase_id = get_entity_id(resp.json())
@@ -128,6 +130,7 @@ class Test取消采购单:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = get_entity_id(resp.json())
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
@@ -157,6 +160,7 @@ class Test删除采购单:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = get_entity_id(resp.json())
         resp2 = client.delete(f"/api/purchases/{purchase_id}", headers=HEADERS)
@@ -225,6 +229,7 @@ class Test更新采购单:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 2, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = get_entity_id(resp.json())
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)

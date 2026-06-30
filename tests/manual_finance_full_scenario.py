@@ -28,6 +28,8 @@ def extract_id(resp):
         return None
     if resp.get("id"):
         return resp["id"]
+    if resp.get("entity_id"):
+        return resp["entity_id"]
     ent = resp.get("entity", {})
     if isinstance(ent, dict):
         if ent.get("id"):
@@ -262,9 +264,67 @@ exp4_id = extract_id(exp4)
 print(f"费用录入完成 房租={exp1_id} 办公={extract_id(exp2)} 运费={extract_id(exp3)} 工资={exp4_id}")
 
 # ══════════════════════════════════════════════════════════
+# 6b. 个人垫付（其他应付款）
+# ══════════════════════════════════════════════════════════
+section("6b. 个人垫付: 老板垫付办公设备款 5000元 (6/8)")
+# dr 6601管理费用 cr 2241其他应付款
+adv = post("/api/personal-advances", {
+    "advancer_name": "老板张三",
+    "amount": 5000,
+    "advance_date": "2026-06-08",
+    "description": "垫付办公设备采购款",
+    "debit_account_code": "6601",
+})
+adv_id = extract_id(adv)
+print(f"个人垫付ID={adv_id}")
+# 偿还3000 (6/25)
+rep = post(f"/api/personal-advances/{adv_id}/repay", {
+    "amount": 3000,
+    "repayment_date": "2026-06-25",
+    "bank_account_id": BANK_ID,
+})
+print(f"偿还个人垫付: {rep.get('ok', False)}")
+# 查询未还余额
+adv_detail = get(f"/api/personal-advances/{adv_id}")
+remaining = adv_detail.get("remaining_amount", 0)
+check("个人垫付未还余额", 2000, remaining)
+
+# ══════════════════════════════════════════════════════════
 # 7. 固定资产
 # ══════════════════════════════════════════════════════════
-section("7. 固定资产: 服务器 50000元 5年 残值5% (6/1)")
+section("7a. 固定资产购入(关联发票): 打印机 6780元 4年 残值5% (6/5)")
+# 通过进项发票同步创建固定资产
+# 会计实务(一般纳税人): 资产原值=不含税金额, 进项税额单列 222102 抵扣
+# 含税6780 不含税6000 税额780 月折旧=6000*0.95/48=118.75 6月新增不提
+# 固定资产发票过账即抵扣即认证（certification_status=certified），与 222102 总账同步
+fa_inv = post("/api/invoices/quick", {
+    "invoice_no": "JX2026-GD001", "direction": "in", "invoice_type": "special",
+    "amount_with_tax": 6780, "tax_rate": 0.13, "counterparty_name": "供应商甲",
+    "seller_name": "供应商甲", "buyer_name": "一般纳税人模拟公司",
+    "issue_date": "2026-06-05",
+    "items": [{"product_id": PID_A, "quantity": 1, "unit_price": 6000, "tax_rate": 0.13}],
+    "purchase_order_action": "auto_create",
+    "fixed_asset": {
+        "asset_code": "FA-INV-001", "asset_name": "打印机",
+        "useful_life": 48, "start_date": "2026-06-05",
+    },
+})
+fa_inv_data = fa_inv.get("data", fa_inv)
+# AI 中间件包裹: {"ok":..., "entity": {"data": {...}}} → 需穿透到 entity.data
+if "entity" in fa_inv and isinstance(fa_inv["entity"], dict):
+    fa_inv_data = fa_inv["entity"].get("data", fa_inv["entity"])
+fa_inv_id = extract_id(fa_inv)
+fa_inv_asset = fa_inv_data.get("fixed_asset", {}) if isinstance(fa_inv_data, dict) else {}
+fa_asset_id = fa_inv_asset.get("id")
+print(f"打印机发票ID={fa_inv_id} 资产ID={fa_asset_id}")
+# 会计实务: 一般纳税人资产原值=不含税金额(6000), 进项税额(780)单列 222102 抵扣
+inv_amount_without_tax = fa_inv_data.get("amount_without_tax", 0)
+asset_value = fa_inv_asset.get("original_value", 0)
+check("资产原值=不含税金额(一般纳税人抵扣进项税)", inv_amount_without_tax, asset_value)
+# 进项税额已在创建时自动认证(无需单独调 /certify)，与 222102 总账入账原子同步
+check("固定资产发票自动认证", "certified", fa_inv_data.get("certification_status"))
+
+section("7b. 固定资产(直接创建): 服务器 50000元 5年 残值5% (6/1)")
 # 月折旧=50000*0.95/60=791.67 但6月新增当月不提
 fa = post("/api/fixed-assets", {
     "asset_code": "FA-2026-001", "name": "服务器", "original_value": 50000,
@@ -387,15 +447,16 @@ for item in (items if isinstance(items, list) else []):
 # 13. 银行对账
 # ══════════════════════════════════════════════════════════
 section("13. 银行对账")
-# 计算银行期末余额: 500000(期初) + 101700(收) - 113000(付) - 25000(工资) - 50(手续费) + 120(利息) = 463770
-bank_end = 500000 + 101700 - 113000 - 25000 - 50 + 120
+# 银行期末余额: 500000(期初) + 101700(收) - 113000(付1) - 25000(工资) - 3000(偿还垫付) - 50(手续费) + 120(利息) = 460770
+bank_end = 500000 + 101700 - 113000 - 25000 - 3000 - 50 + 120
 stmt = post("/api/bank/statement", {
     "period_start": "2026-06-01", "period_end": "2026-06-30",
     "opening_balance": 500000, "closing_balance": bank_end,
     "lines": [
         {"transaction_date": "2026-06-22", "amount": 101700, "description": "收款"},
-        {"transaction_date": "2026-06-25", "amount": -113000, "description": "付款"},
-        {"transaction_date": "2026-06-28", "amount": -25000, "description": "工资"},
+        {"transaction_date": "2026-06-25", "amount": -113000, "description": "付款采购"},
+        {"transaction_date": "2026-06-25", "amount": -25000, "description": "发工资"},
+        {"transaction_date": "2026-06-25", "amount": -3000, "description": "偿还个人垫付"},
         {"transaction_date": "2026-06-28", "amount": -50, "description": "手续费"},
         {"transaction_date": "2026-06-28", "amount": 120, "description": "利息"},
     ],
@@ -430,20 +491,20 @@ mc = post("/api/finance/month-close", {"period": "2026-06"})
 print("月结:", json.dumps(mc, ensure_ascii=False)[:800])
 mc_data = mc.get("entity", mc)
 
-# VAT: 销项=11700+10920+4160-1040=25740, 进项=13000+13000=26000
-# VAT=max(25740-26000,0)=0 (留抵260)
+# VAT: 销项=11700+10920+4160-1040=25740, 进项=13000+13000+780(打印机)=26780
+# VAT=max(25740-26780,0)=0 (留抵1040)
 exp_output_vat = 11700 + 10920 + 4160 - 1040
-exp_input_vat = 13000 + 13000
+exp_input_vat = 13000 + 13000 + 780
 exp_vat = max(exp_output_vat - exp_input_vat, 0)
 check("月结VAT", exp_vat, mc_data.get("curr_vat", 0))
 
 # 附加税 = VAT*12% = 0
 exp_surcharge = q2(exp_vat * d("0.12"))
 
-# 利润 = 198000 - 135000 - 43000(费用) - 50(手续费) + 120(利息) = 20070
+# 利润 = 198000 - 135000 - 48000(费用+个人垫付) - 50(手续费) + 120(利息) = 15070
 # 注: 盘亏2000走1901待处理财产损溢(非损益科目)，不影响当期利润，查明原因后才转管理费用
-exp_profit = 198000 - 135000 - 43000 - 50 + 120
-# 所得税 = 20070 * 25% = 5017.50 (一般纳税人)
+exp_profit = 198000 - 135000 - 48000 - 50 + 120
+# 所得税 = 15070 * 25% = 3767.50 (一般纳税人)
 exp_income_tax = q2(exp_profit * d("0.25"))
 print(f"预期: 销项={exp_output_vat} 进项={exp_input_vat} VAT={exp_vat} 利润={exp_profit} 所得税={exp_income_tax}")
 check("月结所得税", exp_income_tax, mc_data.get("target_income_tax", 0))
@@ -460,10 +521,10 @@ is_post = get("/api/financial-reports/income-statement?start_date=2026-06-01&end
 print("IS:", json.dumps(is_post, ensure_ascii=False)[:800])
 check("月结后营业收入", exp_revenue, is_post.get("revenue", 0))
 check("月结后营业成本", exp_cogs, is_post.get("cost_of_goods_sold", 0))
-# 净利润 = 19950(营业利润) - 5017.50(所得税) = 14932.50
+# 净利润 = 14950(营业利润) - 3767.50(所得税) = 11182.50
 # 注: 利息120在6603贷方冲减财务费用，financial_expenses净额=50-120=-70但利润表显示50(借方)
-# 营业利润 = 198000-135000-3000-40000-50 = 19950
-check("净利润", q2(19950 - 5017.50), is_post.get("net_profit", 0))
+# 营业利润 = 198000-135000-3000-45000-50 = 14950 (含个人垫付5000)
+check("净利润", q2(14950 - 3767.50), is_post.get("net_profit", 0))
 
 # 试算平衡
 trial = get("/api/finance/reports/trial-balance?date=2026-06-30")
@@ -473,8 +534,8 @@ print("试算平衡:", json.dumps(trial, ensure_ascii=False)[:800])
 # 16. 税务核对
 # ══════════════════════════════════════════════════════════
 section("16. 税务核对8项")
-# 利润总额 = 营业利润(19950) = 收入-成本-费用(含手续费50, 不含利息120冲减)
-exp_gross_profit = 198000 - 135000 - 3000 - 40000 - 50  # = 19950
+# 利润总额 = 营业利润(14950) = 收入-成本-费用(含个人垫付5000, 含手续费50, 不含利息120冲减)
+exp_gross_profit = 198000 - 135000 - 3000 - 45000 - 50  # = 14950
 tax_check = get(f"/api/tax/check?period=2026-06&sales={exp_revenue}&output_vat={exp_output_vat}&input_vat={exp_input_vat}&unpaid_vat={exp_vat}&income_tax={exp_income_tax}&surcharge={exp_surcharge}&vat_payable={exp_vat}&gross_profit={exp_gross_profit}")
 print("税务核对:", json.dumps(tax_check, ensure_ascii=False)[:800])
 check("税务核对全通过", True, tax_check.get("all_passed", False))
@@ -482,8 +543,10 @@ check("税务核对全通过", True, tax_check.get("all_passed", False))
 # 季度税务报表
 tax_report = get("/api/tax-report?year=2026&quarter=2")
 print("季度税务:", json.dumps(tax_report, ensure_ascii=False)[:600])
-# 季度税务报表 - 发票层口径(不减退货冲红，退货在申报表单独栏次)
-exp_quarter_output_vat = 11700 + 10920 + 4160  # 发票层销项=26780
+# 季度税务报表 - 发票层净额口径（红字发票 amount<0 自动扣除）
+# 销售3退5件@1600×13% = 退货税额1040 → 红字销项发票 tax_amount=-1040
+# 净销项税 = 11700 + 10920 + 4160 - 1040(红字) = 25740
+exp_quarter_output_vat = 11700 + 10920 + 4160 - 1040  # 净额=25740
 check("季度销项税", exp_quarter_output_vat, tax_report.get("output_tax", 0))
 check("季度进项税", exp_input_vat, tax_report.get("input_tax", 0))
 
@@ -508,7 +571,8 @@ result = {"account_id": AID, "total_checks": total, "passed": passed, "failed": 
           "bugs": bugs, "steps": steps,
           "expected": {"revenue": str(exp_revenue), "cogs": str(exp_cogs), "vat": str(exp_vat),
                        "profit": str(exp_profit), "income_tax": str(exp_income_tax),
-                       "output_vat": str(exp_output_vat), "input_vat": str(exp_input_vat)}}
+                       "output_vat": str(exp_output_vat), "input_vat": str(exp_input_vat)},
+          "added_features": ["personal_advance(5000, repaid_3000)", "fixed_asset_with_invoice(printer_6780)"],}
 with open("test_finance_full_result.json", "w", encoding="utf-8") as f:
     json.dump(result, f, ensure_ascii=False, indent=2)
 print(f"\n详细结果已保存到 test_finance_full_result.json")

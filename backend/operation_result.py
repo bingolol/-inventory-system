@@ -34,6 +34,8 @@ class EntityType(str, Enum):
     OPENING_BALANCE = "opening_balance"
     FIXED_ASSET = "fixed_asset"
     BANK_ENTRY = "bank_entry"
+    PERSONAL_ADVANCE = "personal_advance"
+    PERSONAL_ADVANCE_REPAYMENT = "personal_advance_repayment"
 
 
 @dataclass

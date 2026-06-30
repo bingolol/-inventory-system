@@ -1,0 +1,252 @@
+======================================================================
+PATTERN 1: ["id"] or ['id'] on API response
+======================================================================
+
+  integration\test_invoice_with_fixed_asset.py  (2 occurrences)
+    L426: invoice_id = cr_data["id"]
+    L513: invoice_id = cr_data["id"]
+
+  integration\test_stress_ai_gateway.py  (1 occurrences)
+    L69: ids.append(data["id"])
+
+  integration\test_固定资产.py  (1 occurrences)
+    L29: assert data["id"] > 0
+
+  test_finance_full_scenario.py  (2 occurrences)
+    L30: return resp["id"]
+    L41: return data["id"]
+
+  test_reverse_flow.py  (2 occurrences)
+    L31: return resp["id"]
+    L40: return data["id"]
+
+  transaction\test_固定资产全流程.py  (3 occurrences)
+    L43: assert data["id"] > 0
+    L350: invoice_id = cr_data["id"]
+    L428: invoice_id = cr_data["id"]
+
+  transaction\test_固定资产发票过账.py  (2 occurrences)
+    L145: invoice_id = data["id"]
+    L173: client.post(f"/api/invoices/{data['id']}/reverse",
+
+  unit\test_operation_result.py  (1 occurrences)
+    L40: assert result.data["id"] == 123
+
+  >>> TOTAL: 14 occurrences in 8 files
+
+======================================================================
+PATTERN 2: ["data"] on API response
+======================================================================
+
+  integration\test_accrual_accounting.py  (6 occurrences)
+    L259: assert data["data"]["category"] == "房租"
+    L260: assert data["data"]["amount"] == 10000.0
+    L261: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：费用发生时未付款
+    L304: assert payment_data["data"]["amount"] == 10000.0
+    L346: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：采购发生时未付款
+    L454: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：销售发生时未收款
+
+  transaction\test_权责发生制.py  (6 occurrences)
+    L306: assert data["data"]["category"] == "房租"
+    L307: assert data["data"]["amount"] == 10000.0
+    L308: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：费用发生时未付款
+    L351: assert payment_data["data"]["amount"] == 10000.0
+    L393: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：采购发生时未付款
+    L501: assert data["data"]["payment_status"] == "unpaid"  # 权责发生制：销售发生时未收款
+
+  >>> TOTAL: 12 occurrences in 2 files
+
+======================================================================
+PATTERN 3: order_date in API payloads
+======================================================================
+  (none found)
+
+  >>> TOTAL: 0 occurrences in 0 files
+
+======================================================================
+PATTERN 4: Purchase/Sale payloads missing purchase_date/sale_date
+======================================================================
+
+[PURCHASE PAYLOAD] e2e\test_全流程.py L177-L186
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "has_invoice": True,
+  "payment_method": "company",
+  "payment_status": "paid",
+  "items": [
+  {"product_id": pid, "quantity": 100, "unit_price": 10.00, "tax_rate": 0.13},
+  {"product_id": svc_id, "quantity": 5, "unit_price": 50.00, "tax_rate": 0.06},
+  ]
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_accrual_accounting.py L338-L342
+  response = client.post("/api/purchases", json={
+  "supplier_id": 1,
+  "items": [{"product_id": 1, "quantity": 100, "unit_price": 100}],
+  "payment_method": "company"
+  }, headers={"X-Account-ID": "1"})
+
+[PURCHASE PAYLOAD] integration\test_general_taxpayer_full_cycle.py L135-L143
+  r = c.post("/api/purchases", json={
+  "supplier_id": s["supplier_id"],
+  "items": [{
+  "product_id": s["pid"],
+  "quantity": 100,
+  "unit_price": 113,
+  "tax_rate": 0.13,
+  }],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_purchases_router.py L35-L38
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 5, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_purchases_router.py L49-L53
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 3, "unit_price": 15}],
+  "notes": "测试采购单",
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_purchases_router.py L63-L66
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 2, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_purchases_router.py L84-L87
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_purchases_router.py L101-L104
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] integration\test_xingwang_scenario.py L138-L146
+  r = c.post("/api/purchases", json={
+  "supplier_id": s["supplier_id"],
+  "items": [
+  {"product_id": s["products"]["BT"], "quantity": 100, "unit_price": 100},
+  {"product_id": s["products"]["PB"], "quantity": 200, "unit_price": 80},
+  {"product_id": s["products"]["CB"], "quantity": 500, "unit_price": 10},
+  ],
+  "payment_method": "company",
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_发票销售单联动.py L32-L35
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid, "payment_method": "company", "payment_status": "unpaid",
+  "items": [{"product_id": pid, "quantity": qty, "unit_price": 50}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_权责发生制.py L385-L389
+  response = client.post("/api/purchases", json={
+  "supplier_id": 1,
+  "items": [{"product_id": 1, "quantity": 100, "unit_price": 100}],
+  "payment_method": "company"
+  }, headers={"X-Account-ID": "1", "X-Operator": "user"})
+
+[PURCHASE PAYLOAD] transaction\test_采购全流程.py L53-L57
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 3, "unit_price": 15}],
+  "notes": "测试采购单",
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_采购全流程.py L90-L93
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 5, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_采购全流程.py L128-L131
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_采购全流程.py L157-L160
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_采购全流程.py L225-L228
+  resp = client.post("/api/purchases", json={
+  "supplier_id": sid,
+  "items": [{"product_id": pid, "quantity": 2, "unit_price": 10}],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_销售全流程.py L64-L68
+  resp = client.post("/api/purchases", json={
+  "order_no": f"PO-{tag}", "supplier_id": ids["sid"],
+  "payment_method": "company", "payment_status": "unpaid",
+  "items": [{"product_id": ids["pid"], "quantity": qty, "unit_price": unit_price}],
+  }, headers=HEADERS)
+
+[SALE PAYLOAD] transaction\test_销售全流程.py L175-L182
+  resp = client.post("/api/sales", json={
+  "customer_id": ids["cid"], "deduct_inventory": False,
+  "payment_status": "unpaid",
+  "items": [
+  {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
+  {"product_id": ids["pid"], "quantity": 3, "unit_price": 200},
+  ],
+  }, headers=HEADERS)
+
+[PURCHASE PAYLOAD] transaction\test_销售全流程.py L187-L194
+  resp = client.post("/api/purchases", json={
+  "supplier_id": ids["sid"], "payment_method": "company",
+  "payment_status": "unpaid",
+  "items": [
+  {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
+  {"product_id": ids["pid"], "quantity": 3, "unit_price": 200},
+  ],
+  }, headers=HEADERS)
+
+
+--- Secondary scan: purchase/sale API calls with missing date fields ---
+[PURCHASE CALL] integration\test_purchases_router.py L35: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] integration\test_purchases_router.py L49: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] integration\test_purchases_router.py L63: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] integration\test_purchases_router.py L68: resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
+[PURCHASE CALL] integration\test_purchases_router.py L72: resp = client.put("/api/purchases/99999", json={"notes": "测试"}, headers=HEADERS)
+[PURCHASE CALL] integration\test_purchases_router.py L84: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] integration\test_purchases_router.py L101: resp = client.post("/api/purchases", json={
+[SALE CALL] integration\test_无票销售退货场景.py L199: resp = client.put(f"/api/sales/{sale_id}", json={
+[PURCHASE CALL] transaction\test_发票销售单联动.py L32: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] transaction\test_采购全流程.py L53: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] transaction\test_采购全流程.py L90: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] transaction\test_采购全流程.py L106: resp = client.put("/api/purchases/99999", json={"status": "cancelled"}, headers=HEADERS)
+[PURCHASE CALL] transaction\test_采购全流程.py L128: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] transaction\test_采购全流程.py L133: resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
+[PURCHASE CALL] transaction\test_采购全流程.py L157: resp = client.post("/api/purchases", json={
+[PURCHASE CALL] transaction\test_采购全流程.py L225: resp = client.post("/api/purchases", json={
+
+======================================================================
+SUMMARY TABLE
+======================================================================
+File                                                      P1(id)   P2(data)   P3(order_date)
+-----------------------------------------------------------------------------------------
+integration\test_accrual_accounting.py                         0          6                0
+integration\test_invoice_with_fixed_asset.py                   2          0                0
+integration\test_stress_ai_gateway.py                          1          0                0
+integration\test_固定资产.py                                       1          0                0
+test_finance_full_scenario.py                                  2          0                0
+test_reverse_flow.py                                           2          0                0
+transaction\test_固定资产全流程.py                                    3          0                0
+transaction\test_固定资产发票过账.py                                   2          0                0
+transaction\test_权责发生制.py                                      0          6                0
+unit\test_operation_result.py                                  1          0                0
+-----------------------------------------------------------------------------------------
+TOTAL                                                         14         12                0
+
+Files with P1 hits: 8
+Files with P2 hits: 2
+Files with P3 hits: 0

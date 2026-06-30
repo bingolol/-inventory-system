@@ -35,6 +35,7 @@ class TestGetPurchase:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 5, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
         purchase_id = resp.json().get("entity_id") or resp.json().get("id")
@@ -50,6 +51,7 @@ class TestCreatePurchase:
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 3, "unit_price": 15}],
             "notes": "测试采购单",
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
         data = resp.json()
@@ -63,6 +65,7 @@ class TestUpdatePurchase:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 2, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = resp.json().get("entity_id") or resp.json().get("id")
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
@@ -84,6 +87,7 @@ class TestCancelPurchase:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = resp.json().get("entity_id") or resp.json().get("id")
         resp2 = client.post(f"/api/purchases/{purchase_id}/cancel", headers=HEADERS)
@@ -101,6 +105,7 @@ class TestDeletePurchase:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
+            "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = resp.json().get("entity_id") or resp.json().get("id")
         resp2 = client.delete(f"/api/purchases/{purchase_id}", headers=HEADERS)

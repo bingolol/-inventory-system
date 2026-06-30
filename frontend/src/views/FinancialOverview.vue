@@ -1,30 +1,32 @@
 <template>
   <div class="fo" v-loading="loading">
     <!-- Row 1 -->
+    <div class="fo-bh"><span class="fo-bt">核心指标</span></div>
     <div class="fo-row">
-      <div class="fo-metric" style="border-left:3px solid var(--primary);">
+      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--primary);" @click="router.push('/finance/receivable/aging')">
         <div class="fo-ml">别人欠我</div>
         <div class="fo-mv c-primary">{{ formatMoney(bs?.accounts_receivable || 0) }}</div>
-        <div class="fo-ms">应收账款</div>
+        <div class="fo-ms">应收账款 · 查看往来 →</div>
       </div>
-      <div class="fo-metric" style="border-left:3px solid var(--danger);">
+      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--danger);" @click="router.push('/finance/receivable/aging')">
         <div class="fo-ml">我欠别人</div>
         <div class="fo-mv c-danger">{{ formatMoney(bs?.accounts_payable || 0) }}</div>
-        <div class="fo-ms">应付账款</div>
+        <div class="fo-ms">应付账款 · 查看往来 →</div>
       </div>
-      <div class="fo-metric" style="border-left:3px solid var(--success);">
+      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--success);" @click="router.push('/financial-reports')">
         <div class="fo-ml">本月净利润</div>
         <div class="fo-mv c-success">{{ formatMoney(income?.net_profit || 0) }}</div>
-        <div class="fo-ms">收入 − 成本 − 费用</div>
+        <div class="fo-ms">收入 − 成本 − 费用 · 查看利润表 →</div>
       </div>
-      <div class="fo-metric" style="border-left:3px solid var(--warning);">
+      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--warning);" @click="router.push('/inventory-goods')">
         <div class="fo-ml">库存资金</div>
         <div class="fo-mv c-warning">{{ formatMoney(inventory?.total_stock_value || 0) }}</div>
-        <div class="fo-ms">{{ inventory?.total_quantity || 0 }} 件 · {{ alerts.length }} 项预警</div>
+        <div class="fo-ms">{{ inventory?.total_quantity || 0 }} 件 · {{ alerts.length }} 项预警 · 查看库存 →</div>
       </div>
     </div>
 
     <!-- Row 2: health -->
+    <div class="fo-bh"><span class="fo-bt">财务健康度</span><span class="fo-bl" @click="router.push('/financial-reports')">查看资产负债表 →</span></div>
     <div class="fo-row">
       <div class="fo-metric" v-for="m in health" :key="m.label">
         <div class="fo-ml">{{ m.label }}</div>
@@ -37,7 +39,7 @@
     </div>
 
     <!-- Row 3: Balance sheet -->
-    <div class="fo-bh"><span class="fo-bt">资产负债</span></div>
+    <div class="fo-bh"><span class="fo-bt">资产负债摘要</span><span class="fo-bl" @click="router.push('/financial-reports')">查看资产负债表 →</span></div>
     <div class="fo-tri">
       <div class="fo-tc"><div class="fo-th" style="color:var(--primary);">资产</div>
         <div class="fo-tr"><span>货币资金</span><span class="fo-tv">{{ formatMoney(bs?.monetary_funds || 0) }}</span></div>
@@ -58,15 +60,16 @@
     </div>
 
     <!-- Row 4 -->
+    <div class="fo-bh"><span class="fo-bt">税务与利润</span></div>
     <div class="fo-quad">
-      <div class="fo-qb"><div class="fo-qh">增值税</div><div class="fo-qr"><span class="fo-ql">应纳税额</span><span class="fo-qv c-danger">{{ formatMoney(vatTax?.tax_payable || 0) }}</span></div></div>
-      <div class="fo-qb"><div class="fo-qh">企业所得税</div><div class="fo-qr"><span class="fo-ql">应纳税额</span><span class="fo-qv c-warning">{{ formatMoney(incomeTax?.tax_amount || 0) }}</span></div></div>
-      <div class="fo-qb"><div class="fo-qh">利润速览</div><div class="fo-qr"><span class="fo-ql">营业收入</span><span class="fo-qv">{{ formatMoney(income?.revenue || 0) }}</span></div><div class="fo-qr"><span class="fo-ql">净利润</span><span class="fo-qv c-success">{{ formatMoney(income?.net_profit || 0) }}</span></div></div>
-      <div class="fo-qb"><div class="fo-qh">现金流量</div><div class="fo-qr"><span class="fo-ql">净现金流</span><span class="fo-qv" :class="(cashFlow?.net_cash_flow || 0) >= 0 ? 'c-success' : 'c-danger'">{{ formatMoney(cashFlow?.net_cash_flow || 0) }}</span></div></div>
+      <div class="fo-qb fo-clickable" @click="router.push('/period-end-tax')"><div class="fo-qh">增值税 <span class="fo-ql-link">查看税务 →</span></div><div class="fo-qr"><span class="fo-ql">应纳税额</span><span class="fo-qv c-danger">{{ formatMoney(vatTax?.tax_payable || 0) }}</span></div></div>
+      <div class="fo-qb fo-clickable" @click="router.push('/period-end-tax')"><div class="fo-qh">企业所得税 <span class="fo-ql-link">查看税务 →</span></div><div class="fo-qr"><span class="fo-ql">应纳税额</span><span class="fo-qv c-warning">{{ formatMoney(incomeTax?.tax_amount || 0) }}</span></div></div>
+      <div class="fo-qb fo-clickable" @click="router.push('/financial-reports')"><div class="fo-qh">利润速览 <span class="fo-ql-link">查看利润表 →</span></div><div class="fo-qr"><span class="fo-ql">营业收入</span><span class="fo-qv">{{ formatMoney(income?.revenue || 0) }}</span></div><div class="fo-qr"><span class="fo-ql">净利润</span><span class="fo-qv c-success">{{ formatMoney(income?.net_profit || 0) }}</span></div></div>
+      <div class="fo-qb fo-clickable" @click="router.push('/cash-flows')"><div class="fo-qh">现金流量 <span class="fo-ql-link">查看现金流量表 →</span></div><div class="fo-qr"><span class="fo-ql">净现金流</span><span class="fo-qv" :class="(cashFlow?.net_cash_flow || 0) >= 0 ? 'c-success' : 'c-danger'">{{ formatMoney(cashFlow?.net_cash_flow || 0) }}</span></div></div>
     </div>
 
     <!-- Row 5: Recent expenses -->
-    <div class="fo-bh" style="margin-top:16px;"><span class="fo-bt">近期费用</span><span class="fo-bl" @click="router.push('/expenses')">全部 →</span></div>
+    <div class="fo-bh" style="margin-top:16px;"><span class="fo-bt">近期费用</span><span class="fo-bl" @click="router.push('/expense-outlay')">全部 →</span></div>
     <div class="fo-tbl-wrap" v-if="expList.length">
       <table class="fo-tbl">
         <tr><th style="width:16%;">日期</th><th style="width:14%;">类别</th><th style="width:18%;">金额</th><th>描述</th></tr>
@@ -169,6 +172,11 @@ useAccountAwareData(loadAll)
 .fo-badge.w { background: var(--warning-light); color: var(--warning); }
 .fo-badge.d { background: var(--danger-light); color: var(--danger); }
 .fo-bi { background: var(--border-lighter); color: var(--text-secondary); }
+
+.fo-clickable { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.fo-clickable:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+.fo-ql-link { font-size: 11px; color: var(--text-secondary); font-weight: 400; margin-left: 6px; }
+.fo-clickable:hover .fo-ql-link { color: var(--primary); }
 
 .fo-bh { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 10px; }
 .fo-bt { font-size: 13px; font-weight: 600; color: var(--text-primary); }

@@ -190,6 +190,8 @@ async def quick_create_invoice(
                     buyer_name=invoice.buyer_name,
                     issue_date=invoice.issue_date,
                     notes=invoice.notes,
+                    items=[it.model_dump() for it in invoice.items],
+                    purchase_order_action=invoice.purchase_order_action,
                     asset_code=fa.asset_code,
                     asset_name=fa.asset_name,
                     category=fa.category,

@@ -12,7 +12,7 @@ EXPENSE_FUNCTIONAL_CATEGORIES = ["销售费用", "管理费用", "财务费用",
 DEPRECIATION_METHODS = ["年限平均法", "双倍余额递减法", "年数总和法"]
 
 # 固定资产状态
-ASSET_STATUS = ["在用", "停用", "报废"]
+ASSET_STATUS = ["在用", "停用", "报废", "已冲红"]
 
 # 无形资产状态
 INTANGIBLE_ASSET_STATUS = ["使用中", "已报废"]
@@ -84,6 +84,23 @@ class OrderType:
     RETAIL = "retail"                  # 零售型销售单/采购单
 
 
+class PersonalAdvanceStatus:
+    """个人垫付还款状态"""
+    UNPAID = "unpaid"          # 未偿还
+    PARTIAL = "partial"        # 部分偿还
+    PAID = "paid"              # 已还清
+
+
+# 个人垫付借方科目白名单（创建垫付时 debit_account_code 只能取这里）
+# 含义：垫付的资金被用于什么用途 → 决定借方科目
+#   6601 管理费用 — 日常零星费用（默认，最常见）
+#   6602 销售费用 — 销售相关支出
+#   1405 库存商品 — 垫付采购货款（货已入库但款由个人付）
+#   1601 固定资产 — 垫付购买固定资产
+#   1701 无形资产 — 垫付购买无形资产
+PERSONAL_ADVANCE_DEBIT_ACCOUNTS = ["6601", "6602", "1405", "1601", "1701"]
+
+
 # ── 中文标签映射（前端展示用）──
 ENUM_LABELS = {
     "order_status": {
@@ -131,6 +148,11 @@ ENUM_LABELS = {
     "order_type": {
         OrderType.RETAIL: "零售",
     },
+    "personal_advance_status": {
+        PersonalAdvanceStatus.UNPAID: "未偿还",
+        PersonalAdvanceStatus.PARTIAL: "部分偿还",
+        PersonalAdvanceStatus.PAID: "已还清",
+    },
 }
 
 # ── 枚举导出映射（供 /api/enums 使用）──
@@ -153,4 +175,6 @@ ALL_ENUMS = {
     "personal_transaction_type": PERSONAL_TRANSACTION_TYPES,
     "taxpayer_type": [TaxpayerType.SMALL_SCALE, TaxpayerType.GENERAL],
     "order_type": [OrderType.RETAIL],
+    "personal_advance_status": [PersonalAdvanceStatus.UNPAID, PersonalAdvanceStatus.PARTIAL, PersonalAdvanceStatus.PAID],
+    "personal_advance_debit_accounts": PERSONAL_ADVANCE_DEBIT_ACCOUNTS,
 }

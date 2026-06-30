@@ -40,7 +40,7 @@ ACCOUNT_ID = _account.id if _account else 1
 _db.close()
 
 # 公共请求头
-HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "e2e_test"}
+HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "user"}
 UNIQUE = str(int(time.time()))[-6:]
 
 
@@ -48,6 +48,7 @@ UNIQUE = str(int(time.time()))[-6:]
 def client():
     """全 session 共享的 TestClient"""
     with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
         yield c
 
 
@@ -179,6 +180,7 @@ class TestPurchaseAndInventory:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
+            "purchase_date": "2026-05-19",
             "items": [
                 {"product_id": pid, "quantity": 100, "unit_price": 10.00, "tax_rate": 0.13},
                 {"product_id": svc_id, "quantity": 5, "unit_price": 50.00, "tax_rate": 0.06},
@@ -328,7 +330,9 @@ class TestInvoiceAndTax:
         invoice_id = created_data["invoice_id"]
         resp = client.post(f"/api/invoices/{invoice_id}/reverse", headers=HEADERS)
         assert resp.status_code == 200, f"红冲发票失败: {resp.text}"
-        assert resp.json()["data"]["is_reversed"] is True
+        result = resp.json()
+        assert "red_invoice_id" in result.get("data", {})
+        assert "red_invoice_no" in result.get("data", {})
 
 
 # ═══════════════════════════════════════════════════════════════

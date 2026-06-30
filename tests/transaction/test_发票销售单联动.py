@@ -31,6 +31,7 @@ def _purchase_stock(client, pid, qty=50):
     sid, _ = api_create_supplier(client, HEADERS)
     resp = client.post("/api/purchases", json={
         "supplier_id": sid, "payment_method": "company", "payment_status": "unpaid",
+        "purchase_date": "2026-06-01",
         "items": [{"product_id": pid, "quantity": qty, "unit_price": 50}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"

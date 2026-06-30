@@ -105,17 +105,24 @@ class InvoiceQuickCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_order_action(self):
-        """销项发票必填 sale_order_action；进项发票必填 purchase_order_action；link_existing 时必填 related_order_id"""
+        """销项发票必填 sale_order_action；进项发票必填 purchase_order_action；link_existing 时必填 related_order_id
+
+        例外：携带 fixed_asset 块的进项发票走固定资产过账分支（dr 1601/222102 / cr 2202），
+        不再生成采购单，因此 purchase_order_action 可留空。
+        """
         if self.direction == "out":
             if not self.sale_order_action:
                 raise ValueError("销项发票必填 sale_order_action（link_existing 或 auto_create）")
             if self.sale_order_action == "link_existing" and not self.related_order_id:
                 raise ValueError("sale_order_action=link_existing 时必填 related_order_id")
         elif self.direction == "in":
-            if not self.purchase_order_action:
-                raise ValueError("进项发票必填 purchase_order_action（link_existing 或 auto_create）")
-            if self.purchase_order_action == "link_existing" and not self.related_order_id:
-                raise ValueError("purchase_order_action=link_existing 时必填 related_order_id")
+            # 固定资产场景：跳过 purchase_order_action 强制校验
+            if self.fixed_asset is None:
+                if not self.purchase_order_action:
+                    raise ValueError("进项发票必填 purchase_order_action（link_existing 或 auto_create），"
+                                     "或携带 fixed_asset 块走固定资产过账分支")
+                if self.purchase_order_action == "link_existing" and not self.related_order_id:
+                    raise ValueError("purchase_order_action=link_existing 时必填 related_order_id")
         return self
 
 

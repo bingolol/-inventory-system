@@ -32,7 +32,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     """每个测试前重建数据库"""
-    monkeypatch.setattr(database, 'engine', test_engine)
+    monkeypatch.setattr(database, '_engine', test_engine)
     monkeypatch.setattr(database, 'SessionLocal', TestingSessionLocal)
     Base.metadata.create_all(bind=test_engine)
 
@@ -51,7 +51,9 @@ def setup_db(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 # ═══════════════════════════════════════════════════════════

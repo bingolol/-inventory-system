@@ -36,6 +36,12 @@ from .personal import (
     PersonalTransactionCreate, PersonalTransactionUpdate, PersonalTransactionOut,
 )
 
+from .personal_advance import (
+    PersonalAdvanceBase, PersonalAdvanceCreate, PersonalAdvanceOut,
+    PersonalAdvanceRepaymentCreate, PersonalAdvanceRepaymentOut,
+    PersonalAdvanceSummary,
+)
+
 from .finance import (
     OpeningBalanceBase, OpeningBalanceCreate, OpeningBalanceUpdate, OpeningBalanceOut,
     FixedAssetBase, FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, FixedAssetWithInvoiceUpdate,
@@ -76,6 +82,10 @@ __all__ = [
     # personal
     "OperationLogOut",
     "PersonalTransactionCreate", "PersonalTransactionUpdate", "PersonalTransactionOut",
+    # personal advance (其他应付款/个人垫付)
+    "PersonalAdvanceBase", "PersonalAdvanceCreate", "PersonalAdvanceOut",
+    "PersonalAdvanceRepaymentCreate", "PersonalAdvanceRepaymentOut",
+    "PersonalAdvanceSummary",
     # finance
     "OpeningBalanceBase", "OpeningBalanceCreate", "OpeningBalanceUpdate", "OpeningBalanceOut",
     "FixedAssetBase", "FixedAssetCreate", "FixedAssetUpdate", "FixedAssetOut",

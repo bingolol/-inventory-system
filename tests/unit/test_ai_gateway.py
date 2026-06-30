@@ -39,6 +39,7 @@ async def _ok_app(scope, receive, send):
 def client():
     """仅包装 AIGatewayMiddleware 的 TestClient（无 DB、无其他中间件）"""
     with TestClient(AIGatewayMiddleware(_ok_app)) as c:
+        c.headers.update({"X-Operator": "user"})
         yield c
 
 

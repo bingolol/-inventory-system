@@ -33,6 +33,7 @@ class CreateProduct(Command):
     purchase_price: Optional[float] = None
     sale_price: Optional[float] = None
     min_stock: int = 0
+    track_inventory: bool = True
     description: str = ""
     initial_stock: float = 0.0
 
@@ -50,6 +51,7 @@ class CreateProductHandler(CommandHandler):
             purchase_price=cmd.purchase_price,
             sale_price=cmd.sale_price,
             min_stock=cmd.min_stock,
+            track_inventory=cmd.track_inventory,
             description=cmd.description,
         )
         db.add(product)
@@ -84,6 +86,7 @@ class UpdateProduct(Command):
     purchase_price: Optional[float] = None
     sale_price: Optional[float] = None
     min_stock: Optional[int] = None
+    track_inventory: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -107,6 +110,7 @@ class UpdateProductHandler(CommandHandler):
             'purchase_price': cmd.purchase_price,
             'sale_price': cmd.sale_price,
             'min_stock': cmd.min_stock,
+            'track_inventory': cmd.track_inventory,
             'description': cmd.description,
         }
         for k, v in updates.items():

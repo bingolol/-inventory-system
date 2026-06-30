@@ -1,10 +1,20 @@
 <template>
   <div class="fixed-assets-tab">
+    <div class="row" style="margin-bottom:12px;">
+      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">资产原值</span><span class="stat-mini-value" style="color:var(--primary);">¥{{ formatMoney(totalOriginal) }}</span></div></div>
+      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">累计折旧</span><span class="stat-mini-value" style="color:var(--warning);">¥{{ formatMoney(totalDepreciation) }}</span></div></div>
+      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">资产净值</span><span class="stat-mini-value" style="color:var(--success);">¥{{ formatMoney(totalNet) }}</span></div></div>
+    </div>
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
           <span class="page-title">固定资产管理</span>
-          <el-button type="primary" @click="showCreate()"><el-icon><Plus /></el-icon> 新增资产</el-button>
+          <div>
+            <span style="font-size:12px;color:var(--text-placeholder);margin-right:8px;">折旧期间</span>
+            <el-date-picker v-model="depreciatePeriod" type="month" value-format="YYYY-MM" style="width:140px;" />
+            <el-button size="small" @click="handleBatchDepreciate" :loading="depreciating">计提折旧</el-button>
+            <el-button type="primary" @click="showCreate()"><el-icon><Plus /></el-icon> 新增资产</el-button>
+          </div>
         </div>
       </template>
       <div class="filter-bar">
@@ -31,10 +41,11 @@
         <el-table-column prop="accumulated_depreciation" label="累计折旧" min-width="120" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(row.accumulated_depreciation) }}</span></template></el-table-column>
         <el-table-column label="净值" min-width="120" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(Number(row.original_value) - Number(row.accumulated_depreciation)) }}</span></template></el-table-column>
         <el-table-column prop="status" label="状态" min-width="80" align="center"><template #default="{ row }"><span class="status-badge" :class="statusType(row.status)">{{ row.status }}</span></template></el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status !== '报废'" size="small" link type="primary" @click="showEdit(row)">编辑</el-button>
-            <el-popconfirm v-if="row.status !== '报废'" title="确定处置此资产？（将标记为报废）" @confirm="handleDispose(row)"><template #reference><el-button size="small" link type="warning" style="margin-left:4px">处置</el-button></template></el-popconfirm>
+            <el-button v-if="row.status==='在用'" size="small" link type="success" @click="handleDepreciate(row)">计提折旧</el-button>
+            <el-button v-if="row.status !== '报废'" size="small" link type="warning" @click="showDispose(row)">处置</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -76,12 +87,29 @@
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="handleSave">{{ isEdit ? '保存' : '确认入账' }}</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="disposeDialogVisible" title="处置固定资产" width="460px">
+      <div v-if="disposingAsset">
+        <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">资产: {{ disposingAsset.name }} ({{ disposingAsset.asset_code }})</p>
+        <el-form label-width="0">
+          <div class="fg" style="border-left-color:var(--warning);">
+            <div class="fgh"><span class="fgt" style="background:var(--warning-light);color:var(--warning);">处置信息</span></div>
+            <div class="fgb">
+              <div class="ff"><span class="fl" style="min-width:80px;">处置日期</span><el-date-picker v-model="disposeForm.disposal_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
+              <div class="ff"><span class="fl" style="min-width:80px;">处置价格</span><el-input-number v-model="disposeForm.disposal_price" :min="0" :precision="2" style="width:100%;" controls-position="right" /></div>
+            </div>
+          </div>
+        </el-form>
+      </div>
+      <template #footer><el-button @click="disposeDialogVisible=false">取消</el-button><el-button type="warning" @click="confirmDispose">确认处置</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import fixedAssetsApi from '../api/fixedAssets'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
@@ -93,6 +121,11 @@ const statusFilter = ref('')
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
+const depreciatePeriod = ref(new Date().toISOString().slice(0, 7))
+const depreciating = ref(false)
+const disposeDialogVisible = ref(false)
+const disposingAsset = ref(null)
+const disposeForm = ref({ disposal_price: 0, disposal_date: new Date().toISOString().slice(0, 10) })
 
 const defaultForm = () => ({
   asset_code: '', name: '', category: '', original_value: 0,
@@ -101,6 +134,10 @@ const defaultForm = () => ({
   accumulated_depreciation: 0, status: '在用'
 })
 const form = ref(defaultForm())
+
+const totalOriginal = computed(() => list.value.reduce((s, a) => s + (Number(a.original_value) || 0), 0))
+const totalDepreciation = computed(() => list.value.reduce((s, a) => s + (Number(a.accumulated_depreciation) || 0), 0))
+const totalNet = computed(() => totalOriginal.value - totalDepreciation.value)
 
 async function loadData() {
   loading.value = true
@@ -146,13 +183,45 @@ async function handleSave() {
   }
 }
 
-async function handleDispose(row) {
+function showDispose(row) {
+  disposingAsset.value = row
+  disposeForm.value = { disposal_price: 0, disposal_date: new Date().toISOString().slice(0, 10) }
+  disposeDialogVisible.value = true
+}
+
+async function confirmDispose() {
   try {
-    await fixedAssetsApi.disposeFixedAsset(row.id, '前端处置')
+    await fixedAssetsApi.disposeFixedAsset(disposingAsset.value.id, disposeForm.value.disposal_price, disposeForm.value.disposal_date)
     ElMessage.success('资产已处置')
+    disposeDialogVisible.value = false
     loadData()
   } catch (e) {
     handleError(e, { defaultMsg: '处置固定资产失败，请检查该资产是否已处置' })
+  }
+}
+
+async function handleDepreciate(row) {
+  try {
+    const period = depreciatePeriod.value
+    const res = await fixedAssetsApi.depreciateFixedAsset(row.id, period)
+    ElMessage.success(res.message || '折旧计提成功')
+    loadData()
+  } catch (e) {
+    handleError(e, { defaultMsg: '计提折旧失败' })
+  }
+}
+
+async function handleBatchDepreciate() {
+  if (!depreciatePeriod.value) { ElMessage.warning('请选择折旧期间'); return }
+  depreciating.value = true
+  try {
+    const res = await fixedAssetsApi.batchDepreciateFixedAssets(depreciatePeriod.value)
+    ElMessage.success(`批量折旧完成: ${res.count}项资产已计提`)
+    loadData()
+  } catch (e) {
+    handleError(e, { defaultMsg: '批量计提折旧失败' })
+  } finally {
+    depreciating.value = false
   }
 }
 
@@ -166,10 +235,21 @@ useAccountAwareData(loadData)
 
 <style scoped>
 .fixed-assets-tab { padding: 0; }
+.row { display:flex; gap:12px; }
+.c4 { flex:1; }
+.stat-mini { background:var(--bg-card); border:1px solid var(--border-lighter); border-left:4px solid var(--primary); border-radius:12px; padding:14px 16px; }
+.stat-mini-label { display:block; font-size:12px; color:var(--text-secondary); font-weight:500; margin-bottom:4px; }
+.stat-mini-value { font-size:24px; font-weight:700; letter-spacing:-0.5px; }
 .fa-group { background: var(--bg-elevated); border: 1px solid var(--border-lighter); border-left: 4px solid; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
 .fa-group-header { padding: 12px 16px 4px; }
 .fa-group-tag { display: inline-block; padding: 2px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
 .fa-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .fa-field { display: flex; align-items: center; gap: 12px; }
 .fa-label { font-size: 13px; color: var(--text-regular); flex-shrink: 0; }
+.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
+.fgh { padding:12px 16px 4px; }
+.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
+.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
+.ff { display:flex; align-items:center; gap:12px; }
+.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
 </style>

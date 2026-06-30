@@ -93,6 +93,11 @@ AI_CAPABILITIES: list[Capability] = [
     # ── 费用 / 财务 ──
     Capability("POST",   "/api/expenses",            "创建费用"),
     Capability("PUT",    "/api/expenses/{id}",       "更新费用"),
+    # ── 其他应付款/个人垫付 ──
+    Capability("POST",   "/api/personal-advances",   "创建个人垫付（其他应付款 2241）", params_hint="advancer_name,amount,advance_date,debit_account_code,default=6601"),
+    Capability("POST",   "/api/personal-advances/{id}/repay", "偿还个人垫付（支持部分偿还，自动扣银行/现金）", params_hint="amount,repayment_date,bank_account_id?"),
+    Capability("POST",   "/api/personal-advances/{id}/reverse", "红冲垫付单（须先红冲所有偿还记录）"),
+    Capability("POST",   "/api/personal-advances/{id}/repayments/{repayment_id}/reverse", "红冲单笔偿还记录"),
     Capability("POST",   "/api/opening-balances",    "创建期初余额"),
     Capability("POST",   "/api/cash-flows/transactions", "创建现金流水"),
     Capability("POST",   "/api/fixed-assets",        "创建固定资产（独立入账）"),

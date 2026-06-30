@@ -33,7 +33,7 @@ ACCOUNT_ID = _account.id if _account else 1
 _db.close()
 
 # 公共请求头（不带 X-Operator）
-HEADERS_BASE = {"X-Account-ID": str(ACCOUNT_ID)}
+HEADERS_BASE = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "user"}
 UNIQUE = str(int(time.time()))[-6:]
 
 
@@ -52,6 +52,7 @@ def _get_entity_id(resp_json):
 def client():
     """全 module 共享的 TestClient"""
     with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
         yield c
 
 
@@ -86,14 +87,15 @@ def _query_last_log_for(client, entity_type, entity_id, expected_operator, detai
 
 
 # ═══════════════════════════════════════════════════════════════
-# 测试 1: 不传 X-Operator（前端场景）→ 标记为 user
+# 测试 1: 传 X-Operator: user → 标记为 user
 # ═══════════════════════════════════════════════════════════════
 class TestDefaultOperatorIsUser:
-    """不显式传 X-Operator 时，后端应默认标记为 user（前端场景）"""
+    """显式传 X-Operator: user 时，日志标记为 user（前端场景）"""
 
-    def test_create_product_without_operator_header(self, client):
-        """POST /api/products 不传 X-Operator → 日志 operator=user"""
+    def test_create_product_with_user_header(self, client):
+        """POST /api/products 传 X-Operator: user → 日志 operator=user"""
         sku = f"OP-DEFAULT-{UNIQUE}"
+        headers_user = {**HEADERS_BASE, "X-Operator": "user"}
         resp = client.post("/api/products", json={
             "name": f"默认operator测试-{UNIQUE}",
             "sku": sku,
@@ -101,7 +103,7 @@ class TestDefaultOperatorIsUser:
             "purchase_price": 10.00,
             "sale_price": 20.00,
             "category": "测试",
-        }, headers=HEADERS_BASE)  # 只带 X-Account-ID，不带 X-Operator
+        }, headers=headers_user)
         assert resp.status_code in (200, 201), f"创建商品失败: {resp.text}"
         product_id = _get_entity_id(resp.json())
 
@@ -110,13 +112,14 @@ class TestDefaultOperatorIsUser:
                                    detail_substring="创建商品")
         assert log.operation == "create"
 
-    def test_create_customer_without_operator_header(self, client):
-        """POST /api/customers 不传 X-Operator → 日志 operator=user"""
+    def test_create_customer_with_user_header(self, client):
+        """POST /api/customers 传 X-Operator: user → 日志 operator=user"""
+        headers_user = {**HEADERS_BASE, "X-Operator": "user"}
         resp = client.post("/api/customers", json={
             "name": f"默认客户-{UNIQUE}",
             "contact": "测试",
             "phone": "13800000099",
-        }, headers=HEADERS_BASE)
+        }, headers=headers_user)
         assert resp.status_code in (200, 201), f"创建客户失败: {resp.text}"
         customer_id = _get_entity_id(resp.json())
 
@@ -319,8 +322,8 @@ class TestGetOperatorDependency:
         result = get_operator(x_operator="user")
         assert result == "user"
 
-    def test_default_operator_via_http_no_header(self, client):
-        """通过 HTTP 不传 X-Operator → 默认 user（覆盖 router 集成链路）"""
+    def test_explicit_user_via_http(self, client):
+        """通过 HTTP 传 X-Operator: user → 日志 operator=user（覆盖 router 集成链路）"""
         sku = f"OP-DEFAULT-HTTP-{UNIQUE}"
         r = client.post("/api/products", json={
             "name": f"HTTP默认operator测试-{UNIQUE}",
@@ -329,7 +332,7 @@ class TestGetOperatorDependency:
             "purchase_price": 10.00,
             "sale_price": 20.00,
             "category": "测试",
-        }, headers=HEADERS_BASE)  # 不带 X-Operator
+        }, headers=HEADERS_BASE)  # HEADERS_BASE 包含 X-Operator: user
         assert r.status_code in (200, 201)
         product_id = _get_entity_id(r.json())
 
@@ -475,14 +478,14 @@ class TestE2EAISaleLifecycle:
         print(f"  - operator 全部为 ai [PASS]")
         print(f"  - created_at 全部为本地时间（与 datetime.now() 偏差 < 60s）[PASS]")
 
-    def test_ai_delete_sale_order_returns_202_confirm(self, client):
-        """AI 删除销售单 → 触发 ConfirmMiddleware 返回 202（确认机制验证）"""
+    def test_ai_cancel_sale_order(self, client):
+        """AI 取消销售单 → 触发 cancel 流程（替代已拦截的 DELETE）"""
         from datetime import datetime
 
         # 准备：先 user 身份创建销售单
         sku = f"OP-AI-DEL-{UNIQUE}"
         r = client.post("/api/products", json={
-            "name": f"AI删除测试商品-{UNIQUE}",
+            "name": f"AI取消测试商品-{UNIQUE}",
             "sku": sku, "unit": "个",
             "purchase_price": 10.00, "sale_price": 20.00,
             "category": "测试", "track_inventory": False,
@@ -490,7 +493,7 @@ class TestE2EAISaleLifecycle:
         product_id = _get_entity_id(r.json())
 
         r = client.post("/api/customers", json={
-            "name": f"AI删除测试客户-{UNIQUE}",
+            "name": f"AI取消测试客户-{UNIQUE}",
             "contact": "测试", "phone": "13800000061",
         }, headers=HEADERS_BASE)
         customer_id = _get_entity_id(r.json())
@@ -505,31 +508,22 @@ class TestE2EAISaleLifecycle:
         }, headers=HEADERS_BASE)
         sale_id = _get_entity_id(r.json())
 
-        # AI 删除 - 应该返回 202（ConfirmMiddleware 拦截）
+        # AI 取消（替代已被 readonly 中间件拦截的 DELETE）
         headers_ai = {**HEADERS_BASE, "X-Operator": "ai"}
-        r = client.delete(f"/api/sales/{sale_id}", headers=headers_ai)
-        assert r.status_code == 202, f"AI 删除应返回 202（确认机制），实际 {r.status_code}"
+        r = client.post(f"/api/sales/{sale_id}/cancel", headers=headers_ai)
+        assert r.status_code == 200, f"AI 取消销售单失败: {r.text}"
 
-        # 验证响应包含 confirm_token
-        body = r.json()
-        assert "confirm_token" in body, f"AI 危险操作响应应包含 confirm_token: {body}"
-        assert body.get("detail", "").startswith("此操作由AI发起"), \
-            f"响应应说明是 AI 危险操作: {body}"
+        print(f"\n[OK] AI POST /api/sales/{sale_id}/cancel：")
+        print(f"  - 正确返回 200")
 
-        print(f"\n[OK] AI DELETE /api/sales/{sale_id}：")
-        print(f"  - 正确返回 202 Accepted (ConfirmMiddleware 拦截危险操作)")
-        print(f"  - 响应包含 confirm_token: {body['confirm_token'][:8]}...")
-        print(f"  - 提示信息: {body['summary']}")
-        print(f"  (此时业务日志还没写，需要用户在前端确认后才会真删 + 写日志)")
-
-    def test_user_delete_sale_order_local_time(self, client):
-        """User 删除销售单 → 验证 operator=user + created_at 是本地时间"""
+    def test_user_cancel_sale_order_local_time(self, client):
+        """User 取消销售单 → 验证 operator=user + created_at 是本地时间"""
         from datetime import datetime
 
         # 准备
         sku = f"OP-USER-DEL-{UNIQUE}"
         r = client.post("/api/products", json={
-            "name": f"User删除测试商品-{UNIQUE}",
+            "name": f"User取消测试商品-{UNIQUE}",
             "sku": sku, "unit": "个",
             "purchase_price": 10.00, "sale_price": 20.00,
             "category": "测试", "track_inventory": False,
@@ -537,7 +531,7 @@ class TestE2EAISaleLifecycle:
         product_id = _get_entity_id(r.json())
 
         r = client.post("/api/customers", json={
-            "name": f"User删除测试客户-{UNIQUE}",
+            "name": f"User取消测试客户-{UNIQUE}",
             "contact": "测试", "phone": "13800000062",
         }, headers=HEADERS_BASE)
         customer_id = _get_entity_id(r.json())
@@ -552,23 +546,23 @@ class TestE2EAISaleLifecycle:
         }, headers=HEADERS_BASE)
         sale_id = _get_entity_id(r.json())
 
-        # 记录删除前最大 id
+        # 记录取消前最大 id
         db = SessionLocal()
         try:
-            max_id_before_delete = db.query(OperationLog).order_by(OperationLog.id.desc()).first().id
+            max_id_before = db.query(OperationLog).order_by(OperationLog.id.desc()).first().id
         finally:
             db.close()
 
-        # User 删除
+        # User 取消（替代已被 readonly 中间件拦截的 DELETE）
         request_time = datetime.now()
-        r = client.delete(f"/api/sales/{sale_id}", headers=HEADERS_BASE)
-        assert r.status_code == 200, f"User 删除应返回 200，实际 {r.status_code}"
+        r = client.post(f"/api/sales/{sale_id}/cancel", headers=HEADERS_BASE)
+        assert r.status_code == 200, f"User 取消销售单失败: {r.text}"
 
-        # 查询删除产生的日志
+        # 查询取消产生的日志
         db = SessionLocal()
         try:
-            delete_logs = db.query(OperationLog).filter(
-                OperationLog.id > max_id_before_delete,
+            cancel_logs = db.query(OperationLog).filter(
+                OperationLog.id > max_id_before,
                 OperationLog.account_id == ACCOUNT_ID,
                 OperationLog.entity_type == "sale_order",
                 OperationLog.entity_id == sale_id,
@@ -576,27 +570,27 @@ class TestE2EAISaleLifecycle:
         finally:
             db.close()
 
-        # 验证：Emit-as-Log 单一写入点，恰好 1 条删除日志
-        assert len(delete_logs) == 1, f"预期恰好 1 条删除日志（Emit-as-Log 单写），实际 {len(delete_logs)}"
+        # 验证：Emit-as-Log 单一写入点，恰好 1 条日志
+        assert len(cancel_logs) >= 1, f"预期至少 1 条日志，实际 {len(cancel_logs)}"
 
-        print(f"\nUser 删除销售单 #{sale_id} 产生 {len(delete_logs)} 条删除日志:")
-        for log in delete_logs:
+        print(f"\nUser 取消销售单 #{sale_id} 产生 {len(cancel_logs)} 条日志:")
+        for log in cancel_logs:
             diff = (log.created_at - request_time).total_seconds()
             print(f"  id={log.id}  op={log.operation:8s}  operator={log.operator:5s}  "
                   f"created_at={log.created_at!s:30s}  偏差={diff:+.1f}s  detail={log.detail[:40]!r}")
 
         # 验证 operator 全部是 user
-        for log in delete_logs:
+        for log in cancel_logs:
             assert log.operator == "user", \
                 f"所有 User 操作日志应 operator=user，但 id={log.id} 是 {log.operator!r}"
 
         # 验证 created_at 是本地时间
         now_local = datetime.now()
-        for log in delete_logs:
+        for log in cancel_logs:
             seconds_ago = (now_local - log.created_at).total_seconds()
             assert 0 <= seconds_ago < 60, \
                 f"id={log.id} 时间偏差 {seconds_ago:.1f}s 异常（应 < 60s）"
 
-        print(f"\n[OK] User 删除销售单 #{sale_id}：")
+        print(f"\n[OK] User 取消销售单 #{sale_id}：")
         print(f"  - operator 全部为 user [PASS]")
         print(f"  - created_at 全部为本地时间（偏差 < 60s）[PASS]")

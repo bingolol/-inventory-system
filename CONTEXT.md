@@ -24,6 +24,46 @@
 | [docs/架构参考.md](docs/架构参考.md) | 完整架构手册 |
 | [docs/文件索引.md](docs/文件索引.md) | 全仓库文件清单 |
 | [docs/会计实务.md](docs/会计实务.md) | 会计实践逻辑与系统实现映射 |
+| [代码调用逻辑图.md](代码调用逻辑图.md) | 函数级调用链：Router→Command→Engine→ORM 全链路 |
+
+### ⚠️ 强制执行：编码前检查清单
+
+**每次收到编码任务时，必须按顺序执行以下检查，不可跳过：**
+
+#### 第 1 步：识别任务类型
+判断用户请求属于哪种类型：
+
+| 类型 | 关键词 |
+|------|--------|
+| 新功能 | "添加"、"实现"、"创建"、"写一个"、"新增" |
+| 调试 | "报错"、"修复"、"bug"、"问题"、"失败"、"不工作" |
+| 需求讨论 | "怎么做"、"方案"、"设计"、"思路"、"规划" |
+| 代码理解 | "这是什么"、"解释"、"看看"、"了解" |
+| 重构 | "优化"、"重构"、"整理"、"改进" |
+| 精简沟通 | 用户明确要求精简、或连续对话超过 10 轮 |
+
+#### 第 2 步：加载对应 Skill（必须）
+根据任务类型，**必须**使用 `skill` 工具加载对应 skill：
+
+```
+任务类型 → 加载 Skill
+─────────────────────────────────
+新功能开发 → skill(name="tdd")
+调试修复   → skill(name="diagnose")
+需求对齐   → skill(name="grill-me")
+代码理解   → skill(name="zoom-out")
+重构优化   → skill(name="improve-codebase-architecture")
+创建 PRD  → skill(name="to-prd")
+创建 Issue → skill(name="to-issues")
+精简输出   → skill(name="caveman")
+创建 Skill → skill(name="write-a-skill")
+问题分类   → skill(name="triage")
+```
+
+#### 第 3 步：验证加载
+加载后，确认 skill 内容已注入当前上下文。如果加载失败，**必须**告知用户并停止执行。
+
+---
 
 ### 必须遵守的 5 条规则
 
@@ -100,6 +140,56 @@ Agent 完成任务后检查：
 - [ ] 没有引入新的反模式
 - [ ] 遵循命名约定
 - [ ] 错误处理使用 BusinessError
+
+---
+
+## 技能使用规范
+
+- 每次使用技能（Skill 工具）完成任务后，静默执行 Review。
+- 一切顺利 → 无需任何操作。
+- 发现问题或绕路方案 → 先询问用户是否同意更新技能文档，用户确认后再修改对应的 SKILL.md。
+
+## Skills 说明
+
+- Skills 文件位于 `C:\Users\Administrator\.claude\skills\` 目录
+- 加载时使用 skill 名称（如 `tdd`、`diagnose`），不要用文件路径
+- 系统会自动从 skills 目录查找对应的 SKILL.md 文件
+
+## 违反后果
+
+如果跳过上述检查清单直接编码，**必须**立即停止，回退到第 1 步重新执行.
+
+---
+
+## 架构核心约束（改代码前必背）
+
+| 层级 | 职责 | 关键文件 |
+|------|------|---------|
+| **Routers** | 读→CRUD，写→Commands | `backend/routers/` |
+| **Commands** | 封装**所有写操作**，显式编排库存/财务联动 | `backend/commands/*.py` |
+| **CRUD** | 仅查询+报表，**写操作已下沉** | `backend/crud/*.py` |
+| **Domain** | 业务规则验证（库存/采购/销售单） | `backend/domain/*.py` |
+| **Engines** | 会计核算子系统，直连 ORM | `backend/engine_*.py` |
+| **EventBus** | 日志+汇总重算，解耦副作用 | `backend/middleware/event_bus.py` |
+
+**五大红线**：
+- ❌ 读 `has_invoice` 做分支 → ✅ 查 `Invoice` 表（BR-1）
+- ❌ 读 `Product.purchase_price` 算成本 → ✅ 读 `SaleItem.unit_cost`（BR-7）
+- ❌ 直接 UPDATE `StockMove`/`AccountMove` → ✅ 只 INSERT 反向记录（BR-8）
+- ❌ 增值税进费用 → ✅ 仅进负债 2221（BR-5）
+- ❌ 绕过 API 直连 DB/脚本 → ✅ 全走 API（BR-17）
+
+---
+
+## 常用诊断/重构工具链
+
+| 场景 | 推荐工具/入口 |
+|------|-------------|
+| **报表不平/日期过滤失效/库存跨期污染** | `bs-diag` → `scripts/bs_diag.py` |
+| **报表读错字段（如读 purchase_price 不读 unit_cost）** | `audit-truth-source` → `scripts/audit_truth_source.py` |
+| **疑难 Bug/性能回退** | `diagnose` → 建 2s 确定性复现环 → 二分/假设-埋点 |
+| **架构深化/模块合并/接口重设计** | `improve-codebase-architecture` → 生成 HTML 报告 → Grilling |
+| **新功能/修 Bug** | `tdd` → 先写 1 个集成测 → 再写最小实现 |
 
 ---
 
@@ -481,6 +571,27 @@ BS 和利润表必须覆盖科目表中全部损益类科目：
 | 6801 | 所得税费用 | ✓ | ✓ | 已有 |
 
 BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 + 营业外收入 - 营业外支出`
+
+### BR-24: 其他应付款/个人垫付模块（2026-06-30 新增）
+
+老板/员工用个人资金替公司垫付费用（如零星采购、办公费用、固定资产）时，公司形成一笔对个人的负债，挂账"其他应付款"科目（2241）。
+
+**业务流程**：
+
+1. **创建垫付单** `POST /api/personal-advances`：借 debit_account_code（默认 6601 管理费用）贷 2241 其他应付款。
+2. **偿还** `POST /api/personal-advances/{id}/repay`：支持部分偿还，多次累计。借 2241 贷 1002 银行存款（或 1001 库存现金）。带 `bank_account_id` 时自动生成 BankTransaction 并扣减银行余额。
+3. **红冲垫付单** `POST /api/personal-advances/{id}/reverse`：冲红总账凭证 + 标记 `is_reversed=True`。**前置约束**：必须先红冲所有未冲红的偿还记录。
+4. **红冲单笔偿还** `POST /api/personal-advances/{id}/repayments/{rid}/reverse`：冲红总账凭证 + 反向银行流水（如有）+ 累减 paid_amount + 重算 repayment_status。
+
+**关键规则**：
+
+- 借方科目白名单（`enums.PERSONAL_ADVANCE_DEBIT_ACCOUNTS`）：`6601 管理费用` / `6602 销售费用` / `1405 库存商品` / `1601 固定资产` / `1701 无形资产`。由 schemas 层校验。
+- 垫付人（债权人）按人名自由填写（`advancer_name`），不维护独立的人员表。
+- 垫付单号格式：`PA-YYYY-NNNN`（账本内年度递增），与采购/销售单号格式不同。
+- 偿还金额 ≤ `remaining_amount`（amount - paid_amount），禁止超额偿还。
+- BS 报表 `total_current_liabilities` 必须包含 `other_payable`（2241 余额），否则资产与权益错配不平。
+- 偿还流程的多步原子性（实体写 + 总账 + 银行流水 + 状态更新）由 `unit_of_work(db)` 包裹，与 `expenses` / `payments` 路由模式一致，不走 Command 层。
+- AI 网关已对 4 个写接口开放（create/repay/reverse/reverse-repayment），`/reverse` 自动走 ConfirmMiddleware 二次确认。
 
 ---
 

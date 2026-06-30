@@ -4,6 +4,7 @@ import pytest
 from decimal import Decimal
 
 from test_helpers import ensure_test_product
+from helpers import get_entity_id
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
 
@@ -13,7 +14,7 @@ def _ensure_customer(client, tag: str) -> int:
     resp = client.post("/api/customers", json={
         "name": f"FinCust-{tag}-{u}", "contact": "T", "phone": f"138{tag}0001",
     }, headers=HEADERS)
-    return resp.json().get("data", resp.json()).get("id")
+    return get_entity_id(resp.json())
 
 
 def _ensure_supplier(client, tag: str) -> int:
@@ -21,7 +22,7 @@ def _ensure_supplier(client, tag: str) -> int:
     resp = client.post("/api/suppliers", json={
         "name": f"FinSup-{tag}-{u}", "contact": "T", "phone": f"139{tag}0001",
     }, headers=HEADERS)
-    return resp.json().get("data", resp.json()).get("id")
+    return get_entity_id(resp.json())
 
 
 def _create_sale(client, pid: int, cid: int) -> dict:

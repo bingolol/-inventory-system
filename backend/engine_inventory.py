@@ -270,7 +270,19 @@ class InventoryEngine:
             original = orig_query.order_by(models.StockMove.id.desc()).first()
         else:
             original = orig_query.first()
-        effective_unit_cost = original.unit_cost if original else Decimal(str(unit_cost))
+        # ⚠️ 反向冲销用原流水的实际单价（total_cost / quantity），
+        # 不用派生的 unit_cost（移动加权平均）——避免采购退货借贷不同源。
+        # 采购入库：total_cost/qty = 发票不含税单价（真相源）
+        # 销售出库：total_cost/qty = avg_cost（与 unit_cost 等价，无副作用）
+        if original:
+            orig_qty = Decimal(str(original.quantity))
+            orig_total_cost = Decimal(str(original.total_cost))
+            if orig_qty != 0:
+                effective_unit_cost = (orig_total_cost / orig_qty).quantize(Decimal("0.000001"))
+            else:
+                effective_unit_cost = Decimal(str(unit_cost))
+        else:
+            effective_unit_cost = Decimal(str(unit_cost))
         rev_qty = Decimal(str(quantity))
         rev_cost = (rev_qty * effective_unit_cost).quantize(Q2)
 
@@ -309,6 +321,14 @@ class InventoryEngine:
         old_value = Decimal(str(inv.total_value))
 
         if is_inbound:
+            # 采购入库反向 = 采购退货 → 库存减少
+            # 库存不足时拒绝（避免库存负数，符合会计实务）
+            if old_qty < rev_qty:
+                raise BusinessError(
+                    code=ErrorCode.INVENTORY_INSUFFICIENT,
+                    message=f"库存不足，无法退货。商品: {product.name}，当前库存: {old_qty}，退货数量: {rev_qty}",
+                    data={"required": float(rev_qty), "current": float(old_qty)},
+                )
             inv.quantity -= quantity
             inv.total_value = (old_value - rev_cost).quantize(Q2)
         else:

@@ -49,7 +49,7 @@ class FixedAssetEngine:
         3. 计算月折旧额
         4. 写 FixedAssetDepreciation 流水
         5. 更新 accumulated_depreciation 缓存
-        6. 生成会计凭证 借:6602 贷:1602
+        6. 生成会计凭证 借:6601(管理费用) 贷:1602(累计折旧)
         """
         asset = self.db.query(models.FixedAsset).filter(
             models.FixedAsset.id == asset_id,
@@ -97,7 +97,7 @@ class FixedAssetEngine:
         asset.accumulated_depreciation = accumulated_after
         self.db.flush()
 
-        # 生成会计凭证：借:6602（管理费用—折旧费）贷:1602（累计折旧）
+        # 生成会计凭证：借:6601（管理费用）贷:1602（累计折旧）
         dep_date = _period_to_date(period)
         source = {
             "amount": monthly,
@@ -128,11 +128,15 @@ class FixedAssetEngine:
         return results
 
     def record_disposal(self, asset_id: int, disposal_price: Decimal = Decimal("0"),
-                        disposal_date: Optional[date] = None) -> None:
+                        disposal_date: Optional[date] = None,
+                        bank_account_id: Optional[int] = None) -> None:
         """处置（报废/出售）固定资产
 
         1. 更新资产状态为"报废"
         2. 生成处置凭证（冲销账面价值 + 处置损益）
+        3. 处置价格 > 0 且提供 bank_account_id 时：
+           - 创建 BankTransaction（inflow，投资活动现金流）
+           - 同步银行账户余额（与 1002 总账科目保持一致）
 
         处置价格 > 账面净值 → 资产处置收益（6111）
         处置价格 < 账面净值 → 营业外支出（6711）
@@ -181,6 +185,33 @@ class FixedAssetEngine:
             "description": f"固定资产处置: {asset.name}",
         }
         post_journal(self.db, self.account_id, "asset_disposal", source)
+
+        # 处置价格 > 0 → 银行收到处置款，同步创建银行流水（与 1002 总账科目保持一致）
+        # 未提供 bank_account_id 时按原逻辑仅更新总账（向后兼容）
+        if disposal_price > 0 and bank_account_id is not None:
+            from utils import _d
+            bank_account = self.db.query(models.BankAccount).filter(
+                models.BankAccount.id == bank_account_id,
+                models.BankAccount.account_id == self.account_id,
+            ).with_for_update().first()
+            if bank_account:
+                new_balance = _d(bank_account.balance) + _d(disposal_price)
+                # 处置固定资产属于投资活动现金流（CAS 31）
+                bank_tx = models.BankTransaction(
+                    account_id=self.account_id,
+                    bank_account_id=bank_account_id,
+                    transaction_type="inflow",
+                    amount=_d(disposal_price),
+                    balance_after=new_balance,
+                    transaction_date=disposal_date,
+                    description=f"固定资产处置款: {asset.name}",
+                    flow_category="investing",
+                    related_entity_type="fixed_asset_disposal",
+                    related_entity_id=asset_id,
+                )
+                self.db.add(bank_tx)
+                self.db.flush()
+                bank_account.balance = new_balance
 
 
 def _period_to_date(period: str) -> date:

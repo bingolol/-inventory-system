@@ -22,7 +22,7 @@ import database
 import models
 from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
 from tests.helpers import get_entity_id
-from confirm_middleware import confirm_store
+
 
 
 _TEST_DB_FILE = os.path.join(tempfile.gettempdir(), f"test_accrual_{uuid.uuid4().hex[:8]}.db")
@@ -77,6 +77,7 @@ def setup_db():
     Base.metadata.drop_all(bind=database._engine)
     configure_engine(_TEST_DATABASE_URL)
     Base.metadata.create_all(bind=database._engine)
+    database._init_pending_confirms_table()
 
     # 创建测试账本、会计科目表
     db = database.SessionLocal()
@@ -113,13 +114,15 @@ def setup_db():
     # 恢复全局 engine 到 production DB
     configure_engine(_orig_db_url)
     Base.metadata.create_all(bind=database._engine)
-    confirm_store._init_db()
+    database._init_pending_confirms_table()
     set_maintenance_mode(False)
 
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        c.headers.update({"X-Operator": "user"})
+        yield c
 
 
 # ═══════════════════════════════════════════════════════════
@@ -136,7 +139,7 @@ def test_create_bank_account(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json().get("data", response.json())
     assert data["bank_name"] == "工商银行"
     assert data["account_number"] == "6222021234567890123"
     assert data["balance"] == "100000.00"
@@ -167,7 +170,7 @@ def test_update_bank_account(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    account_id = create_resp.json()["id"]
+    account_id = create_resp.json().get("data", create_resp.json()).get("id")
 
     # 更新（余额不能直接编辑，只能通过银行流水调整）
     response = client.put(f"/api/bank-accounts/{account_id}", json={
@@ -175,7 +178,8 @@ def test_update_bank_account(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert response.status_code == 200
-    assert response.json()["bank_name"] == "工商银行-更新"
+    updated = response.json().get("data", response.json())
+    assert updated["bank_name"] == "工商银行-更新"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -214,7 +218,7 @@ def test_delete_bank_account(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    account_id = create_resp.json()["id"]
+    account_id = create_resp.json().get("data", create_resp.json()).get("id")
 
     # 删除
     response = client.delete(f"/api/bank-accounts/{account_id}", headers={"X-Account-ID": "1", "X-Operator": "user"})
@@ -237,7 +241,7 @@ def test_create_bank_transaction(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
 
     # 录入银行流水（收入）
     response = client.post("/api/bank-transactions", json={
@@ -250,7 +254,7 @@ def test_create_bank_transaction(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json().get("data", response.json())
     assert data["transaction_type"] == "inflow"
     assert data["amount"] == "50000.00"
     assert data["balance_after"] == "150000.00"  # 100000 + 50000
@@ -264,7 +268,7 @@ def test_create_bank_transaction_outflow(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
 
     # 录入银行流水（支出）
     response = client.post("/api/bank-transactions", json={
@@ -277,7 +281,7 @@ def test_create_bank_transaction_outflow(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json().get("data", response.json())
     assert data["transaction_type"] == "outflow"
     assert data["amount"] == "30000.00"
     assert data["balance_after"] == "70000.00"  # 100000 - 30000
@@ -321,7 +325,7 @@ def test_pay_expense(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -332,7 +336,7 @@ def test_pay_expense(client):
         "payment_method": "company",
         "description": "6月房租"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
 
     # 费用付款
     payment_resp = client.post("/api/payments", json={
@@ -385,7 +389,8 @@ def test_create_purchase_accrual(client):
     response = client.post("/api/purchases", json={
         "supplier_id": 1,
         "items": [{"product_id": 1, "quantity": 100, "unit_price": 100}],
-        "payment_method": "company"
+        "payment_method": "company",
+        "purchase_date": "2026-06-01"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert response.status_code == 200
@@ -405,7 +410,7 @@ def test_pay_purchase(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
 
     # 创建供应商
     supplier_resp = client.post("/api/suppliers", json={
@@ -413,7 +418,7 @@ def test_pay_purchase(client):
         "contact": "王五",
         "phone": "13700137000"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    supplier_id = supplier_resp.json()["data"]["id"]
+    supplier_id = supplier_resp.json().get("data", supplier_resp.json()).get("id")
 
     # 创建商品
     product_resp = client.post("/api/products", json={
@@ -513,7 +518,7 @@ def test_receive_sale(client):
         "account_number": "6222021234567890123",
         "balance": 50000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
 
     # 创建供应商
     client.post("/api/suppliers", json={
@@ -553,7 +558,7 @@ def test_receive_sale(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     assert sale_resp.status_code == 200
-    sale_id = sale_resp.json()["data"]["id"]
+    sale_id = sale_resp.json().get("data", sale_resp.json()).get("id")
 
     # 销售收款
     receipt_resp = client.post("/api/receipts", json={
@@ -738,7 +743,7 @@ def test_payment_exceeds_expense_amount(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
 
     # 尝试付款金额超过费用金额
     payment_resp = client.post("/api/payments", json={
@@ -807,7 +812,7 @@ def test_duplicate_payment(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
 
     # 第一次付款
     payment1_resp = client.post("/api/payments", json={
@@ -849,7 +854,7 @@ def test_payment_with_bank_account(client):
         "account_number": "6222021234567890123",
         "balance": 100000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = bank_resp.json()["id"]
+    bank_account_id = bank_resp.json().get("data", bank_resp.json()).get("id")
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -860,7 +865,7 @@ def test_payment_with_bank_account(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    expense_id = expense_resp.json()["data"]["id"]
+    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
 
     # 付款时指定银行账户
     payment_resp = client.post("/api/payments", json={
@@ -951,7 +956,7 @@ def test_full_business_flow(client):
         "balance": 200000
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
     assert bank_resp.status_code == 200
-    bank_account_id = bank_resp.json()["id"]
+    bank_account_id = bank_resp.json().get("data", bank_resp.json()).get("id")
 
     # ── 3. 创建供应商和客户 ──
     supplier_resp = client.post("/api/suppliers", json={

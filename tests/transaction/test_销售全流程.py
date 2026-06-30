@@ -64,6 +64,7 @@ def _purchase_stock(client, ids, qty=50, unit_price=10.00):
     resp = client.post("/api/purchases", json={
         "order_no": f"PO-{tag}", "supplier_id": ids["sid"],
         "payment_method": "company", "payment_status": "unpaid",
+        "purchase_date": "2026-06-01",
         "items": [{"product_id": ids["pid"], "quantity": qty, "unit_price": unit_price}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
@@ -175,6 +176,7 @@ class Test创建销售单:
         resp = client.post("/api/sales", json={
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid",
+            "sale_date": "2026-06-01",
             "items": [
                 {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
                 {"product_id": ids["pid"], "quantity": 3, "unit_price": 200},
