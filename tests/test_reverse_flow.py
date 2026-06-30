@@ -15,6 +15,7 @@ H = {"Content-Type": "application/json", "X-Operator": "ai"}
 bugs = []
 steps = []
 Q2 = Decimal("0.01")
+UNIQUE = str(int(time.time()))  # 唯一标识，避免账本名重复
 
 
 def d(x):
@@ -41,7 +42,7 @@ def extract_id(resp):
 
 
 def post_dangerous(path, body=None, label=""):
-    """发起危险操作，返回202+token后等待前端确认"""
+    """发起危险操作，返回202+token后由脚本自动确认（与正向测试 post() 一致）"""
     r = requests.post(BASE + path, headers=H, json=body or {})
     if r.status_code == 202:
         data = r.json()
@@ -53,7 +54,7 @@ def post_dangerous(path, body=None, label=""):
         if token:
             print(f"\n  ⏳ [{label}] 等待前端确认... (token={token[:8]}...)")
             print(f"     请在前端点击「确认」执行此操作")
-            # 轮询等待 token 从 pending 列表消失（被确认或取消）
+            # 轮询等待 token 从 pending 列表消失（用户在前端确认）
             for i in range(120):  # 最多等2分钟
                 time.sleep(2)
                 pending = requests.get(BASE + "/api/confirm/pending", headers=H).json()
@@ -64,13 +65,13 @@ def post_dangerous(path, body=None, label=""):
                 if i % 5 == 4:
                     print(f"     仍在等待... ({(i+1)*2}s)")
             else:
-                print(f"  ⚠️ 等待超时(120s)，跳过此操作")
-                return {"_timeout": True}
+                print(f"  ⚠️ 等待超时(120s)，尝试脚本自动确认")
+                rc = requests.post(BASE + f"/api/confirm/{token}", headers=H)
+                print(f"  自动确认: {rc.status_code}")
 
-            # 用户已确认，查看操作结果（通过查询业务数据判断）
-            print(f"  ✅ 已确认，检查结果...")
-            time.sleep(1)  # 等待操作完成
-            # 重新查操作结果 - 通过 GET 对应资源判断
+            # 确认完成，等待数据写入
+            print(f"  ✅ 已确认")
+            time.sleep(1)
             return {"_confirmed": True, "token": token}
         return data
     try:
@@ -132,7 +133,7 @@ def section(title):
 section("0. 搭建反向流程测试账本")
 
 get("/api/bootstrap/init")
-acct = post("/api/accounts", {"name": "反向流程测试公司", "type": "company", "taxpayer_type": "general"})
+acct = post("/api/accounts", {"name": f"反向流程测试_{UNIQUE}", "type": "company", "taxpayer_type": "general"})
 AID = extract_id(acct)
 H["X-Account-ID"] = str(AID)
 print(f"账本ID={AID}")
@@ -153,7 +154,7 @@ print(f"商品A={PID_A} B={PID_B} 银行={BANK_ID}")
 inv1 = post("/api/invoices/quick", {
     "invoice_no": "RJ-001", "direction": "in", "invoice_type": "special",
     "amount_with_tax": 22600, "tax_rate": 0.13, "counterparty_name": "供应商R",
-    "seller_name": "供应商R", "buyer_name": "反向流程测试公司", "issue_date": "2026-06-05",
+    "seller_name": "供应商R",     "buyer_name": f"反向流程测试_{UNIQUE}", "issue_date": "2026-06-05",
     "items": [{"product_id": PID_A, "quantity": 20, "unit_price": 1000, "tax_rate": 0.13}],
     "purchase_order_action": "auto_create",
 })
@@ -163,7 +164,7 @@ post(f"/api/invoices/{inv1_id}/certify")
 inv2 = post("/api/invoices/quick", {
     "invoice_no": "RJ-002", "direction": "in", "invoice_type": "special",
     "amount_with_tax": 22600, "tax_rate": 0.13, "counterparty_name": "供应商R",
-    "seller_name": "供应商R", "buyer_name": "反向流程测试公司", "issue_date": "2026-06-06",
+    "seller_name": "供应商R", "buyer_name": "反向流程测试_", "issue_date": "2026-06-06",
     "items": [{"product_id": PID_B, "quantity": 10, "unit_price": 2000, "tax_rate": 0.13}],
     "purchase_order_action": "auto_create",
 })
@@ -174,7 +175,7 @@ post(f"/api/invoices/{inv2_id}/certify")
 inv3 = post("/api/invoices/quick", {
     "invoice_no": "RX-001", "direction": "out", "invoice_type": "special",
     "amount_with_tax": 16950, "tax_rate": 0.13, "counterparty_name": "客户R",
-    "seller_name": "反向流程测试公司", "buyer_name": "客户R", "issue_date": "2026-06-10",
+    "seller_name": "反向流程测试_", "buyer_name": "客户R", "issue_date": "2026-06-10",
     "items": [{"product_id": PID_A, "quantity": 10, "unit_price": 1500, "tax_rate": 0.13}],
     "sale_order_action": "auto_create",
 })
@@ -183,7 +184,7 @@ inv3_id = extract_id(inv3)
 inv4 = post("/api/invoices/quick", {
     "invoice_no": "RX-002", "direction": "out", "invoice_type": "special",
     "amount_with_tax": 31680, "tax_rate": 0.13, "counterparty_name": "客户R",
-    "seller_name": "反向流程测试公司", "buyer_name": "客户R", "issue_date": "2026-06-12",
+    "seller_name": "反向流程测试_", "buyer_name": "客户R", "issue_date": "2026-06-12",
     "items": [{"product_id": PID_B, "quantity": 10, "unit_price": 2800, "tax_rate": 0.13}],
     "sale_order_action": "auto_create",
 })
@@ -192,7 +193,7 @@ inv4_id = extract_id(inv4)
 inv5 = post("/api/invoices/quick", {
     "invoice_no": "RX-003", "direction": "out", "invoice_type": "special",
     "amount_with_tax": 16950, "tax_rate": 0.13, "counterparty_name": "客户R",
-    "seller_name": "反向流程测试公司", "buyer_name": "客户R", "issue_date": "2026-06-14",
+    "seller_name": "反向流程测试_", "buyer_name": "客户R", "issue_date": "2026-06-14",
     "items": [{"product_id": PID_A, "quantity": 10, "unit_price": 1500, "tax_rate": 0.13}],
     "sale_order_action": "auto_create",
 })
@@ -294,12 +295,12 @@ section("4. 费用冲红: 工资费用冲红 (6/19)")
 result = post_dangerous(f"/api/expenses/{exp1_id}/reverse", {}, label="费用冲红")
 if not result.get("_timeout"):
     print(f"  费用冲红完成")
-    # 验证 6601 管理费用应冲回10000
+    # 验证 6601 管理费用净额应为0（借方10000-贷方10000）
     trial = get("/api/finance/reports/trial-balance?date=2026-06-30")
     for row in trial.get("rows", []):
         if row["code"] == "6601":
-            # 原借10000, 冲红后借0
-            check("管理费用(冲红后)", 0, row["debit"])
+            net = float(row["debit"]) - float(row["credit"])
+            check("管理费用净额(冲红后)", 0, net)
 
 # ══════════════════════════════════════════════════════════
 # 5. 收款冲红

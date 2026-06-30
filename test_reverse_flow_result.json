@@ -1,5 +1,5 @@
 {
-  "account_id": 23,
+  "account_id": 4,
   "total_checks": 6,
   "passed": 3,
   "failed": 3,
@@ -19,7 +19,7 @@
       "pass": false
     },
     {
-      "label": "管理费用(冲红后)",
+      "label": "管理费用净额(冲红后)",
       "expected": "0.00",
       "actual": "10000.00",
       "diff": "10000.00",
@@ -42,7 +42,7 @@
       "pass": false
     },
     {
-      "label": "管理费用(冲红后)",
+      "label": "管理费用净额(冲红后)",
       "expected": "0.00",
       "actual": "10000.00",
       "diff": "10000.00",

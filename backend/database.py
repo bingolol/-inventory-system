@@ -80,6 +80,14 @@ def get_db_url() -> str:
     return str(_engine.url)
 
 
+def get_engine():
+    """返回当前底层 SQLAlchemy Engine（供测试/运维做原生查询用）。
+
+    业务代码应通过 SessionLocal 走 ORM；仅在需要 raw_connection 等底层能力时使用。
+    """
+    return _engine
+
+
 def configure_engine(db_url: str):
     global _engine, SessionLocal
     _engine = _make_engine(db_url)
@@ -119,11 +127,18 @@ def init_db():
     import models
     import models_finance
     import models_bank
-    Base.metadata.create_all(bind=_engine)
-    _auto_migrate_columns()
-    _migrate_asset_code_unique_to_account_scoped()
-    _sync_bank_account_balance_from_ledger()
-    _create_immutable_triggers()
+    # init_db 执行 create_all / 迁移 / 触发器创建等 DDL 操作，需临时进入维护模式
+    # 放行 _guard_execute 的 DDL 红线（否则被 SECURITY_VIOLATION 拦截）。
+    # 调用方（main.py startup / 测试）无需关心，函数返回后自动恢复。
+    set_maintenance_mode(True)
+    try:
+        Base.metadata.create_all(bind=_engine)
+        _auto_migrate_columns()
+        _migrate_asset_code_unique_to_account_scoped()
+        _sync_bank_account_balance_from_ledger()
+        _create_immutable_triggers()
+    finally:
+        set_maintenance_mode(False)
 
 
 def _create_immutable_triggers():
