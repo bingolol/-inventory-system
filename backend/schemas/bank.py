@@ -1,6 +1,6 @@
 """银行账户/流水 Schema"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -28,8 +28,9 @@ class BankAccountOut(BankAccountBase):
     id: int
     account_id: int
     created_at: datetime
+    balance: Decimal = Field(default=Decimal('0'), validation_alias="balance_l4")
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class BankAccountList(BaseModel):
@@ -55,9 +56,11 @@ class BankTransactionCreate(BankTransactionBase):
 class BankTransactionOut(BankTransactionBase):
     id: int
     account_id: int
-    balance_after: Decimal
+    amount: Decimal = Field(validation_alias="amount_l2")
+    transaction_date: datetime = Field(validation_alias="transaction_date_l1")
+    balance_after: Decimal = Field(validation_alias="balance_after_l4")
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[int] = None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

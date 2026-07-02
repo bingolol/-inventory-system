@@ -1,7 +1,15 @@
+<<<<<<< Updated upstream
 ﻿---
 doc-type: reference
 ---
 # 馃 Agent Skills 鎶€鑳界洰褰曚娇鐢ㄦ寚鍗?
+=======
+---
+doc-type: catalog
+---
+
+# 🤖 Agent Skills 技能目录使用指南
+>>>>>>> Stashed changes
 
 > 鏈」鐩?`.agents/skills/` 涓嬪唴缃?23 涓妧鑳?Skill),鐢ㄤ簬瑙勮寖 AI Agent 鍦ㄥ紑鍙戞祦绋嬩腑鐨勮涓恒€?
 > 鏈枃妗ｆ寜**浣跨敤鍦烘櫙**鍒嗙被,鎸囧寮€鍙戜汉鍛樺拰 Agent 浣曟椂璋冪敤鍝釜鎶€鑳姐€?

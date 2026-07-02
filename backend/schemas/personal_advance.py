@@ -1,6 +1,10 @@
 """其他应付款/个人垫付 — Pydantic 模式"""
 
+<<<<<<< Updated upstream
 from pydantic import BaseModel, Field, model_validator
+=======
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+>>>>>>> Stashed changes
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -35,20 +39,33 @@ class PersonalAdvanceOut(BaseModel):
     account_id: int
     advance_no: str
     advancer_name: str
+<<<<<<< Updated upstream
     amount: Decimal
     advance_date: datetime
+=======
+    amount: Decimal = Field(validation_alias="amount_l1")
+    advance_date: datetime = Field(validation_alias="advance_date_l1")
+>>>>>>> Stashed changes
     debit_account_code: str
     description: str
     image_url: str = ""
     repayment_status: str
+<<<<<<< Updated upstream
     paid_amount: Decimal
+=======
+    paid_amount: Decimal = Field(validation_alias="paid_amount_l4")
+>>>>>>> Stashed changes
     remaining_amount: Decimal = Field(default=Decimal("0"), description="未偿还余额 = amount - paid_amount")
     is_reversed: bool = False
     reversed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
+<<<<<<< Updated upstream
     model_config = {"from_attributes": True}
+=======
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+>>>>>>> Stashed changes
 
 
 class PersonalAdvanceRepaymentCreate(BaseModel):
@@ -62,8 +79,13 @@ class PersonalAdvanceRepaymentOut(BaseModel):
     id: int
     account_id: int
     advance_id: int
+<<<<<<< Updated upstream
     amount: Decimal
     repayment_date: datetime
+=======
+    amount: Decimal = Field(validation_alias="amount_l1")
+    repayment_date: datetime = Field(validation_alias="repayment_date_l1")
+>>>>>>> Stashed changes
     bank_account_id: Optional[int] = None
     bank_transaction_id: Optional[int] = None
     description: str
@@ -71,7 +93,11 @@ class PersonalAdvanceRepaymentOut(BaseModel):
     reversed_at: Optional[datetime] = None
     created_at: datetime
 
+<<<<<<< Updated upstream
     model_config = {"from_attributes": True}
+=======
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+>>>>>>> Stashed changes
 
 
 class PersonalAdvanceSummary(BaseModel):

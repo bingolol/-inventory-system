@@ -17,6 +17,8 @@ from .cash_flow import (
     list_cash_flow_transactions,
     generate_cash_flow_statement,
 )
+from .cwbb_xqykjzz import generate_cwbb_xqykjzz
+from .cwbb_xqykjzz_export import export_cwbb_xqykjzz
 from .fixed_assets import (
     create_fixed_asset,
     get_fixed_asset,
@@ -56,6 +58,8 @@ __all__ = [
     "generate_income_statement",
     "generate_cash_flow_statement",
     "list_cash_flow_transactions",
+    "generate_cwbb_xqykjzz",
+    "export_cwbb_xqykjzz",
     # 固定资产
     "create_fixed_asset",
     "get_fixed_asset",

@@ -13,10 +13,45 @@ from tests.helpers import get_entity_id, uniq
 
 # ── DB-level factories (unit tests) ──
 
+def ensure_default_account(db, account_id=1):
+    """确保默认账本 Account + Ledger + LedgerAccount 存在（临时数据库 setup 后调用）"""
+    import models
+    import models_finance
+    import models_bank
+    from database import Base
+    from models import Account
+    from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
+    from finance_integration import CHART_OF_ACCOUNTS
+
+    # 补救：确保表已创建（防止 create_all 在 models 导入前执行）
+    Base.metadata.create_all(bind=db.get_bind())
+
+    acc = db.query(Account).filter(Account.id == account_id).first()
+    if not acc:
+        acc = Account(id=account_id, name="测试账本", code="test",
+                      type="company", taxpayer_type_l3="small_scale")
+        db.add(acc)
+        db.flush()
+    ledger = db.query(Ledger).filter(Ledger.code == acc.code).first()
+    if not ledger:
+        ledger = Ledger(code=acc.code, name=acc.name, type=acc.type or "company",
+                        taxpayer_type_l3=acc.taxpayer_type_l3 or "small_scale")
+        db.add(ledger)
+        db.flush()
+        for code, name, atype in CHART_OF_ACCOUNTS:
+            la = LedgerAccount(ledger_id=ledger.id, code=code, name=name,
+                               account_type=atype, is_leaf=True, is_active=True)
+            db.add(la)
+            db.flush()
+            db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0,
+                                        debit_total_l4=0, credit_total_l4=0))
+    db.commit()
+    return acc
+
 def make_account(db, name="测试账本"):
     from models import Account
     tag = uuid.uuid4().hex[:8]
-    acc = Account(name=name, code=f"TEST-{tag}", taxpayer_type="small_scale")
+    acc = Account(name=name, code=f"TEST-{tag}", taxpayer_type_l3="small_scale")
     db.add(acc)
     db.flush()
     return acc
@@ -48,9 +83,9 @@ def make_product(db, account_id, name=None, track_inventory=True, purchase_price
         name=name or f"商品-{tag}",
         sku=f"SKU-{tag}",
         unit="个",
-        purchase_price=purchase_price,
-        sale_price=sale_price,
-        track_inventory=track_inventory,
+        purchase_price_l3=purchase_price,
+        sale_price_l3=sale_price,
+        track_inventory_l3=track_inventory,
         category="测试",
     )
     db.add(p)
@@ -84,7 +119,7 @@ def make_supplier(db, account_id, name=None):
 def make_stock_move(db, product_id, qty, unit_cost, move_type="inbound", source_type="purchase", ref_id=None):
     from models import StockMove
     sm = StockMove(
-        product_id=product_id, quantity=qty, unit_cost=unit_cost,
+        product_id=product_id, quantity_l1=qty, unit_cost_l2=unit_cost,
         move_type=move_type, source_type=source_type, reference_id=ref_id,
     )
     db.add(sm)
@@ -99,7 +134,7 @@ def make_bank_account(db, account_id, name=None, balance=Decimal("100000")):
         account_id=account_id,
         name=name or f"银行账户-{tag}",
         account_number=f"6222{tag[:12]}",
-        balance=balance,
+        balance_l4=balance,
     )
     db.add(ba)
     db.flush()
@@ -108,9 +143,9 @@ def make_bank_account(db, account_id, name=None, balance=Decimal("100000")):
             account_id=account_id,
             bank_account_id=ba.id,
             transaction_type="inflow",
-            amount=balance,
-            balance_after=balance,
-            transaction_date=date.today(),
+            amount_l2=balance,
+            balance_after_l4=balance,
+            transaction_date_l1=date.today(),
             description="期初余额",
             flow_category="operating",
         ))

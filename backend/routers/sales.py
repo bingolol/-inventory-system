@@ -27,10 +27,10 @@ def _build_sale_out(order, invoiced: bool = False):
             id=item.id,
             product_id=item.product_id,
             product_name=item.product.name if item.product else None,
-            quantity=item.quantity,
-            unit_price=item.unit_price,
-            tax_rate=item.tax_rate,
-            total_price=item.total_price,
+            quantity=item.quantity_l1,
+            unit_price=item.unit_price_l1,
+            tax_rate=item.tax_rate_l1,
+            total_price=item.total_price_l1,
             notes=item.notes or "",
         ))
     return schemas.SaleOrderOut(
@@ -39,13 +39,13 @@ def _build_sale_out(order, invoiced: bool = False):
         customer_id=order.customer_id,
         customer_name=order.customer.name if order.customer else "散客",
         order_type=order.order_type if order.order_type is not None else OrderType.RETAIL,
-        total_price=order.total_price,
+        total_price=order.total_price_l1,
         has_invoice=invoiced,
         payment_status=order.payment_status,
         status=order.status,
         notes=order.notes,
         image_url=order.image_url or "",
-        sale_date=order.sale_date,
+        sale_date=order.sale_date_l1,
         created_at=order.created_at,
         items=items
     )
@@ -73,6 +73,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
                 customer_id=data.customer_id,
                 deduct_inventory=data.deduct_inventory,
                 payment_status=data.payment_status,
+                has_invoice=data.has_invoice,
                 notes=data.notes,
                 image_url=data.image_url or "",
                 total_price=data.total_price,
@@ -91,7 +92,7 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
         inventory_changes.append({
             "product_id": item.product_id,
             "product_name": product.name if product else f"商品{item.product_id}",
-            "quantity": f"-{item.quantity}"
+            "quantity": f"-{item.quantity_l1}"
         })
     
     # 返回 OperationResult 格式
@@ -99,12 +100,12 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
         operation=OperationType.CREATE,
         entity_type=EntityType.SALE_ORDER,
         entity_id=order.id,
-        summary=f"销售单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
+        summary=f"销售单 {order.order_no} 创建成功，金额 {order.total_price_l1}，商品数量 {len(order.items)}",
         ai_hint="销售单已创建，库存已扣减。如需收款，请调用 POST /api/receipts。",
         data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
         changes={
             "inventory": inventory_changes,
-            "receivable": {"amount": f"+{order.total_price}"}
+            "receivable": {"amount": f"+{order.total_price_l1}"}
         }
     )
     return result.to_dict()

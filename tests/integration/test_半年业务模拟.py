@@ -24,14 +24,19 @@ from models import Account
 from test_helpers import ensure_test_product
 from helpers import get_entity_id
 
-# ── 获取测试用 account_id ──
-_db = SessionLocal()
-_account = _db.query(Account).first()
-ACCOUNT_ID = _account.id if _account else 1
-_db.close()
 
-# 公共请求头
-HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "e2e_test"}
+def _extract_data(resp_json):
+    """从 AI Gateway 响应中提取 data 字段"""
+    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
+        ent = resp_json["entity"]
+        if "data" in ent:
+            return ent["data"]
+    if isinstance(resp_json, dict) and "data" in resp_json:
+        return resp_json["data"]
+    return resp_json
+
+# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
+HEADERS = {"X-Account-ID": "1", "X-Operator": "e2e_test"}
 UNIQUE = str(int(time.time()))[-6:]
 
 # 时间配置: 模拟2026年1月-6月
@@ -241,7 +246,7 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销项发票失败: {resp.text}"
-        data = resp.json().get("data", resp.json())
+        data = _extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "1月销项发票应生成销售单"
 
     def test_february_business(self, client, created_data):
@@ -351,7 +356,7 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销项发票失败: {resp.text}"
-        data = resp.json().get("data", resp.json())
+        data = _extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "3月销项发票应生成销售单"
 
     def test_april_business(self, client, created_data):
@@ -504,7 +509,7 @@ class TestMonthlyBusinessCycle:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销项发票失败: {resp.text}"
-        data = resp.json().get("data", resp.json())
+        data = _extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "6月销项发票应生成销售单"
 
 

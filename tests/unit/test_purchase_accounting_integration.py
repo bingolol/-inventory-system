@@ -19,7 +19,7 @@ from models import StockMove
 @pytest.fixture
 def account(db):
     a = Account(id=1, name="测试账本", type="company", code="test",
-                taxpayer_type="general")
+                taxpayer_type_l3="general")
     db.add(a)
     db.commit()
     return a
@@ -54,8 +54,8 @@ def accts(db, ledger):
 @pytest.fixture
 def product(db):
     p = Product(id=1, account_id=1, name="测试商品", sku="T-001",
-                purchase_price=Decimal("10"), sale_price=Decimal("20"),
-                track_inventory=True)
+                purchase_price_l3=Decimal("10"), sale_price_l3=Decimal("20"),
+                track_inventory_l3=True)
     db.add(p)
     db.commit()
     return p
@@ -98,7 +98,7 @@ class TestPurchaseCreateTriggersAccounting:
             la = db.query(LedgerAccount).filter(
                 LedgerAccount.id == line.ledger_account_id
             ).first()
-            codes[la.code] = {"debit": line.debit, "credit": line.credit}
+            codes[la.code] = {"debit": line.debit_l2, "credit": line.credit_l2}
 
         assert codes["1405"]["debit"] == Decimal("100.00"), "库存商品借(不含税): 100.00"
         assert codes["222102"]["debit"] == Decimal("13.00"), "进项税借: 13.00"
@@ -112,8 +112,8 @@ class TestPurchaseCreateTriggersAccounting:
         ).all()
         assert len(stock_moves) == 1, "创建采购单后应生成 1 条库存流水"
         sm = stock_moves[0]
-        assert sm.quantity == 10
-        assert sm.total_cost == Decimal("100.00")
+        assert sm.quantity_l1 == 10
+        assert sm.total_cost_l2 == Decimal("100.00")
         assert sm.product_id == product.id
 
     def test_idempotent_post_journal(self, db, account, accts, product):
@@ -153,15 +153,15 @@ class TestSmallScaleTaxpayerPurchase:
     def test_small_scale_no_tax_separation(self, db):
         """自包含：创建小规模账本+科目+商品→采购→验证无进项税"""
         acc = Account(id=2, name="小规模", type="company", code="small_test",
-                      taxpayer_type="small_scale")
+                      taxpayer_type_l3="small_scale")
         db.add(acc)
         lgr = Ledger(id=2, name="小规模账本", type="company", code="small_test")
         db.add(lgr)
         for code, name, atype in [("1405", "库存商品", "asset"), ("2202", "应付账款", "liability")]:
             db.add(LedgerAccount(ledger_id=lgr.id, code=code, name=name, account_type=atype, is_leaf=True))
         prod = Product(id=2, account_id=2, name="测试商品2", sku="T-002",
-                       purchase_price=Decimal("10"), sale_price=Decimal("20"),
-                       track_inventory=True)
+                       purchase_price_l3=Decimal("10"), sale_price_l3=Decimal("20"),
+                       track_inventory_l3=True)
         db.add(prod)
         db.commit()
 
@@ -196,7 +196,7 @@ class TestSmallScaleTaxpayerPurchase:
             la = db.query(LedgerAccount).filter(
                 LedgerAccount.id == line.ledger_account_id
             ).first()
-            codes[la.code] = {"debit": line.debit, "credit": line.credit}
+            codes[la.code] = {"debit": line.debit_l2, "credit": line.credit_l2}
 
         assert codes["1405"]["debit"] == Decimal("100.00"), "小规模：全额100进成本"
         assert codes["2202"]["credit"] == Decimal("100.00"), "小规模：应付账款100"
@@ -239,4 +239,4 @@ class TestCancelPurchaseTriggersReversal:
             StockMove.source_id == order.id,
         ).all()
         assert len(rev_moves) == 1, "取消采购单应生成 1 条反向库存流水"
-        assert rev_moves[0].quantity == -10, "反向流水数量应为负数"
+        assert rev_moves[0].quantity_l1 == -10, "反向流水数量应为负数"

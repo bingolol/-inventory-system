@@ -57,15 +57,15 @@ class BankReconcileEngine:
             return existing
         rec = mb.BankReconciliation(
             bank_account_id=self.bank_account_id, account_id=self.account_id,
-            period=self.period, book_balance=book_balance, statement_balance=Decimal("0"),
-            adjusted_book=book_balance, adjusted_statement=Decimal("0"),
+            period=self.period, book_balance_l4=book_balance, statement_balance_l1=Decimal("0"),
+            adjusted_book_l4=book_balance, adjusted_statement_l4=Decimal("0"),
             balanced=False, status="matching" if seed else "draft",
         )
         self.db.add(rec); self.db.flush()
         for s in seed:
             self.db.add(mb.ReconciliationItem(
                 reconciliation_id=rec.id, item_type=s["item_type"],
-                amount=Decimal(str(s["amount"])), direction=s.get("direction","in"),
+                amount_l2=Decimal(str(s["amount"])), direction=s.get("direction","in"),
                 source_dates=s.get("source_dates", []), notes=s.get("notes",""),
                 resolved=False,
             ))
@@ -82,8 +82,8 @@ class BankReconcileEngine:
         bank_txns = self.db.query(m.BankTransaction).filter(
             m.BankTransaction.bank_account_id == self.bank_account_id,
             m.BankTransaction.account_id == self.account_id,
-            m.BankTransaction.transaction_date >= self.period_start,
-            m.BankTransaction.transaction_date <= self.period_end,
+            m.BankTransaction.transaction_date_l1 >= self.period_start,
+            m.BankTransaction.transaction_date_l1 <= self.period_end,
         ).all()
 
         stmt = self.db.query(mb.BankStatement).filter(
@@ -106,7 +106,7 @@ class BankReconcileEngine:
         if not rec:
             return
 
-        rec.statement_balance = stmt.closing_balance
+        rec.statement_balance_l1 = stmt.closing_balance_l1
 
         matched_tx_ids = set()
         matched_stmt_ids = set()
@@ -114,15 +114,15 @@ class BankReconcileEngine:
         # ── Round 1: 1:1 ----
         for sl in stmt_lines:
             if sl.id in matched_stmt_ids: continue
-            sl_amount = Decimal(str(sl.amount))
+            sl_amount = Decimal(str(sl.amount_l1))
             sl_dir = "in" if sl_amount >= 0 else "out"
             for tx in bank_txns:
                 if tx.id in matched_tx_ids: continue
-                tx_amount = Decimal(str(tx.amount))
+                tx_amount = Decimal(str(tx.amount_l2))
                 tx_dir = "in" if tx.transaction_type == "inflow" else "out"
                 if sl_dir != tx_dir: continue
                 if abs(abs(sl_amount) - abs(tx_amount)) > Decimal("0.01"): continue
-                sl_d = sl.transaction_date; tx_d = tx.transaction_date
+                sl_d = sl.transaction_date_l1; tx_d = tx.transaction_date_l1
                 sl_date = sl_d.date() if hasattr(sl_d, 'hour') else sl_d
                 tx_date = tx_d.date() if hasattr(tx_d, 'hour') else tx_d
                 if abs((sl_date - tx_date).days) > 3: continue
@@ -169,14 +169,14 @@ class BankReconcileEngine:
                if (tx.transaction_type == "inflow") == (direction == "in")
                and tx.id not in matched_tx_ids]
         usl = [sl for sl in unmatched_sl
-               if (Decimal(str(sl.amount)) >= 0) == (direction == "in")
+               if (Decimal(str(sl.amount_l1)) >= 0) == (direction == "in")
                and sl.id not in matched_stmt_ids]
         if len(utx) < 2 or not usl:
             return
 
         for sl in usl:
-            sl_amount = abs(Decimal(str(sl.amount)))
-            sl_d = sl.transaction_date
+            sl_amount = abs(Decimal(str(sl.amount_l1)))
+            sl_d = sl.transaction_date_l1
             sl_date = sl_d.date() if hasattr(sl_d, 'hour') else sl_d
 
             # 回溯 + 剪枝 (≤10 笔)
@@ -189,12 +189,12 @@ class BankReconcileEngine:
         for combo in combinations(utx, size):
             if any(tx.id in matched_tx_ids for tx in combo):
                 continue
-            total = sum(abs(Decimal(str(tx.amount))) for tx in combo)
+            total = sum(abs(Decimal(str(tx.amount_l2))) for tx in combo)
             if abs(total - target) > Decimal("0.01"):
                 continue
             dates = []
             for tx in combo:
-                tx_d = tx.transaction_date
+                tx_d = tx.transaction_date_l1
                 dates.append(tx_d.date() if hasattr(tx_d, 'hour') else tx_d)
             max_date = max(dates)
             min_date = min(dates)
@@ -233,22 +233,22 @@ class BankReconcileEngine:
         for sl in stmt_lines:
             if sl.id in matched_stmt_ids: continue
             if str(sl.id) in existing_sources: continue
-            amt = abs(Decimal(str(sl.amount)))
-            itype = "bank_received_not_book" if Decimal(str(sl.amount)) >= 0 else "bank_paid_not_book"
+            amt = abs(Decimal(str(sl.amount_l1)))
+            itype = "bank_received_not_book" if Decimal(str(sl.amount_l1)) >= 0 else "bank_paid_not_book"
             self.db.add(mb.ReconciliationItem(
-                reconciliation_id=rec.id, item_type=itype, amount=amt,
-                direction="in" if Decimal(str(sl.amount)) >= 0 else "out",
-                source_ids=[sl.id], source_dates=[sl.transaction_date.isoformat()],
+                reconciliation_id=rec.id, item_type=itype, amount_l2=amt,
+                direction="in" if Decimal(str(sl.amount_l1)) >= 0 else "out",
+                source_ids=[sl.id], source_dates=[sl.transaction_date_l1.isoformat()],
             ))
         for tx in bank_txns:
             if tx.id in matched_tx_ids: continue
             if str(tx.id) in existing_sources: continue
-            amt = Decimal(str(tx.amount))
+            amt = Decimal(str(tx.amount_l2))
             itype = "book_received_not_bank" if tx.transaction_type == "inflow" else "book_paid_not_bank"
             self.db.add(mb.ReconciliationItem(
-                reconciliation_id=rec.id, item_type=itype, amount=abs(amt),
+                reconciliation_id=rec.id, item_type=itype, amount_l2=abs(amt),
                 direction="in" if tx.transaction_type == "inflow" else "out",
-                source_ids=[tx.id], source_dates=[tx.transaction_date.isoformat()],
+                source_ids=[tx.id], source_dates=[tx.transaction_date_l1.isoformat()],
             ))
 
     def _scan_fees(self, rec, stmt_lines, matched_stmt_ids):
@@ -305,11 +305,11 @@ class BankReconcileEngine:
 
         for pi in prev_items:
             for sl in stmt_lines:
-                sl_amt = abs(Decimal(str(sl.amount)))
-                sl_dir = "in" if Decimal(str(sl.amount)) >= 0 else "out"
+                sl_amt = abs(Decimal(str(sl.amount_l1)))
+                sl_dir = "in" if Decimal(str(sl.amount_l1)) >= 0 else "out"
                 if pi.direction != sl_dir: continue
-                if abs(sl_amt - pi.amount) > Decimal("0.01"): continue
-                sl_date = sl.transaction_date.date() if hasattr(sl.transaction_date, 'hour') else sl.transaction_date
+                if abs(sl_amt - pi.amount_l2) > Decimal("0.01"): continue
+                sl_date = sl.transaction_date_l1.date() if hasattr(sl.transaction_date_l1, 'hour') else sl.transaction_date_l1
                 prev_dates = pi.source_dates or []
                 if prev_dates:
                     prev_last_str = prev_dates[-1]
@@ -329,10 +329,10 @@ class BankReconcileEngine:
         items = self.db.query(mb.ReconciliationItem).filter(
             mb.ReconciliationItem.reconciliation_id == rec.id, mb.ReconciliationItem.resolved == False,
         ).all()
-        adj_book = rec.book_balance
-        adj_stmt = rec.statement_balance
+        adj_book = rec.book_balance_l4
+        adj_stmt = rec.statement_balance_l1
         for it in items:
-            amt = it.amount
+            amt = it.amount_l2
             if it.item_type in ("bank_received_not_book",):
                 adj_book += amt
             elif it.item_type in ("bank_paid_not_book",):
@@ -348,8 +348,8 @@ class BankReconcileEngine:
                     adj_stmt += amt
                 else:
                     adj_book -= amt
-        rec.adjusted_book = adj_book
-        rec.adjusted_statement = adj_stmt
+        rec.adjusted_book_l4 = adj_book
+        rec.adjusted_statement_l4 = adj_stmt
         rec.balanced = abs(adj_book - adj_stmt) <= Decimal("0.01")
 
     # ═══════════════════════════════════════════════════
@@ -368,8 +368,8 @@ class BankReconcileEngine:
             m.BankTransaction.account_id == self.account_id,
         ).all()
 
-        sl_total = sum(abs(Decimal(str(sl.amount))) for sl in stmt_lines)
-        tx_total = sum(abs(Decimal(str(tx.amount))) for tx in txs)
+        sl_total = sum(abs(Decimal(str(sl.amount_l1))) for sl in stmt_lines)
+        tx_total = sum(abs(Decimal(str(tx.amount_l2))) for tx in txs)
         if abs(sl_total - tx_total) > Decimal("0.01"):
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                 message=f"金额不匹配: 对账单 {sl_total} vs 系统 {tx_total}")
@@ -400,7 +400,7 @@ class BankReconcileEngine:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="调节表不存在")
         if not rec.balanced:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
-                message=f"调节不平: book={rec.adjusted_book} stmt={rec.adjusted_statement}")
+                message=f"调节不平: book={rec.adjusted_book_l4} stmt={rec.adjusted_statement_l4}")
 
         # 检查未处理的费用/利息项——必须先调 generate-entry 才能确认
         pending = self.db.query(mb.ReconciliationItem).filter(
@@ -410,7 +410,7 @@ class BankReconcileEngine:
         ).all()
         if pending:
             item_ids = [it.id for it in pending]
-            total = sum(abs(it.amount) for it in pending)
+            total = sum(abs(it.amount_l2) for it in pending)
             raise BusinessError(
                 code=ErrorCode.VALIDATION_ERROR,
                 message=f"有 {len(pending)} 笔未达项需要先生成凭证（合计 {total} 元），"
@@ -446,7 +446,7 @@ class BankReconcileEngine:
         for it in items:
             direction = "out" if it.item_type == "bank_paid_not_book" else "in"
             post_journal(self.db, self.account_id, "bank_fee_entry", {
-                "amount": abs(it.amount),
+                "amount": abs(it.amount_l2),
                 "direction": direction,
                 "date": self.period + "-15",
                 "source_model": "bank_fee_entry",
@@ -473,14 +473,14 @@ class BankReconcileEngine:
         ledger = account and self.db.query(Ledger).filter(Ledger.code == account.code).first()
         if not ledger:
             return Decimal("0")
-        d = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit), 0)).join(
+        d = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002",
-            AccountMove.date <= cutoff).scalar())
-        c = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit), 0)).join(
+            AccountMove.date_l1 <= cutoff).scalar())
+        c = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002",
-            AccountMove.date <= cutoff).scalar())
+            AccountMove.date_l1 <= cutoff).scalar())
         return (d - c).quantize(Q2)

@@ -59,7 +59,11 @@ class TestAIGatewayAllows:
 
     def test_no_operator_header_blocked(self, client):
         """无 X-Operator 头 → 走白名单校验 → /api/invoices/with-fixed-asset 不在白名单 → 403"""
-        r = client.post("/api/invoices/with-fixed-asset", json={"x": 1})
+        # 默认 client fixture 带 X-Operator:user，因此单独创建无头 client
+        from fastapi.testclient import TestClient
+        from ai_gateway import AIGatewayMiddleware
+        noop = TestClient(AIGatewayMiddleware(_ok_app))
+        r = noop.post("/api/invoices/with-fixed-asset", json={"x": 1})
         assert r.status_code == 403
         assert r.json()["error"]["code"] == "ENDPOINT_NOT_ALLOWED_FOR_AI"
 

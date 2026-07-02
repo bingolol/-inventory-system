@@ -26,9 +26,9 @@ def list_invoices(db: Session, account_id: int, skip: int = 0, limit: int = 100,
             quarter_end = datetime(year + 1, 1, 1)
         else:
             quarter_end = datetime(year, quarter * 3 + 1, 1)
-        q = q.filter(models.Invoice.issue_date >= quarter_start, models.Invoice.issue_date < quarter_end)
+        q = q.filter(models.Invoice.issue_date_l1 >= quarter_start, models.Invoice.issue_date_l1 < quarter_end)
     total = q.count()
-    items = q.order_by(models.Invoice.issue_date.desc()).offset(skip).limit(limit).all()
+    items = q.order_by(models.Invoice.issue_date_l1.desc()).offset(skip).limit(limit).all()
     return total, items
 
 

@@ -23,20 +23,20 @@ from fastapi.testclient import TestClient
 c=TestClient(app)
 
 s=TS()
-acc=models.Account(name='X',code=f'D{uuid.uuid4().hex[:4]}',taxpayer_type='general')
+acc=models.Account(name='X',code=f'D{uuid.uuid4().hex[:4]}',taxpayer_type_l3='general')
 s.add(acc);s.flush();aid=acc.id
 from finance_integration import get_or_create_ledger_id;lid=get_or_create_ledger_id(s,aid)
-ba=models.BankAccount(account_id=aid,bank_name='X',account_number='6222',balance=3000)
+ba=models.BankAccount(account_id=aid,bank_name='X',account_number='6222',balance_l4=3000)
 s.add(ba);s.flush();baid=ba.id
 
 from models_finance import LedgerAccount,AccountMove,AccountMoveLine,LedgerAccountBalance
 ac=s.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code=='1002').first()
-m=AccountMove(ledger_id=lid,move_type='bank',date=datetime(2024,12,31,23,59,59),state='posted')
+m=AccountMove(ledger_id=lid,move_type='bank',date_l1=datetime(2024,12,31,23,59,59),state='posted')
 s.add(m);s.flush()
-s.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=3000,credit=0,amount_residual=3000))
+s.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=3000,credit_l2=0,amount_residual_l2=3000))
 bal=s.query(LedgerAccountBalance).filter(LedgerAccountBalance.ledger_account_id==ac.id).first()
-if bal:bal.balance=3000;bal.debit_total=3000
-tx=models.BankTransaction(bank_account_id=baid,account_id=aid,amount=500,transaction_type='inflow',transaction_date=date(2025,1,5),description='t500',balance_after=500)
+if bal:bal.balance_l4=3000;bal.debit_total_l4=3000
+tx=models.BankTransaction(bank_account_id=baid,account_id=aid,amount_l2=500,transaction_type='inflow',transaction_date_l1=date(2025,1,5),description='t500',balance_after_l4=500)
 s.add(tx);s.commit();s.close()
 
 h={'X-Account-ID':str(aid),'X-Operator':'user'}

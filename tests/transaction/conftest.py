@@ -34,7 +34,7 @@ def bootstrap_db(db):
     from models import Account
     if db.query(Account).filter(Account.id == 1).first():
         return
-    account = Account(name="测试账本", type="company", code="company", taxpayer_type="small_scale")
+    account = Account(name="测试账本", type="company", code="company", taxpayer_type_l3="small_scale")
     db.add(account)
     db.flush()
     from finance_integration import get_or_create_ledger_id

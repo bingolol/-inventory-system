@@ -14,9 +14,14 @@ const downloadBlob = (blob, fallbackName, format, disposition) => {
     const match = disposition.match(/filename\*=UTF-8''(.+)/i)
     if (match) filename = decodeURIComponent(match[1])
   }
-  const mime = format === 'csv'
-    ? 'text/csv'
-    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  let mime = 'application/octet-stream'
+  if (format === 'csv') {
+    mime = 'text/csv'
+  } else if (filename.endsWith('.xls')) {
+    mime = 'application/vnd.ms-excel'
+  } else if (filename.endsWith('.xlsx')) {
+    mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }
   const url = window.URL.createObjectURL(new Blob([blob], { type: mime }))
   const link = document.createElement('a')
   link.href = url
@@ -47,4 +52,13 @@ export const exportProductsBatch = async (productIds, format = 'excel') => {
   return true
 }
 
-export default { getExportUrl, exportFile, exportProductsBatch }
+export const exportCWBBXQYKJZZ = async (reportType, date) => {
+  const res = await api.get('/export/cwbb-xqykjzz', {
+    params: { report_type: reportType, date },
+    responseType: 'blob'
+  })
+  downloadBlob(res.data, `财务报表_${reportType}_${date}.xls`, 'excel', res.headers['content-disposition'])
+  return true
+}
+
+export default { getExportUrl, exportFile, exportProductsBatch, exportCWBBXQYKJZZ }

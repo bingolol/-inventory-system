@@ -68,7 +68,7 @@ def accounts(db, ledger):
 def product(db, ledger):
     p = Product(
         account_id=1, name="测试商品", sku="T-001",
-        purchase_price=Decimal("50"), sale_price=Decimal("100"),
+        purchase_price_l3=Decimal("50"), sale_price_l3=Decimal("100"),
     )
     db.add(p)
     db.commit()
@@ -87,7 +87,7 @@ class TestSaleOrder:
             "tax_amount": Decimal("13.00"),
             "date": date_obj(2026, 6, 15),
             "items": [
-                {"product_id": product.id, "quantity": 2},
+                {"product_id": product.id, "quantity": 2, "unit_cost": Decimal("50")},
             ],
         }
         move = engine.post(ledger.id, "sale_order", source)
@@ -95,7 +95,7 @@ class TestSaleOrder:
 
         assert move.state == "posted"
         assert move.name.startswith("SALE-2026-")
-        assert move.amount_total == Decimal("213.00")
+        assert move.amount_total_l2 == Decimal("213.00")
 
         lines = db.query(AccountMoveLine).filter(
             AccountMoveLine.move_id == move.id
@@ -104,30 +104,30 @@ class TestSaleOrder:
 
         # 借 1122 应收账款 113
         assert lines[0].ledger_account_id == accounts["1122"].id
-        assert lines[0].debit == Decimal("113.00")
-        assert lines[0].credit == Decimal("0")
+        assert lines[0].debit_l2 == Decimal("113.00")
+        assert lines[0].credit_l2 == Decimal("0")
         assert lines[0].partner_id == 1
         assert lines[0].partner_type == "customer"
-        assert lines[0].amount_residual == Decimal("113.00")
+        assert lines[0].amount_residual_l2 == Decimal("113.00")
 
         # 贷 6001 主营业务收入 100
         assert lines[1].ledger_account_id == accounts["6001"].id
-        assert lines[1].debit == Decimal("0")
-        assert lines[1].credit == Decimal("100.00")
-        assert lines[1].amount_residual == Decimal("100.00")
+        assert lines[1].debit_l2 == Decimal("0")
+        assert lines[1].credit_l2 == Decimal("100.00")
+        assert lines[1].amount_residual_l2 == Decimal("100.00")
 
         # 贷 222101 销项税 13
         assert lines[2].ledger_account_id == accounts["222101"].id
-        assert lines[2].credit == Decimal("13.00")
-        assert lines[2].amount_residual == Decimal("13.00")
+        assert lines[2].credit_l2 == Decimal("13.00")
+        assert lines[2].amount_residual_l2 == Decimal("13.00")
 
         # 借 6401 主营业务成本 100 (2 * 50)
         assert lines[3].ledger_account_id == accounts["6401"].id
-        assert lines[3].debit == Decimal("100.00")
+        assert lines[3].debit_l2 == Decimal("100.00")
 
         # 贷 1405 库存商品 100
         assert lines[4].ledger_account_id == accounts["1405"].id
-        assert lines[4].credit == Decimal("100.00")
+        assert lines[4].credit_l2 == Decimal("100.00")
 
     def test_balance_check(self, db, ledger, accounts, product):
         engine = JournalEngine(db)
@@ -147,8 +147,8 @@ class TestSaleOrder:
         lines = db.query(AccountMoveLine).filter(
             AccountMoveLine.move_id == move.id
         ).all()
-        total_debit = sum(l.debit for l in lines)
-        total_credit = sum(l.credit for l in lines)
+        total_debit = sum(l.debit_l2 for l in lines)
+        total_credit = sum(l.credit_l2 for l in lines)
         assert total_debit == total_credit
 
     def test_amount_mismatch_raises(self, db, ledger, accounts):
@@ -183,9 +183,9 @@ class TestSaleOrder:
             AccountMoveLine.move_id == move.id
         ).order_by(AccountMoveLine.id).all()
         # 1122 是借记行 → residual = debit
-        assert lines[0].amount_residual == lines[0].debit == Decimal("56.50")
+        assert lines[0].amount_residual_l2 == lines[0].debit_l2 == Decimal("56.50")
         # 6001 是贷记行 → residual = credit
-        assert lines[1].amount_residual == lines[1].credit == Decimal("50.00")
+        assert lines[1].amount_residual_l2 == lines[1].credit_l2 == Decimal("50.00")
 
 
 class TestPurchaseOrder:
@@ -213,18 +213,18 @@ class TestPurchaseOrder:
 
         # 借 1405 库存商品 200
         assert lines[0].ledger_account_id == accounts["1405"].id
-        assert lines[0].debit == Decimal("200.00")
+        assert lines[0].debit_l2 == Decimal("200.00")
 
         # 借 222102 进项税 26
         assert lines[1].ledger_account_id == accounts["222102"].id
-        assert lines[1].debit == Decimal("26.00")
+        assert lines[1].debit_l2 == Decimal("26.00")
 
         # 贷 2202 应付账款 226
         assert lines[2].ledger_account_id == accounts["2202"].id
-        assert lines[2].credit == Decimal("226.00")
+        assert lines[2].credit_l2 == Decimal("226.00")
         assert lines[2].partner_id == 2
         assert lines[2].partner_type == "supplier"
-        assert lines[2].amount_residual == Decimal("226.00")
+        assert lines[2].amount_residual_l2 == Decimal("226.00")
 
 
 class TestReceipt:
@@ -248,11 +248,11 @@ class TestReceipt:
 
         # 借 1002 银行存款 500
         assert lines[0].ledger_account_id == accounts["1002"].id
-        assert lines[0].debit == Decimal("500.00")
+        assert lines[0].debit_l2 == Decimal("500.00")
 
         # 贷 1122 应收账款 500
         assert lines[1].ledger_account_id == accounts["1122"].id
-        assert lines[1].credit == Decimal("500.00")
+        assert lines[1].credit_l2 == Decimal("500.00")
         assert lines[1].partner_id == 1
         assert lines[1].partner_type == "customer"
 
@@ -278,13 +278,13 @@ class TestPayment:
 
         # 借 2202 应付账款 300
         assert lines[0].ledger_account_id == accounts["2202"].id
-        assert lines[0].debit == Decimal("300.00")
+        assert lines[0].debit_l2 == Decimal("300.00")
         assert lines[0].partner_id == 2
         assert lines[0].partner_type == "supplier"
 
         # 贷 1002 银行存款 300
         assert lines[1].ledger_account_id == accounts["1002"].id
-        assert lines[1].credit == Decimal("300.00")
+        assert lines[1].credit_l2 == Decimal("300.00")
 
 
 class TestExpense:
@@ -308,11 +308,11 @@ class TestExpense:
 
         # 借 6601 管理费用 200
         assert lines[0].ledger_account_id == accounts["6601"].id
-        assert lines[0].debit == Decimal("200.00")
+        assert lines[0].debit_l2 == Decimal("200.00")
 
         # 贷 1002 银行存款 200
         assert lines[1].ledger_account_id == accounts["1002"].id
-        assert lines[1].credit == Decimal("200.00")
+        assert lines[1].credit_l2 == Decimal("200.00")
 
 
 class TestErrors:
@@ -374,7 +374,7 @@ class TestBalanceUpdated:
             "total_without_tax": Decimal("100.00"),
             "tax_amount": Decimal("13.00"),
             "date": date_obj(2026, 6, 15),
-            "items": [{"product_id": product.id, "quantity": 2}],
+            "items": [{"product_id": product.id, "quantity": 2, "unit_cost": Decimal("50")}],
         }
         engine.post(ledger.id, "sale_order", source)
         db.commit()
@@ -382,14 +382,14 @@ class TestBalanceUpdated:
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["1122"].id
         ).first()
-        assert bal.balance == Decimal("113.00")
+        assert bal.balance_l4 == Decimal("113.00")
 
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["1405"].id
         ).first()
-        assert bal.balance == Decimal("-100.00")
+        assert bal.balance_l4 == Decimal("-100.00")
 
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["6001"].id
         ).first()
-        assert bal.balance == Decimal("-100.00")
+        assert bal.balance_l4 == Decimal("-100.00")

@@ -16,6 +16,8 @@ from models_finance import (
 from engine_journal import JournalEngine
 from errors import BusinessError, ErrorCode
 from utils import Q2
+from lineage import writes, reads, TIER_L3
+from rules import enforce_rules
 
 
 EXPENSE_ACCOUNT_CODE_MAP = {
@@ -51,6 +53,18 @@ CHART_OF_ACCOUNTS = [
     ("222107", "未交增值税", "liability"),
     ("222104", "应交附加税", "liability"),
     ("222105", "应交所得税", "liability"),
+    ("222108", "应交个人所得税", "liability"),  # 代扣员工个税(业务因果链 E)
+    ("222110", "应交城市维护建设税", "liability"),
+    ("222111", "应交教育费附加", "liability"),
+    ("222112", "应交地方教育附加", "liability"),
+    ("222113", "应交消费税", "liability"),
+    ("222114", "应交资源税", "liability"),
+    ("222115", "应交土地增值税", "liability"),
+    ("222116", "应交房产税", "liability"),
+    ("222117", "应交城镇土地使用税", "liability"),
+    ("222118", "应交车船税", "liability"),
+    ("222119", "应交印花税", "liability"),
+    ("222120", "应交环境保护税", "liability"),
     ("2241", "其他应付款", "liability"),
     ("2501", "长期借款", "liability"),
     # 权益类
@@ -65,6 +79,17 @@ CHART_OF_ACCOUNTS = [
     ("6111", "资产处置收益", "income"),
     ("6401", "主营业务成本", "expense"),
     ("6403", "税金及附加", "expense"),
+    ("640301", "税金及附加-消费税", "expense"),
+    ("640302", "税金及附加-城市维护建设税", "expense"),
+    ("640303", "税金及附加-教育费附加", "expense"),
+    ("640304", "税金及附加-地方教育附加", "expense"),
+    ("640305", "税金及附加-资源税", "expense"),
+    ("640306", "税金及附加-土地增值税", "expense"),
+    ("640307", "税金及附加-房产税", "expense"),
+    ("640308", "税金及附加-城镇土地使用税", "expense"),
+    ("640309", "税金及附加-车船税", "expense"),
+    ("640310", "税金及附加-印花税", "expense"),
+    ("640311", "税金及附加-环境保护税", "expense"),
     ("6601", "管理费用", "expense"),
     ("6602", "销售费用", "expense"),
     ("6603", "财务费用", "expense"),
@@ -75,6 +100,8 @@ CHART_OF_ACCOUNTS = [
 ]
 
 
+@reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+@writes("Ledger.taxpayer_type_l3", tier=TIER_L3, source="policy")
 def get_or_create_ledger_id(db: Session, account_id: int) -> int:
     """获取 account_id 对应的 ledger_id，不存在则自动创建"""
     account = get_account(db, account_id)
@@ -89,7 +116,7 @@ def get_or_create_ledger_id(db: Session, account_id: int) -> int:
             name=account.name,
             type=account.type or "company",
             code=account.code,
-            taxpayer_type=account.taxpayer_type or "small_scale",
+            taxpayer_type_l3=account.taxpayer_type_l3 or "small_scale",
         )
         db.add(ledger)
         db.flush()
@@ -97,10 +124,16 @@ def get_or_create_ledger_id(db: Session, account_id: int) -> int:
             la = LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True)
             db.add(la)
             db.flush()
-            db.add(LedgerAccountBalance(ledger_account_id=la.id, balance=0, debit_total=0, credit_total=0))
+            db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0, debit_total_l4=0, credit_total_l4=0))
     else:
-        # 如果 ledger 已存在但缺少 LedgerAccount，补充（保证不会因测试预创建导致重复）
-        pass
+        # 如果 ledger 已存在但缺少 LedgerAccount，自动补齐（科目表扩展后同步）
+        existing_codes = {la.code for la in db.query(LedgerAccount.code).filter(LedgerAccount.ledger_id == ledger.id)}
+        for code, name, atype in CHART_OF_ACCOUNTS:
+            if code not in existing_codes:
+                la = LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True)
+                db.add(la)
+                db.flush()
+                db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0, debit_total_l4=0, credit_total_l4=0))
     return ledger.id
 
 
@@ -208,11 +241,11 @@ def reverse_journal(
         ledger_id=original.ledger_id,
         name=f"冲红-{original.name}",
         move_type=original.move_type,
-        date=reversal_date or original.date,
+        date_l1=reversal_date or original.date_l1,
         state="posted",
         source_model=source_model,
         source_id=source_id,
-        amount_total=original.amount_total,
+        amount_total_l2=original.amount_total_l2,
         reversed_entry_id=original.id,
         is_reversal=True,
     )
@@ -223,14 +256,17 @@ def reverse_journal(
         rl = AccountMoveLine(
             move_id=reversal.id,
             ledger_account_id=ol.ledger_account_id,
-            debit=ol.credit,
-            credit=ol.debit,
+            debit_l2=ol.credit_l2,
+            credit_l2=ol.debit_l2,
             partner_id=ol.partner_id,
             partner_type=ol.partner_type,
-            amount_residual=ol.credit or ol.debit,
+            amount_residual_l2=ol.credit_l2 or ol.debit_l2,
         )
         db.add(rl)
         db.flush()
         engine.ledger_engine.update_balance(rl)
+
+    # AS-01 借贷平衡校验：冲红凭证生成后必须保持借方=贷方
+    enforce_rules(db, ["AS-01"], {"move_id": reversal.id})
 
     return reversal

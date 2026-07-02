@@ -18,10 +18,10 @@ e=create_engine("sqlite:///:memory:");Base.metadata.create_all(bind=e)
 S=sessionmaker(bind=e);db=S()
 
 # ═══════════════════════════ 建账 ═══════════════════════════
-acc=models.Account(name="星辰科技有限公司",code=f"XC{uuid.uuid4().hex[:4]}",taxpayer_type="general")
+acc=models.Account(name="星辰科技有限公司",code=f"XC{uuid.uuid4().hex[:4]}",taxpayer_type_l3="general")
 db.add(acc);db.flush();aid=acc.id
 from finance_integration import get_or_create_ledger_id;lid=get_or_create_ledger_id(db,aid)
-bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222021234567890",balance=0)
+bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222021234567890",balance_l4=0)
 supp=models.Supplier(account_id=aid,name="供应商A",contact="A",phone="13800000001")
 cust=models.Customer(account_id=aid,name="客户B",contact="B",phone="13900000002")
 db.add_all([bank,supp,cust]);db.flush();baid=bank.id
@@ -31,18 +31,18 @@ from engine_tax_check import TaxCheckEngine
 from engine_bank_reconcile import BankReconcileEngine
 
 def J(db,lid,dt,drs,crs):
-    m=AccountMove(ledger_id=lid,move_type="biz",date=dt,state="posted");db.add(m);db.flush()
+    m=AccountMove(ledger_id=lid,move_type="biz",date_l1=dt,state="posted");db.add(m);db.flush()
     for c,a in drs.items():
         ac=db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code==c).first()
-        if ac and a:db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=Decimal(str(a)),credit=0,amount_residual=Decimal(str(a))))
+        if ac and a:db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=Decimal(str(a)),credit_l2=0,amount_residual_l2=Decimal(str(a))))
     for c,a in crs.items():
         ac=db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code==c).first()
-        if ac and a:db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=0,credit=Decimal(str(a)),amount_residual=Decimal(str(a))))
+        if ac and a:db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=0,credit_l2=Decimal(str(a)),amount_residual_l2=Decimal(str(a))))
     db.flush()
 
 def B(amt,dr,dt):
-    t=models.BankTransaction(bank_account_id=baid,account_id=aid,amount=amt,
-        transaction_type="inflow" if dr=="in" else "outflow",transaction_date=dt,balance_after=Decimal(str(amt)) if dr=="in" else Decimal("0"))
+    t=models.BankTransaction(bank_account_id=baid,account_id=aid,amount_l2=amt,
+        transaction_type="inflow" if dr=="in" else "outflow",transaction_date_l1=dt,balance_after_l4=Decimal(str(amt)) if dr=="in" else Decimal("0"))
     db.add(t);db.flush()
     if dr=="in": J(db,lid,dt,{"1002":amt},{"1122":amt})
     else:        J(db,lid,dt,{"2202":amt},{"1002":amt})
@@ -95,18 +95,18 @@ for period,pt,pu,iv,st,su,ov,pdt,sdt,wdt,wage,rdt,rent,udt,util in PLAN:
     it_delta=round(r["target_income_tax"]-r["posted_income_tax"],2)
     
     # 银行对账 (银行扣 15 管理费)
-    bb=sum(Decimal(str(l.debit))-Decimal(str(l.credit)) for l in db.query(AccountMoveLine).join(AccountMove).filter(
+    bb=sum(Decimal(str(l.debit_l2))-Decimal(str(l.credit_l2)) for l in db.query(AccountMoveLine).join(AccountMove).filter(
         AccountMoveLine.ledger_account_id==db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code=="1002").first().id,
-        AccountMove.date<=datetime(y,m,28,23,59,59)).all())
+        AccountMove.date_l1<=datetime(y,m,28,23,59,59)).all())
     stmt=models_bank.BankStatement(bank_account_id=baid,account_id=aid,
-        period_start=date(y,m,1),period_end=date(y,m,28),opening_balance=float(bb-su-ov+pt+wage+rent+util),closing_balance=float(bb-15))
+        period_start=date(y,m,1),period_end=date(y,m,28),opening_balance_l1=float(bb-su-ov+pt+wage+rent+util),closing_balance_l1=float(bb-15))
     db.add(stmt);db.flush()
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,int(sdt.split("-")[1])).date(),amount=su+ov,description=f"{period}销售回款"))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,int(pdt.split("-")[1])).date(),amount=-pt,description=f"{period}采购付款"))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,int(wdt.split("-")[1])).date(),amount=-wage,description=f"{period}工资"))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,int(rdt.split("-")[1])).date(),amount=-rent,description=f"{period}房租"))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,int(udt.split("-")[1])).date(),amount=-util,description=f"{period}水电"))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime(y,m,15).date(),amount=-15,description="账户管理费"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,int(sdt.split("-")[1])).date(),amount_l1=su+ov,description=f"{period}销售回款"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,int(pdt.split("-")[1])).date(),amount_l1=-pt,description=f"{period}采购付款"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,int(wdt.split("-")[1])).date(),amount_l1=-wage,description=f"{period}工资"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,int(rdt.split("-")[1])).date(),amount_l1=-rent,description=f"{period}房租"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,int(udt.split("-")[1])).date(),amount_l1=-util,description=f"{period}水电"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime(y,m,15).date(),amount_l1=-15,description="账户管理费"))
     db.commit()
     be=BankReconcileEngine(db,aid,baid,period);rec=be.create_reconciliation([]);be.run_matching()
     items=db.query(models_bank.ReconciliationItem).filter(models_bank.ReconciliationItem.reconciliation_id==rec.id).all()

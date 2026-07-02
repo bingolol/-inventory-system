@@ -135,7 +135,7 @@ def reverse_cash_transaction(
         transaction.reversed_at = datetime.now()
 
         crud._log(db, account_id, "reverse", "cash_flow", transaction_id,
-                  f"红冲现金流水: {transaction.type} {transaction.amount}", operator=operator)
+                  f"红冲现金流水: {transaction.type} {transaction.amount_l2}", operator=operator)
 
     op = OperationResult(
         operation=OperationType.UPDATE,

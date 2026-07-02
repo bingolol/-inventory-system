@@ -31,11 +31,11 @@ class TestWriteToken:
         from database import _request_write_perm
         from models import Product, Account
         token = _request_write_perm.set(True)
-        acc = Account(name="test", type="company", code="test", taxpayer_type="small_scale")
+        acc = Account(name="test", type="company", code="test", taxpayer_type_l3="small_scale")
         db.add(acc)
         db.flush()
         p = Product(name="token-test", account_id=acc.id,
-                    purchase_price=10, sale_price=20, unit="个")
+                    purchase_price_l3=10, sale_price_l3=20, unit="个")
         db.add(p)
         db.commit()
         _request_write_perm.reset(token)
@@ -139,7 +139,7 @@ class TestORMMutation:
     def test_orm_add_without_token_blocked(self, db):
         from errors import BusinessError
         from models import Product
-        p = Product(name="test", purchase_price=10, sale_price=20, unit="个")
+        p = Product(name="test", purchase_price_l3=10, sale_price_l3=20, unit="个")
         db.add(p)
         with pytest.raises(BusinessError, match="ORM"):
             db.commit()

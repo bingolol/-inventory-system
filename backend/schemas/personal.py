@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
@@ -41,11 +41,11 @@ class PersonalTransactionUpdate(BaseModel):
 class PersonalTransactionOut(BaseModel):
     id: int
     type: str
-    amount: Decimal
+    amount: Decimal = Field(validation_alias="amount_l1")
     category: str
     description: str
     image_url: str = ""
-    date: datetime
+    date: datetime = Field(validation_alias="date_l1")
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

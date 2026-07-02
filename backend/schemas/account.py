@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 
@@ -7,10 +7,10 @@ class AccountOut(BaseModel):
     name: str
     type: str
     code: str
-    taxpayer_type: str
+    taxpayer_type: str = Field(validation_alias="taxpayer_type_l3")
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class AccountUpdate(BaseModel):

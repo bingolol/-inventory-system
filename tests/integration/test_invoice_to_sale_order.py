@@ -92,9 +92,9 @@ class TestInvoiceAutoGenerateSaleOrder:
             invoice = db.query(Invoice).filter(Invoice.invoice_no == payload["invoice_no"]).first()
             sale_order = db.query(SaleOrder).filter(SaleOrder.id == invoice.related_order_id).first()
             # total_price = 价税合计
-            assert Decimal(str(sale_order.total_price)) == Decimal("1030.00")
+            assert Decimal(str(sale_order.total_price_l1)) == Decimal("1030.00")
             # tax_amount = 发票税额
-            assert Decimal(str(sale_order.tax_amount)) == Decimal("30.00")
+            assert Decimal(str(sale_order.tax_amount_l1)) == Decimal("30.00")
         finally:
             db.close()
 
@@ -114,7 +114,7 @@ class TestInvoiceAutoGenerateSaleOrder:
             assert len(sale_order.items) == 1
             item = sale_order.items[0]
             assert item.product_id == payload["items"][0]["product_id"]
-            assert item.quantity == 10
+            assert item.quantity_l1 == 10
             # 发票商品明细也已保存
             assert len(invoice.items) == 1
             assert invoice.items[0].product_id == payload["items"][0]["product_id"]

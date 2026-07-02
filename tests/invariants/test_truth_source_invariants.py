@@ -30,9 +30,15 @@ def general_account(db, bootstrap_db):
     """建一般纳税人账本（用于测试进项税额分离）"""
     acc = db.query(Account).filter(Account.id == 1).first()
     if acc:
+<<<<<<< Updated upstream
         acc.taxpayer_type = "general"
     else:
         acc = Account(name="一般纳税人测试", type="company", code="inv_test", taxpayer_type="general")
+=======
+        acc.taxpayer_type_l3 = "general"
+    else:
+        acc = Account(name="一般纳税人测试", type="company", code="inv_test", taxpayer_type_l3="general")
+>>>>>>> Stashed changes
         db.add(acc)
         db.flush()
     db.commit()
@@ -64,8 +70,13 @@ def _line_amount(lines, account_code, ledger_db):
     if not la:
         return Decimal("0"), Decimal("0")
     matched = [l for l in lines if l.ledger_account_id == la.id]
+<<<<<<< Updated upstream
     debit = sum((l.debit or Decimal("0")) for l in matched)
     credit = sum((l.credit or Decimal("0")) for l in matched)
+=======
+    debit = sum((l.debit_l2 or Decimal("0")) for l in matched)
+    credit = sum((l.credit_l2 or Decimal("0")) for l in matched)
+>>>>>>> Stashed changes
     return debit, credit
 
 
@@ -115,8 +126,13 @@ class Test采购退货借贷同源:
             StockMove.source_id == order_a.id,
             StockMove.product_id == p.id,
         ).first()
+<<<<<<< Updated upstream
         assert move_a.unit_cost == Decimal("833.333333"), (
             f"A 的 unit_cost 应被稀释到 833.33，实际 {move_a.unit_cost}。"
+=======
+        assert move_a.unit_cost_l2 == Decimal("833.333333"), (
+            f"A 的 unit_cost 应被稀释到 833.33，实际 {move_a.unit_cost_l2}。"
+>>>>>>> Stashed changes
             f"若为 1000 说明测试场景失效，无法检测 bug。"
         )
 
@@ -234,9 +250,15 @@ class Test反向StockMove同源:
         assert rev_move, "应生成反向 StockMove"
 
         # 反向 total_cost = 原入库单价 × 退货数量 = 1000
+<<<<<<< Updated upstream
         assert rev_move.total_cost == Decimal("1000.00"), (
             f"反向 StockMove.total_cost 必须按原入库金额比例分摊："
             f"期望 1000.00，实际 {rev_move.total_cost}。"
+=======
+        assert rev_move.total_cost_l2 == Decimal("1000.00"), (
+            f"反向 StockMove.total_cost 必须按原入库金额比例分摊："
+            f"期望 1000.00，实际 {rev_move.total_cost_l2}。"
+>>>>>>> Stashed changes
             f"若为 833.33 说明误用了 avg_cost"
         )
 
@@ -259,6 +281,7 @@ class Test反向StockMove同源:
         moves = db.query(StockMove).filter(StockMove.product_id == p.id).all()
         # 求和时考虑方向：quantity>0 入库加，quantity<0 出库/退货减
         sum_total_cost = sum(
+<<<<<<< Updated upstream
             (Decimal(str(m.total_cost or 0)) if Decimal(str(m.quantity)) > 0
              else -Decimal(str(m.total_cost or 0)))
             for m in moves
@@ -266,5 +289,14 @@ class Test反向StockMove同源:
 
         assert inv.total_value == sum_total_cost, (
             f"库存账面价值 {inv.total_value} ≠ StockMove 求和 {sum_total_cost}。"
+=======
+            (Decimal(str(m.total_cost_l2 or 0)) if Decimal(str(m.quantity_l1)) > 0
+             else -Decimal(str(m.total_cost_l2 or 0)))
+            for m in moves
+        )
+
+        assert inv.total_value_l4 == sum_total_cost, (
+            f"库存账面价值 {inv.total_value_l4} ≠ StockMove 求和 {sum_total_cost}。"
+>>>>>>> Stashed changes
             f"差异说明反向冲销用了错误成本源。"
         )

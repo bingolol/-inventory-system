@@ -8,9 +8,12 @@ import models
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from models_finance import Ledger
+from lineage import reads, TIER_L1, TIER_L2, TIER_L4
 
 from ._ledger_helpers import _lp, _pdr
 
+@reads("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
+@reads("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
 def generate_income_statement(db: Session, account_id: int, start_date: str, end_date: str):
     """生成利润表"""
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -40,8 +43,31 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     operating_profit = gross_profit - total_operating_expenses
 
     # ── 税金及附加 + 所得税 — 纯总账取数（月结后自动体现）──
+    # 总账取数兼容旧 6403 和新的明细科目
     sur_d, sur_c = _lp(db, ledger_is, "6403", start_dt, end_dt)
     tax_surcharges = (sur_d - sur_c).quantize(Q2)
+    # 明细科目
+    surcharge_detail_codes = {
+        "consumption_tax": "640301",
+        "urban_construction_tax": "640302",
+        "education_surcharge": "640303",
+        "local_education_surcharge": "640304",
+        "resource_tax": "640305",
+        "land_appreciation_tax": "640306",
+        "property_tax": "640307",
+        "land_use_tax": "640308",
+        "vehicle_vessel_tax": "640309",
+        "stamp_tax": "640310",
+        "environmental_tax": "640311",
+    }
+    surcharge_details = {}
+    for key, code in surcharge_detail_codes.items():
+        d, c = _lp(db, ledger_is, code, start_dt, end_dt)
+        surcharge_details[key] = (d - c).quantize(Q2)
+    # 若 6403 有旧数据而明细为 0，总额用 6403；否则用明细合计
+    detail_total = sum(surcharge_details.values())
+    if tax_surcharges == Decimal("0") and detail_total != Decimal("0"):
+        tax_surcharges = detail_total
     total_operating_expenses = (total_operating_expenses + tax_surcharges).quantize(Q2)
     operating_profit = gross_profit - total_operating_expenses
 
@@ -111,6 +137,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
         "administrative_expenses": administrative_expenses.quantize(Q2),
         "financial_expenses": financial_expenses.quantize(Q2),
         "tax_surcharges": tax_surcharges.quantize(Q2),
+        **{k: v.quantize(Q2) for k, v in surcharge_details.items()},
         "total_operating_expenses": total_operating_expenses.quantize(Q2),
         "operating_profit": operating_profit.quantize(Q2),
         "non_operating_income": non_operating_income.quantize(Q2),

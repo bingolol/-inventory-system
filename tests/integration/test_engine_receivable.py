@@ -60,7 +60,7 @@ def make_move(db, ledger, day):
     m = AccountMove(
         ledger_id=ledger.id,
         move_type="test",
-        date=date_obj(2026, 6, day),
+        date_l1=date_obj(2026, 6, day),
         state="posted",
     )
     db.add(m)
@@ -75,11 +75,11 @@ def make_line(db, move, account_id, debit=Decimal("0"), credit=Decimal("0"),
     line = AccountMoveLine(
         move_id=move.id,
         ledger_account_id=account_id,
-        debit=debit,
-        credit=credit,
+        debit_l2=debit,
+        credit_l2=credit,
         partner_id=partner_id,
         partner_type=partner_type,
-        amount_residual=residual,
+        amount_residual_l2=residual,
     )
     db.add(line)
     db.flush()
@@ -102,8 +102,8 @@ class TestReconcile:
 
         db.refresh(line_a)
         db.refresh(line_b)
-        assert line_a.amount_residual == Decimal("200")
-        assert line_b.amount_residual == Decimal("0")
+        assert line_a.amount_residual_l2 == Decimal("200")
+        assert line_b.amount_residual_l2 == Decimal("0")
 
     def test_reconciled_flag(self, db, ledger, accounts):
         engine = ReceivableEngine(db)
@@ -135,7 +135,7 @@ class TestReconcile:
         assert rec is not None
         assert rec.debit_move_id == line_a.id
         assert rec.credit_move_id == line_b.id
-        assert rec.amount == Decimal("300")
+        assert rec.amount_l2 == Decimal("300")
         assert rec.ledger_id == ledger.id
 
     def test_cross_ledger_blocked(self, db, ledger, accounts):
@@ -231,7 +231,7 @@ class TestAgingReport:
         for d, amt in dates_amounts:
             m = AccountMove(
                 ledger_id=ledger.id, move_type="test",
-                date=d, state="posted",
+                date_l1=d, state="posted",
             )
             db.add(m)
             db.flush()
@@ -249,7 +249,7 @@ class TestAgingReport:
 
         m1 = AccountMove(
             ledger_id=ledger.id, move_type="test",
-            date=date_obj(2026, 6, 15), state="posted",
+            date_l1=date_obj(2026, 6, 15), state="posted",
         )
         db.add(m1)
         db.flush()
@@ -262,7 +262,7 @@ class TestAgingReport:
         # 核销 200 那条
         m2 = AccountMove(
             ledger_id=ledger.id, move_type="test",
-            date=date_obj(2026, 6, 20), state="posted",
+            date_l1=date_obj(2026, 6, 20), state="posted",
         )
         db.add(m2)
         db.flush()

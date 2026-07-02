@@ -40,6 +40,7 @@ from .finance import (
     get_latest_opening_balance, generate_balance_sheet, generate_income_statement,
     list_cash_flow_transactions,
     generate_cash_flow_statement,
+    generate_cwbb_xqykjzz, export_cwbb_xqykjzz,
     create_fixed_asset, get_fixed_asset, list_fixed_assets, update_fixed_asset, delete_fixed_asset,
     create_intangible_asset, get_intangible_asset, list_intangible_assets, update_intangible_asset, delete_intangible_asset,
     aggregate_vat_invoices,

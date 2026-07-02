@@ -7,9 +7,16 @@ from models_finance import (
 )
 from accounting_engine import AccountingError
 from engine_ledger import LedgerEngine
-
+from database import set_maintenance_mode
 
 import uuid
+
+
+@pytest.fixture(autouse=True)
+def _maintenance_mode():
+    set_maintenance_mode(True)
+    yield
+    set_maintenance_mode(False)
 
 @pytest.fixture
 def ledger(db):
@@ -61,7 +68,7 @@ def make_line(db, account_id, debit=Decimal("0"), credit=Decimal("0"),
     """辅助：创建一条分录行（关联一个虚拟凭证）"""
     move = AccountMove(
         ledger_id=ledger_id, move_type="test",
-        date=move_date or date_obj(2026, 6, 1),
+        date_l1=move_date or date_obj(2026, 6, 1),
         state="draft",
     )
     db.add(move)
@@ -69,11 +76,11 @@ def make_line(db, account_id, debit=Decimal("0"), credit=Decimal("0"),
     line = AccountMoveLine(
         move_id=move.id,
         ledger_account_id=account_id,
-        debit=debit,
-        credit=credit,
+        debit_l2=debit,
+        credit_l2=credit,
         partner_id=partner_id,
         partner_type=partner_type,
-        amount_residual=debit or credit,
+        amount_residual_l2=debit or credit,
     )
     db.add(line)
     db.flush()
@@ -100,7 +107,7 @@ class TestNonLeafAccountGuard:
             LedgerAccountBalance.ledger_account_id == accounts["child1"].id
         ).first()
         assert bal is not None
-        assert bal.balance == Decimal("100")
+        assert bal.balance_l4 == Decimal("100")
 
 
 class TestLeafBalanceUpdate:
@@ -115,9 +122,9 @@ class TestLeafBalanceUpdate:
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["child1"].id
         ).first()
-        assert bal.balance == Decimal("200")
-        assert bal.debit_total == Decimal("200")
-        assert bal.credit_total == Decimal("0")
+        assert bal.balance_l4 == Decimal("200")
+        assert bal.debit_total_l4 == Decimal("200")
+        assert bal.credit_total_l4 == Decimal("0")
 
     def test_credit_decreases_balance(self, db, accounts):
         engine = LedgerEngine(db)
@@ -130,9 +137,9 @@ class TestLeafBalanceUpdate:
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["child1"].id
         ).first()
-        assert bal.balance == Decimal("200")
-        assert bal.debit_total == Decimal("500")
-        assert bal.credit_total == Decimal("300")
+        assert bal.balance_l4 == Decimal("200")
+        assert bal.debit_total_l4 == Decimal("500")
+        assert bal.credit_total_l4 == Decimal("300")
 
     def test_multiple_leaf_accounts_independent(self, db, accounts):
         engine = LedgerEngine(db)
@@ -142,10 +149,10 @@ class TestLeafBalanceUpdate:
 
         b1 = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["child1"].id
-        ).first().balance
+        ).first().balance_l4
         b2 = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["child2"].id
-        ).first().balance
+        ).first().balance_l4
         assert b1 == Decimal("100")
         assert b2 == Decimal("200")
 
@@ -174,7 +181,7 @@ class TestCashBalanceCheck:
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == accounts["cash"].id
         ).first()
-        assert bal.balance == Decimal("0")
+        assert bal.balance_l4 == Decimal("0")
 
     def test_receivable_negative_allowed(self, db, accounts):
         """应收账款(asset_receivable)允许负数（视为预收）
@@ -199,7 +206,7 @@ class TestCashBalanceCheck:
         bal = db.query(LedgerAccountBalance).filter(
             LedgerAccountBalance.ledger_account_id == receivable.id
         ).first()
-        assert bal.balance == Decimal("-500")
+        assert bal.balance_l4 == Decimal("-500")
 
 
 class TestGetBalance:

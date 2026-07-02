@@ -22,6 +22,12 @@
         <el-tab-pane label="期初余额" name="opening-balance">
           <OpeningBalanceTab />
         </el-tab-pane>
+<<<<<<< Updated upstream
+=======
+        <el-tab-pane label="小企业会计准则报表" name="cwbb-xqykjzz">
+          <CWBBXQYKJZZ :date="reportDate" />
+        </el-tab-pane>
+>>>>>>> Stashed changes
       </el-tabs>
     </el-card>
   </div>
@@ -34,6 +40,10 @@ import financeApi from '../api/finance'
 import BalanceSheet from '../components/BalanceSheet.vue'
 import IncomeStatement from '../components/IncomeStatement.vue'
 import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
+<<<<<<< Updated upstream
+=======
+import CWBBXQYKJZZ from '../components/CWBBXQYKJZZ.vue'
+>>>>>>> Stashed changes
 import { handleError } from '../utils/errorHandler'
 
 const activeTab = ref('income-statement')

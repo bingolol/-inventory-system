@@ -228,7 +228,7 @@ def _build_snapshot(inner: dict) -> dict:
                 snapshot["order"] = {
                     "id": order.id,
                     "order_no": getattr(order, "order_no", ""),
-                    "total_price": float(order.total_price) if order.total_price else 0,
+                    "total_price": float(order.total_price_l1) if order.total_price_l1 else 0,
                     "status": order.status,
                 }
 
@@ -249,7 +249,7 @@ def _build_snapshot(inner: dict) -> dict:
                         inventory.append({
                             "product_id": pid,
                             "product_name": product.name if product else f"商品{pid}",
-                            "remaining": inv.quantity,
+                            "remaining": inv.quantity_l4,
                         })
                 if inventory:
                     snapshot["inventory"] = inventory
@@ -261,7 +261,7 @@ def _build_snapshot(inner: dict) -> dict:
             if inv is not None:
                 snapshot["inventory"] = [{
                     "product_id": entity_id,
-                    "remaining": inv.quantity,
+                    "remaining": inv.quantity_l4,
                 }]
 
         return snapshot

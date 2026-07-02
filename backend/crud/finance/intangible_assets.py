@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 import models, schemas
 from ..base import _log
+from lineage import writes, TIER_L3
 
+@writes("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
 def create_intangible_asset(db: Session, account_id: int, data: schemas.IntangibleAssetCreate, operator: str = "user"):
     """创建无形资产"""
     asset = models.IntangibleAsset(
@@ -13,10 +15,10 @@ def create_intangible_asset(db: Session, account_id: int, data: schemas.Intangib
         asset_code=data.asset_code,
         name=data.name,
         category=data.category,
-        original_value=data.original_value,
-        useful_life=data.useful_life,
-        start_date=datetime.strptime(data.start_date, "%Y-%m-%d").date(),
-        accumulated_amortization=data.accumulated_amortization,
+        original_value_l1=data.original_value,
+        useful_life_l3=data.useful_life,
+        start_date_l1=datetime.strptime(data.start_date, "%Y-%m-%d").date(),
+        accumulated_amortization_l4=data.accumulated_amortization,
         status=data.status
     )
     db.add(asset)

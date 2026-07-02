@@ -18,42 +18,42 @@ def seed_data(db):
     """创建测试基础数据"""
     account = models.Account(
         id=1, name="测试账本", type="company", code="test",
-        taxpayer_type="small_scale"
+        taxpayer_type_l3="small_scale"
     )
     db.add(account)
 
     # 销售单
     sale = models.SaleOrder(
         id=100, account_id=1, order_no="SO-001",
-        total_price=Decimal("11300"),  # 含税
+        total_price_l1=Decimal("11300"),  # 含税
         status="completed",
-        sale_date=datetime(2026, 1, 15)
+        sale_date_l1=datetime(2026, 1, 15)
     )
     db.add(sale)
 
     # 销售明细
     sale_item = models.SaleItem(
-        order_id=100, product_id=1, quantity=10,
-        unit_price=Decimal("1130"), tax_rate=Decimal("0.13"),
-        total_price=Decimal("11300")
+        order_id=100, product_id=1, quantity_l1=10,
+        unit_price_l1=Decimal("1130"), tax_rate_l1=Decimal("0.13"),
+        total_price_l1=Decimal("11300")
     )
     db.add(sale_item)
 
     # 商品（进价用于计算成本）
     product = models.Product(
         id=1, account_id=1, name="测试商品",
-        purchase_price=Decimal("500"), sale_price=Decimal("1000")
+        purchase_price_l3=Decimal("500"), sale_price_l3=Decimal("1000")
     )
     db.add(product)
 
     # 销项发票（收入取数来源）
     invoice_out = models.Invoice(
         account_id=1, invoice_no="INV-OUT-001", direction="out",
-        invoice_type="ordinary", tax_rate=Decimal("0.13"),
-        amount_without_tax=Decimal("10000"),  # 不含税
-        tax_amount=Decimal("1300"),
-        amount_with_tax=Decimal("11300"),
-        counterparty_name="客户A", issue_date=datetime(2026, 1, 15),
+        invoice_type="ordinary", tax_rate_l1=Decimal("0.13"),
+        amount_without_tax_l1=Decimal("10000"),  # 不含税
+        tax_amount_l1=Decimal("1300"),
+        amount_with_tax_l1=Decimal("11300"),
+        counterparty_name="客户A", issue_date_l1=datetime(2026, 1, 15),
         related_order_type="sale_order", related_order_id=100,
     )
     db.add(invoice_out)
@@ -61,18 +61,18 @@ def seed_data(db):
     # 费用（有票）
     expense = models.Expense(
         id=200, account_id=1, category="房租",
-        amount=Decimal("2000"), expense_date=datetime(2026, 2, 1)
+        amount_l1=Decimal("2000"), expense_date_l1=datetime(2026, 2, 1)
     )
     db.add(expense)
 
     # 费用发票
     expense_invoice = models.Invoice(
         account_id=1, invoice_no="INV-EXP-001", direction="in",
-        invoice_type="ordinary", tax_rate=Decimal("0.06"),
-        amount_without_tax=Decimal("1886.79"),
-        tax_amount=Decimal("113.21"),
-        amount_with_tax=Decimal("2000"),
-        counterparty_name="房东", issue_date=datetime(2026, 2, 1),
+        invoice_type="ordinary", tax_rate_l1=Decimal("0.06"),
+        amount_without_tax_l1=Decimal("1886.79"),
+        tax_amount_l1=Decimal("113.21"),
+        amount_with_tax_l1=Decimal("2000"),
+        counterparty_name="房东", issue_date_l1=datetime(2026, 2, 1),
         related_order_type="expense", related_order_id=200,
     )
     db.add(expense_invoice)
@@ -80,13 +80,13 @@ def seed_data(db):
     # 无票费用
     expense_no_invoice = models.Expense(
         id=201, account_id=1, category="办公用品",
-        amount=Decimal("500"), expense_date=datetime(2026, 2, 15)
+        amount_l1=Decimal("500"), expense_date_l1=datetime(2026, 2, 15)
     )
     db.add(expense_no_invoice)
 
     db.flush()
     # 设置销售成本（实际由 InventoryEngine.outbound 写入，此处用进价模拟）
-    sale_item.set_calculated_cost(product.purchase_price)
+    sale_item.set_calculated_cost(product.purchase_price_l3)
     db.flush()
     return {"account_id": 1, "sale_id": 100, "expense_id": 200}
 

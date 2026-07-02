@@ -34,23 +34,23 @@ class ReceivableEngine:
             ledger_id=ledger_id,
             debit_move_id=debit_line_id,
             credit_move_id=credit_line_id,
-            amount=amount,
+            amount_l2=amount,
         )
         self.db.add(reconcile)
 
-        debit_line.amount_residual -= amount
-        credit_line.amount_residual -= amount
+        debit_line.amount_residual_l2 -= amount
+        credit_line.amount_residual_l2 -= amount
 
-        if debit_line.amount_residual <= 0:
+        if debit_line.amount_residual_l2 <= 0:
             debit_line.reconciled = True
-        if credit_line.amount_residual <= 0:
+        if credit_line.amount_residual_l2 <= 0:
             credit_line.reconciled = True
 
     def get_partner_balance(self, partner_id: int, partner_type: str,
                             account_type: str = None, as_of: str = None) -> Decimal:
         query = self.db.query(
-            func.coalesce(func.sum(AccountMoveLine.debit), 0),
-            func.coalesce(func.sum(AccountMoveLine.credit), 0),
+            func.coalesce(func.sum(AccountMoveLine.debit_l2), 0),
+            func.coalesce(func.sum(AccountMoveLine.credit_l2), 0),
         ).filter(
             AccountMoveLine.partner_id == partner_id,
             AccountMoveLine.partner_type == partner_type,
@@ -64,7 +64,7 @@ class ReceivableEngine:
         if as_of:
             query = query.filter(
                 AccountMoveLine.move_id.in_(
-                    self.db.query(AccountMove.id).filter(AccountMove.date <= as_of)
+                    self.db.query(AccountMove.id).filter(AccountMove.date_l1 <= as_of)
                 )
             )
 
@@ -79,15 +79,15 @@ class ReceivableEngine:
         d90 = as_of - timedelta(days=90)
 
         bucket = case(
-            (AccountMove.date >= d30, "0-30"),
-            (AccountMove.date >= d60, "31-60"),
-            (AccountMove.date >= d90, "61-90"),
+            (AccountMove.date_l1 >= d30, "0-30"),
+            (AccountMove.date_l1 >= d60, "31-60"),
+            (AccountMove.date_l1 >= d90, "61-90"),
             else_="90+",
         )
 
         rows = self.db.query(
             bucket.label("bucket"),
-            func.coalesce(func.sum(AccountMoveLine.amount_residual), 0).label("total"),
+            func.coalesce(func.sum(AccountMoveLine.amount_residual_l2), 0).label("total"),
         ).join(
             AccountMove, AccountMove.id == AccountMoveLine.move_id,
         ).join(
@@ -97,7 +97,7 @@ class ReceivableEngine:
             AccountMoveLine.partner_type == partner_type,
             LedgerAccount.account_type == account_type,
             AccountMoveLine.reconciled == False,
-            AccountMove.date <= as_of,
+            AccountMove.date_l1 <= as_of,
         ).group_by("bucket").all()
 
         aging = {

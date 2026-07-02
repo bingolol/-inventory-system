@@ -9,6 +9,24 @@ from models_finance import (
 )
 from accounting_engine import AccountingError, AccountingErrorCode
 from engine_ledger import LedgerEngine
+from lineage import writes, derives, TIER_L1, TIER_L2
+from rules import enforce_rules
+
+
+# 税金及附加明细科目 -> 应交税费对应科目
+TAX_SURCHARGE_EXPENSE_TO_PAYABLE = {
+    "640301": "222113",  # 消费税
+    "640302": "222110",  # 城市维护建设税
+    "640303": "222111",  # 教育费附加
+    "640304": "222112",  # 地方教育附加
+    "640305": "222114",  # 资源税
+    "640306": "222115",  # 土地增值税
+    "640307": "222116",  # 房产税
+    "640308": "222117",  # 城镇土地使用税
+    "640309": "222118",  # 车船税
+    "640310": "222119",  # 印花税
+    "640311": "222120",  # 环境保护税
+}
 
 
 class JournalEngine:
@@ -18,6 +36,11 @@ class JournalEngine:
         self.db = db
         self.ledger_engine = LedgerEngine(db)
 
+    @writes("AccountMove.date_l1", tier=TIER_L1, source="external")
+    @writes("AccountMove.amount_total_l2", tier=TIER_L2, source="engine")
+    @writes("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
+    @writes("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
+    @writes("AccountMoveLine.amount_residual_l2", tier=TIER_L2, source="engine")
     def post(self, ledger_id: int, move_type: str, source: dict) -> AccountMove:
         lines, journal_code, validation = self._build(move_type, source)
 
@@ -36,11 +59,11 @@ class JournalEngine:
             ledger_id=ledger_id,
             name=name,
             move_type=move_type,
-            date=move_date,
+            date_l1=move_date,
             state="posted",
             source_model=source.get("source_model"),
             source_id=source.get("source_id"),
-            amount_total=sum(Decimal(str(l["debit"])) for l in lines),
+            amount_total_l2=sum(Decimal(str(l["debit"])) for l in lines),
         )
         self.db.add(move)
         self.db.flush()
@@ -53,16 +76,19 @@ class JournalEngine:
             line = AccountMoveLine(
                 move_id=move.id,
                 ledger_account_id=self._get_leaf_account_id(ledger_id, line_data["account_code"]),
-                debit=debit_val,
-                credit=credit_val,
+                debit_l2=debit_val,
+                credit_l2=credit_val,
                 partner_id=line_data.get("partner_id"),
                 partner_type=line_data.get("partner_type"),
-                amount_residual=residual,
+                amount_residual_l2=residual,
             )
             self.db.add(line)
             self.db.flush()
 
             self.ledger_engine.update_balance(line)
+
+        # AS-01 借贷平衡后写校验(纵深防御:即使 _validate 漏检,DB 层兜底)
+        enforce_rules(self.db, ["AS-01"], {"move_id": move.id})
 
         return move
 
@@ -131,8 +157,8 @@ class JournalEngine:
                     StockMove.source_id == source.get("source_id", 0),
                     StockMove.product_id == item["product_id"],
                 ).first()
-                if move and move.unit_cost:
-                    unit_cost = move.unit_cost
+                if move and move.unit_cost_l2:
+                    unit_cost = move.unit_cost_l2
                 else:
                     # 非追踪库存商品（track_inventory=False）无 StockMove，成本为 0
                     unit_cost = Decimal("0")
@@ -196,23 +222,31 @@ class JournalEngine:
         self._check_required(source, ["amount"])
 
         amount = Decimal(str(source["amount"]))
+        withholding_tax = Decimal(str(source.get("withholding_tax_amount", 0) or 0))
         partner_id = source.get("partner_id")
         debit_account = source.get("debit_account_code", "2202")
-        dr_line = {"account_code": debit_account, "debit": amount, "credit": Decimal("0")}
+
+        # 借方:应付科目(应发金额 = 实发 + 代扣个税)
+        gross = amount + withholding_tax
+        dr_line = {"account_code": debit_account, "debit": gross, "credit": Decimal("0")}
         if partner_id is not None:
             dr_line["partner_id"] = partner_id
             dr_line["partner_type"] = "supplier"
 
+        # 贷方1:银行存款/库存现金(实发金额)
         bank_account_id = source.get("bank_account_id")
-        if bank_account_id is not None:
-            cr_line = {"account_code": "1002", "debit": Decimal("0"), "credit": amount}
-        else:
-            cr_line = {"account_code": "1001", "debit": Decimal("0"), "credit": amount}
+        cash_code = "1002" if bank_account_id is not None else "1001"
+        cr_cash = {"account_code": cash_code, "debit": Decimal("0"), "credit": amount}
 
-        return [
-            dr_line,
-            cr_line,
-        ], "BNK", {"balance_check": True}
+        lines = [dr_line, cr_cash]
+
+        # 贷方2:应交个人所得税(代扣金额) — 仅工资场景有值
+        # 业务因果链 E:发放工资时借2211(应发)、贷1002(实发)、贷222108(代扣个税)
+        if withholding_tax > 0:
+            withholding_account = source.get("withholding_tax_account_code", "222108")
+            lines.append({"account_code": withholding_account, "debit": Decimal("0"), "credit": withholding_tax})
+
+        return lines, "BNK", {"balance_check": True}
 
     def _build_expense(self, source):
         self._check_required(source, ["amount", "expense_account_code"])
@@ -245,7 +279,12 @@ class JournalEngine:
         ], "FA", {"balance_check": True}
 
     def _build_asset_disposal(self, source):
-        """处置凭证：借:1602 借:1002(收款) 贷:1601 + 损益科目"""
+        """处置凭证：借:1602 借:1002(收款) 贷:1601 + 损益科目
+
+        小企业会计准则：固定资产处置损益一律计入营业外收支，不使用"资产处置损益"科目。
+        处置价格 > 账面净值 → 营业外收入（6301）
+        处置价格 < 账面净值 → 营业外支出（6701）
+        """
         self._check_required(source, ["original_value", "accumulated_depreciation", "net_value"])
         original = Decimal(str(source["original_value"]))
         accumulated = Decimal(str(source["accumulated_depreciation"]))
@@ -263,11 +302,11 @@ class JournalEngine:
             lines.append({"account_code": "1002", "debit": disposal_price, "credit": Decimal("0")})
 
         if diff > 0:
-            # 赚了：贷:6111（资产处置收益）
-            lines.append({"account_code": "6111", "debit": Decimal("0"), "credit": diff})
+            # 赚了：贷:6301（营业外收入）— 小企业准则不计入资产处置损益
+            lines.append({"account_code": "6301", "debit": Decimal("0"), "credit": diff})
         elif diff < 0:
-            # 亏了：借:6711（营业外支出）
-            lines.append({"account_code": "6711", "debit": abs(diff), "credit": Decimal("0")})
+            # 亏了：借:6701（营业外支出）
+            lines.append({"account_code": "6701", "debit": abs(diff), "credit": Decimal("0")})
 
         return lines, "FA", {"balance_check": True}
 
@@ -356,7 +395,27 @@ class JournalEngine:
             ], "GEN", {"balance_check": True}
 
     def _build_tax_surcharge(self, source):
-        """计提附加税：借:6403（税金及附加）贷:222104（应交附加税）"""
+        """计提附加税
+
+        兼容旧模式：source["amount"] 单金额 → 6403/222104。
+        新模式：source["taxes"] = {expense_code: amount, ...}，分别计入明细科目。
+        """
+        if "taxes" in source:
+            lines = []
+            for expense_code, amount in source["taxes"].items():
+                amount = Decimal(str(amount))
+                if amount <= Decimal("0"):
+                    continue
+                # expense_code 形如 "640302"，对应 payable_code "222110"
+                payable_code = TAX_SURCHARGE_EXPENSE_TO_PAYABLE.get(expense_code)
+                if not payable_code:
+                    raise ValueError(f"附加税明细科目 {expense_code} 未配置对应应交科目")
+                lines.append({"account_code": expense_code, "debit": amount, "credit": Decimal("0")})
+                lines.append({"account_code": payable_code, "debit": Decimal("0"), "credit": amount})
+            if not lines:
+                return [], "TAX", {"balance_check": False}
+            return lines, "TAX", {"balance_check": True}
+
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
         return [

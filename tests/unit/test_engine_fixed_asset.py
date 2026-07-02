@@ -32,8 +32,8 @@ def accts(db, ledger):
         ("1601", "固定资产", "asset"),
         ("1602", "累计折旧", "asset"),
         ("6601", "管理费用", "expense"),
-        ("6111", "资产处置收益", "income"),
-        ("6711", "资产处置损失", "expense"),
+        ("6301", "营业外收入", "income"),
+        ("6701", "营业外支出", "expense"),
     ]
     result = {}
     for code, name, atype in seed:
@@ -51,12 +51,12 @@ def _create_asset(db, **overrides):
         asset_code="FA-TEST-001",
         name="测试设备",
         category="机器设备",
-        original_value=Decimal("120000"),
-        salvage_rate=Decimal("0.05"),
-        useful_life=60,
-        depreciation_method="年限平均法",
-        start_date=date(2025, 1, 1),
-        accumulated_depreciation=Decimal("0"),
+        original_value_l1=Decimal("120000"),
+        salvage_rate_l3=Decimal("0.05"),
+        useful_life_l3=60,
+        depreciation_method_l3="年限平均法",
+        start_date_l1=date(2025, 1, 1),
+        accumulated_depreciation_l4=Decimal("0"),
         status="在用",
     )
     defaults.update(overrides)
@@ -75,15 +75,15 @@ class TestMonthlyDepreciationCalculation:
         assert result == Decimal("1900.00")
 
     def test_straight_line_partial_year(self, db, account, accts):
-        asset = _create_asset(db, original_value=Decimal("60000"),
-                              salvage_rate=Decimal("0"), useful_life=36,
+        asset = _create_asset(db, original_value_l1=Decimal("60000"),
+                              salvage_rate_l3=Decimal("0"), useful_life_l3=36,
                               asset_code="FA-TEST-002")
         eng = FixedAssetEngine(db, account_id=1)
         result = eng.calculate_monthly(asset)
         assert result == Decimal("1666.67")
 
     def test_already_fully_depreciated(self, db, account, accts):
-        asset = _create_asset(db, accumulated_depreciation=Decimal("114000"))
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("114000"))
         eng = FixedAssetEngine(db, account_id=1)
         result = eng.calculate_monthly(asset)
         assert result == Decimal("0")
@@ -98,14 +98,14 @@ class TestRecordDepreciation:
         assert dep is not None
         assert dep.asset_id == asset.id
         assert dep.period == "2025-06"
-        assert dep.amount == Decimal("1900.00")
+        assert dep.amount_l2 == Decimal("1900.00")
 
     def test_updates_accumulated_depreciation(self, db, account, accts):
         asset = _create_asset(db)
         eng = FixedAssetEngine(db, account_id=1)
         eng.record_depreciation(asset.id, period="2025-06")
         db.refresh(asset)
-        assert asset.accumulated_depreciation == Decimal("1900.00")
+        assert asset.accumulated_depreciation_l4 == Decimal("1900.00")
 
     def test_idempotent_same_period(self, db, account, accts):
         asset = _create_asset(db)
@@ -114,7 +114,7 @@ class TestRecordDepreciation:
         dep2 = eng.record_depreciation(asset.id, period="2025-06")
         assert dep1.id == dep2.id
         db.refresh(asset)
-        assert asset.accumulated_depreciation == Decimal("1900.00")
+        assert asset.accumulated_depreciation_l4 == Decimal("1900.00")
 
     def test_multiple_periods(self, db, account, accts):
         asset = _create_asset(db)
@@ -122,7 +122,7 @@ class TestRecordDepreciation:
         eng.record_depreciation(asset.id, period="2025-06")
         eng.record_depreciation(asset.id, period="2025-07")
         db.refresh(asset)
-        assert asset.accumulated_depreciation == Decimal("3800.00")
+        assert asset.accumulated_depreciation_l4 == Decimal("3800.00")
 
     def test_skip_retired_asset(self, db, account, accts):
         asset = _create_asset(db, status="报废")
@@ -131,12 +131,12 @@ class TestRecordDepreciation:
         assert dep is None
 
     def test_stop_at_salvage_value(self, db, account, accts):
-        asset = _create_asset(db, accumulated_depreciation=Decimal("113000"))
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("113000"))
         eng = FixedAssetEngine(db, account_id=1)
         dep = eng.record_depreciation(asset.id, period="2025-06")
-        assert dep.amount == Decimal("1000.00")
+        assert dep.amount_l2 == Decimal("1000.00")
         db.refresh(asset)
-        assert asset.accumulated_depreciation == Decimal("114000.00")
+        assert asset.accumulated_depreciation_l4 == Decimal("114000.00")
 
 
 class TestBatchDepreciate:
@@ -144,8 +144,8 @@ class TestBatchDepreciate:
     def test_batch_processes_all_active(self, db, account, accts):
         _create_asset(db, asset_code="FA-001")
         _create_asset(db, asset_code="FA-002",
-                      original_value=Decimal("60000"),
-                      useful_life=36)
+                      original_value_l1=Decimal("60000"),
+                      useful_life_l3=36)
         eng = FixedAssetEngine(db, account_id=1)
         results = eng.batch_depreciate(period="2025-06")
         assert len(results) == 2
@@ -162,7 +162,7 @@ class TestRecordDisposal:
 
     def test_disposal_scrap(self, db, account, accts):
         """报废（处置价格=0）→ 借:6711 营业外支出"""
-        asset = _create_asset(db, accumulated_depreciation=Decimal("100000"))
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("100000"))
         eng = FixedAssetEngine(db, account_id=1)
         eng.record_disposal(asset.id, disposal_price=Decimal("0"),
                             disposal_date=date(2025, 6, 30))
@@ -170,8 +170,8 @@ class TestRecordDisposal:
         assert asset.status == "报废"
 
     def test_disposal_profit(self, db, account, accts):
-        """处置价格 > 净值 → 贷:6111 资产处置收益"""
-        asset = _create_asset(db, accumulated_depreciation=Decimal("100000"),
+        """处置价格 > 净值 → 贷:6301 营业外收入"""
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("100000"),
                               asset_code="FA-PROFIT")
         # 净值 = 120000 - 100000 = 20000，卖 30000，赚 10000
         eng = FixedAssetEngine(db, account_id=1)
@@ -181,8 +181,8 @@ class TestRecordDisposal:
         assert asset.status == "报废"
 
     def test_disposal_loss(self, db, account, accts):
-        """处置价格 < 净值 → 借:6711 营业外支出"""
-        asset = _create_asset(db, accumulated_depreciation=Decimal("100000"),
+        """处置价格 < 净值 → 借:6701 营业外支出"""
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("100000"),
                               asset_code="FA-LOSS")
         # 净值 = 20000，卖 5000，亏 15000
         eng = FixedAssetEngine(db, account_id=1)
@@ -193,7 +193,7 @@ class TestRecordDisposal:
 
     def test_disposal_break_even(self, db, account, accts):
         """处置价格 = 净值 → 无损益科目"""
-        asset = _create_asset(db, accumulated_depreciation=Decimal("100000"),
+        asset = _create_asset(db, accumulated_depreciation_l4=Decimal("100000"),
                               asset_code="FA-BREAK")
         # 净值 = 20000，卖 20000，不赚不亏
         eng = FixedAssetEngine(db, account_id=1)

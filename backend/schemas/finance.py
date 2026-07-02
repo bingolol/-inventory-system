@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -61,9 +61,9 @@ class OpeningBalanceOut(OpeningBalanceBase):
     
     @classmethod
     def model_validate(cls, obj):
-        # 将date字段转换为字符串格式
-        if hasattr(obj, 'date') and obj.date:
-            obj.date = obj.date.isoformat()
+        # 将 ORM 的 date_l1 字段映射到 Schema 的 date 字段
+        if hasattr(obj, 'date_l1') and obj.date_l1:
+            obj.date = obj.date_l1.isoformat()
         return super().model_validate(obj)
 
 
@@ -121,8 +121,9 @@ class FixedAssetOut(FixedAssetBase):
     
     @classmethod
     def model_validate(cls, obj):
-        if hasattr(obj, 'start_date') and obj.start_date:
-            obj.start_date = obj.start_date.isoformat()
+        # 将 ORM 的 start_date_l1 字段映射到 Schema 的 start_date 字段
+        if hasattr(obj, 'start_date_l1') and obj.start_date_l1:
+            obj.start_date = obj.start_date_l1.isoformat()
         return super().model_validate(obj)
 
 
@@ -164,8 +165,9 @@ class IntangibleAssetOut(IntangibleAssetBase):
     
     @classmethod
     def model_validate(cls, obj):
-        if hasattr(obj, 'start_date') and obj.start_date:
-            obj.start_date = obj.start_date.isoformat()
+        # 将 ORM 的 start_date_l1 字段映射到 Schema 的 start_date 字段
+        if hasattr(obj, 'start_date_l1') and obj.start_date_l1:
+            obj.start_date = obj.start_date_l1.isoformat()
         return super().model_validate(obj)
 
 
@@ -391,15 +393,15 @@ class CashFlowTransactionOut(BaseModel):
     id: int
     account_id: int
     type: str
-    amount: Decimal
-    flow_category: str
+    amount: Decimal = Field(validation_alias="amount_l2")
+    flow_category: str = Field(validation_alias="flow_category_l2")
     description: str
-    transaction_date: datetime
+    transaction_date: datetime = Field(validation_alias="transaction_date_l1")
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[int] = None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class CashFlowStatement(BaseModel):

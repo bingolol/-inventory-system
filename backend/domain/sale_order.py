@@ -104,10 +104,10 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
         items = [
             SaleOrderLine(
                 product_id=item.product_id,
-                quantity=item.quantity,
-                unit_price=Decimal(str(item.unit_price)) if item.unit_price else Decimal("0"),
-                tax_rate=Decimal(str(item.tax_rate)) if item.tax_rate else Decimal("0"),
-                total_price=Money(item.total_price),
+                quantity=item.quantity_l1,
+                unit_price=Decimal(str(item.unit_price_l1)) if item.unit_price_l1 else Decimal("0"),
+                tax_rate=Decimal(str(item.tax_rate_l1)) if item.tax_rate_l1 else Decimal("0"),
+                total_price=Money(item.total_price_l1),
             )
             for item in (orm_obj.items or [])
         ]
@@ -115,7 +115,7 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
             id=orm_obj.id,
             order_no=orm_obj.order_no or "",
             customer_id=orm_obj.customer_id,
-            total_price=Money(orm_obj.total_price),
+            total_price=Money(orm_obj.total_price_l1),
             payment_status=orm_obj.payment_status or "unpaid",
             status=orm_obj.status or OrderStatus.PENDING,
             notes=orm_obj.notes or "",

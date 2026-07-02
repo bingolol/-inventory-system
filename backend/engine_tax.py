@@ -15,6 +15,7 @@ from sqlalchemy import func as sqlfunc
 from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
 from finance_integration import post_journal
 from utils import _d, Q2
+from lineage import reads, TIER_L3
 
 logger = logging.getLogger("inventory")
 
@@ -22,32 +23,32 @@ logger = logging.getLogger("inventory")
 def _l(db: Session, ledger: Ledger, code: str, cutoff: datetime):
     if not ledger:
         return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit), 0)).join(
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date <= cutoff).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit), 0)).join(
+        AccountMove.date_l1 <= cutoff).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date <= cutoff).scalar())
+        AccountMove.date_l1 <= cutoff).scalar())
     return d, c
 
 
 def _lp(db: Session, ledger: Ledger, code: str, start: datetime, end: datetime):
     if not ledger:
         return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit), 0)).join(
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date >= start, AccountMove.date <= end).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit), 0)).join(
+        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date >= start, AccountMove.date <= end).scalar())
+        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
     return d, c
 
 
@@ -66,6 +67,7 @@ class TaxAccrualEngine:
     def __init__(self, db: Session):
         self.db = db
 
+    @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     def execute(self, account_id: int, period: str, taxpayer_type: str = "") -> Dict:
         period_start, close_dt = _parse_period(period)
 
@@ -79,7 +81,7 @@ class TaxAccrualEngine:
         if not ledger:
             return {"status": "error", "msg": "总账未初始化"}
         if not taxpayer_type:
-            taxpayer_type = account.taxpayer_type if account else "small_scale"
+            taxpayer_type = account.taxpayer_type_l3 if account else "small_scale"
 
         closed = self._has_closed(ledger, period)
         # 修复 #1：移除顶层"已结账则跳过"守卫，改为允许补提差额
@@ -114,20 +116,37 @@ class TaxAccrualEngine:
 
         if curr_vat > Decimal("0"):
             # 修复 #1：附加税用 delta 模式，避免已计提后补提失效
-            # 原代码 not closed["surcharge"] 守卫导致首次计提后无法补提差额。
-            target_surcharge = (curr_vat * Decimal("0.12")).quantize(Q2)
-            posted_surcharge = _crd(self.db, ledger, "222104", close_dt)
-            surcharge_delta = target_surcharge - posted_surcharge
+            # 按最新政策拆分：城建税7%、教育费附加3%、地方教育附加2%；小规模纳税人减半（2023-2027）
+            surcharge_reduction = Decimal("0.5") if taxpayer_type == "small_scale" else Decimal("1")
+            surcharge_taxes = {
+                "640302": (curr_vat * Decimal("0.07") * surcharge_reduction).quantize(Q2),  # 城建税
+                "640303": (curr_vat * Decimal("0.03") * surcharge_reduction).quantize(Q2),  # 教育费附加
+                "640304": (curr_vat * Decimal("0.02") * surcharge_reduction).quantize(Q2),  # 地方教育附加
+            }
+            target_surcharge = sum(surcharge_taxes.values())
 
-            if surcharge_delta > Decimal("0.01"):
+            # delta 按明细科目分别计算，支持补提差额
+            taxes_delta = {}
+            for expense_code, target in surcharge_taxes.items():
+                payable_code = {
+                    "640302": "222110",
+                    "640303": "222111",
+                    "640304": "222112",
+                }[expense_code]
+                posted = _crd(self.db, ledger, payable_code, close_dt)
+                delta = target - posted
+                if delta > Decimal("0.01"):
+                    taxes_delta[expense_code] = delta
+
+            if taxes_delta:
                 post_journal(self.db, account_id, "tax_surcharge", {
-                    "amount": surcharge_delta,
+                    "taxes": taxes_delta,
                     "date": close_dt,
                     "source_model": "tax_surcharge",
                     "source_id": _period_hash(period, "surcharge"),
                 }, force=closed["surcharge"])
-                result_lines.append(f"附加税: +{surcharge_delta}")
-                logger.info(f"月结 {period} 计提附加税: {surcharge_delta}")
+                result_lines.append(f"附加税: +{sum(taxes_delta.values())}")
+                logger.info(f"月结 {period} 计提附加税: {taxes_delta}")
 
             # VAT 结转：仅一般纳税人执行（222101→222106→222107）
             # 小规模纳税人 222103 本身就是应交增值税，无需结转
@@ -137,8 +156,8 @@ class TaxAccrualEngine:
                 vat_xfer_exists = self.db.query(AccountMove).filter(
                     AccountMove.ledger_id == ledger.id,
                     AccountMove.source_model == "vat_transfer_out",
-                    AccountMove.date >= period_start,
-                    AccountMove.date <= close_dt,
+                    AccountMove.date_l1 >= period_start,
+                    AccountMove.date_l1 <= close_dt,
                 ).first() is not None
                 if not vat_xfer_exists:
                     post_journal(self.db, account_id, "vat_transfer_out", {
@@ -156,8 +175,8 @@ class TaxAccrualEngine:
             exemption_closed = self.db.query(AccountMove).filter(
                 AccountMove.ledger_id == ledger.id,
                 AccountMove.source_model == "vat_exemption",
-                AccountMove.date >= period_start,
-                AccountMove.date <= close_dt,
+                AccountMove.date_l1 >= period_start,
+                AccountMove.date_l1 <= close_dt,
             ).first() is not None
             if not exemption_closed:
                 # 计算季度总不含税销售额（从发票汇总）
@@ -165,11 +184,11 @@ class TaxAccrualEngine:
                 from enums import InvoiceDirection
                 quarter_start_month = period_start.month - 2  # 季度首月
                 q_start = datetime(period_start.year, quarter_start_month, 1, 0, 0, 0)
-                quarterly_revenue = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+                quarterly_revenue = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
                     models.Invoice.account_id == account_id,
                     models.Invoice.direction == InvoiceDirection.OUT,
-                models.Invoice.issue_date >= q_start,
-                models.Invoice.issue_date <= close_dt,
+                models.Invoice.issue_date_l1 >= q_start,
+                models.Invoice.issue_date_l1 <= close_dt,
                 ).scalar())
 
                 # 季度销项税总额（222103贷方发生额）
@@ -182,19 +201,19 @@ class TaxAccrualEngine:
                     # 导致专票部分也被全额免税（应减按1%缴纳）。
                     # 正确：普票全额免，专票减按1%（减免2%）
                     from enums import InvoiceType
-                    ordinary_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+                    ordinary_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
                         models.Invoice.account_id == account_id,
                         models.Invoice.direction == InvoiceDirection.OUT,
                         models.Invoice.invoice_type == InvoiceType.ORDINARY,
-                        models.Invoice.issue_date >= q_start,
-                        models.Invoice.issue_date <= close_dt,
+                        models.Invoice.issue_date_l1 >= q_start,
+                        models.Invoice.issue_date_l1 <= close_dt,
                     ).scalar())
-                    special_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+                    special_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
                         models.Invoice.account_id == account_id,
                         models.Invoice.direction == InvoiceDirection.OUT,
                         models.Invoice.invoice_type == InvoiceType.SPECIAL,
-                        models.Invoice.issue_date >= q_start,
-                        models.Invoice.issue_date <= close_dt,
+                        models.Invoice.issue_date_l1 >= q_start,
+                        models.Invoice.issue_date_l1 <= close_dt,
                     ).scalar())
 
                     # 普票全额免：已记的1%销项税转出至营业外收入
@@ -220,8 +239,9 @@ class TaxAccrualEngine:
                 + _bal(self.db, ledger, "6602", close_dt)
                 + _bal(self.db, ledger, "6603", close_dt)
                 + _bal(self.db, ledger, "6403", close_dt))
-        non_op_income = _crd(self.db, ledger, "6301", close_dt) + _crd(self.db, ledger, "6111", close_dt)
-        non_op_expense = _bal(self.db, ledger, "6701", close_dt) + _bal(self.db, ledger, "6711", close_dt)
+        # 小企业准则：固定资产处置损益计入营业外收支(6301/6701)，不使用"资产处置损益"(6111/6711)
+        non_op_income = _crd(self.db, ledger, "6301", close_dt)
+        non_op_expense = _bal(self.db, ledger, "6701", close_dt)
         cumulative_profit = revenue - cogs - opex + non_op_income - non_op_expense
 
         # 个体工商户不缴企业所得税（缴个人所得税，系统不处理个税）
@@ -277,8 +297,8 @@ class TaxAccrualEngine:
                 income_rev_exists = self.db.query(AccountMove).filter(
                     AccountMove.ledger_id == ledger.id,
                     AccountMove.source_model == "tax_income_reversal",
-                    AccountMove.date >= period_start,
-                    AccountMove.date <= close_dt,
+                    AccountMove.date_l1 >= period_start,
+                    AccountMove.date_l1 <= close_dt,
                 ).first() is not None
                 post_journal(self.db, account_id, "tax_income_reversal", {
                     "amount": abs(delta),
@@ -304,15 +324,15 @@ class TaxAccrualEngine:
         surcharge_exists = self.db.query(AccountMove).filter(
             AccountMove.ledger_id == ledger.id,
             AccountMove.source_model == "tax_surcharge",
-            AccountMove.date >= period_start,
-            AccountMove.date <= period_end,
+            AccountMove.date_l1 >= period_start,
+            AccountMove.date_l1 <= period_end,
         ).first() is not None
 
         income_exists = self.db.query(AccountMove).filter(
             AccountMove.ledger_id == ledger.id,
             AccountMove.source_model == "tax_income",
-            AccountMove.date >= period_start,
-            AccountMove.date <= period_end,
+            AccountMove.date_l1 >= period_start,
+            AccountMove.date_l1 <= period_end,
         ).first() is not None
 
         return {"surcharge": surcharge_exists, "income_tax": income_exists}

@@ -31,10 +31,10 @@ def _calc_partner_reconciliation(db: Session, account_id: int, party_type: str, 
             return None
 
         # 期初：start_date 前未付款采购单
-        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price), 0)).filter(
+        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price_l1), 0)).filter(
             PurchaseOrder.account_id == account_id,
             PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date < start_dt,
+            PurchaseOrder.purchase_date_l1 < start_dt,
             PurchaseOrder.payment_status == PaymentStatus.UNPAID,
             PurchaseOrder.status == OrderStatus.COMPLETED
         ).scalar())
@@ -43,22 +43,22 @@ def _calc_partner_reconciliation(db: Session, account_id: int, party_type: str, 
         orders = db.query(PurchaseOrder).filter(
             PurchaseOrder.account_id == account_id,
             PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date >= start_dt,
-            PurchaseOrder.purchase_date <= end_dt,
+            PurchaseOrder.purchase_date_l1 >= start_dt,
+            PurchaseOrder.purchase_date_l1 <= end_dt,
             PurchaseOrder.status == OrderStatus.COMPLETED
         ).all()
-        current = sum((_d(o.total_price) for o in orders), Decimal('0'))
-        paid = sum((_d(o.total_price) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
+        current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
+        paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
 
         # 发票
         invs = db.query(Invoice).filter(
             Invoice.account_id == account_id,
             Invoice.direction == InvoiceDirection.IN,
             Invoice.counterparty_name == partner.name,
-            Invoice.issue_date >= start_dt,
-            Invoice.issue_date <= end_dt
+            Invoice.issue_date_l1 >= start_dt,
+            Invoice.issue_date_l1 <= end_dt
         ).all()
-        inv_amount = sum((_d(i.amount_with_tax) for i in invs), Decimal('0'))
+        inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
 
     else:
         partner = db.query(Customer).filter(
@@ -68,10 +68,10 @@ def _calc_partner_reconciliation(db: Session, account_id: int, party_type: str, 
             return None
 
         # 期初：start_date 前未收款销售单
-        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price), 0)).filter(
+        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price_l1), 0)).filter(
             SaleOrder.account_id == account_id,
             SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date < start_dt,
+            SaleOrder.sale_date_l1 < start_dt,
             SaleOrder.payment_status == PaymentStatus.UNPAID,
             SaleOrder.status == OrderStatus.COMPLETED
         ).scalar())
@@ -80,22 +80,22 @@ def _calc_partner_reconciliation(db: Session, account_id: int, party_type: str, 
         orders = db.query(SaleOrder).filter(
             SaleOrder.account_id == account_id,
             SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date >= start_dt,
-            SaleOrder.sale_date <= end_dt,
+            SaleOrder.sale_date_l1 >= start_dt,
+            SaleOrder.sale_date_l1 <= end_dt,
             SaleOrder.status == OrderStatus.COMPLETED
         ).all()
-        current = sum((_d(o.total_price) for o in orders), Decimal('0'))
-        paid = sum((_d(o.total_price) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
+        current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
+        paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
 
         # 发票
         invs = db.query(Invoice).filter(
             Invoice.account_id == account_id,
             Invoice.direction == InvoiceDirection.OUT,
             Invoice.counterparty_name == partner.name,
-            Invoice.issue_date >= start_dt,
-            Invoice.issue_date <= end_dt
+            Invoice.issue_date_l1 >= start_dt,
+            Invoice.issue_date_l1 <= end_dt
         ).all()
-        inv_amount = sum((_d(i.amount_with_tax) for i in invs), Decimal('0'))
+        inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
 
     closing = opening + current - paid
     return {
@@ -189,10 +189,10 @@ def get_reconciliation_detail(
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "供应商", "order_id": partner_id})
 
         # 期初
-        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price), 0)).filter(
+        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price_l1), 0)).filter(
             PurchaseOrder.account_id == account_id,
             PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date < start_dt,
+            PurchaseOrder.purchase_date_l1 < start_dt,
             PurchaseOrder.payment_status == PaymentStatus.UNPAID,
             PurchaseOrder.status == OrderStatus.COMPLETED
         ).scalar())
@@ -201,17 +201,17 @@ def get_reconciliation_detail(
         orders = db.query(PurchaseOrder).filter(
             PurchaseOrder.account_id == account_id,
             PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date >= start_dt,
-            PurchaseOrder.purchase_date <= end_dt,
+            PurchaseOrder.purchase_date_l1 >= start_dt,
+            PurchaseOrder.purchase_date_l1 <= end_dt,
             PurchaseOrder.status == OrderStatus.COMPLETED
-        ).order_by(PurchaseOrder.purchase_date).all()
+        ).order_by(PurchaseOrder.purchase_date_l1).all()
 
         items = []
         for o in orders:
             items.append({
-                "date": o.purchase_date.strftime("%Y-%m-%d") if o.purchase_date else "",
+                "date": o.purchase_date_l1.strftime("%Y-%m-%d") if o.purchase_date_l1 else "",
                 "description": f"采购单 {o.order_no}",
-                "amount": o.total_price,
+                "amount": o.total_price_l1,
                 "payment_status": o.payment_status,
                 "has_invoice": linkage_has_invoice(db, account_id, "purchase_order", o.id),
                 "notes": o.notes or ""
@@ -222,8 +222,8 @@ def get_reconciliation_detail(
             Invoice.account_id == account_id,
             Invoice.direction == InvoiceDirection.IN,
             Invoice.counterparty_name == partner.name,
-            Invoice.issue_date >= start_dt,
-            Invoice.issue_date <= end_dt
+            Invoice.issue_date_l1 >= start_dt,
+            Invoice.issue_date_l1 <= end_dt
         ).all()
 
     else:
@@ -234,10 +234,10 @@ def get_reconciliation_detail(
             raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": partner_id})
 
         # 期初
-        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price), 0)).filter(
+        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price_l1), 0)).filter(
             SaleOrder.account_id == account_id,
             SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date < start_dt,
+            SaleOrder.sale_date_l1 < start_dt,
             SaleOrder.payment_status == PaymentStatus.UNPAID,
             SaleOrder.status == OrderStatus.COMPLETED
         ).scalar())
@@ -246,17 +246,17 @@ def get_reconciliation_detail(
         orders = db.query(SaleOrder).filter(
             SaleOrder.account_id == account_id,
             SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date >= start_dt,
-            SaleOrder.sale_date <= end_dt,
+            SaleOrder.sale_date_l1 >= start_dt,
+            SaleOrder.sale_date_l1 <= end_dt,
             SaleOrder.status == OrderStatus.COMPLETED
-        ).order_by(SaleOrder.sale_date).all()
+        ).order_by(SaleOrder.sale_date_l1).all()
 
         items = []
         for o in orders:
             items.append({
-                "date": o.sale_date.strftime("%Y-%m-%d") if o.sale_date else "",
+                "date": o.sale_date_l1.strftime("%Y-%m-%d") if o.sale_date_l1 else "",
                 "description": f"销售单 {o.order_no}",
-                "amount": o.total_price,
+                "amount": o.total_price_l1,
                 "payment_status": o.payment_status,
                 "has_invoice": linkage_has_invoice(db, account_id, "sale_order", o.id),
                 "notes": o.notes or ""
@@ -267,25 +267,25 @@ def get_reconciliation_detail(
             Invoice.account_id == account_id,
             Invoice.direction == InvoiceDirection.OUT,
             Invoice.counterparty_name == partner.name,
-            Invoice.issue_date >= start_dt,
-            Invoice.issue_date <= end_dt
+            Invoice.issue_date_l1 >= start_dt,
+            Invoice.issue_date_l1 <= end_dt
         ).all()
 
     for i in invs:
         items.append({
-            "date": i.issue_date.strftime("%Y-%m-%d") if i.issue_date else "",
+            "date": i.issue_date_l1.strftime("%Y-%m-%d") if i.issue_date_l1 else "",
             "description": f"发票 {i.invoice_no}",
-            "amount": i.amount_with_tax,
+            "amount": i.amount_with_tax_l1,
             "payment_status": "invoice",
             "has_invoice": True,
             "notes": i.notes or ""
         })
 
     items.sort(key=lambda x: x["date"])
-    current = sum((_d(o.total_price) for o in orders), Decimal('0'))
-    paid = sum((_d(o.total_price) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
+    current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
+    paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
     closing = opening + current - paid
-    inv_amount = sum((_d(i.amount_with_tax) for i in invs), Decimal('0'))
+    inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
 
     return {
         "partner_name": partner.name,

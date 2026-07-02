@@ -50,12 +50,21 @@ def list_personal_advances(
     if status:
         q = q.filter(models.PersonalAdvance.repayment_status == status)
     if start_date:
+<<<<<<< Updated upstream
         q = q.filter(models.PersonalAdvance.advance_date >= start_date)
     if end_date:
         q = q.filter(models.PersonalAdvance.advance_date <= end_date + " 23:59:59")
     # 已冲红单据默认仍然展示（便于审计追溯），由前端标识
     total = q.count()
     items = q.order_by(models.PersonalAdvance.advance_date.desc()).offset(skip).limit(limit).all()
+=======
+        q = q.filter(models.PersonalAdvance.advance_date_l1 >= start_date)
+    if end_date:
+        q = q.filter(models.PersonalAdvance.advance_date_l1 <= end_date + " 23:59:59")
+    # 已冲红单据默认仍然展示（便于审计追溯），由前端标识
+    total = q.count()
+    items = q.order_by(models.PersonalAdvance.advance_date_l1.desc()).offset(skip).limit(limit).all()
+>>>>>>> Stashed changes
     return total, items
 
 
@@ -72,7 +81,11 @@ def list_repayments_by_advance(db: Session, account_id: int, advance_id: int):
     return db.query(models.PersonalAdvanceRepayment).filter(
         models.PersonalAdvanceRepayment.account_id == account_id,
         models.PersonalAdvanceRepayment.advance_id == advance_id,
+<<<<<<< Updated upstream
     ).order_by(models.PersonalAdvanceRepayment.repayment_date.asc()).all()
+=======
+    ).order_by(models.PersonalAdvanceRepayment.repayment_date_l1.asc()).all()
+>>>>>>> Stashed changes
 
 
 def get_repayment(db: Session, account_id: int, repayment_id: int):
@@ -92,8 +105,13 @@ def get_personal_advance_summary(db: Session, account_id: int):
     rows = db.query(
         models.PersonalAdvance.advancer_name.label("advancer_name"),
         sqlfunc.count(models.PersonalAdvance.id).label("advance_count"),
+<<<<<<< Updated upstream
         sqlfunc.sum(models.PersonalAdvance.amount).label("total_amount"),
         sqlfunc.sum(models.PersonalAdvance.paid_amount).label("paid_amount"),
+=======
+        sqlfunc.sum(models.PersonalAdvance.amount_l1).label("total_amount"),
+        sqlfunc.sum(models.PersonalAdvance.paid_amount_l4).label("paid_amount"),
+>>>>>>> Stashed changes
     ).filter(
         models.PersonalAdvance.account_id == account_id,
         models.PersonalAdvance.is_reversed == False,
@@ -119,8 +137,13 @@ def get_personal_advance_totals(db: Session, account_id: int):
     用于列表页顶部统计卡片，以及作为 2241 科目余额的对照（应相等）。
     """
     row = db.query(
+<<<<<<< Updated upstream
         sqlfunc.sum(models.PersonalAdvance.amount).label("total_amount"),
         sqlfunc.sum(models.PersonalAdvance.paid_amount).label("paid_amount"),
+=======
+        sqlfunc.sum(models.PersonalAdvance.amount_l1).label("total_amount"),
+        sqlfunc.sum(models.PersonalAdvance.paid_amount_l4).label("paid_amount"),
+>>>>>>> Stashed changes
     ).filter(
         models.PersonalAdvance.account_id == account_id,
         models.PersonalAdvance.is_reversed == False,

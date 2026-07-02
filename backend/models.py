@@ -12,10 +12,23 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, comment="用户名")
-    password_hash = Column(String(128), nullable=False, comment="密码哈希")
+    password_hash = Column(String(128), nullable=False, comment="密码哈希(PBKDF2)")
+    password_salt = Column(String(32), nullable=True, comment="密码盐(NULL表示旧SHA256格式)")
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, comment="默认账本")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class UserToken(Base):
+    __tablename__ = "user_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    access_token_hash = Column(String(64), nullable=False, index=True, comment="访问令牌哈希")
+    refresh_token_hash = Column(String(64), nullable=False, index=True, comment="刷新令牌哈希")
+    access_expires_at = Column(DateTime, nullable=False, comment="访问令牌过期时间")
+    refresh_expires_at = Column(DateTime, nullable=False, comment="刷新令牌过期时间")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
 # 账本表：支持多公司/个人记账切换
@@ -26,7 +39,9 @@ class Account(Base):
     name = Column(String(100), nullable=False, comment="账本名")
     type = Column(String(20), nullable=False, default="company", comment="类型: company/personal")
     code = Column(String(50), unique=True, nullable=False, comment="代码标识: riyun=日运办公, qiaoyou=巧游电子, personal=个人")
-    taxpayer_type = Column(String(20), nullable=False, default="small_scale", comment="纳税人类型: small_scale / general")
+    taxpayer_type_l3 = Column(String(20), nullable=False, default="small_scale", comment="[L3-政策] 纳税人类型: small_scale / general", info={"tier":"L3","source":"policy"})
+    taxpayer_id_l1 = Column(String(50), nullable=True, comment="[L1-外部] 纳税人识别号（统一社会信用代码）", info={"tier":"L1","source":"external"})
+    taxpayer_name_l1 = Column(String(200), nullable=True, comment="[L1-外部] 纳税人名称", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -36,30 +51,30 @@ class OpeningBalance(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
-    date = Column(Date, nullable=False, comment="期初日期")
-    
+    date_l1 = Column(Date, nullable=False, comment="[L1-外部] 期初日期", info={"tier":"L1","source":"external"})
+
     # 流动资产类
-    cash_balance = Column(Numeric(12, 2), default=Decimal('0'), comment="现金余额")
-    bank_balance = Column(Numeric(12, 2), default=Decimal('0'), comment="银行存款")
-    accounts_receivable = Column(Numeric(12, 2), default=Decimal('0'), comment="应收账款")
-    inventory_value = Column(Numeric(12, 2), default=Decimal('0'), comment="库存价值")
-    
+    cash_balance_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 现金余额", info={"tier":"L1","source":"external"})
+    bank_balance_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 银行存款", info={"tier":"L1","source":"external"})
+    accounts_receivable_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 应收账款", info={"tier":"L1","source":"external"})
+    inventory_value_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 库存价值", info={"tier":"L1","source":"external"})
+
     # 非流动资产类
-    fixed_assets_original = Column(Numeric(12, 2), default=Decimal('0'), comment="固定资产原值")
-    accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
-    intangible_assets_original = Column(Numeric(12, 2), default=Decimal('0'), comment="无形资产原值")
-    accumulated_amortization = Column(Numeric(12, 2), default=Decimal('0'), comment="累计摊销")
-    
+    fixed_assets_original_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 固定资产原值", info={"tier":"L1","source":"external"})
+    accumulated_depreciation_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 累计折旧", info={"tier":"L1","source":"external"})
+    intangible_assets_original_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 无形资产原值", info={"tier":"L1","source":"external"})
+    accumulated_amortization_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 累计摊销", info={"tier":"L1","source":"external"})
+
     # 流动负债类
-    accounts_payable = Column(Numeric(12, 2), default=Decimal('0'), comment="应付账款")
-    tax_payable = Column(Numeric(12, 2), default=Decimal('0'), comment="应交税费")
-    
+    accounts_payable_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 应付账款", info={"tier":"L1","source":"external"})
+    tax_payable_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 应交税费", info={"tier":"L1","source":"external"})
+
     # 非流动负债类
-    long_term_borrowings = Column(Numeric(12, 2), default=Decimal('0'), comment="长期借款")
-    
+    long_term_borrowings_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 长期借款", info={"tier":"L1","source":"external"})
+
     # 权益类
-    paid_in_capital = Column(Numeric(12, 2), default=Decimal('0'), comment="实收资本")
-    retained_earnings = Column(Numeric(12, 2), default=Decimal('0'), comment="未分配利润")
+    paid_in_capital_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 实收资本", info={"tier":"L1","source":"external"})
+    retained_earnings_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 未分配利润", info={"tier":"L1","source":"external"})
     
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -76,12 +91,21 @@ class FixedAsset(Base):
     asset_code = Column(String(50), comment="资产编码（账本内唯一）")
     name = Column(String(100), nullable=False, comment="资产名称")
     category = Column(String(50), comment="资产类别")
+<<<<<<< Updated upstream
     original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
     salvage_rate = Column(Numeric(5, 2), default=Decimal('0.05'), comment="残值率")
     useful_life = Column(Integer, nullable=False, comment="使用寿命(月)")
     depreciation_method = Column(String(20), default="年限平均法", comment="折旧方法")
     start_date = Column(Date, nullable=False, comment="开始折旧日期")
     accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
+=======
+    original_value_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 原值", info={"tier":"L1","source":"external"})
+    salvage_rate_l3 = Column(Numeric(5, 2), default=Decimal('0.05'), comment="[L3-政策] 残值率", info={"tier":"L3","source":"policy"})
+    useful_life_l3 = Column(Integer, nullable=False, comment="[L3-政策] 使用寿命(月)", info={"tier":"L3","source":"policy"})
+    depreciation_method_l3 = Column(String(20), default="年限平均法", comment="[L3-政策] 折旧方法", info={"tier":"L3","source":"policy"})
+    start_date_l1 = Column(Date, nullable=False, comment="[L1-外部] 开始折旧日期", info={"tier":"L1","source":"external"})
+    accumulated_depreciation_l4 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L4-派生] 累计折旧", info={"tier":"L4","source":"derived"})
+>>>>>>> Stashed changes
     status = Column(String(20), default="在用", comment="在用/停用/报废/已冲红")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -101,9 +125,9 @@ class FixedAssetDepreciation(Base):
     asset_id = Column(Integer, ForeignKey("fixed_assets.id"), nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
     period = Column(String(7), nullable=False, comment="折旧期间 YYYY-MM")
-    amount = Column(Numeric(12, 2), nullable=False, comment="本期折旧额")
-    accumulated_before = Column(Numeric(12, 2), default=Decimal('0'), comment="折旧前累计折旧")
-    accumulated_after = Column(Numeric(12, 2), default=Decimal('0'), comment="折旧后累计折旧")
+    amount_l2 = Column(Numeric(12, 2), nullable=False, comment="[L2-计算] 本期折旧额", info={"tier":"L2","source":"engine"})
+    accumulated_before_l2 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L2-计算] 折旧前累计折旧", info={"tier":"L2","source":"engine"})
+    accumulated_after_l2 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L2-计算] 折旧后累计折旧", info={"tier":"L2","source":"engine"})
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
@@ -120,10 +144,10 @@ class IntangibleAsset(Base):
     asset_code = Column(String(50), comment="资产编码（账本内唯一）")
     name = Column(String(100), nullable=False, comment="资产名称")
     category = Column(String(50), comment="类别(专利/软件/商标等)")
-    original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
-    useful_life = Column(Integer, nullable=False, comment="使用寿命(月)")
-    start_date = Column(Date, nullable=False, comment="开始摊销日期")
-    accumulated_amortization = Column(Numeric(12, 2), default=Decimal('0'), comment="累计摊销")
+    original_value_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 原值", info={"tier":"L1","source":"external"})
+    useful_life_l3 = Column(Integer, nullable=False, comment="[L3-政策] 使用寿命(月)", info={"tier":"L3","source":"policy"})
+    start_date_l1 = Column(Date, nullable=False, comment="[L1-外部] 开始摊销日期", info={"tier":"L1","source":"external"})
+    accumulated_amortization_l4 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L4-派生] 累计摊销", info={"tier":"L4","source":"derived"})
     status = Column(String(20), default="使用中", comment="使用中/已报废")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -144,10 +168,10 @@ class Product(Base):
     sku = Column(String(50), index=True, comment="商品编码")
     category = Column(String(50), default="", comment="分类")
     unit = Column(String(20), default="个", comment="单位")
-    purchase_price = Column(Numeric(12, 2), default=Decimal('0'), comment="进价")
-    sale_price = Column(Numeric(12, 2), default=Decimal('0'), comment="售价")
-    min_stock = Column(Integer, default=0, comment="最低库存预警")
-    track_inventory = Column(Boolean, nullable=False, default=True, comment="是否追踪库存（人力商品=False）")
+    purchase_price_l3 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L3-政策] 进价(主数据静态,非成本真相源)", info={"tier":"L3","source":"policy"})
+    sale_price_l3 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L3-政策] 售价", info={"tier":"L3","source":"policy"})
+    min_stock_l3 = Column(Integer, default=0, comment="[L3-政策] 最低库存预警", info={"tier":"L3","source":"policy"})
+    track_inventory_l3 = Column(Boolean, nullable=False, default=True, comment="[L3-政策] 是否追踪库存（人力商品=False）", info={"tier":"L3","source":"policy"})
     description = Column(Text, default="", comment="描述")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -196,14 +220,14 @@ class PurchaseOrder(Base):
     order_no = Column(String(30), index=True, comment="采购单号")
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), comment="供应商ID")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail/purchase_labor")
-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额（价税合计）")
-    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="增值税额")
+    total_price_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 订单总额（价税合计）", info={"tier":"L1","source":"external"})
+    tax_amount_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 增值税额", info={"tier":"L1","source":"external"})
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="付款状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    purchase_date = Column(DateTime, default=datetime.now, comment="采购日期")
+    purchase_date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 采购日期", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
     supplier = relationship("Supplier", back_populates="purchase_orders")
@@ -216,10 +240,10 @@ class PurchaseItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("purchase_orders.id"), nullable=False, comment="采购订单ID")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Integer, nullable=False, comment="数量")
-    unit_price = Column(Numeric(12, 6), nullable=False, comment="单价")
-    tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.13'), comment="税率: 0.01/0.03/0.06/0.09/0.13")
-    total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+    quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
+    unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.13'), comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
+    total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
     notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
 
     order = relationship("PurchaseOrder", back_populates="items")
@@ -239,13 +263,14 @@ class SaleOrder(Base):
     order_no = Column(String(30), index=True, comment="销售单号")
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="客户ID(可为空=散客)")
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail")
-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="订单总额（价税合计）")
-    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="增值税额")
+    total_price_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 订单总额（价税合计）", info={"tier":"L1","source":"external"})
+    tax_amount_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 增值税额", info={"tier":"L1","source":"external"})
+    has_invoice_l1 = Column(Boolean, nullable=False, default=True, comment="[L1-外部] 是否已开发票(散客现金销售=False,未开票收入仍需申报销项税)", info={"tier":"L1","source":"external"})
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="支付状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    sale_date = Column(DateTime, default=datetime.now, comment="销售日期")
+    sale_date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 销售日期", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
     customer = relationship("Customer", back_populates="sale_orders")
@@ -258,19 +283,15 @@ class SaleItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("sale_orders.id"), nullable=False, comment="销售订单ID")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Integer, nullable=False, comment="数量")
-    unit_price = Column(Numeric(12, 6), nullable=False, comment="单价")
-    tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="税率: 0.01/0.03/0.06/0.09/0.13")
-    total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
-    _unit_cost = Column("unit_cost", Numeric(14, 6), default=Decimal('0'), comment="出库时移动加权平均成本")
-
-    @property
-    def unit_cost(self):
-        return self._unit_cost
-
-    def set_calculated_cost(self, value):
-        self._unit_cost = value
+    quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
+    unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
+    total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
+    unit_cost_l2 = Column(Numeric(14, 6), default=Decimal('0'), comment="[L2-计算] 出库时锁定的移动加权平均成本快照", info={"tier":"L2","source":"engine"})
     notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
+
+    def set_calculated_cost(self, cost: Decimal):
+        self.unit_cost_l2 = cost
 
     order = relationship("SaleOrder", back_populates="items")
     product = relationship("Product", back_populates="sale_items")
@@ -288,9 +309,9 @@ class Inventory(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Integer, default=0, comment="当前库存，业务层禁止为负")
-    average_cost = Column(Numeric(14, 6), default=Decimal('0'), comment="移动加权平均成本")
-    total_value = Column(Numeric(14, 2), default=Decimal('0'), comment="库存总金额")
+    quantity_l4 = Column(Integer, default=0, comment="[L4-派生] 当前库存，业务层禁止为负", info={"tier":"L4","source":"derived"})
+    average_cost_l4 = Column(Numeric(14, 6), default=Decimal('0'), comment="[L4-派生] 移动加权平均成本", info={"tier":"L4","source":"derived"})
+    total_value_l4 = Column(Numeric(14, 2), default=Decimal('0'), comment="[L4-派生] 库存总金额", info={"tier":"L4","source":"derived"})
     last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     product = relationship("Product", back_populates="inventory")
@@ -306,13 +327,13 @@ class StockMove(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Numeric(12, 0), nullable=False, comment="入库为正，出库为负")
-    unit_cost = Column(Numeric(14, 6), default=Decimal('0'), comment="移动加权平均单价")
-    total_cost = Column(Numeric(14, 2), default=Decimal('0'), comment="行总金额")
+    quantity_l1 = Column(Numeric(12, 0), nullable=False, comment="[L1-外部] 入库为正，出库为负(值来自源单据)", info={"tier":"L1","source":"external"})
+    unit_cost_l2 = Column(Numeric(14, 6), default=Decimal('0'), comment="[L2-计算] 移动加权平均单价", info={"tier":"L2","source":"engine"})
+    total_cost_l2 = Column(Numeric(14, 2), default=Decimal('0'), comment="[L2-计算] 行总金额", info={"tier":"L2","source":"engine"})
     source_type = Column(String(50), nullable=False, comment="来源类型: purchase_order/sale_order/adjustment/reversal")
     source_id = Column(Integer, nullable=False, comment="来源单据ID")
     ref_source_id = Column(Integer, nullable=True, index=True, comment="原始单据ID（部分退货时记录原销售/采购单ID，用于关联）")
-    move_date = Column(DateTime, nullable=True, comment="业务日期（取自源单据）")
+    move_date_l1 = Column(DateTime, nullable=True, comment="[L1-外部] 业务日期（取自源单据）", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
@@ -352,11 +373,11 @@ class PersonalTransaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     type = Column(String(10), nullable=False, comment="类型: income/expense")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 金额", info={"tier":"L1","source":"external"})
     category = Column(String(50), default="", comment="分类")
     description = Column(Text, default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    date = Column(DateTime, default=datetime.now, comment="交易日期")
+    date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 交易日期", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -369,18 +390,18 @@ class Invoice(Base):
     invoice_no = Column(String(50), nullable=False, comment="发票号码")
     direction = Column(String(10), nullable=False, comment="方向: in 进项 / out 销项")
     invoice_type = Column(String(20), nullable=False, comment="类型: ordinary 普票 / special 专票")
-    tax_rate = Column(Numeric(12, 2), nullable=False, comment="税率: 0.01/0.03/0.06/0.09/0.13")
-    amount_without_tax = Column(Numeric(12, 2), nullable=False, comment="不含税金额")
-    tax_amount = Column(Numeric(12, 2), nullable=False, comment="税额")
-    amount_with_tax = Column(Numeric(12, 2), nullable=False, comment="价税合计")
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
+    amount_without_tax_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 不含税金额", info={"tier":"L1","source":"external"})
+    tax_amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 税额", info={"tier":"L1","source":"external"})
+    amount_with_tax_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 价税合计", info={"tier":"L1","source":"external"})
     counterparty_name = Column(String(200), nullable=False, comment="对方名称")
     seller_name = Column(String(200), nullable=False, default="", comment="销方名称")
     buyer_name = Column(String(200), nullable=False, default="", comment="买方名称")
-    issue_date = Column(DateTime, nullable=False, comment="开票日期")
+    issue_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 开票日期", info={"tier":"L1","source":"external"})
     pdf_path = Column(String(500), nullable=True, comment="PDF文件路径")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    certification_status = Column(String(20), nullable=False, default=CertificationStatus.N_A, comment="认证状态: pending / certified / n_a")
-    certification_date = Column(DateTime, nullable=True, comment="认证日期")
+    certification_status_l3 = Column(String(20), nullable=False, default=CertificationStatus.N_A, comment="[L3-政策] 认证状态: pending / certified / n_a", info={"tier":"L3","source":"policy"})
+    certification_date_l3 = Column(DateTime, nullable=True, comment="[L3-政策] 认证日期", info={"tier":"L3","source":"policy"})
     related_order_id = Column(Integer, nullable=True, comment="关联订单ID")
     related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale_order/purchase_order/expense/fixed_asset")
     is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
@@ -406,10 +427,10 @@ class InvoiceItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, comment="发票ID")
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
-    quantity = Column(Integer, nullable=False, comment="数量")
-    unit_price = Column(Numeric(12, 6), nullable=False, comment="单价")
-    tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="税率")
-    total_price = Column(Numeric(12, 2), nullable=False, comment="小计")
+    quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
+    unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="[L1-外部] 税率", info={"tier":"L1","source":"external"})
+    total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
 
     invoice = relationship("Invoice", back_populates="items")
     product = relationship("Product")
@@ -428,8 +449,8 @@ class Expense(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     category = Column(String(50), nullable=False, comment="类别: 房租/水电/工资/材料/办公用品/运费/维修/其他")
     functional_category = Column(String(20), nullable=False, default="管理费用", comment="功能分类: 销售费用/管理费用/财务费用")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    expense_date = Column(DateTime, nullable=False, comment="支出日期")
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 金额", info={"tier":"L1","source":"external"})
+    expense_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 支出日期", info={"tier":"L1","source":"external"})
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default="unpaid", comment="付款状态: unpaid/paid")
     payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True, comment="付款记录ID")
@@ -448,10 +469,11 @@ class CashFlowTransaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     type = Column(String(10), nullable=False, comment="类型: inflow/outflow")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    flow_category = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="现金流量分类: operating/investing/financing")
+    amount_l2 = Column(Numeric(12, 2), nullable=False, comment="[L2-计算] 金额", info={"tier":"L2","source":"engine"})
+    flow_category_l2 = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="[L2-计算] 现金流量分类: operating/investing/financing", info={"tier":"L2","source":"engine"})
+    cash_flow_item_code_l2 = Column(String(10), nullable=True, comment="[L2-计算] 现金流量表项目代码: CF01~CF19", info={"tier":"L2","source":"engine"})
     description = Column(Text, default="", comment="描述")
-    transaction_date = Column(DateTime, nullable=False, comment="交易日期")
+    transaction_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 交易日期", info={"tier":"L1","source":"external"})
     related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: sale/purchase/expense/other")
     related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
     is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
@@ -473,7 +495,7 @@ class BankAccount(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     bank_name = Column(String(100), nullable=False, comment="银行名称")
     account_number = Column(String(50), nullable=False, comment="银行账号")
-    balance = Column(Numeric(12, 2), nullable=False, default=Decimal('0'), comment="当前余额")
+    balance_l4 = Column(Numeric(12, 2), nullable=False, default=Decimal('0'), comment="[L4-派生] 当前余额", info={"tier":"L4","source":"derived"})
     description = Column(String(500), default="", comment="描述")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
@@ -488,15 +510,16 @@ class BankTransaction(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False, index=True, comment="银行账户")
     transaction_type = Column(String(10), nullable=False, comment="类型: inflow/outflow")
-    amount = Column(Numeric(12, 2), nullable=False, comment="金额")
-    balance_after = Column(Numeric(12, 2), nullable=False, comment="交易后余额")
-    transaction_date = Column(DateTime, nullable=False, comment="交易日期")
+    amount_l2 = Column(Numeric(12, 2), nullable=False, comment="[L2-计算] 金额", info={"tier":"L2","source":"engine"})
+    balance_after_l4 = Column(Numeric(12, 2), nullable=False, comment="[L4-派生] 交易后余额", info={"tier":"L4","source":"derived"})
+    transaction_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 交易日期", info={"tier":"L1","source":"external"})
     description = Column(String(500), default="", comment="描述")
     reference_no = Column(String(100), default="", comment="银行流水号")
-    flow_category = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="现金流量分类: operating/investing/financing")
+    flow_category_l2 = Column(String(20), nullable=False, default=FlowCategory.OPERATING, comment="[L2-计算] 现金流量分类: operating/investing/financing", info={"tier":"L2","source":"engine"})
+    cash_flow_item_code_l2 = Column(String(10), nullable=True, comment="[L2-计算] 现金流量表项目代码: CF01~CF19", info={"tier":"L2","source":"engine"})
     related_entity_type = Column(String(20), nullable=True, comment="关联实体类型: payment/receipt")
     related_entity_id = Column(Integer, nullable=True, comment="关联实体ID")
-    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, default=datetime.now)
 
     account = relationship("Account", backref="bank_transactions")
     bank_account = relationship("BankAccount", backref="transactions")
@@ -511,9 +534,12 @@ class Payment(Base):
     payment_type = Column(String(20), nullable=False, comment="付款类型: expense/purchase/salary/tax(缴税清负债)")
     related_entity_type = Column(String(20), nullable=False, comment="关联实体类型: expense/purchase_order")
     related_entity_id = Column(Integer, nullable=False, comment="关联实体ID")
-    amount = Column(Numeric(12, 2), nullable=False, comment="付款金额")
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 付款金额(工资场景为实发金额)", info={"tier":"L1","source":"external"})
+    withholding_tax_amount_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal("0"),
+        comment="[L1-外部] 代扣个人所得税(工资场景,非工资为0)",
+        info={"tier":"L1","source":"external"})
     payment_method = Column(String(20), nullable=False, default="company", comment="付款方式: company/private_advance")
-    payment_date = Column(DateTime, nullable=False, comment="付款日期")
+    payment_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 付款日期", info={"tier":"L1","source":"external"})
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
     bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
     description = Column(String(500), default="", comment="描述")
@@ -533,9 +559,9 @@ class Receipt(Base):
     receipt_type = Column(String(20), nullable=False, comment="收款类型: sale")
     related_entity_type = Column(String(20), nullable=False, comment="关联实体类型: sale_order")
     related_entity_id = Column(Integer, nullable=False, comment="关联实体ID")
-    amount = Column(Numeric(12, 2), nullable=False, comment="收款金额")
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 收款金额", info={"tier":"L1","source":"external"})
     receipt_method = Column(String(20), nullable=False, default="company", comment="收款方式: company/private_advance")
-    receipt_date = Column(DateTime, nullable=False, comment="收款日期")
+    receipt_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 收款日期", info={"tier":"L1","source":"external"})
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
     bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
     description = Column(String(500), default="", comment="描述")
@@ -560,8 +586,13 @@ class PersonalAdvance(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     advance_no = Column(String(30), index=True, comment="垫付单号 PA-YYYY-0001")
     advancer_name = Column(String(100), nullable=False, comment="垫付人姓名（自由填写）")
+<<<<<<< Updated upstream
     amount = Column(Numeric(12, 2), nullable=False, comment="垫付金额")
     advance_date = Column(DateTime, nullable=False, comment="垫付日期")
+=======
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 垫付金额", info={"tier":"L1","source":"external"})
+    advance_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 垫付日期", info={"tier":"L1","source":"external"})
+>>>>>>> Stashed changes
 
     # 借方科目编码：默认 6601 管理费用，可选 1405 库存商品 / 1601 固定资产 / 6602 销售费用 等
     # 由 PERSONAL_ADVANCE_DEBIT_ACCOUNTS 白名单校验（enums.py 单一真相源）
@@ -570,9 +601,15 @@ class PersonalAdvance(Base):
     description = Column(String(500), default="", comment="用途说明")
     image_url = Column(String(500), default="", comment="附件图片URL")
 
+<<<<<<< Updated upstream
     # 还款状态与已还金额（paid_amount 用于多次部分偿还累计）
     repayment_status = Column(String(20), nullable=False, default="unpaid", comment="还款状态: unpaid/partial/paid")
     paid_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="已偿还金额")
+=======
+    # 还款状态与已还金额（paid_amount_l4 用于多次部分偿还累计）
+    repayment_status = Column(String(20), nullable=False, default="unpaid", comment="还款状态: unpaid/partial/paid")
+    paid_amount_l4 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L4-派生] 已偿还金额", info={"tier":"L4","source":"derived"})
+>>>>>>> Stashed changes
 
     is_reversed = Column(Boolean, default=False, comment="是否已冲红")
     reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
@@ -590,7 +627,11 @@ class PersonalAdvance(Base):
         """未偿还余额 = 垫付金额 - 已偿还金额（冲红的垫付单余额为0）"""
         if self.is_reversed:
             return Decimal('0')
+<<<<<<< Updated upstream
         return (Decimal(str(self.amount)) - Decimal(str(self.paid_amount or 0))).quantize(Decimal('0.01'))
+=======
+        return (Decimal(str(self.amount_l1)) - Decimal(str(self.paid_amount_l4 or 0))).quantize(Decimal('0.01'))
+>>>>>>> Stashed changes
 
 
 class PersonalAdvanceRepayment(Base):
@@ -604,8 +645,13 @@ class PersonalAdvanceRepayment(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     advance_id = Column(Integer, ForeignKey("personal_advances.id"), nullable=False, index=True, comment="关联垫付单")
+<<<<<<< Updated upstream
     amount = Column(Numeric(12, 2), nullable=False, comment="偿还金额")
     repayment_date = Column(DateTime, nullable=False, comment="偿还日期")
+=======
+    amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 偿还金额", info={"tier":"L1","source":"external"})
+    repayment_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 偿还日期", info={"tier":"L1","source":"external"})
+>>>>>>> Stashed changes
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
     bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
     description = Column(String(500), default="", comment="描述")

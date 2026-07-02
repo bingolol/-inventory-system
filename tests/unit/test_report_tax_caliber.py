@@ -11,7 +11,7 @@ from crud.finance import generate_income_statement
 @pytest.fixture
 def general_account(db):
     a = Account(id=10, name="一般纳税人", type="company", code="general_test",
-                taxpayer_type="general")
+                taxpayer_type_l3="general")
     db.add(a)
     db.commit()
     return a
@@ -20,7 +20,7 @@ def general_account(db):
 @pytest.fixture
 def small_account(db):
     a = Account(id=11, name="小规模", type="company", code="small_test2",
-                taxpayer_type="small_scale")
+                taxpayer_type_l3="small_scale")
     db.add(a)
     db.commit()
     return a
@@ -31,9 +31,9 @@ def _make_sale(db, account_id, total_price, items_data):
     so = SaleOrder(
         account_id=account_id,
         order_no=f"T-{datetime.now().timestamp()}",
-        total_price=total_price,
+        total_price_l1=total_price,
         status=OrderStatus.COMPLETED,
-        sale_date=datetime(2026, 6, 1),
+        sale_date_l1=datetime(2026, 6, 1),
     )
     db.add(so)
     db.flush()
@@ -41,10 +41,10 @@ def _make_sale(db, account_id, total_price, items_data):
         si = SaleItem(
             order_id=so.id,
             product_id=it["product_id"],
-            quantity=it["quantity"],
-            unit_price=it["unit_price"],
-            tax_rate=it["tax_rate"],
-            total_price=it["total_price"],
+            quantity_l1=it["quantity"],
+            unit_price_l1=it["unit_price"],
+            tax_rate_l1=it["tax_rate"],
+            total_price_l1=it["total_price"],
         )
         db.add(si)
     db.commit()
@@ -58,7 +58,7 @@ class TestIncomeStatementRevenueCaliber:
     def test_general_taxpayer_revenue_is_without_tax(self, db, general_account):
         """一般纳税人：收入=不含税金额"""
         prod = Product(id=100, account_id=10, name="商品G", sku="G-100",
-                       purchase_price=Decimal("10"), track_inventory=False)
+                       purchase_price_l3=Decimal("10"), track_inventory=False)
         db.add(prod)
         db.commit()
 
@@ -76,7 +76,7 @@ class TestIncomeStatementRevenueCaliber:
     def test_small_scale_revenue_is_with_tax(self, db, small_account):
         """小规模：收入=含税金额"""
         prod = Product(id=101, account_id=11, name="商品S", sku="S-101",
-                       purchase_price=Decimal("10"), track_inventory=False)
+                       purchase_price_l3=Decimal("10"), track_inventory=False)
         db.add(prod)
         db.commit()
 

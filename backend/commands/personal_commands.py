@@ -36,11 +36,11 @@ class CreatePersonalTransactionHandler(CommandHandler):
         tx = models.PersonalTransaction(
             account_id=cmd.account_id,
             type=cmd.type,
-            amount=cmd.amount,
+            amount_l1=cmd.amount,
             category=cmd.category,
             description=cmd.description,
             image_url=cmd.image_url,
-            date=tx_date,
+            date_l1=tx_date,
         )
         db.add(tx)
         db.flush()
@@ -76,7 +76,7 @@ class UpdatePersonalTransactionHandler(CommandHandler):
         # 2. 部分更新
         updates = {
             'type': cmd.type,
-            'amount': cmd.amount,
+            'amount_l1': cmd.amount,
             'category': cmd.category,
             'description': cmd.description,
             'image_url': cmd.image_url,
@@ -87,7 +87,7 @@ class UpdatePersonalTransactionHandler(CommandHandler):
 
         # 日期字段特殊处理（字符串 → datetime）
         if cmd.date is not None:
-            tx.date = datetime.strptime(cmd.date, "%Y-%m-%d")
+            tx.date_l1 = datetime.strptime(cmd.date, "%Y-%m-%d")
 
         db.flush()
         return tx

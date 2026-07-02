@@ -46,7 +46,7 @@ class CreateOpeningBalanceHandler(CommandHandler):
         ob_date = datetime.strptime(cmd.date, "%Y-%m-%d").date()
         existing = db.query(models.OpeningBalance).filter(
             models.OpeningBalance.account_id == cmd.account_id,
-            models.OpeningBalance.date == ob_date,
+            models.OpeningBalance.date_l1 == ob_date,
         ).first()
         if existing:
             raise BusinessError(code=ErrorCode.BALANCE_ALREADY_EXISTS, data={"date": cmd.date})
@@ -67,20 +67,20 @@ class CreateOpeningBalanceHandler(CommandHandler):
         # 3. 创建 ORM 对象
         opening_balance = models.OpeningBalance(
             account_id=cmd.account_id,
-            date=ob_date,
-            cash_balance=cmd.cash_balance,
-            bank_balance=cmd.bank_balance,
-            accounts_receivable=cmd.accounts_receivable,
-            inventory_value=cmd.inventory_value,
-            fixed_assets_original=cmd.fixed_assets_original,
-            accumulated_depreciation=cmd.accumulated_depreciation,
-            intangible_assets_original=cmd.intangible_assets_original,
-            accumulated_amortization=cmd.accumulated_amortization,
-            accounts_payable=cmd.accounts_payable,
-            tax_payable=cmd.tax_payable,
-            long_term_borrowings=cmd.long_term_borrowings,
-            paid_in_capital=cmd.paid_in_capital,
-            retained_earnings=cmd.retained_earnings,
+            date_l1=ob_date,
+            cash_balance_l1=cmd.cash_balance,
+            bank_balance_l1=cmd.bank_balance,
+            accounts_receivable_l1=cmd.accounts_receivable,
+            inventory_value_l1=cmd.inventory_value,
+            fixed_assets_original_l1=cmd.fixed_assets_original,
+            accumulated_depreciation_l1=cmd.accumulated_depreciation,
+            intangible_assets_original_l1=cmd.intangible_assets_original,
+            accumulated_amortization_l1=cmd.accumulated_amortization,
+            accounts_payable_l1=cmd.accounts_payable,
+            tax_payable_l1=cmd.tax_payable,
+            long_term_borrowings_l1=cmd.long_term_borrowings,
+            paid_in_capital_l1=cmd.paid_in_capital,
+            retained_earnings_l1=cmd.retained_earnings,
         )
         db.add(opening_balance)
         db.flush()
@@ -117,7 +117,7 @@ class CreateOpeningBalanceHandler(CommandHandler):
                 models.BankAccount.account_id == cmd.account_id,
             ).order_by(models.BankAccount.id.asc()).first()
             if bank_account:
-                bank_account.balance = (Decimal(str(bank_account.balance)) + bank_balance_val).quantize(Decimal("0.01"))
+                bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) + bank_balance_val).quantize(Decimal("0.01"))
             else:
                 # 没有银行账户时记录日志（不影响期初余额过账本身）
                 import logging
@@ -170,42 +170,42 @@ class UpdateOpeningBalanceHandler(CommandHandler):
 
         # 2. 更新字段
         if cmd.date is not None:
-            opening_balance.date = datetime.strptime(cmd.date, "%Y-%m-%d").date()
+            opening_balance.date_l1 = datetime.strptime(cmd.date, "%Y-%m-%d").date()
         if cmd.cash_balance is not None:
-            opening_balance.cash_balance = cmd.cash_balance
+            opening_balance.cash_balance_l1 = cmd.cash_balance
         if cmd.bank_balance is not None:
-            opening_balance.bank_balance = cmd.bank_balance
+            opening_balance.bank_balance_l1 = cmd.bank_balance
         if cmd.accounts_receivable is not None:
-            opening_balance.accounts_receivable = cmd.accounts_receivable
+            opening_balance.accounts_receivable_l1 = cmd.accounts_receivable
         if cmd.inventory_value is not None:
-            opening_balance.inventory_value = cmd.inventory_value
+            opening_balance.inventory_value_l1 = cmd.inventory_value
         if cmd.fixed_assets_original is not None:
-            opening_balance.fixed_assets_original = cmd.fixed_assets_original
+            opening_balance.fixed_assets_original_l1 = cmd.fixed_assets_original
         if cmd.accumulated_depreciation is not None:
-            opening_balance.accumulated_depreciation = cmd.accumulated_depreciation
+            opening_balance.accumulated_depreciation_l1 = cmd.accumulated_depreciation
         if cmd.intangible_assets_original is not None:
-            opening_balance.intangible_assets_original = cmd.intangible_assets_original
+            opening_balance.intangible_assets_original_l1 = cmd.intangible_assets_original
         if cmd.accumulated_amortization is not None:
-            opening_balance.accumulated_amortization = cmd.accumulated_amortization
+            opening_balance.accumulated_amortization_l1 = cmd.accumulated_amortization
         if cmd.accounts_payable is not None:
-            opening_balance.accounts_payable = cmd.accounts_payable
+            opening_balance.accounts_payable_l1 = cmd.accounts_payable
         if cmd.tax_payable is not None:
-            opening_balance.tax_payable = cmd.tax_payable
+            opening_balance.tax_payable_l1 = cmd.tax_payable
         if cmd.long_term_borrowings is not None:
-            opening_balance.long_term_borrowings = cmd.long_term_borrowings
+            opening_balance.long_term_borrowings_l1 = cmd.long_term_borrowings
         if cmd.paid_in_capital is not None:
-            opening_balance.paid_in_capital = cmd.paid_in_capital
+            opening_balance.paid_in_capital_l1 = cmd.paid_in_capital
         if cmd.retained_earnings is not None:
-            opening_balance.retained_earnings = cmd.retained_earnings
+            opening_balance.retained_earnings_l1 = cmd.retained_earnings
 
         # 3. 校验：更新后资产 = 负债 + 权益（含非流动资产/负债）
-        total_assets = (_d(opening_balance.cash_balance) + _d(opening_balance.bank_balance)
-                        + _d(opening_balance.accounts_receivable) + _d(opening_balance.inventory_value)
-                        + _d(opening_balance.fixed_assets_original) - _d(opening_balance.accumulated_depreciation)
-                        + _d(opening_balance.intangible_assets_original) - _d(opening_balance.accumulated_amortization))
-        total_liabilities = (_d(opening_balance.accounts_payable) + _d(opening_balance.tax_payable)
-                             + _d(opening_balance.long_term_borrowings))
-        total_equity = _d(opening_balance.paid_in_capital) + _d(opening_balance.retained_earnings)
+        total_assets = (_d(opening_balance.cash_balance_l1) + _d(opening_balance.bank_balance_l1)
+                        + _d(opening_balance.accounts_receivable_l1) + _d(opening_balance.inventory_value_l1)
+                        + _d(opening_balance.fixed_assets_original_l1) - _d(opening_balance.accumulated_depreciation_l1)
+                        + _d(opening_balance.intangible_assets_original_l1) - _d(opening_balance.accumulated_amortization_l1))
+        total_liabilities = (_d(opening_balance.accounts_payable_l1) + _d(opening_balance.tax_payable_l1)
+                             + _d(opening_balance.long_term_borrowings_l1))
+        total_equity = _d(opening_balance.paid_in_capital_l1) + _d(opening_balance.retained_earnings_l1)
         if total_assets != total_liabilities + total_equity:
             raise BusinessError(
                 code=ErrorCode.BALANCE_SHEET_UNBALANCED,
@@ -215,7 +215,7 @@ class UpdateOpeningBalanceHandler(CommandHandler):
         # 4. 日志
         db.flush()
         _log(db, cmd.account_id, "update", "opening_balance", opening_balance.id,
-             f"更新期初余额: {opening_balance.date}", operator=cmd.operator)
+             f"更新期初余额: {opening_balance.date_l1}", operator=cmd.operator)
         db.flush()
         return opening_balance
 
@@ -243,10 +243,10 @@ class CreateCashFlowTransactionHandler(CommandHandler):
         transaction = models.CashFlowTransaction(
             account_id=cmd.account_id,
             type=cmd.type,
-            amount=cmd.amount,
-            flow_category=cmd.flow_category,
+            amount_l2=cmd.amount,
+            flow_category_l2=cmd.flow_category,
             description=cmd.description,
-            transaction_date=datetime.strptime(cmd.transaction_date, "%Y-%m-%d"),
+            transaction_date_l1=datetime.strptime(cmd.transaction_date, "%Y-%m-%d"),
             related_entity_type=cmd.related_entity_type,
             related_entity_id=cmd.related_entity_id,
         )
@@ -311,18 +311,29 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
         if not transaction:
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "现金流水", "order_id": cmd.transaction_id})
 
-        # 2. 更新字段
+        if getattr(transaction, "is_reversed", False):
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"现金流水 #{cmd.transaction_id} 已冲红，禁止更新",
+                ai_instruction="STOP_RETRYING. 已冲红的现金流水不能更新，如需调整请创建新记录。",
+            )
+
+        # 2. 冲红原总账凭证（不修改 AccountMove，只 INSERT 反向凭证）
+        from finance_integration import reverse_journal, post_journal
+        reverse_journal(db, cmd.account_id, "cash_flow", transaction.id)
+
+        # 3. 更新业务字段
         if cmd.type is not None:
             transaction.type = cmd.type
         if cmd.amount is not None:
-            transaction.amount = cmd.amount
+            transaction.amount_l2 = cmd.amount
         if cmd.flow_category is not None:
-            transaction.flow_category = cmd.flow_category
+            transaction.flow_category_l2 = cmd.flow_category
         if cmd.description is not None:
             transaction.description = cmd.description
         if cmd.transaction_date is not None:
             try:
-                transaction.transaction_date = datetime.strptime(cmd.transaction_date, "%Y-%m-%d")
+                transaction.transaction_date_l1 = datetime.strptime(cmd.transaction_date, "%Y-%m-%d")
             except ValueError:
                 raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": cmd.transaction_date})
         if cmd.related_entity_type is not None:
@@ -330,9 +341,31 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
         if cmd.related_entity_id is not None:
             transaction.related_entity_id = cmd.related_entity_id
 
-        # 3. 日志
+        # 4. 重新生成总账凭证
+        counter_account = getattr(cmd, "counter_account_code", None) or "2202"
+        if not counter_account or counter_account == "2202":
+            mapping = {
+                ("operating", "inflow"): "6001",
+                ("operating", "outflow"): "6602",
+                ("investing", "inflow"): "6111",
+                ("investing", "outflow"): "1601",
+                ("financing", "inflow"): "2001",
+                ("financing", "outflow"): "2501",
+            }
+            counter_account = mapping.get((transaction.flow_category_l2, transaction.type), "2202")
+        post_journal(db, cmd.account_id, "cash_flow", {
+            "amount": transaction.amount_l2,
+            "direction": transaction.type,
+            "flow_category": transaction.flow_category_l2,
+            "counter_account": counter_account,
+            "date": transaction.transaction_date_l1.strftime("%Y-%m-%d"),
+            "source_model": "cash_flow",
+            "source_id": transaction.id,
+        })
+
+        # 5. 日志
         _log(db, cmd.account_id, "update", "cash_flow", cmd.transaction_id,
-             f"更新现金流水: {transaction.type} {transaction.amount}", operator=cmd.operator)
+             f"更新现金流水: {transaction.type} {transaction.amount_l2}", operator=cmd.operator)
         db.flush()
         return transaction
 
@@ -357,10 +390,22 @@ class DeleteCashFlowTransactionHandler(CommandHandler):
         if not transaction:
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "现金流水", "order_id": cmd.transaction_id})
 
-        # 2. 日志 + 删除
-        _log(db, cmd.account_id, "delete", "cash_flow", cmd.transaction_id,
-             f"删除现金流水: {transaction.type} {transaction.amount}", operator=cmd.operator)
+        if getattr(transaction, "is_reversed", False):
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"现金流水 #{cmd.transaction_id} 已被冲红，不可重复操作",
+                ai_instruction="STOP_RETRYING. 该现金流水已冲红。",
+            )
 
-        db.delete(transaction)
+        # 2. 冲红总账凭证 + 标记已冲红（不物理删除，保留审计轨迹）
+        from finance_integration import reverse_journal
+        from datetime import datetime
+        reverse_journal(db, cmd.account_id, "cash_flow", transaction.id)
+        transaction.is_reversed = True
+        transaction.reversed_at = datetime.now()
+
+        _log(db, cmd.account_id, "delete", "cash_flow", cmd.transaction_id,
+             f"删除(冲红)现金流水: {transaction.type} {transaction.amount_l2}", operator=cmd.operator)
         db.flush()
         return True
+

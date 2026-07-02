@@ -22,7 +22,7 @@ class Ledger(Base):
     name          = Column(String(100), nullable=False)
     type          = Column(String(20), nullable=False)       # company / personal
     code          = Column(String(50), unique=True)
-    taxpayer_type = Column(String(20))                       # small_scale / general
+    taxpayer_type_l3 = Column(String(20), info={"tier":"L3","source":"policy"})                       # [L3-政策] small_scale / general
     created_at    = Column(DateTime, default=datetime.now)
 
 
@@ -55,9 +55,9 @@ class LedgerAccountBalance(Base):
     id                = Column(Integer, primary_key=True)
     ledger_account_id = Column(Integer, ForeignKey("ledger_accounts.id"),
                                 nullable=False, unique=True, index=True)
-    balance           = Column(Numeric(14, 2), default=Decimal("0"))
-    debit_total       = Column(Numeric(14, 2), default=Decimal("0"))
-    credit_total      = Column(Numeric(14, 2), default=Decimal("0"))
+    balance_l4        = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
+    debit_total_l4    = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
+    credit_total_l4   = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
 
     created_at        = Column(DateTime, default=datetime.now)
     updated_at        = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -88,16 +88,16 @@ class AccountMove(Base):
     journal_id      = Column(Integer, ForeignKey("account_journals.id"))
     name            = Column(String(30))
     move_type       = Column(String(20), nullable=False)
-    date            = Column(Date, nullable=False)
+    date_l1         = Column(Date, nullable=False, info={"tier":"L1","source":"external"})
     state           = Column(String(10), default='draft')
     ref             = Column(String(200))
 
     source_model    = Column(String(50))
     source_id       = Column(Integer)
 
-    amount_total    = Column(Numeric(14, 2), default=Decimal("0"))
-    amount_untaxed  = Column(Numeric(14, 2), default=Decimal("0"))
-    amount_tax      = Column(Numeric(14, 2), default=Decimal("0"))
+    amount_total_l2   = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
+    amount_untaxed_l2 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
+    amount_tax_l2     = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
 
     operator_id     = Column(Integer)
     posted_at       = Column(DateTime)
@@ -112,7 +112,7 @@ class AccountMove(Base):
                                    cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("ix_move_date", "date"),
+        Index("ix_move_date", "date_l1"),
         Index("ix_move_source", "source_model", "source_id"),
     )
 
@@ -125,10 +125,10 @@ class AccountMoveLine(Base):
     move_id           = Column(Integer, ForeignKey("account_moves.id"), nullable=False, index=True)
     ledger_account_id = Column(Integer, ForeignKey("ledger_accounts.id"), nullable=False, index=True)
 
-    debit             = Column(Numeric(14, 2), default=Decimal("0"))
-    credit            = Column(Numeric(14, 2), default=Decimal("0"))
+    debit_l2          = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
+    credit_l2         = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
 
-    amount_currency   = Column(Numeric(14, 2), default=Decimal("0"))
+    amount_currency_l2 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
     currency_id       = Column(Integer)
 
     name              = Column(String(200))
@@ -138,7 +138,7 @@ class AccountMoveLine(Base):
     display_type      = Column(String(20))
 
     reconciled        = Column(Boolean, default=False)
-    amount_residual   = Column(Numeric(14, 2), default=Decimal("0"))
+    amount_residual_l2 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
 
     move              = relationship("AccountMove", back_populates="line_ids")
 
@@ -157,8 +157,8 @@ class AccountPartialReconcile(Base):
     debit_move_id   = Column(Integer, ForeignKey("account_move_lines.id"), nullable=False)
     credit_move_id  = Column(Integer, ForeignKey("account_move_lines.id"), nullable=False)
 
-    amount          = Column(Numeric(14, 2), nullable=False)
-    amount_currency = Column(Numeric(14, 2), default=Decimal("0"))
+    amount_l2          = Column(Numeric(14, 2), nullable=False, info={"tier":"L2","source":"engine"})
+    amount_currency_l2 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L2","source":"engine"})
 
     created_at      = Column(DateTime, default=datetime.now)
 
@@ -232,8 +232,8 @@ class SaleReturn(Base):
     return_no         = Column(String(30), nullable=False)
     original_order_id = Column(Integer, ForeignKey("sale_orders.id"))
     customer_id       = Column(Integer, ForeignKey("customers.id"))
-    total_with_tax    = Column(Numeric(12, 2), nullable=False)
-    return_date       = Column(DateTime, nullable=False)
+    total_with_tax_l1 = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
+    return_date_l1    = Column(DateTime, nullable=False, info={"tier":"L1","source":"external"})
     reason            = Column(Text)
     status            = Column(String(20), default='draft')
     refund_status     = Column(String(20), default='pending')
@@ -250,10 +250,10 @@ class SaleReturnItem(Base):
     id         = Column(Integer, primary_key=True)
     return_id  = Column(Integer, ForeignKey("sale_returns.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    quantity   = Column(Integer, nullable=False)
-    unit_price = Column(Numeric(12, 6), nullable=False)
-    tax_rate   = Column(Numeric(12, 2), nullable=False)
-    total_price = Column(Numeric(12, 2), nullable=False)
+    quantity_l1 = Column(Integer, nullable=False, info={"tier":"L1","source":"external"})
+    unit_price_l1 = Column(Numeric(12, 6), nullable=False, info={"tier":"L1","source":"external"})
+    tax_rate_l1   = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
+    total_price_l1 = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
 
     return_order = relationship("SaleReturn", back_populates="items")
 
@@ -267,8 +267,8 @@ class PurchaseReturn(Base):
     return_no         = Column(String(30), nullable=False)
     original_order_id = Column(Integer, ForeignKey("purchase_orders.id"))
     supplier_id       = Column(Integer, ForeignKey("suppliers.id"))
-    total_with_tax    = Column(Numeric(12, 2), nullable=False)
-    return_date       = Column(DateTime, nullable=False)
+    total_with_tax_l1 = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
+    return_date_l1    = Column(DateTime, nullable=False, info={"tier":"L1","source":"external"})
     reason            = Column(Text)
     status            = Column(String(20), default='draft')
     refund_status     = Column(String(20), default='pending')
@@ -284,12 +284,12 @@ class BadDebt(Base):
     ledger_id         = Column(Integer, ForeignKey("ledgers.id"), nullable=False)
     partner_id        = Column(Integer, nullable=False)
     partner_type      = Column(String(20), nullable=False)
-    original_amount   = Column(Numeric(14, 2), nullable=False)
-    bad_amount        = Column(Numeric(14, 2), nullable=False)
+    original_amount_l1 = Column(Numeric(14, 2), nullable=False, info={"tier":"L1","source":"external"})
+    bad_amount_l1      = Column(Numeric(14, 2), nullable=False, info={"tier":"L1","source":"external"})
     reason            = Column(Text, nullable=False)
     status            = Column(String(20), default='pending')
 
-    provision_move_id = Column(Integer, ForeignKey("account_moves.id"))
+    # 小企业准则不计提坏账准备,只有 writeoff 核销凭证
     writeoff_move_id  = Column(Integer, ForeignKey("account_moves.id"))
 
     created_at        = Column(DateTime, default=datetime.now)
@@ -303,8 +303,8 @@ class PurchaseEstimate(Base):
     ledger_id       = Column(Integer, ForeignKey("ledgers.id"), nullable=False)
     supplier_id     = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
     estimate_no     = Column(String(30), nullable=False)
-    estimate_date   = Column(Date, nullable=False)
-    total_amount    = Column(Numeric(12, 2), nullable=False)
+    estimate_date_l1 = Column(Date, nullable=False, info={"tier":"L1","source":"external"})
+    total_amount_l1  = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
     status          = Column(String(20), default='estimated')
 
     estimate_move_id = Column(Integer, ForeignKey("account_moves.id"))
@@ -321,9 +321,9 @@ class PurchaseEstimateItem(Base):
     id         = Column(Integer, primary_key=True)
     estimate_id = Column(Integer, ForeignKey("purchase_estimates.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    quantity   = Column(Integer, nullable=False)
-    unit_price = Column(Numeric(12, 6), nullable=False)
-    total_price = Column(Numeric(12, 2), nullable=False)
+    quantity_l1 = Column(Integer, nullable=False, info={"tier":"L1","source":"external"})
+    unit_price_l1 = Column(Numeric(12, 6), nullable=False, info={"tier":"L1","source":"external"})
+    total_price_l1 = Column(Numeric(12, 2), nullable=False, info={"tier":"L1","source":"external"})
 
     estimate   = relationship("PurchaseEstimate", back_populates="items")
 

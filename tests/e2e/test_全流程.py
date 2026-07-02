@@ -27,11 +27,22 @@ from fastapi.testclient import TestClient
 import workspace
 workspace.ensure_workspace()
 
-from database import init_db, SessionLocal
+from database import init_db, SessionLocal, set_maintenance_mode
 init_db()
 
-from main import app
+# Ensure Account exists (self-bootstrap for e2e tests)
 from models import Account
+set_maintenance_mode(True)
+try:
+    _db2 = SessionLocal()
+    if not _db2.query(Account).first():
+        _db2.add(Account(id=1, name="测试账本", code="test", type="company"))
+        _db2.commit()
+    _db2.close()
+finally:
+    set_maintenance_mode(False)
+
+from main import app
 
 # ── 获取测试用 account_id ──
 _db = SessionLocal()
@@ -263,13 +274,12 @@ class TestSaleAndInventory:
 class TestSaleCancelRestore:
 
     def test_cancel_sale_order(self, client, created_data):
-        """取消扣库存的销售单 → 库存回补（PUT status=cancelled）"""
+        """取消扣库存的销售单 → 库存回补"""
         sale_id = created_data["sale_id"]
         pid = created_data["product_track_id"]
         stock_before = created_data["stock_after_sale"]
 
-        resp = client.put(f"/api/sales/{sale_id}", json={"status": "cancelled"},
-                         headers=HEADERS)
+        resp = client.post(f"/api/sales/{sale_id}/cancel", headers=HEADERS)
         assert resp.status_code == 200, f"取消销售单失败: {resp.text}"
 
         qty = _get_inventory_qty(client, pid)

@@ -31,28 +31,28 @@ c=TestClient(app);H={"X-Account-ID":"1","X-Operator":"user"}
 
 # ========= 1. 建账套 + 银行账户 + 期初 =========
 s=TS()
-acc=models.Account(name="真实业务",code=f"R{uuid.uuid4().hex[:4]}",taxpayer_type="general")
+acc=models.Account(name="真实业务",code=f"R{uuid.uuid4().hex[:4]}",taxpayer_type_l3="general")
 s.add(acc);s.flush();aid=acc.id
 from finance_integration import get_or_create_ledger_id;lid=get_or_create_ledger_id(s,aid)
 supp=models.Supplier(account_id=aid,name="供应商A",contact="A",phone="13800000001")
 cust=models.Customer(account_id=aid,name="客户B",contact="B",phone="13900000002")
 prod=models.Product(account_id=aid,name="商品X",sku=f"SKU{uuid.uuid4().hex[:4]}",unit="个",
-    purchase_price=10,sale_price=20,track_inventory=False,category="测试")
-bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222021234567890",balance=10000)
+    purchase_price_l3=10,sale_price_l3=20,track_inventory_l3=False,category="测试")
+bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222021234567890",balance_l4=10000)
 s.add_all([supp,cust,prod,bank]);s.flush()
 ba_id=bank.id;cust_id=cust.id;prod_id=prod.id
 
 from models_finance import LedgerAccount,AccountMove,AccountMoveLine,LedgerAccountBalance
 ac=s.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code=="1002").first()
-m=AccountMove(ledger_id=lid,move_type="bank",date=datetime(2024,12,31,23,59,59),state="posted")
+m=AccountMove(ledger_id=lid,move_type="bank",date_l1=datetime(2024,12,31,23,59,59),state="posted")
 s.add(m);s.flush()
-s.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=10000,credit=0,amount_residual=10000))
+s.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=10000,credit_l2=0,amount_residual_l2=10000))
 bal=s.query(LedgerAccountBalance).filter(LedgerAccountBalance.ledger_account_id==ac.id).first()
-if bal:bal.balance=10000;bal.debit_total=10000
+if bal:bal.balance_l4=10000;bal.debit_total_l4=10000
 
 sale=models.SaleOrder(account_id=aid,customer_id=cust_id,order_no=f"SO-{uuid.uuid4().hex[:4]}",
-    total_price=500,status="completed",payment_status="paid",sale_date=date(2025,1,3))
-s.add(sale);s.flush();s.add(models.SaleItem(order_id=sale.id,product_id=prod_id,quantity=5,unit_price=100,tax_rate=0,total_price=500))
+    total_price_l1=500,status="completed",payment_status="paid",sale_date_l1=date(2025,1,3))
+s.add(sale);s.flush();s.add(models.SaleItem(order_id=sale.id,product_id=prod_id,quantity_l1=5,unit_price_l1=100,tax_rate_l1=0,total_price_l1=500))
 sale_id=sale.id
 s.commit();s.close()
 
@@ -78,7 +78,7 @@ txs=s.query(models.BankTransaction).filter(
     models.BankTransaction.account_id==aid,models.BankTransaction.bank_account_id==ba_id).all()
 print(f"\n系统BankTransaction ({len(txs)}笔):")
 for tx in txs:
-    print(f"  #{tx.id} {tx.transaction_type} {tx.amount} @ {tx.transaction_date} bal_after={tx.balance_after}")
+    print(f"  #{tx.id} {tx.transaction_type} {tx.amount_l2} @ {tx.transaction_date_l1} bal_after={tx.balance_after_l4}")
 s.close()
 
 # ========= 5. 导入对账单 =========

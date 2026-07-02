@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 import models
 from errors import BusinessError, ErrorCode
 from utils import Q2
+from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
+from rules import enforce_rules
 
 
 class InventoryEngine:
@@ -20,10 +22,10 @@ class InventoryEngine:
         """从源单据获取业务日期"""
         if source_type == "purchase_order":
             po = self.db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == source_id).first()
-            return po.purchase_date if po and po.purchase_date else datetime.now()
+            return po.purchase_date_l1 if po and po.purchase_date_l1 else datetime.now()
         if source_type == "sale_order":
             so = self.db.query(models.SaleOrder).filter(models.SaleOrder.id == source_id).first()
-            return so.sale_date if so and so.sale_date else datetime.now()
+            return so.sale_date_l1 if so and so.sale_date_l1 else datetime.now()
         if source_type.endswith("_reversal"):
             base_type = source_type.replace("_reversal", "")
             return self._get_move_date(base_type, source_id)
@@ -41,6 +43,15 @@ class InventoryEngine:
             raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})
         return product
 
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+    @writes("StockMove.quantity_l1", tier=TIER_L1, source="external")
+    @writes("StockMove.unit_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.total_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.move_date_l1", tier=TIER_L1, source="external")
+    @derives("Inventory.quantity_l4", from_fields=["StockMove.quantity_l1"])
+    @derives("Inventory.average_cost_l4", from_fields=["StockMove.unit_cost_l2"])
+    @derives("Inventory.total_value_l4", from_fields=["StockMove.total_cost_l2"])
     def inbound(self, account_id: int, product_id: int, quantity: int,
                 unit_price: Decimal, source_type: str, source_id: int,
                 tax_rate: Decimal = None,
@@ -59,7 +70,7 @@ class InventoryEngine:
         返回: {"product_id", "quantity", "total_cost", "tax_amount", "total_amount"}
         """
         product = self._get_product(account_id, product_id)
-        if not product.track_inventory:
+        if not product.track_inventory_l3:
             return {"product_id": product_id, "quantity": quantity,
                     "total_cost": Decimal("0"), "tax_amount": Decimal("0"),
                     "total_amount": Decimal("0")}
@@ -71,7 +82,7 @@ class InventoryEngine:
                                 data={"details": f"账本不存在: account_id={account_id}"})
 
         new_qty = Decimal(str(quantity))
-        is_general = account.taxpayer_type == "general"
+        is_general = account.taxpayer_type_l3 == "general"
         if is_general and tax_rate is not None:
             rate = Decimal(str(tax_rate))
             total_cost = (new_qty * Decimal(str(unit_price))).quantize(Q2)  # 不含税
@@ -98,12 +109,12 @@ class InventoryEngine:
             models.Inventory.product_id == product_id,
         ).with_for_update().first()
         if not inv:
-            inv = models.Inventory(account_id=account_id, product_id=product_id, quantity=0)
+            inv = models.Inventory(account_id=account_id, product_id=product_id, quantity_l4=0)
             self.db.add(inv)
             self.db.flush()
 
-        old_qty = Decimal(str(inv.quantity))
-        old_value = Decimal(str(inv.total_value))
+        old_qty = Decimal(str(inv.quantity_l4))
+        old_value = Decimal(str(inv.total_value_l4))
 
         avg_cost = unit_price
         if old_qty + new_qty > 0:
@@ -112,24 +123,28 @@ class InventoryEngine:
         move = models.StockMove(
             product_id=product_id,
             account_id=account_id,
-            quantity=new_qty,
-            unit_cost=avg_cost,
-            total_cost=total_cost,
+            quantity_l1=new_qty,
+            unit_cost_l2=avg_cost,
+            total_cost_l2=total_cost,
             source_type=source_type,
             source_id=source_id,
-            move_date=move_date or self._get_move_date(source_type, source_id),
+            move_date_l1=move_date or self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 
-        inv.quantity += quantity
-        inv.average_cost = avg_cost
-        inv.total_value = (old_value + total_cost).quantize(Q2)
+        inv.quantity_l4 += quantity
+        inv.average_cost_l4 = avg_cost
+        inv.total_value_l4 = (old_value + total_cost).quantize(Q2)
         self.db.flush()
+
+        # AS-03 库存账面价值一致性校验(Inventory.total_value == Σ StockMove.total_cost)
+        enforce_rules(self.db, ["AS-03"], {"product_id": product_id})
 
         return {"product_id": product_id, "quantity": quantity,
                 "total_cost": total_cost, "tax_amount": tax_amount,
                 "total_amount": total_amount}
 
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def outbound(self, account_id: int, product_id: int, quantity: int,
                  source_type: str, source_id: int,
                  operator: str = "user",
@@ -142,7 +157,7 @@ class InventoryEngine:
         4. 返回 unit_cost（用于 COGS 计算）
         """
         product = self._get_product(account_id, product_id)
-        if not product.track_inventory:
+        if not product.track_inventory_l3:
             return Decimal("0")
 
         existing = self.db.query(models.StockMove).filter(
@@ -151,18 +166,24 @@ class InventoryEngine:
             models.StockMove.product_id == product_id,
         ).first()
         if existing:
-            return existing.unit_cost
+            return existing.unit_cost_l2
 
         return self._record_outbound(account_id, product_id, quantity,
                                       source_type, source_id, operator, move_date)
 
+    @writes("StockMove.quantity_l1", tier=TIER_L1, source="external")
+    @writes("StockMove.unit_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.total_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.move_date_l1", tier=TIER_L1, source="external")
+    @derives("Inventory.quantity_l4", from_fields=["StockMove.quantity_l1"])
+    @derives("Inventory.total_value_l4", from_fields=["StockMove.total_cost_l2"])
     def _record_outbound(self, account_id: int, product_id: int, quantity: int,
                          source_type: str, source_id: int,
                          operator: str = "user",
                          move_date: datetime = None) -> Decimal:
         """执行出库写操作（无幂等检查，被 outbound / force_outbound 共用）"""
         product = self._get_product(account_id, product_id)
-        if not product.track_inventory:
+        if not product.track_inventory_l3:
             return Decimal("0")
 
         inv = self.db.query(models.Inventory).filter(
@@ -172,31 +193,34 @@ class InventoryEngine:
         if not inv:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                                 data={"details": f"商品 {product.name} 无库存记录"})
-        if inv.quantity < quantity:
+        if inv.quantity_l4 < quantity:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
-                                data={"details": f"库存不足: {product.name} 当前库存{inv.quantity}, 需要出库{quantity}"})
+                                data={"details": f"库存不足: {product.name} 当前库存{inv.quantity_l4}, 需要出库{quantity}"})
 
-        unit_cost = inv.average_cost or Decimal("0")
+        unit_cost = inv.average_cost_l4 or Decimal("0")
         out_qty = Decimal(str(quantity))
         out_cost = (out_qty * unit_cost).quantize(Q2)
 
         move = models.StockMove(
             product_id=product_id,
             account_id=account_id,
-            quantity=-out_qty,
-            unit_cost=unit_cost,
-            total_cost=out_cost,
+            quantity_l1=-out_qty,
+            unit_cost_l2=unit_cost,
+            total_cost_l2=out_cost,
             source_type=source_type,
             source_id=source_id,
-            move_date=move_date or self._get_move_date(source_type, source_id),
+            move_date_l1=move_date or self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 
-        inv.quantity -= quantity
-        inv.total_value = (Decimal(str(inv.total_value)) - out_cost).quantize(Q2)
-        if inv.quantity <= 0:
-            inv.average_cost = Decimal("0")
+        inv.quantity_l4 -= quantity
+        inv.total_value_l4 = (Decimal(str(inv.total_value_l4)) - out_cost).quantize(Q2)
+        if inv.quantity_l4 <= 0:
+            inv.average_cost_l4 = Decimal("0")
         self.db.flush()
+
+        # AS-03 库存账面价值一致性校验(Inventory.total_value == Σ StockMove.total_cost)
+        enforce_rules(self.db, ["AS-03"], {"product_id": product_id})
 
         return unit_cost
 
@@ -228,6 +252,15 @@ class InventoryEngine:
                             source_type, source_id, tax_rate=tax_rate,
                             operator=operator, move_date=move_date, force=True)
 
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @writes("StockMove.quantity_l1", tier=TIER_L1, source="external")
+    @writes("StockMove.unit_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.total_cost_l2", tier=TIER_L2, source="engine")
+    @writes("StockMove.move_date_l1", tier=TIER_L1, source="external")
+    @derives("Inventory.quantity_l4", from_fields=["StockMove.quantity_l1"])
+    @derives("Inventory.total_value_l4", from_fields=["StockMove.total_cost_l2"])
+    @reads("StockMove.unit_cost_l2", tier=TIER_L2, source="engine")
+    @reads("StockMove.total_cost_l2", tier=TIER_L2, source="engine")
     def reverse(self, account_id: int, product_id: int, quantity: int,
                 unit_cost: Decimal, source_type: str, source_id: int,
                 operator: str = "user",
@@ -245,7 +278,7 @@ class InventoryEngine:
           （同一 source_id 经过"冲红+重建"后会有多条正向流水，需冲红最近一条而非最早一条）。
         """
         product = self._get_product(account_id, product_id)
-        if not product.track_inventory:
+        if not product.track_inventory_l3:
             return
 
         rev_source_type = f"{source_type}_reversal"
@@ -275,8 +308,13 @@ class InventoryEngine:
         # 采购入库：total_cost/qty = 发票不含税单价（真相源）
         # 销售出库：total_cost/qty = avg_cost（与 unit_cost 等价，无副作用）
         if original:
+<<<<<<< Updated upstream
             orig_qty = Decimal(str(original.quantity))
             orig_total_cost = Decimal(str(original.total_cost))
+=======
+            orig_qty = Decimal(str(original.quantity_l1))
+            orig_total_cost = Decimal(str(original.total_cost_l2))
+>>>>>>> Stashed changes
             if orig_qty != 0:
                 effective_unit_cost = (orig_total_cost / orig_qty).quantize(Decimal("0.000001"))
             else:
@@ -295,18 +333,18 @@ class InventoryEngine:
                 code=ErrorCode.VALIDATION_ERROR,
                 data={"details": f"找不到原始库存流水: source_type={source_type}, source_id={source_id}, product_id={product_id}"},
             )
-        is_inbound = original.quantity > 0
+        is_inbound = original.quantity_l1 > 0
         sign = Decimal("-1") if is_inbound else Decimal("1")
         move = models.StockMove(
             product_id=product_id,
             account_id=account_id,
-            quantity=rev_qty * sign,
-            unit_cost=effective_unit_cost,
-            total_cost=rev_cost,
+            quantity_l1=rev_qty * sign,
+            unit_cost_l2=effective_unit_cost,
+            total_cost_l2=rev_cost,
             source_type=rev_source_type,
             source_id=actual_sid,
             ref_source_id=source_id if source_id_override is not None else None,
-            move_date=self._get_move_date(source_type, source_id),
+            move_date_l1=self._get_move_date(source_type, source_id),
         )
         self.db.add(move)
 
@@ -317,8 +355,8 @@ class InventoryEngine:
         if not inv:
             return
 
-        old_qty = Decimal(str(inv.quantity))
-        old_value = Decimal(str(inv.total_value))
+        old_qty = Decimal(str(inv.quantity_l4))
+        old_value = Decimal(str(inv.total_value_l4))
 
         if is_inbound:
             # 采购入库反向 = 采购退货 → 库存减少
@@ -329,14 +367,22 @@ class InventoryEngine:
                     message=f"库存不足，无法退货。商品: {product.name}，当前库存: {old_qty}，退货数量: {rev_qty}",
                     data={"required": float(rev_qty), "current": float(old_qty)},
                 )
+<<<<<<< Updated upstream
             inv.quantity -= quantity
             inv.total_value = (old_value - rev_cost).quantize(Q2)
+=======
+            inv.quantity_l4 -= quantity
+            inv.total_value_l4 = (old_value - rev_cost).quantize(Q2)
+>>>>>>> Stashed changes
         else:
-            inv.quantity += quantity
-            inv.total_value = (old_value + rev_cost).quantize(Q2)
-        new_qty = Decimal(str(inv.quantity))
+            inv.quantity_l4 += quantity
+            inv.total_value_l4 = (old_value + rev_cost).quantize(Q2)
+        new_qty = Decimal(str(inv.quantity_l4))
         if new_qty > 0:
-            inv.average_cost = (Decimal(str(inv.total_value)) / new_qty).quantize(Decimal("0.000001"))
+            inv.average_cost_l4 = (Decimal(str(inv.total_value_l4)) / new_qty).quantize(Decimal("0.000001"))
         else:
-            inv.average_cost = Decimal("0")
+            inv.average_cost_l4 = Decimal("0")
         self.db.flush()
+
+        # AS-03 库存账面价值一致性校验(Inventory.total_value == Σ StockMove.total_cost)
+        enforce_rules(self.db, ["AS-03"], {"product_id": product_id})

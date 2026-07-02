@@ -23,9 +23,9 @@ def ensure_test_product(account_id: int = None) -> int:
                 name=f"测试商品-{datetime.now().strftime('%H%M%S%f')}",
                 sku=f"TEST-{datetime.now().strftime('%H%M%S%f')}",
                 unit="个",
-                purchase_price=Decimal("50.00"),
-                sale_price=Decimal("100.00"),
-                track_inventory=True,
+                purchase_price_l3=Decimal("50.00"),
+                sale_price_l3=Decimal("100.00"),
+                track_inventory_l3=True,
                 category="测试",
             )
             db.add(product)
@@ -35,10 +35,10 @@ def ensure_test_product(account_id: int = None) -> int:
             Inventory.product_id == product.id
         ).first()
         if inv is None:
-            inv = Inventory(account_id=account_id, product_id=product.id, quantity=100)
+            inv = Inventory(account_id=account_id, product_id=product.id, quantity_l4=100)
             db.add(inv)
-        elif inv.quantity < 100:
-            inv.quantity = 100
+        elif inv.quantity_l4 < 100:
+            inv.quantity_l4 = 100
         db.commit()
         return product.id
     finally:

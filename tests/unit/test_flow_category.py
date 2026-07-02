@@ -16,10 +16,10 @@ from enums import FlowCategory
 @pytest.fixture
 def seed_data(db):
     """创建测试基础数据"""
-    account = models.Account(id=1, name="测试账本", type="company", code="test", taxpayer_type="small_scale")
+    account = models.Account(id=1, name="测试账本", type="company", code="test", taxpayer_type_l3="small_scale")
     db.add(account)
 
-    bank_account = models.BankAccount(id=1, account_id=1, bank_name="测试银行", account_number="123456", balance=Decimal("10000"))
+    bank_account = models.BankAccount(id=1, account_id=1, bank_name="测试银行", account_number="123456", balance_l4=Decimal("10000"))
     db.add(bank_account)
 
     db.flush()
@@ -31,52 +31,52 @@ class TestBankTransactionFlowCategory:
         """BankTransaction 模型有 flow_category 字段"""
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("1000"),
-            balance_after=Decimal("11000"),
-            transaction_date=datetime.now(),
-            flow_category=FlowCategory.OPERATING,
+            transaction_type="inflow", amount_l2=Decimal("1000"),
+            balance_after_l4=Decimal("11000"),
+            transaction_date_l1=datetime.now(),
+            flow_category_l2=FlowCategory.OPERATING,
         )
         db.add(tx)
         db.flush()
-        assert tx.flow_category == "operating"
+        assert tx.flow_category_l2 == "operating"
 
     def test_default_flow_category_is_operating(self, db, seed_data):
         """默认 flow_category 为 operating"""
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("1000"),
-            balance_after=Decimal("11000"),
-            transaction_date=datetime.now(),
+            transaction_type="inflow", amount_l2=Decimal("1000"),
+            balance_after_l4=Decimal("11000"),
+            transaction_date_l1=datetime.now(),
         )
         db.add(tx)
         db.flush()
-        assert tx.flow_category == "operating"
+        assert tx.flow_category_l2 == "operating"
 
     def test_can_set_investing_category(self, db, seed_data):
         """可以设置为 investing"""
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="outflow", amount=Decimal("5000"),
-            balance_after=Decimal("5000"),
-            transaction_date=datetime.now(),
-            flow_category=FlowCategory.INVESTING,
+            transaction_type="outflow", amount_l2=Decimal("5000"),
+            balance_after_l4=Decimal("5000"),
+            transaction_date_l1=datetime.now(),
+            flow_category_l2=FlowCategory.INVESTING,
         )
         db.add(tx)
         db.flush()
-        assert tx.flow_category == "investing"
+        assert tx.flow_category_l2 == "investing"
 
     def test_can_set_financing_category(self, db, seed_data):
         """可以设置为 financing"""
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("50000"),
-            balance_after=Decimal("60000"),
-            transaction_date=datetime.now(),
-            flow_category=FlowCategory.FINANCING,
+            transaction_type="inflow", amount_l2=Decimal("50000"),
+            balance_after_l4=Decimal("60000"),
+            transaction_date_l1=datetime.now(),
+            flow_category_l2=FlowCategory.FINANCING,
         )
         db.add(tx)
         db.flush()
-        assert tx.flow_category == "financing"
+        assert tx.flow_category_l2 == "financing"
 
 
 class TestCashFlowStatementClassification:
@@ -87,10 +87,10 @@ class TestCashFlowStatementClassification:
         # 经营流入
         tx1 = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("1000"),
-            balance_after=Decimal("11000"),
-            transaction_date=datetime(2026, 1, 15),
-            flow_category=FlowCategory.OPERATING,
+            transaction_type="inflow", amount_l2=Decimal("1000"),
+            balance_after_l4=Decimal("11000"),
+            transaction_date_l1=datetime(2026, 1, 15),
+            flow_category_l2=FlowCategory.OPERATING,
         )
         db.add(tx1)
         db.flush()
@@ -105,10 +105,10 @@ class TestCashFlowStatementClassification:
         # 投资流出（购买设备）
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="outflow", amount=Decimal("5000"),
-            balance_after=Decimal("5000"),
-            transaction_date=datetime(2026, 1, 15),
-            flow_category=FlowCategory.INVESTING,
+            transaction_type="outflow", amount_l2=Decimal("5000"),
+            balance_after_l4=Decimal("5000"),
+            transaction_date_l1=datetime(2026, 1, 15),
+            flow_category_l2=FlowCategory.INVESTING,
         )
         db.add(tx)
         db.flush()
@@ -124,10 +124,10 @@ class TestCashFlowStatementClassification:
         # 筹资流入（银行贷款）
         tx = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("50000"),
-            balance_after=Decimal("60000"),
-            transaction_date=datetime(2026, 1, 15),
-            flow_category=FlowCategory.FINANCING,
+            transaction_type="inflow", amount_l2=Decimal("50000"),
+            balance_after_l4=Decimal("60000"),
+            transaction_date_l1=datetime(2026, 1, 15),
+            flow_category_l2=FlowCategory.FINANCING,
         )
         db.add(tx)
         db.flush()
@@ -143,26 +143,26 @@ class TestCashFlowStatementClassification:
         # 经营流入
         tx1 = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("1000"),
-            balance_after=Decimal("11000"),
-            transaction_date=datetime(2026, 1, 15),
-            flow_category=FlowCategory.OPERATING,
+            transaction_type="inflow", amount_l2=Decimal("1000"),
+            balance_after_l4=Decimal("11000"),
+            transaction_date_l1=datetime(2026, 1, 15),
+            flow_category_l2=FlowCategory.OPERATING,
         )
         # 投资流出
         tx2 = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="outflow", amount=Decimal("5000"),
-            balance_after=Decimal("6000"),
-            transaction_date=datetime(2026, 1, 20),
-            flow_category=FlowCategory.INVESTING,
+            transaction_type="outflow", amount_l2=Decimal("5000"),
+            balance_after_l4=Decimal("6000"),
+            transaction_date_l1=datetime(2026, 1, 20),
+            flow_category_l2=FlowCategory.INVESTING,
         )
         # 筹资流入
         tx3 = models.BankTransaction(
             account_id=1, bank_account_id=1,
-            transaction_type="inflow", amount=Decimal("50000"),
-            balance_after=Decimal("56000"),
-            transaction_date=datetime(2026, 1, 25),
-            flow_category=FlowCategory.FINANCING,
+            transaction_type="inflow", amount_l2=Decimal("50000"),
+            balance_after_l4=Decimal("56000"),
+            transaction_date_l1=datetime(2026, 1, 25),
+            flow_category_l2=FlowCategory.FINANCING,
         )
         db.add_all([tx1, tx2, tx3])
         db.flush()

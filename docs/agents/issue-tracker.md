@@ -1,6 +1,13 @@
+<<<<<<< Updated upstream
 ﻿---
 doc-type: reference
 ---
+=======
+---
+doc-type: reference
+---
+
+>>>>>>> Stashed changes
 # Issue tracker: GitHub
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.

@@ -9,10 +9,32 @@ import models
 from enums import OrderStatus, PaymentStatus, PaymentMethod
 from utils import _d, Q2
 from models_finance import Ledger
+from lineage import reads, TIER_L1, TIER_L2
 
 from .opening_balances import get_latest_opening_balance
 from ._ledger_helpers import _l, _lp, _bal, _crd, _stock_moves_as_of
 
+@reads("OpeningBalance.cash_balance_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.bank_balance_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.retained_earnings_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.fixed_assets_original_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.accumulated_depreciation_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.intangible_assets_original_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.accumulated_amortization_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.accounts_payable_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.tax_payable_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.long_term_borrowings_l1", tier=TIER_L1, source="external")
+@reads("OpeningBalance.paid_in_capital_l1", tier=TIER_L1, source="external")
+@reads("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
+@reads("PurchaseOrder.total_price_l1", tier=TIER_L1, source="external")
+@reads("Expense.amount_l1", tier=TIER_L1, source="external")
+@reads("Payment.amount_l1", tier=TIER_L1, source="external")
+@reads("Receipt.amount_l1", tier=TIER_L1, source="external")
+@reads("StockMove.quantity_l1", tier=TIER_L1, source="external")
+@reads("StockMove.total_cost_l2", tier=TIER_L2, source="engine")
+@reads("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
+@reads("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
+@reads("BankTransaction.amount_l2", tier=TIER_L2, source="engine")
 def generate_balance_sheet(db: Session, account_id: int, date: str):
     """生成资产负债表"""
     query_date = datetime.strptime(date, "%Y-%m-%d")
@@ -33,41 +55,41 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         opening_long_term_borrowings = Decimal('0')
         opening_paid_in_capital = Decimal('0')
     else:
-        opening_date = datetime.combine(opening_balance.date, datetime.min.time())
-        opening_cash = _d(opening_balance.cash_balance)
-        opening_bank = _d(opening_balance.bank_balance)
-        opening_retained_earnings = _d(opening_balance.retained_earnings)
-        opening_fixed_assets_original = _d(opening_balance.fixed_assets_original)
-        opening_accumulated_depreciation = _d(opening_balance.accumulated_depreciation)
-        opening_intangible_assets_original = _d(opening_balance.intangible_assets_original)
-        opening_accumulated_amortization = _d(opening_balance.accumulated_amortization)
-        opening_accounts_payable = _d(opening_balance.accounts_payable)
-        opening_tax_payable = _d(opening_balance.tax_payable)
-        opening_long_term_borrowings = _d(opening_balance.long_term_borrowings)
-        opening_paid_in_capital = _d(opening_balance.paid_in_capital)
+        opening_date = datetime.combine(opening_balance.date_l1, datetime.min.time())
+        opening_cash = _d(opening_balance.cash_balance_l1)
+        opening_bank = _d(opening_balance.bank_balance_l1)
+        opening_retained_earnings = _d(opening_balance.retained_earnings_l1)
+        opening_fixed_assets_original = _d(opening_balance.fixed_assets_original_l1)
+        opening_accumulated_depreciation = _d(opening_balance.accumulated_depreciation_l1)
+        opening_intangible_assets_original = _d(opening_balance.intangible_assets_original_l1)
+        opening_accumulated_amortization = _d(opening_balance.accumulated_amortization_l1)
+        opening_accounts_payable = _d(opening_balance.accounts_payable_l1)
+        opening_tax_payable = _d(opening_balance.tax_payable_l1)
+        opening_long_term_borrowings = _d(opening_balance.long_term_borrowings_l1)
+        opening_paid_in_capital = _d(opening_balance.paid_in_capital_l1)
 
     # ── 流动资产 ──
-    sales_received = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price)).filter(
+    sales_received = _d(db.query(sqlfunc.sum(models.SaleOrder.total_price_l1)).filter(
         models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= opening_date,
-        models.SaleOrder.sale_date <= query_end,
+        models.SaleOrder.sale_date_l1 >= opening_date,
+        models.SaleOrder.sale_date_l1 <= query_end,
         models.SaleOrder.status == OrderStatus.COMPLETED,
         models.SaleOrder.payment_status == PaymentStatus.PAID
     ).scalar())
 
-    purchase_paid = _d(db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
+    purchase_paid = _d(db.query(sqlfunc.sum(models.PurchaseOrder.total_price_l1)).filter(
         models.PurchaseOrder.account_id == account_id,
-        models.PurchaseOrder.purchase_date >= opening_date,
-        models.PurchaseOrder.purchase_date <= query_end,
+        models.PurchaseOrder.purchase_date_l1 >= opening_date,
+        models.PurchaseOrder.purchase_date_l1 <= query_end,
         models.PurchaseOrder.status == OrderStatus.COMPLETED,
         models.PurchaseOrder.payment_status == PaymentStatus.PAID,
         models.PurchaseOrder.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
-    expense_paid = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
+    expense_paid = _d(db.query(sqlfunc.sum(models.Expense.amount_l1)).filter(
         models.Expense.account_id == account_id,
-        models.Expense.expense_date >= opening_date,
-        models.Expense.expense_date <= query_end,
+        models.Expense.expense_date_l1 >= opening_date,
+        models.Expense.expense_date_l1 <= query_end,
         models.Expense.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
@@ -89,26 +111,35 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         ending_cash = cash_from_ledger
         ending_bank = bank_from_ledger
     else:
-        # 总账无数据时回退到银行账户表
+        # 总账无数据时从 BankTransaction（L2 真相源）计算银行余额
         has_bank_accounts = db.query(models.BankAccount).filter(
             models.BankAccount.account_id == account_id
         ).first() is not None
         if has_bank_accounts:
-            bank_balance = _d(db.query(sqlfunc.sum(models.BankAccount.balance)).filter(
-                models.BankAccount.account_id == account_id
-            ).scalar())
+            from sqlalchemy import case as sqlcase
+            tx_net = db.query(
+                sqlfunc.sum(
+                    sqlcase(
+                        (models.BankTransaction.transaction_type == 'inflow', models.BankTransaction.amount_l2),
+                        else_=-models.BankTransaction.amount_l2
+                    )
+                )
+            ).filter(
+                models.BankTransaction.account_id == account_id
+            ).scalar()
+            bank_balance = opening_bank + _d(tx_net) if tx_net else opening_bank
             ending_cash = Decimal('0')
             ending_bank = bank_balance
         else:
-            total_payments = _d(db.query(sqlfunc.sum(models.Payment.amount)).filter(
+            total_payments = _d(db.query(sqlfunc.sum(models.Payment.amount_l1)).filter(
                 models.Payment.account_id == account_id,
-                models.Payment.payment_date >= opening_date,
-                models.Payment.payment_date <= query_end,
+                models.Payment.payment_date_l1 >= opening_date,
+                models.Payment.payment_date_l1 <= query_end,
             ).scalar())
-            total_receipts = _d(db.query(sqlfunc.sum(models.Receipt.amount)).filter(
+            total_receipts = _d(db.query(sqlfunc.sum(models.Receipt.amount_l1)).filter(
                 models.Receipt.account_id == account_id,
-                models.Receipt.receipt_date >= opening_date,
-                models.Receipt.receipt_date <= query_end,
+                models.Receipt.receipt_date_l1 >= opening_date,
+                models.Receipt.receipt_date_l1 <= query_end,
             ).scalar())
             ending_cash = opening_cash - total_payments + total_receipts
             ending_bank = Decimal('0')
@@ -124,13 +155,13 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         pid = m.product_id
         if pid not in inv_agg:
             inv_agg[pid] = {"qty": Decimal("0"), "value": Decimal("0")}
-        qty = Decimal(str(m.quantity))
+        qty = Decimal(str(m.quantity_l1))
         inv_agg[pid]["qty"] += qty
-        # StockMove.total_cost 存的是绝对值，方向由 quantity 正负表示
+        # StockMove.total_cost_l2 存的是绝对值，方向由 quantity_l1 正负表示
         if qty > 0:
-            inv_agg[pid]["value"] += _d(m.total_cost)
+            inv_agg[pid]["value"] += _d(m.total_cost_l2)
         else:
-            inv_agg[pid]["value"] -= _d(m.total_cost)
+            inv_agg[pid]["value"] -= _d(m.total_cost_l2)
     inventory_value = Decimal('0')
     for pid, agg in inv_agg.items():
         if agg["qty"] > 0:
@@ -158,9 +189,22 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     # 一般纳税人：222101→222106→222107 月结后余额在 222107
     # 小规模纳税人：直接用 222103，不走转出未交增值税机制，余额即应交税金
     vat_payable = (_credit_balance("222107") + _credit_balance("222103")).quantize(Q2)
-    surcharge_liability = _credit_balance("222104").quantize(Q2)
+    # 应交附加税：兼容旧 222104 和新明细科目
+    surcharge_liability = (_credit_balance("222104")
+                           + _credit_balance("222110")
+                           + _credit_balance("222111")
+                           + _credit_balance("222112")
+                           + _credit_balance("222113")
+                           + _credit_balance("222114")
+                           + _credit_balance("222115")
+                           + _credit_balance("222116")
+                           + _credit_balance("222117")
+                           + _credit_balance("222118")
+                           + _credit_balance("222119")
+                           + _credit_balance("222120")).quantize(Q2)
     income_tax_liability = _credit_balance("222105").quantize(Q2)
-    tax_payable = (vat_payable + surcharge_liability + income_tax_liability).quantize(Q2)
+    personal_income_tax_liability = _credit_balance("222108").quantize(Q2)  # 代扣员工个税(业务因果链 E)
+    tax_payable = (vat_payable + surcharge_liability + income_tax_liability + personal_income_tax_liability).quantize(Q2)
     # 留抵 = 应交增值税借方余额（一般纳税人：222101+222102+222106，转出后剩余为留抵）
     vat_debit = (_balance("222101") + _balance("222102") + _balance("222106"))
     prepaid_tax = max(vat_debit, Decimal("0")).quantize(Q2)
@@ -175,7 +219,19 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     dep_d, dep_c = _lp(db, ledger, "1602", opening_date, query_end)
     depreciation_expense = dep_c.quantize(Q2)  # 已包含在6601中，此处仅用于报表展示
     amortization_expense = Decimal("0")  # 摊销已包含在6601中，保留字段兼容前端
-    surcharge_expense = _balance("6403").quantize(Q2)
+    # 税金及附加费用：兼容旧 6403 和新明细科目
+    surcharge_expense = (_balance("6403")
+                         + _balance("640301")
+                         + _balance("640302")
+                         + _balance("640303")
+                         + _balance("640304")
+                         + _balance("640305")
+                         + _balance("640306")
+                         + _balance("640307")
+                         + _balance("640308")
+                         + _balance("640309")
+                         + _balance("640310")
+                         + _balance("640311")).quantize(Q2)
     income_tax_expense = _balance("6801").quantize(Q2)
     # 营业外收支（6301/6701）+ 资产处置损益（6111/6711）
     non_operating_income = (_credit_balance("6301") + _credit_balance("6111")).quantize(Q2)
@@ -223,7 +279,12 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         "accounts_payable": accounts_payable.quantize(Q2),
         "other_payable": other_payable.quantize(Q2),
         "tax_payable": tax_payable.quantize(Q2),
+        "vat_payable": vat_payable.quantize(Q2),
+        "surcharge_liability": surcharge_liability.quantize(Q2),
+        "income_tax_liability": income_tax_liability.quantize(Q2),
+        "personal_income_tax_liability": personal_income_tax_liability.quantize(Q2),
         "total_current_liabilities": total_current_liabilities.quantize(Q2),
+        "salaries_payable": salaries_payable.quantize(Q2),
         "long_term_borrowings": long_term_borrowings.quantize(Q2),
         "total_non_current_liabilities": total_non_current_liabilities.quantize(Q2),
         "total_liabilities": total_liabilities.quantize(Q2),

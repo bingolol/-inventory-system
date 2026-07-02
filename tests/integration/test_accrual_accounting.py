@@ -20,8 +20,9 @@ from main import app
 from database import get_db, Base
 import database
 import models
-from models_finance import Ledger, LedgerAccount
+from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
 from finance_integration import CHART_OF_ACCOUNTS
+from tests.helpers import get_entity_id
 
 
 # 测试数据库
@@ -55,17 +56,20 @@ def setup_db(monkeypatch):
 def auto_create_account_ledger(setup_db):
     """在每个测试前自动创建测试账本、会计科目表和科目（post_journal 依赖）"""
     db = TestingSessionLocal()
-    account = models.Account(id=1, name="测试账本", code="test_accrual", type="company")
+    account = models.Account(id=1, name="测试账本", code="test_accrual", type="company", taxpayer_type_l3="small_scale")
     db.add(account)
     db.flush()
-    ledger = Ledger(code="test_accrual", name="测试账本", type="company")
+    ledger = Ledger(code="test_accrual", name="测试账本", type="company", taxpayer_type_l3="small_scale")
     db.add(ledger)
     db.flush()
     for code, name, acct_type in CHART_OF_ACCOUNTS:
-        db.add(LedgerAccount(
+        la = LedgerAccount(
             ledger_id=ledger.id, code=code, name=name,
             account_type=acct_type, is_leaf=True, is_active=True,
-        ))
+        )
+        db.add(la)
+        db.flush()
+        db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0, debit_total_l4=0, credit_total_l4=0))
     db.commit()
     db.close()
 
@@ -81,12 +85,26 @@ def client():
 # Behavior 1: 银行账户 CRUD（Critical）
 # ═══════════════════════════════════════════════════════════
 
+def _setup_opening_balance(client, bank_balance=100000):
+    """Helper: set up opening balance and create bank account (picks up balance from opening balance)"""
+    client.post("/api/opening-balances", json={
+        "date": "2026-01-01",
+        "bank_balance": bank_balance,
+        "retained_earnings": bank_balance,
+    }, headers={"X-Account-ID": "1"})
+    resp = client.post("/api/bank-accounts", json={
+        "bank_name": "工商银行",
+        "account_number": "6222021234567890123",
+    }, headers={"X-Account-ID": "1"})
+    return resp
+
+
 def test_create_bank_account(client):
     """创建银行账户"""
     response = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000,
+        "balance": 0,
         "description": "公司基本户"
     }, headers={"X-Account-ID": "1"})
 
@@ -94,7 +112,7 @@ def test_create_bank_account(client):
     data = response.json()
     assert data["bank_name"] == "工商银行"
     assert data["account_number"] == "6222021234567890123"
-    assert data["balance"] == "100000.00"
+    assert data["balance"] == "0.00"
 
 
 def test_list_bank_accounts(client):
@@ -103,7 +121,7 @@ def test_list_bank_accounts(client):
     client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
+        "balance": 0
     }, headers={"X-Account-ID": "1"})
 
     # 查询
@@ -120,9 +138,9 @@ def test_update_bank_account(client):
     create_resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
+        "balance": 0
     }, headers={"X-Account-ID": "1"})
-    account_id = create_resp.json()["id"]
+    account_id = get_entity_id(create_resp.json())
 
     # 更新（余额不能直接编辑，只能通过银行流水调整）
     response = client.put(f"/api/bank-accounts/{account_id}", json={
@@ -139,25 +157,33 @@ def test_update_bank_account(client):
 
 def test_delete_bank_account_with_transactions_should_fail(client):
     """有银行流水的银行账户不能直接删除"""
-    # 1. 创建银行账户
-    client.post("/api/bank-accounts", json={
+    # 1. 创建银行账户（balance=0）
+    resp = client.post("/api/bank-accounts", json={
         "bank_name": "测试银行",
         "account_number": "TEST-001",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
+    ba_id = get_entity_id(resp.json())
 
-    # 2. 录入银行流水
+    # 2. 录入银行流水（先充值 inflow，才能 outflow）
     client.post("/api/bank-transactions", json={
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
+        "transaction_type": "inflow",
+        "amount": 100000,
+        "transaction_date": "2026-03-01",
+        "description": "充值",
+        "reference_no": "BANK-REF-001"
+    }, headers={"X-Account-ID": "1"})
+    client.post("/api/bank-transactions", json={
+        "bank_account_id": ba_id,
         "transaction_type": "outflow",
         "amount": 10000,
         "transaction_date": "2026-03-01",
         "description": "测试支出",
-        "reference_no": "BANK-REF-001"
+        "reference_no": "BANK-REF-002"
     }, headers={"X-Account-ID": "1"})
 
     # 3. 尝试删除银行账户（应失败）
-    response = client.delete("/api/bank-accounts/1", headers={"X-Account-ID": "1"})
+    response = client.delete(f"/api/bank-accounts/{ba_id}", headers={"X-Account-ID": "1"})
     assert response.status_code == 409  # 有关联数据，不能删除
 
 
@@ -167,9 +193,8 @@ def test_delete_bank_account(client):
     create_resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
-    account_id = create_resp.json()["id"]
+    account_id = get_entity_id(create_resp.json())
 
     # 删除
     response = client.delete(f"/api/bank-accounts/{account_id}", headers={"X-Account-ID": "1"})
@@ -190,9 +215,8 @@ def test_create_bank_transaction(client):
     account_resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = get_entity_id(account_resp.json())
 
     # 录入银行流水（收入）
     response = client.post("/api/bank-transactions", json={
@@ -208,18 +232,27 @@ def test_create_bank_transaction(client):
     data = response.json()
     assert data["transaction_type"] == "inflow"
     assert data["amount"] == "50000.00"
-    assert data["balance_after"] == "150000.00"  # 100000 + 50000
+    assert data["balance_after"] == "50000.00"  # 0 + 50000
 
 
 def test_create_bank_transaction_outflow(client):
     """录入银行流水（支出）"""
-    # 先创建银行账户
+    # 先创建银行账户（balance=0）
     account_resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
-    bank_account_id = account_resp.json()["id"]
+    bank_account_id = get_entity_id(account_resp.json())
+
+    # 先充值才能支出
+    client.post("/api/bank-transactions", json={
+        "bank_account_id": bank_account_id,
+        "transaction_type": "inflow",
+        "amount": 100000,
+        "transaction_date": "2026-06-18",
+        "description": "充值",
+        "reference_no": "BANK-REF-FUND"
+    }, headers={"X-Account-ID": "1"})
 
     # 录入银行流水（支出）
     response = client.post("/api/bank-transactions", json={
@@ -271,13 +304,10 @@ def test_create_expense_accrual(client):
 
 def test_pay_expense(client):
     """费用付款时，创建付款记录、银行流水，更新费用状态"""
-    # 先创建银行账户
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1"})
-    bank_account_id = account_resp.json()["id"]
+    # 先通过期初余额创建银行账户（余额=100000）
+    _setup_opening_balance(client, 100000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    bank_account_id = bank_list.json()["items"][0]["id"]
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -357,13 +387,10 @@ def test_create_purchase_accrual(client):
 
 def test_pay_purchase(client):
     """采购付款时，创建付款记录、银行流水，更新采购单状态"""
-    # 先创建银行账户
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1"})
-    bank_account_id = account_resp.json()["id"]
+    # 先通过期初余额创建银行账户（余额=100000）
+    _setup_opening_balance(client, 100000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    bank_account_id = bank_list.json()["items"][0]["id"]
 
     # 创建供应商
     supplier_resp = client.post("/api/suppliers", json={
@@ -371,8 +398,12 @@ def test_pay_purchase(client):
         "contact": "王五",
         "phone": "13700137000"
     }, headers={"X-Account-ID": "1"})
+<<<<<<< Updated upstream
     _sd = supplier_resp.json()
     supplier_id = _sd.get("data", _sd)["id"]
+=======
+    supplier_id = get_entity_id(supplier_resp.json())
+>>>>>>> Stashed changes
 
     # 创建商品
     product_resp = client.post("/api/products", json={
@@ -467,13 +498,10 @@ def test_create_sale_accrual(client):
 
 def test_receive_sale(client):
     """销售收款时，创建收款记录、银行流水，更新销售单状态"""
-    # 先创建银行账户
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 50000
-    }, headers={"X-Account-ID": "1"})
-    bank_account_id = account_resp.json()["id"]
+    # 先通过期初余额创建银行账户（余额=50000）
+    _setup_opening_balance(client, 50000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    bank_account_id = bank_list.json()["items"][0]["id"]
 
     # 创建供应商
     client.post("/api/suppliers", json={
@@ -558,7 +586,6 @@ def test_balance_sheet_includes_unpaid_expenses(client):
     client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
 
     # 创建费用（未付款）
@@ -611,16 +638,16 @@ def test_income_statement_includes_unpaid_expenses(client):
 
 def test_cash_flow_statement_from_bank_transactions(client):
     """现金流量表应从银行流水自动生成"""
-    # 创建银行账户
-    client.post("/api/bank-accounts", json={
+    # 创建银行账户（balance=0）
+    resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
+    ba_id = get_entity_id(resp.json())
 
     # 录入银行流水（收入）
     client.post("/api/bank-transactions", json={
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
         "transaction_type": "inflow",
         "amount": 50000,
         "transaction_date": "2026-06-19",
@@ -630,7 +657,7 @@ def test_cash_flow_statement_from_bank_transactions(client):
 
     # 录入银行流水（支出）
     client.post("/api/bank-transactions", json={
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
         "transaction_type": "outflow",
         "amount": 30000,
         "transaction_date": "2026-06-20",
@@ -683,12 +710,10 @@ def test_expense_amount_negative(client):
 
 def test_payment_exceeds_expense_amount(client):
     """付款金额超过费用金额 → 应该被拒绝或警告"""
-    # 创建银行账户
-    client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1"})
+    # 通过期初余额创建银行账户
+    _setup_opening_balance(client, 100000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    ba_id = bank_list.json()["items"][0]["id"]
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -709,7 +734,7 @@ def test_payment_exceeds_expense_amount(client):
         "amount": 2000,  # 超过费用金额
         "payment_method": "company",
         "payment_date": "2026-06-20",
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
         "description": "超额付款"
     }, headers={"X-Account-ID": "1"})
 
@@ -747,17 +772,15 @@ def test_bank_account_not_found(client):
         "description": "测试不存在的银行账户"
     }, headers={"X-Account-ID": "1"})
 
-    assert payment_resp.status_code == 422  # 应该报错
+    assert payment_resp.status_code == 404  # 应该报错（BANK_ACCOUNT_NOT_FOUND 返回 404）
 
 
 def test_duplicate_payment(client):
     """重复付款同一笔费用 → 应该被允许（支持多次付款）"""
-    # 创建银行账户
-    client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1"})
+    # 通过期初余额创建银行账户
+    _setup_opening_balance(client, 100000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    ba_id = bank_list.json()["items"][0]["id"]
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -778,7 +801,7 @@ def test_duplicate_payment(client):
         "amount": 500,
         "payment_method": "company",
         "payment_date": "2026-06-20",
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
         "description": "第一次付款"
     }, headers={"X-Account-ID": "1"})
     assert payment1_resp.status_code == 200
@@ -791,7 +814,7 @@ def test_duplicate_payment(client):
         "amount": 500,
         "payment_method": "company",
         "payment_date": "2026-06-21",
-        "bank_account_id": 1,
+        "bank_account_id": ba_id,
         "description": "第二次付款"
     }, headers={"X-Account-ID": "1"})
     assert payment2_resp.status_code == 200
@@ -804,13 +827,10 @@ def test_duplicate_payment(client):
 
 def test_payment_with_bank_account(client):
     """付款时指定银行账户 → 银行余额更新"""
-    # 先创建银行账户
-    bank_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1"})
-    bank_account_id = bank_resp.json()["id"]
+    # 先通过期初余额创建银行账户
+    _setup_opening_balance(client, 100000)
+    bank_list = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"})
+    ba_id = bank_list.json()["items"][0]["id"]
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -831,7 +851,7 @@ def test_payment_with_bank_account(client):
         "amount": 1000,
         "payment_method": "company",
         "payment_date": "2026-06-20",
-        "bank_account_id": bank_account_id,
+        "bank_account_id": ba_id,
         "description": "指定银行账户付款"
     }, headers={"X-Account-ID": "1"})
 
@@ -877,7 +897,7 @@ def test_payment_rollback_on_bank_account_not_found(client):
         "description": "测试不存在的银行账户"
     }, headers={"X-Account-ID": "1"})
 
-    assert payment_resp.status_code == 422
+    assert payment_resp.status_code == 404
 
     # 验证：费用状态仍然是 unpaid（事务回滚）
     expense_list = client.get("/api/expenses", headers={"X-Account-ID": "1"})
@@ -905,11 +925,10 @@ def test_full_business_flow(client):
         "retained_earnings": 200000
     }, headers={"X-Account-ID": "1"})
 
-    # ── 2. 创建银行账户 ──
+    # ── 2. 创建银行账户（balance 通过期初余额同步） ──
     bank_resp = client.post("/api/bank-accounts", json={
         "bank_name": "工商银行",
         "account_number": "6222021234567890123",
-        "balance": 200000
     }, headers={"X-Account-ID": "1"})
     assert bank_resp.status_code == 200
     bank_account_id = bank_resp.json()["id"]
@@ -1086,11 +1105,10 @@ def test_balance_sheet_monetary_funds_with_bank_accounts(client):
         "retained_earnings": 50000
     }, headers={"X-Account-ID": "1"})
 
-    # 2. 创建银行账户（余额=100000，与期初一致）
+    # 2. 创建银行账户（balance 通过期初余额同步）
     client.post("/api/bank-accounts", json={
         "bank_name": "测试银行",
         "account_number": "TEST-001",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
 
     # 3. 查询资产负债表
@@ -1117,11 +1135,10 @@ def test_balance_sheet_monetary_funds_reflects_payments(client):
         "retained_earnings": 50000
     }, headers={"X-Account-ID": "1"})
 
-    # 2. 创建银行账户（余额=100000）
+    # 2. 创建银行账户（balance 通过期初余额同步）──
     client.post("/api/bank-accounts", json={
         "bank_name": "测试银行",
         "account_number": "TEST-001",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
 
     # 3. 创建费用（已付款，从银行扣款）
@@ -1160,15 +1177,15 @@ def test_balance_sheet_monetary_funds_reflects_payments(client):
 
 def test_bank_account_balance_cannot_be_edited_directly(client):
     """银行账户余额不能通过 PUT 接口直接修改"""
-    # 1. 创建银行账户（余额=100000）
-    client.post("/api/bank-accounts", json={
+    # 1. 创建银行账户（余额=0）
+    resp = client.post("/api/bank-accounts", json={
         "bank_name": "测试银行",
         "account_number": "TEST-001",
-        "balance": 100000
     }, headers={"X-Account-ID": "1"})
+    ba_id = get_entity_id(resp.json())
 
     # 2. 尝试直接修改余额
-    response = client.put("/api/bank-accounts/1", json={
+    response = client.put(f"/api/bank-accounts/{ba_id}", json={
         "balance": 999999
     }, headers={"X-Account-ID": "1"})
 
@@ -1176,4 +1193,4 @@ def test_bank_account_balance_cannot_be_edited_directly(client):
     assert response.status_code == 200
     accounts = client.get("/api/bank-accounts", headers={"X-Account-ID": "1"}).json()
     account = accounts["items"][0]
-    assert account["balance"] == "100000.00"  # 余额不变
+    assert account["balance"] == "0.00"  # 余额不变（初始=0）

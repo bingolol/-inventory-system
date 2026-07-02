@@ -15,7 +15,7 @@ from enums import OrderStatus
 @pytest.fixture
 def account(db):
     a = Account(id=1, name="测试", type="company", code="test",
-                taxpayer_type="general")
+                taxpayer_type_l3="general")
     db.add(a)
     db.commit()
     return a
@@ -46,12 +46,12 @@ def accts(db, ledger):
 @pytest.fixture
 def product(db):
     p = Product(id=1, account_id=1, name="测试商品", sku="T-001",
-                purchase_price=Decimal("8"), sale_price=Decimal("20"),
-                track_inventory=True)
+                purchase_price_l3=Decimal("8"), sale_price_l3=Decimal("20"),
+                track_inventory_l3=True)
     db.add(p)
     db.flush()
-    inv = Inventory(account_id=1, product_id=1, quantity=100,
-                    average_cost=Decimal("8.00"), total_value=Decimal("800.00"))
+    inv = Inventory(account_id=1, product_id=1, quantity_l4=100,
+                    average_cost_l4=Decimal("8.00"), total_value_l4=Decimal("800.00"))
     db.add(inv)
     db.commit()
     return p
@@ -93,7 +93,7 @@ class TestSaleCreateTriggersAccounting:
             la = db.query(LedgerAccount).filter(
                 LedgerAccount.id == line.ledger_account_id
             ).first()
-            codes[la.code] = {"debit": line.debit, "credit": line.credit}
+            codes[la.code] = {"debit": line.debit_l2, "credit": line.credit_l2}
 
         assert codes["1122"]["debit"] == Decimal("226.00"), "应收账款借(含税): 226"
         assert codes["6001"]["credit"] == Decimal("200.00"), "主营业务收入贷(不含税): 200"
@@ -107,5 +107,5 @@ class TestSaleCreateTriggersAccounting:
             StockMove.source_id == order.id,
         ).first()
         assert sm is not None, "销售出库应生成 StockMove"
-        assert sm.quantity == -10
-        assert sm.unit_cost == Decimal("8.00")
+        assert sm.quantity_l1 == -10
+        assert sm.unit_cost_l2 == Decimal("8.00")

@@ -30,7 +30,7 @@ def list_bank_transactions(
     query = db.query(BankTransaction).filter(
         BankTransaction.bank_account_id == bank_account_id,
         BankTransaction.account_id == account_id
-    ).order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
+    ).order_by(BankTransaction.transaction_date_l1.desc(), BankTransaction.id.desc())
     total = query.count()
     items = query.offset(skip).limit(limit).all()
     try:
@@ -60,17 +60,17 @@ def create_bank_transaction(
         # 计算交易后余额
         amount = _d(data.amount)
         if data.transaction_type == "inflow":
-            new_balance = _d(bank_account.balance) + amount
+            new_balance = _d(bank_account.balance_l4) + amount
         else:
-            new_balance = _d(bank_account.balance) - amount
+            new_balance = _d(bank_account.balance_l4) - amount
             # 余额校验：禁止银行账户透支（防止负资产）
             if new_balance < 0:
                 raise BusinessError(
                     code=ErrorCode.VALIDATION_ERROR,
-                    message=f"银行账户余额不足: 当前余额 {bank_account.balance}，"
+                    message=f"银行账户余额不足: 当前余额 {bank_account.balance_l4}，"
                             f"支出金额 {amount}，超额 {abs(new_balance)}",
                     ai_instruction=f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 "
-                                   f"{bank_account.balance}，不足以支出 {amount}。"
+                                   f"{bank_account.balance_l4}，不足以支出 {amount}。"
                                    f"请减少金额或先充值。"
                 )
 
@@ -79,16 +79,16 @@ def create_bank_transaction(
             account_id=account_id,
             bank_account_id=data.bank_account_id,
             transaction_type=data.transaction_type,
-            amount=amount,
-            balance_after=new_balance,
-            transaction_date=data.transaction_date,
+            amount_l2=amount,
+            balance_after_l4=new_balance,
+            transaction_date_l1=data.transaction_date,
             description=data.description,
             reference_no=data.reference_no
         )
         db.add(transaction)
 
         # 更新银行账户余额
-        bank_account.balance = new_balance
+        bank_account.balance_l4 = new_balance
 
         db.flush()
         _log(db, account_id, "create", "bank_transaction", transaction.id,
@@ -97,23 +97,3 @@ def create_bank_transaction(
     db.refresh(transaction)
     return BankTransactionOut.model_validate(transaction)
 
-
-@router.post("/{transaction_id}/reverse")
-def reverse_bank_tx(
-    transaction_id: int,
-    db: Session = Depends(get_db),
-    account_id: int = Depends(get_account_id),
-    operator: str = Depends(get_operator),
-):
-    """红冲银行交易：生成反向凭证 + 反向流水"""
-    with unit_of_work(db):
-        reversal = reverse_bank_transaction(db, account_id, transaction_id)
-        if not reversal:
-            raise BusinessError(
-                code=ErrorCode.VALIDATION_ERROR,
-                message=f"银行交易 {transaction_id} 不存在或已冲销",
-            )
-        _log(db, account_id, "reverse", "bank_transaction", transaction_id,
-             f"冲销银行交易 #{transaction_id}: {reversal.description}", operator=operator)
-    db.refresh(reversal)
-    return BankTransactionOut.model_validate(reversal)

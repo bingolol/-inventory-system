@@ -12,7 +12,12 @@ from _client import post, get, extract_id
 
 def create_payment(payment_type, related_entity_type, related_entity_id,
                    amount, payment_date, bank_account_id,
+<<<<<<< Updated upstream
                    payment_method="company", description=None):
+=======
+                   payment_method="company", description=None,
+                   withholding_tax_amount=0):
+>>>>>>> Stashed changes
     """创建付款（走 POST /api/payments）。
 
     参数：
@@ -26,10 +31,21 @@ def create_payment(payment_type, related_entity_type, related_entity_id,
             - "purchase_order"（采购单）
         related_entity_id: 关联实体 ID
         amount: 付款金额（必须 > 0）
+<<<<<<< Updated upstream
+=======
+            ⚠️ 工资场景: amount = 实发金额(打到员工银行卡的钱),不含代扣个税
+>>>>>>> Stashed changes
         payment_date: 付款日期 "YYYY-MM-DD"
         bank_account_id: 付款银行账户 ID
         payment_method: "company"（公司账户，默认）
         description: 备注
+<<<<<<< Updated upstream
+=======
+        withholding_tax_amount: 代扣个人所得税(仅 payment_type="salary" 时使用,默认 0)
+            ⚠️ 工资场景: 应发 = amount + withholding_tax_amount
+            凭证: 借2211(应发) / 贷1002(实发=amount) / 贷222108(代扣=withholding_tax_amount)
+            非工资场景传此参数会报 VALIDATION_ERROR
+>>>>>>> Stashed changes
     """
     body = {
         "payment_type": payment_type,
@@ -39,6 +55,11 @@ def create_payment(payment_type, related_entity_type, related_entity_id,
         "payment_date": payment_date,
         "bank_account_id": bank_account_id,
     }
+<<<<<<< Updated upstream
+=======
+    if withholding_tax_amount:
+        body["withholding_tax_amount"] = withholding_tax_amount
+>>>>>>> Stashed changes
     if description: body["description"] = description
     return post("/api/payments", body)
 
@@ -58,11 +79,28 @@ def pay_purchase(purchase_order_id, amount, payment_date, bank_account_id,
 
 
 def pay_salary(expense_id, amount, payment_date, bank_account_id,
+<<<<<<< Updated upstream
                 description=None):
+=======
+                description=None, withholding_tax_amount=0):
+>>>>>>> Stashed changes
     """发工资（封装 create_payment，payment_type="salary"）。
 
     参数：
         expense_id: 工资费用 ID（先在 08_expenses 创建 category="工资" 的费用）
+<<<<<<< Updated upstream
+=======
+        amount: 实发金额（打到员工银行卡的钱,不含代扣个税）
+        withholding_tax_amount: 代扣个人所得税(默认 0,有代扣时传入)
+            应发 = amount + withholding_tax_amount
+            凭证: 借2211(应发) / 贷1002(实发) / 贷222108(代扣)
+
+    ⚠️ 计提工资时(08_expenses.create_expense)的 amount 应为【应发金额】(总额),
+       发放时(pay_salary)的 amount 应为【实发金额】(应发 - 代扣个税)。
+       系统会自动: 借2211=amount+withholding_tax_amount(清掉计提的负债)
+                  贷1002=amount(银行实际出账)
+                  贷222108=withholding_tax_amount(代扣个税负债)
+>>>>>>> Stashed changes
     """
     return create_payment(
         payment_type="salary",
@@ -72,6 +110,10 @@ def pay_salary(expense_id, amount, payment_date, bank_account_id,
         payment_date=payment_date,
         bank_account_id=bank_account_id,
         description=description,
+<<<<<<< Updated upstream
+=======
+        withholding_tax_amount=withholding_tax_amount,
+>>>>>>> Stashed changes
     )
 
 

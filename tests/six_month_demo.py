@@ -20,13 +20,13 @@ from finance_integration import get_or_create_ledger_id
 from engine_tax import TaxAccrualEngine, _bal, _crd, _lp
 
 tag = uuid.uuid4().hex[:6]
-acc = models.Account(name="6M Flow", code=f"D6-{tag}", taxpayer_type="general")
+acc = models.Account(name="6M Flow", code=f"D6-{tag}", taxpayer_type_l3="general")
 db.add(acc); db.flush(); aid = acc.id
 lid = get_or_create_ledger_id(db, aid)
 
 
 def post(db, lid, date, drs, crs):
-    m = AccountMove(ledger_id=lid, move_type="test", date=date, state="posted")
+    m = AccountMove(ledger_id=lid, move_type="test", date_l1=date, state="posted")
     db.add(m); db.flush()
     for c, a in drs.items():
         ac = db.query(LedgerAccount).filter(
@@ -34,14 +34,14 @@ def post(db, lid, date, drs, crs):
         ).first()
         if ac and a:
             db.add(AccountMoveLine(move_id=m.id, ledger_account_id=ac.id,
-                   debit=Decimal(str(a)), credit=0, amount_residual=Decimal(str(a))))
+                   debit_l2=Decimal(str(a)), credit_l2=0, amount_residual_l2=Decimal(str(a))))
     for c, a in crs.items():
         ac = db.query(LedgerAccount).filter(
             LedgerAccount.ledger_id == lid, LedgerAccount.code == c
         ).first()
         if ac and a:
             db.add(AccountMoveLine(move_id=m.id, ledger_account_id=ac.id,
-                   debit=0, credit=Decimal(str(a)), amount_residual=Decimal(str(a))))
+                   debit_l2=0, credit_l2=Decimal(str(a)), amount_residual_l2=Decimal(str(a))))
     db.flush()
 
 

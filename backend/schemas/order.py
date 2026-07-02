@@ -90,6 +90,7 @@ class SaleOrderCreate(BaseModel):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
     payment_status: str = "unpaid"
+    has_invoice: bool = True  # 散客现金销售不开发票时传 False
     image_url: Optional[str] = ""
     notes: str = ""
     total_price: Optional[Decimal] = None
@@ -116,6 +117,7 @@ class SaleOrderOut(BaseModel):
     total_price: Decimal
     payment_status: str
     status: str
+    has_invoice: bool = True
     notes: str
     image_url: Optional[str] = ""
     sale_date: datetime
@@ -151,7 +153,7 @@ class InventoryAdjust(BaseModel):
     adjust_date: Optional[str] = None
     reason: Optional[str] = None  # 报损原因（减少库存时必填）
     # 盘盈入库时若商品无 average_cost 且无 purchase_price，必须显式提供 unit_cost
-    # 否则零成本入库会污染 StockMove.total_cost 和后续 COGS
+    # 否则零成本入库会污染 StockMove.total_cost_l2 和后续 COGS
     unit_cost: Optional[float] = Field(default=None, ge=0, description="盘盈估值单价（实物商品无成本时必填）")
 
 

@@ -61,6 +61,9 @@ class ErrorCode(str, Enum):
     # 银行账户 (9xxx)
     BANK_ACCOUNT_NOT_FOUND = "BANK_ACCOUNT_NOT_FOUND"
 
+    # 会计准则违规 (10xxx)
+    RULE_VIOLATION = "RULE_VIOLATION"
+
     # 通用 (9xxx)
     VALIDATION_ERROR = "VALIDATION_ERROR"
     DUPLICATE_ENTRY = "DUPLICATE_ENTRY"
@@ -201,6 +204,13 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         404, ActionType.NONE,
         "银行账户不存在: ID={bank_account_id}",
         "STOP_RETRYING. 银行账户不存在，请检查账户ID是否正确。"
+    ),
+
+    # 会计准则违规
+    ErrorCode.RULE_VIOLATION: (
+        422, ActionType.USER_INPUT,
+        "会计准则校验失败: {details}",
+        "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"
     ),
 
     # 通用

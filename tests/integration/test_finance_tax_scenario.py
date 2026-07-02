@@ -21,7 +21,7 @@ def _account_taxpayer_type(aid):
     db = SessionLocal()
     try:
         acc = db.query(Account).filter(Account.id == aid).first()
-        return acc.taxpayer_type if acc else "small_scale"
+        return acc.taxpayer_type_l3 if acc else "small_scale"
     finally:
         db.close()
 
@@ -100,13 +100,13 @@ class TestFullTaxScenario:
 
     def test_05_vat_check_endpoint_consistent(self, client):
         """会计预检查:增值税计算与引擎一致"""
-        r = client.get("/api/accounting/vat?total_revenue=10000&taxpayer_type=small_scale",
+        r = client.get("/api/accounting/vat?total_revenue=10000&taxpayer_type=small_scale&ordinary_revenue=10000&special_revenue=0",
                        headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is True
-        # 小规模减按1%:10000 * 1% = 100
-        assert float(data["result"]["tax_payable"]) == 100.00
+        # 小规模普票季≤30万，普票免征；专票减按1%：0 * 1% = 0
+        assert float(data["result"]["tax_payable"]) == 0.00
 
     def test_06_income_tax_small_micro(self, client):
         """所得税:小微优惠(利润≤300万,实际税负5%)"""
@@ -186,10 +186,10 @@ class TestAccountingErrorGuidance:
         assert "accounting_rule" in err
 
     def test_negative_profit_guided(self, client):
-        """利润为负 → 422 + 引导(不需缴税)"""
+        """利润为负 → 200 + tax_payable=0 (BR-15 亏损不抛异常)"""
         r = client.get("/api/accounting/income-tax?profit=-500&taxpayer_type=small_micro",
                        headers={"X-Account-ID": str(get_account_id())})
-        assert r.status_code == 422
-        err = r.json()["error"]
-        assert err["code"] == "INCOME_TAX_PROFIT_NEGATIVE"
-        assert "STOP_RETRYING" in err["ai_instruction"]
+        assert r.status_code == 200
+        data = r.json()
+        assert data["result"]["tax_payable"] == 0
+        assert data["result"]["reduction_item"] == "亏损，不计提所得税"

@@ -27,11 +27,11 @@ from fastapi.testclient import TestClient
 c=TestClient(app)
 
 s=TS()
-acc=models.Account(name='X',code=f'A{uuid.uuid4().hex[:4]}',taxpayer_type='general')
+acc=models.Account(name='X',code=f'A{uuid.uuid4().hex[:4]}',taxpayer_type_l3='general')
 s.add(acc);s.flush();aid=acc.id
 from finance_integration import get_or_create_ledger_id
 get_or_create_ledger_id(s,aid)
-ba=models.BankAccount(account_id=aid,bank_name='X',account_number='6222',balance=0)
+ba=models.BankAccount(account_id=aid,bank_name='X',account_number='6222',balance_l4=0)
 s.add(ba);s.flush();baid=ba.id
 s.commit();s.close()
 

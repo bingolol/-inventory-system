@@ -43,7 +43,11 @@ def _ledger_balance(db, account_id: int, code: str) -> Decimal:
     ).first()
     if not lab:
         return Decimal("0")
+<<<<<<< Updated upstream
     raw = Decimal(str(lab.balance or 0))
+=======
+    raw = Decimal(str(lab.balance_l4 or 0))
+>>>>>>> Stashed changes
     # 负债类（2xxx/3xxx）取反，返回业务正数
     if code.startswith("2") or code.startswith("3"):
         return -raw
@@ -70,7 +74,11 @@ def _ledger_raw_balance(db, account_id: int, code: str) -> Decimal:
     ).first()
     if not lab:
         return Decimal("0")
+<<<<<<< Updated upstream
     return Decimal(str(lab.balance or 0))
+=======
+    return Decimal(str(lab.balance_l4 or 0))
+>>>>>>> Stashed changes
 
 
 def _bs(client):
@@ -142,7 +150,11 @@ class Test创建固定资产发票_总账过账:
 
         # 资产卡片原值 = 总账 1601 增量（一致性）
         asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+<<<<<<< Updated upstream
         assert Decimal(str(asset.original_value)) == Decimal("11300.00")
+=======
+        assert Decimal(str(asset.original_value_l1)) == Decimal("11300.00")
+>>>>>>> Stashed changes
 
     def test_bs_固定资产科目包含资产原值(self, client, db):
         """BS 报表 fixed_assets_original 字段应反映总账 1601 余额"""
@@ -231,7 +243,11 @@ class Test更新资产原值_同步总账:
 
         # 资产卡片原值 = 22600
         asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+<<<<<<< Updated upstream
         assert Decimal(str(asset.original_value)) == Decimal("22600.00")
+=======
+        assert Decimal(str(asset.original_value_l1)) == Decimal("22600.00")
+>>>>>>> Stashed changes
 
     def test_多次更新原值_总账始终一致(self, client, db):
         """反复更新原值：每次都冲红+重过，BS 1601 余额 == 资产卡片原值"""
@@ -250,7 +266,11 @@ class Test更新资产原值_同步总账:
 
         # 最终：资产卡片原值 = 15000，且 BS 1601 增量累计 = 15000 - 5000 = 10000
         asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+<<<<<<< Updated upstream
         assert Decimal(str(asset.original_value)) == Decimal("15000.00")
+=======
+        assert Decimal(str(asset.original_value_l1)) == Decimal("15000.00")
+>>>>>>> Stashed changes
 
 
 class Test幂等性:
@@ -294,7 +314,11 @@ class Test一般纳税人专票自动认证:
         from finance_integration import get_or_create_ledger_id
         acct = Account(
             name="一般纳税人测试", type="company",
+<<<<<<< Updated upstream
             code=uniq("GT-"), taxpayer_type="general",
+=======
+            code=uniq("GT-"), taxpayer_type_l3="general",
+>>>>>>> Stashed changes
         )
         db.add(acct)
         db.flush()
@@ -360,8 +384,13 @@ class Test一般纳税人专票自动认证:
 
         # 资产原值 = 不含税金额 6000（不是含税 6780）
         asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+<<<<<<< Updated upstream
         assert Decimal(str(asset.original_value)) == Decimal("6000.00"), \
             f"一般纳税人资产原值应为不含税, 实际={asset.original_value}"
+=======
+        assert Decimal(str(asset.original_value_l1)) == Decimal("6000.00"), \
+            f"一般纳税人资产原值应为不含税, 实际={asset.original_value_l1}"
+>>>>>>> Stashed changes
 
         # 222102 增加 780（进项税额入账，借方余额）
         after_222102 = _ledger_raw_balance(db, acct.id, "222102")
@@ -403,5 +432,10 @@ class Test一般纳税人专票自动认证:
         # 资产原值 = 价税合计 6780（普通发票不抵扣，全额进资产）
         asset_id = data["fixed_asset"]["id"]
         asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+<<<<<<< Updated upstream
         assert Decimal(str(asset.original_value)) == Decimal("6780.00"), \
             f"普通发票资产原值应=价税合计, 实际={asset.original_value}"
+=======
+        assert Decimal(str(asset.original_value_l1)) == Decimal("6780.00"), \
+            f"普通发票资产原值应=价税合计, 实际={asset.original_value_l1}"
+>>>>>>> Stashed changes

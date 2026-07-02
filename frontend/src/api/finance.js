@@ -11,6 +11,7 @@ export const getTrend = (params) => api.get('/reports/trend', { params })
 export const getBalanceSheet = (date) => api.get('/financial-reports/balance-sheet', { params: { date } })
 export const getIncomeStatement = (startDate, endDate) => api.get('/financial-reports/income-statement', { params: { start_date: startDate, end_date: endDate } })
 export const getFinancialSummary = (date) => api.get('/financial-reports/financial-summary', { params: { date } })
+export const getCWBBXQYKJZZ = (reportType, date) => api.get('/financial-reports/cwbb-xqykjzz', { params: { report_type: reportType, date } })
 
 // Cash Flows
 export const getCashFlowStatement = (startDate, endDate) => api.get('/cash-flows/statement', { params: { start_date: startDate, end_date: endDate } })
@@ -40,7 +41,7 @@ export const getPartnerReceivable = (partnerId, params) => api.get(`/finance/rec
 
 export default {
   getOverview, getPurchaseReport, getSaleReport, getProfitReport, getTrend,
-  getBalanceSheet, getIncomeStatement, getFinancialSummary,
+  getBalanceSheet, getIncomeStatement, getFinancialSummary, getCWBBXQYKJZZ,
   getCashFlowStatement, getCashFlowTransactions, createCashFlowTransaction, updateCashFlowTransaction, deleteCashFlowTransaction,
   getOpeningBalances, getOpeningBalance, createOpeningBalance, updateOpeningBalance, deleteOpeningBalance, getLatestOpeningBalance,
   getTrialBalance, getAccountChart, getJournalMoves, getJournalMove, getPartnerReceivable,

@@ -42,6 +42,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api/index'
+import { useAccountStore } from '../stores/account'
 import { handleError } from '../utils/errorHandler'
 
 const visible = ref(false)
@@ -51,6 +52,8 @@ let pollTimer = null
 
 // 轮询获取待确认列表
 const pollPending = async () => {
+  const accountStore = useAccountStore()
+  if (!accountStore.currentAccountId && accountStore.accounts.length === 0) return
   try {
     const res = await api.get('/confirm/pending')
     const items = res.pending || []

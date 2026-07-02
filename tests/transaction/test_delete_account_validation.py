@@ -36,7 +36,7 @@ class TestDeleteAccountValidation:
             account_id=account.id,
             bank_name="测试银行",
             account_number="123456",
-            balance=Decimal("1000"),
+            balance_l4=Decimal("1000"),
         )
         db.add(bank_account)
         db.flush()
@@ -56,7 +56,7 @@ class TestDeleteAccountValidation:
             account_id=account.id,
             bank_name="测试银行",
             account_number="789012",
-            balance=Decimal("500"),
+            balance_l4=Decimal("500"),
         )
         db.add(bank_account)
         db.flush()
@@ -66,9 +66,9 @@ class TestDeleteAccountValidation:
             payment_type="expense",
             related_entity_type="expense",
             related_entity_id=1,
-            amount=Decimal("100"),
+            amount_l1=Decimal("100"),
             payment_method="company",
-            payment_date=datetime.now(),
+            payment_date_l1=datetime.now(),
             bank_account_id=bank_account.id,
         )
         db.add(payment)
@@ -91,9 +91,9 @@ class TestDeleteAccountValidation:
             account_id=account.id,
             asset_code="FA-001",
             name="测试资产",
-            original_value=Decimal("10000"),
-            useful_life=60,
-            start_date=datetime.now().date(),
+            original_value_l1=Decimal("10000"),
+            useful_life_l3=60,
+            start_date_l1=datetime.now().date(),
         )
         db.add(fixed_asset)
         db.flush()
@@ -112,9 +112,9 @@ class TestDeleteAccountValidation:
             account_id=account.id,
             asset_code="IA-001",
             name="测试软件",
-            original_value=Decimal("5000"),
-            useful_life=36,
-            start_date=datetime.now().date(),
+            original_value_l1=Decimal("5000"),
+            useful_life_l3=36,
+            start_date_l1=datetime.now().date(),
         )
         db.add(intangible_asset)
         db.flush()

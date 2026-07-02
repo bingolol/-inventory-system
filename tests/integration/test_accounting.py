@@ -26,6 +26,13 @@ def setup_db(monkeypatch):
     Base.metadata.create_all(bind=_engine)
     init_db()
 
+    from factories import ensure_default_account
+    _db = _SessionLocal()
+    try:
+        ensure_default_account(_db)
+    finally:
+        _db.close()
+
     def _get_db():
         db = _SessionLocal()
         try:
@@ -46,7 +53,7 @@ def client():
 
 
 ACCT_ID = 1
-HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "test"}
+HEADERS = {"X-Account-ID": str(ACCT_ID)}
 TODAY = "2026-06-24"
 
 

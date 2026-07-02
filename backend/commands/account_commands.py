@@ -8,6 +8,7 @@ from crud.base import _log
 from errors import BusinessError, ErrorCode
 from crud.base import get_account
 from finance_integration import get_or_create_ledger_id
+from lineage import writes, TIER_L3
 
 
 @dataclass
@@ -20,6 +21,7 @@ class CreateAccount(Command):
 
 @register(CreateAccount)
 class CreateAccountHandler(CommandHandler):
+    @writes("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreateAccount, db: Any) -> Any:
         code = cmd.code
         if not code:
@@ -27,7 +29,7 @@ class CreateAccountHandler(CommandHandler):
             code = f"acc_{int(time.time() * 1000) % 1000000}"
         account = models.Account(
             name=cmd.name, type=cmd.type, code=code,
-            taxpayer_type=cmd.taxpayer_type,
+            taxpayer_type_l3=cmd.taxpayer_type,
         )
         db.add(account)
         db.flush()

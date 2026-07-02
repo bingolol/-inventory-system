@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -47,6 +47,12 @@ class AccountMoveSummary(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @classmethod
+    def model_validate(cls, obj):
+        if hasattr(obj, 'date_l1') and obj.date_l1:
+            obj.date = obj.date_l1
+        return super().model_validate(obj)
+
 
 class AccountMoveLineOut(BaseModel):
     id: int
@@ -56,7 +62,7 @@ class AccountMoveLineOut(BaseModel):
     credit: Decimal = Decimal("0")
     partner_id: Optional[int] = None
     partner_type: Optional[str] = None
-    amount_residual: Decimal = Decimal("0")
+    amount_residual: Decimal = Field(default=Decimal("0"), validation_alias="amount_residual_l2")
     reconciled: bool = False
 
 
@@ -137,9 +143,9 @@ def get_journal_moves(
     )
 
     if date_from:
-        query = query.filter(AccountMove.date >= date_from)
+        query = query.filter(AccountMove.date_l1 >= date_from)
     if date_to:
-        query = query.filter(AccountMove.date <= date_to)
+        query = query.filter(AccountMove.date_l1 <= date_to)
     if move_type:
         query = query.filter(AccountMove.move_type == move_type)
     if state:
@@ -147,7 +153,7 @@ def get_journal_moves(
 
     total = query.count()
     moves = query.order_by(
-        AccountMove.date.desc(), AccountMove.id.desc()
+        AccountMove.date_l1.desc(), AccountMove.id.desc()
     ).offset(skip).limit(limit).all()
 
     return {
@@ -189,11 +195,11 @@ def get_journal_move(
             id=line.id,
             account_code=acct_map[line.ledger_account_id].code if line.ledger_account_id in acct_map else "",
             account_name=acct_map[line.ledger_account_id].name if line.ledger_account_id in acct_map else "",
-            debit=line.debit,
-            credit=line.credit,
+            debit=line.debit_l2,
+            credit=line.credit_l2,
             partner_id=line.partner_id,
             partner_type=line.partner_type,
-            amount_residual=line.amount_residual,
+            amount_residual=line.amount_residual_l2,
             reconciled=line.reconciled,
         )
         for line in move.line_ids
@@ -203,9 +209,9 @@ def get_journal_move(
         id=move.id,
         name=move.name,
         move_type=move.move_type,
-        date=move.date,
+        date=move.date_l1,
         state=move.state,
-        amount_total=move.amount_total,
+        amount_total=move.amount_total_l2,
         source_model=move.source_model,
         source_id=move.source_id,
         is_reversal=move.is_reversal,

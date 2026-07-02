@@ -35,7 +35,7 @@ client = TestClient(app)
 # === 建账 ===
 db = TestSession()
 tag = uuid.uuid4().hex[:4]
-acc = models.Account(name=f"API-{tag}", code=f"A6-{tag}", taxpayer_type="general")
+acc = models.Account(name=f"API-{tag}", code=f"A6-{tag}", taxpayer_type_l3="general")
 db.add(acc); db.flush(); aid = acc.id
 
 from finance_integration import get_or_create_ledger_id
@@ -44,14 +44,14 @@ lid = get_or_create_ledger_id(db, aid)
 # 期初: dr 银行 1000, cr 实收 1000
 from models_finance import AccountMove, AccountMoveLine, LedgerAccount
 def _bal_move(db, lid, dt, drs, crs):
-    m = AccountMove(ledger_id=lid, move_type="test", date=dt, state="posted")
+    m = AccountMove(ledger_id=lid, move_type="test", date_l1=dt, state="posted")
     db.add(m); db.flush()
     for c, a in drs.items():
         ac = db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid, LedgerAccount.code==c).first()
-        if ac and a: db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=Decimal(str(a)),credit=0,amount_residual=Decimal(str(a))))
+        if ac and a: db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=Decimal(str(a)),credit_l2=0,amount_residual_l2=Decimal(str(a))))
     for c, a in crs.items():
         ac = db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid, LedgerAccount.code==c).first()
-        if ac and a: db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=0,credit=Decimal(str(a)),amount_residual=Decimal(str(a))))
+        if ac and a: db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=0,credit_l2=Decimal(str(a)),amount_residual_l2=Decimal(str(a))))
     db.flush()
 
 _bal_move(db, lid, datetime(2024,12,31,23,59,59), {"1002": 1000}, {"3001": 1000})

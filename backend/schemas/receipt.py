@@ -1,6 +1,6 @@
 """收款 Schema"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
@@ -24,7 +24,9 @@ class ReceiptCreate(ReceiptBase):
 class ReceiptOut(ReceiptBase):
     id: int
     account_id: int
+    amount: Decimal = Field(validation_alias="amount_l1")
+    receipt_date: datetime = Field(validation_alias="receipt_date_l1")
     bank_transaction_id: Optional[int] = None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

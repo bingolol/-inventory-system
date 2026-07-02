@@ -19,19 +19,13 @@
 import pytest
 import time
 from decimal import Decimal
-from database import SessionLocal
-from models import Account
+from database import SessionLocal, set_maintenance_mode
+from models import Account, OpeningBalance, BankAccount, Product, Inventory
 from test_helpers import ensure_test_product
 
-# ── 获取测试用 account_id ──
-_db = SessionLocal()
-_account = _db.query(Account).first()
-ACCOUNT_ID = _account.id if _account else 1
-TAXPAYER_TYPE = _account.taxpayer_type if _account else "small_scale"
-_db.close()
-
-# 公共请求头
-HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "accounting_test"}
+# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
+ACCOUNT_ID = 1
+HEADERS = {"X-Account-ID": "1", "X-Operator": "accounting_test"}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -40,8 +34,8 @@ def seed_opening_balance():
     from datetime import date, datetime
     from decimal import Decimal
     from database import SessionLocal, get_engine
-    from models import OpeningBalance, BankAccount, Product, Inventory
 
+    set_maintenance_mode(True)
     # 使用原始 sqlite3 连接清理业务数据（不删 opening_balances，仅更新）
     raw = get_engine().raw_connection()
     raw.execute("PRAGMA foreign_keys=OFF")
@@ -63,20 +57,20 @@ def seed_opening_balance():
         ).first()
         if not ob:
             ob = OpeningBalance(account_id=ACCOUNT_ID)
-        ob.date = date(2026, 1, 1)
-        ob.cash_balance = Decimal('10000.00')
-        ob.bank_balance = Decimal('50000.00')
-        ob.accounts_receivable = Decimal('5000.00')
-        ob.inventory_value = Decimal('20000.00')
-        ob.fixed_assets_original = Decimal('0')
-        ob.accumulated_depreciation = Decimal('0')
-        ob.intangible_assets_original = Decimal('0')
-        ob.accumulated_amortization = Decimal('0')
-        ob.accounts_payable = Decimal('0')
-        ob.tax_payable = Decimal('0')
-        ob.long_term_borrowings = Decimal('0')
-        ob.paid_in_capital = Decimal('50000.00')
-        ob.retained_earnings = Decimal('35000.00')
+        ob.date_l1 = date(2026, 1, 1)
+        ob.cash_balance_l1 = Decimal('10000.00')
+        ob.bank_balance_l1 = Decimal('50000.00')
+        ob.accounts_receivable_l1 = Decimal('5000.00')
+        ob.inventory_value_l1 = Decimal('20000.00')
+        ob.fixed_assets_original_l1 = Decimal('0')
+        ob.accumulated_depreciation_l1 = Decimal('0')
+        ob.intangible_assets_original_l1 = Decimal('0')
+        ob.accumulated_amortization_l1 = Decimal('0')
+        ob.accounts_payable_l1 = Decimal('0')
+        ob.tax_payable_l1 = Decimal('0')
+        ob.long_term_borrowings_l1 = Decimal('0')
+        ob.paid_in_capital_l1 = Decimal('50000.00')
+        ob.retained_earnings_l1 = Decimal('35000.00')
         if not ob.id:
             db.add(ob)
 
@@ -85,9 +79,9 @@ def seed_opening_balance():
             name=f"测试产品-{int(datetime.now().timestamp())}",
             sku=f"OB-{int(datetime.now().timestamp())}",
             unit="个",
-            purchase_price=Decimal('50.00'),
-            sale_price=Decimal('100.00'),
-            track_inventory=True,
+            purchase_price_l3=Decimal('50.00'),
+            sale_price_l3=Decimal('100.00'),
+            track_inventory_l3=True,
             category="测试",
         )
         db.add(product)
@@ -95,21 +89,22 @@ def seed_opening_balance():
         inv = Inventory(
             account_id=ACCOUNT_ID,
             product_id=product.id,
-            quantity=200,
-            average_cost=Decimal('100.00'),
-            total_value=Decimal('20000.00'),
+            quantity_l4=200,
+            average_cost_l4=Decimal('100.00'),
+            total_value_l4=Decimal('20000.00'),
         )
         db.add(inv)
         bank = BankAccount(
             account_id=ACCOUNT_ID,
             bank_name="测试银行",
             account_number="6222021234567890",
-            balance=Decimal('60000.00'),
+            balance_l4=Decimal('60000.00'),
         )
         db.add(bank)
         db.commit()
     finally:
         db.close()
+        set_maintenance_mode(False)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -184,12 +179,12 @@ class TestBalanceSheetEquation:
         # 手工算单一真相源的应付账款：采购单未付款 + 费用未付款
         db = SessionLocal()
         try:
-            po_payable = db.query(sqlfunc.sum(models.PurchaseOrder.total_price)).filter(
+            po_payable = db.query(sqlfunc.sum(models.PurchaseOrder.total_price_l1)).filter(
                 models.PurchaseOrder.account_id == ACCOUNT_ID,
                 models.PurchaseOrder.status == "completed",
                 models.PurchaseOrder.payment_status == "unpaid"
             ).scalar() or Decimal('0')
-            expense_payable = db.query(sqlfunc.sum(models.Expense.amount)).filter(
+            expense_payable = db.query(sqlfunc.sum(models.Expense.amount_l1)).filter(
                 models.Expense.account_id == ACCOUNT_ID,
                 models.Expense.payment_status == "unpaid"
             ).scalar() or Decimal('0')
@@ -212,10 +207,10 @@ class TestBalanceSheetEquation:
         try:
             ob = db.query(models.OpeningBalance).filter(
                 models.OpeningBalance.account_id == ACCOUNT_ID
-            ).order_by(models.OpeningBalance.date.desc()).first()
+            ).order_by(models.OpeningBalance.date_l1.desc()).first()
             assert ob is not None, "seed_opening_balance fixture should have created data"
-            opening_ar = Decimal(str(ob.accounts_receivable or 0))
-            opening_inv = Decimal(str(ob.inventory_value or 0))
+            opening_ar = Decimal(str(ob.accounts_receivable_l1 or 0))
+            opening_inv = Decimal(str(ob.inventory_value_l1 or 0))
         finally:
             db.close()
 
@@ -301,7 +296,12 @@ class TestVATCalculation:
         
         # 小规模纳税人: 应纳增值税 = 不含税销售额 × 征收率
         # 一般纳税人: 应纳增值税 = 销项税额 - 进项税额
-        if TAXPAYER_TYPE == "general":
+        # 从 DB 查询纳税人类型（避免模块级 DB 访问）
+        _tdb = SessionLocal()
+        _tacc = _tdb.query(Account).first()
+        _tp = _tacc.taxpayer_type_l3 if _tacc else "small_scale"
+        _tdb.close()
+        if _tp == "general":
             expected_payable = max(output_tax - input_tax, Decimal('0'))
             assert abs(payable - expected_payable) <= Decimal('0.01'), \
                 f"增值税计算错误: 预期{expected_payable}, 实际{payable}"

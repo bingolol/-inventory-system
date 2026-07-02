@@ -84,5 +84,5 @@ class InventoryDomain(DomainModel["Inventory"]):
             id=orm_obj.id,
             account_id=orm_obj.account_id,
             product_id=orm_obj.product_id,
-            quantity=orm_obj.quantity if orm_obj.quantity is not None else 0,
+            quantity=orm_obj.quantity_l4 if orm_obj.quantity_l4 is not None else 0,
         )

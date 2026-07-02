@@ -14,42 +14,42 @@ Base.metadata.create_all(bind=e)
 S=sessionmaker(bind=e)
 db=S()
 
-acc=models.Account(name="6M全流程",code=f"F6{uuid.uuid4().hex[:4]}",taxpayer_type="general")
+acc=models.Account(name="6M全流程",code=f"F6{uuid.uuid4().hex[:4]}",taxpayer_type_l3="general")
 db.add(acc);db.flush();aid=acc.id;acc_code=acc.code
 from finance_integration import get_or_create_ledger_id;lid=get_or_create_ledger_id(db,aid)
-bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222",balance=0)
+bank=models.BankAccount(account_id=aid,bank_name="工商银行",account_number="6222",balance_l4=0)
 db.add(bank);db.flush();baid=bank.id
 cust=models.Customer(account_id=aid,name="客户",contact="C",phone="13900000001")
 db.add(cust);db.flush();cid=cust.id
 
 from models_finance import LedgerAccount,AccountMove,AccountMoveLine,LedgerAccountBalance
 ac=db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid,LedgerAccount.code=="1002").first()
-m=AccountMove(ledger_id=lid,move_type="bank",date=datetime(2024,12,31,23,59,59),state="posted")
+m=AccountMove(ledger_id=lid,move_type="bank",date_l1=datetime(2024,12,31,23,59,59),state="posted")
 db.add(m);db.flush()
-db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit=10000,credit=0,amount_residual=10000))
+db.add(AccountMoveLine(move_id=m.id,ledger_account_id=ac.id,debit_l2=10000,credit_l2=0,amount_residual_l2=10000))
 bal=db.query(LedgerAccountBalance).filter(LedgerAccountBalance.ledger_account_id==ac.id).first()
-if bal:bal.balance=10000;bal.debit_total=10000
+if bal:bal.balance_l4=10000;bal.debit_total_l4=10000
 db.commit()
 
 def book_bal(period):
     y,m=int(period[:4]),int(period[5:7])
     _,ld=calendar.monthrange(y,m)
-    return sum(Decimal(str(l.debit))-Decimal(str(l.credit)) for l in db.query(AccountMoveLine).join(AccountMove).filter(
+    return sum(Decimal(str(l.debit_l2))-Decimal(str(l.credit_l2)) for l in db.query(AccountMoveLine).join(AccountMove).filter(
         AccountMoveLine.ledger_account_id==ac.id,AccountMove.date<=datetime(y,m,ld,23,59,59)).all())
 
 def post_tx(baid,aid,amt,dr,dt):
-    tx=models.BankTransaction(bank_account_id=baid,account_id=aid,amount=amt,
-        transaction_type="inflow" if dr=="in" else "outflow",transaction_date=dt,
-        description=f"test{amt}",balance_after=Decimal(str(amt)) if dr=="in" else Decimal("0"))
+    tx=models.BankTransaction(bank_account_id=baid,account_id=aid,amount_l1=amt,
+        transaction_type="inflow" if dr=="in" else "outflow",transaction_date_l1=dt,
+        description=f"test{amt}",balance_after_l4=Decimal(str(amt)) if dr=="in" else Decimal("0"))
     db.add(tx);db.flush()
     ba=db.query(models.BankAccount).filter(models.BankAccount.id==baid).first()
-    if ba:ba.balance+=(Decimal(str(amt)) if dr=="in" else -Decimal(str(amt)))
-    m2=AccountMove(ledger_id=lid,move_type="bank",date=dt,state="posted")
+    if ba:ba.balance_l4+=(Decimal(str(amt)) if dr=="in" else -Decimal(str(amt)))
+    m2=AccountMove(ledger_id=lid,move_type="bank",date_l1=dt,state="posted")
     db.add(m2);db.flush()
     db2=Decimal(str(amt)) if dr=="in" else 0;cr2=0 if dr=="in" else Decimal(str(amt))
-    db.add(AccountMoveLine(move_id=m2.id,ledger_account_id=ac.id,debit=db2,credit=cr2,amount_residual=db2 or cr2))
+    db.add(AccountMoveLine(move_id=m2.id,ledger_account_id=ac.id,debit_l2=db2,credit_l2=cr2,amount_residual_l2=db2 or cr2))
     b=db.query(LedgerAccountBalance).filter(LedgerAccountBalance.ledger_account_id==ac.id).first()
-    if b:b.balance+=(db2-cr2);b.debit_total+=db2;b.credit_total+=cr2
+    if b:b.balance_l4+=(db2-cr2);b.debit_total_l4+=db2;b.credit_total_l4+=cr2
     db.flush();return tx
 
 from engine_bank_reconcile import BankReconcileEngine
@@ -80,11 +80,11 @@ for period,rev,rdt,exp,edt,fee,fdt in MONTHS:
     # 导入对账单
     stmt=models_bank.BankStatement(bank_account_id=baid,account_id=aid,
         period_start=date(y,m,1),period_end=date(y,m,28),
-        opening_balance=Decimal(str(bb)),closing_balance=Decimal(str(bb+rev-exp-fee)))
+        opening_balance_l1=Decimal(str(bb)),closing_balance_l1=Decimal(str(bb+rev-exp-fee)))
     db.add(stmt);db.flush()
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime.strptime(rdt,"%Y-%m-%d").date(),amount=rev))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime.strptime(edt,"%Y-%m-%d").date(),amount=-exp))
-    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=datetime.strptime(fdt,"%Y-%m-%d").date(),amount=-fee,description="账户管理费"))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime.strptime(rdt,"%Y-%m-%d").date(),amount_l1=rev))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime.strptime(edt,"%Y-%m-%d").date(),amount_l1=-exp))
+    db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=datetime.strptime(fdt,"%Y-%m-%d").date(),amount_l1=-fee,description="账户管理费"))
     db.commit()
     
     # 对账

@@ -59,6 +59,13 @@ class TestGatewayIntegration:
         }, headers={"X-Account-ID": str(account_id)})
         assert resp.status_code == 403
 
+    def test_post_no_operator_blocked(self, client, account_id):
+        """无 X-Operator → 网关 403，到不了中间件"""
+        resp = client.post("/api/products", json={
+            "name": "noop-prod", "purchase_price": 10, "sale_price": 20, "unit": "个",
+        }, headers={"X-Account-ID": str(account_id)})
+        assert resp.status_code == 403
+
     def test_post_ai_whitelisted_allowed(self, client, account_id):
         """X-Operator: ai + 白名单端点 → 可写"""
         resp = client.post("/api/products", json={
@@ -67,10 +74,8 @@ class TestGatewayIntegration:
         assert resp.status_code == 200
 
     def test_post_ai_not_whitelisted_blocked(self, client, account_id):
-        """X-Operator: ai + 非白名单端点(bank-accounts) → 403"""
-        resp = client.post("/api/bank-accounts", json={
-            "name": "blocked-test", "account_type": "checking", "opening_balance": 0,
-        }, headers={"X-Operator": "ai", "X-Account-ID": str(account_id)})
+        """X-Operator: ai + 非白名单端点(DELETE bank-accounts) → 403"""
+        resp = client.delete("/api/bank-accounts/999", headers={"X-Operator": "ai", "X-Account-ID": str(account_id)})
         assert resp.status_code == 403
 
 

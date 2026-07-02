@@ -96,8 +96,8 @@ class Test销项发票联动销售单:
         assert r.status_code == 200, r.text
         inv = db.query(Invoice).filter(Invoice.invoice_no == payload["invoice_no"]).first()
         so = db.query(SaleOrder).filter(SaleOrder.id == inv.related_order_id).first()
-        assert Decimal(str(so.total_price)) == Decimal("1030.00")
-        assert Decimal(str(so.tax_amount)) == Decimal("30.00")
+        assert Decimal(str(so.total_price_l1)) == Decimal("1030.00")
+        assert Decimal(str(so.tax_amount_l1)) == Decimal("30.00")
 
     def test_out_invoice_items_synced_to_sale_order(self, db, client):
         pid = _product_id(client)
@@ -110,7 +110,7 @@ class Test销项发票联动销售单:
         assert len(so.items) == 1
         item = so.items[0]
         assert item.product_id == payload["items"][0]["product_id"]
-        assert item.quantity == 10
+        assert item.quantity_l1 == 10
         assert len(inv.items) == 1
         assert inv.items[0].product_id == payload["items"][0]["product_id"]
 

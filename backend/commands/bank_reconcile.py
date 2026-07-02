@@ -35,15 +35,15 @@ class ImportBankStatementHandler(CommandHandler):
             bank_account_id=ba.id, account_id=cmd.account_id,
             period_start=datetime.strptime(cmd.period_start, "%Y-%m-%d").date(),
             period_end=datetime.strptime(cmd.period_end, "%Y-%m-%d").date(),
-            opening_balance=cmd.opening_balance, closing_balance=cmd.closing_balance,
+            opening_balance_l1=cmd.opening_balance, closing_balance_l1=cmd.closing_balance,
         )
         db.add(stmt); db.flush()
 
         for line in cmd.lines or []:
             db.add(models_bank.BankStatementLine(
                 statement_id=stmt.id,
-                transaction_date=datetime.strptime(line["transaction_date"], "%Y-%m-%d").date(),
-                amount=line.get("amount", 0), description=line.get("description", ""),
+                transaction_date_l1=datetime.strptime(line["transaction_date"], "%Y-%m-%d").date(),
+                amount_l1=line.get("amount", 0), description=line.get("description", ""),
             ))
 
         _log(db, cmd.account_id, "import", "bank_statement", stmt.id,

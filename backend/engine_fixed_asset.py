@@ -12,6 +12,8 @@ import models
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal, reverse_journal
 from utils import Q2
+from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
+from rules import enforce_rules
 
 
 class FixedAssetEngine:
@@ -19,15 +21,17 @@ class FixedAssetEngine:
         self.db = db
         self.account_id = account_id
 
+    @reads("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
+    @reads("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
     def calculate_monthly(self, asset: models.FixedAsset) -> Decimal:
         """计算月折旧额（年限平均法）
 
         返回实际可计提金额，已满额则返回 0。
         """
-        original = Decimal(str(asset.original_value))
-        salvage_rate = Decimal(str(asset.salvage_rate))
-        useful_life = int(asset.useful_life)
-        accumulated = Decimal(str(asset.accumulated_depreciation))
+        original = Decimal(str(asset.original_value_l1))
+        salvage_rate = Decimal(str(asset.salvage_rate_l3))
+        useful_life = int(asset.useful_life_l3)
+        accumulated = Decimal(str(asset.accumulated_depreciation_l4))
 
         if useful_life <= 0:
             return Decimal("0")
@@ -40,6 +44,10 @@ class FixedAssetEngine:
             return Decimal("0")
         return min(monthly, remaining)
 
+    @writes("FixedAssetDepreciation.amount_l2", tier=TIER_L2, source="engine")
+    @writes("FixedAssetDepreciation.accumulated_before_l2", tier=TIER_L2, source="engine")
+    @writes("FixedAssetDepreciation.accumulated_after_l2", tier=TIER_L2, source="engine")
+    @derives("FixedAsset.accumulated_depreciation_l4", from_fields=["FixedAssetDepreciation.amount_l2"])
     def record_depreciation(self, asset_id: int, period: str
                             ) -> Optional[models.FixedAssetDepreciation]:
         """计提单个资产的月折旧
@@ -62,9 +70,9 @@ class FixedAssetEngine:
             return None
 
         # 当月增加下月提（第三十一条）
-        if asset.start_date:
+        if asset.start_date_l1:
             dep_year, dep_month = map(int, period.split("-"))
-            if dep_year == asset.start_date.year and dep_month == asset.start_date.month:
+            if dep_year == asset.start_date_l1.year and dep_month == asset.start_date_l1.month:
                 return None
 
         # 幂等检查
@@ -79,7 +87,7 @@ class FixedAssetEngine:
         if monthly <= 0:
             return None
 
-        accumulated_before = Decimal(str(asset.accumulated_depreciation))
+        accumulated_before = Decimal(str(asset.accumulated_depreciation_l4))
         accumulated_after = accumulated_before + monthly
 
         # 写折旧流水（真相源）
@@ -87,14 +95,14 @@ class FixedAssetEngine:
             asset_id=asset_id,
             account_id=self.account_id,
             period=period,
-            amount=monthly,
-            accumulated_before=accumulated_before,
-            accumulated_after=accumulated_after,
+            amount_l2=monthly,
+            accumulated_before_l2=accumulated_before,
+            accumulated_after_l2=accumulated_after,
         )
         self.db.add(dep)
 
         # 更新缓存
-        asset.accumulated_depreciation = accumulated_after
+        asset.accumulated_depreciation_l4 = accumulated_after
         self.db.flush()
 
         # 生成会计凭证：借:6601（管理费用）贷:1602（累计折旧）
@@ -109,6 +117,9 @@ class FixedAssetEngine:
             "description": f"固定资产折旧: {asset.name} {period}",
         }
         post_journal(self.db, self.account_id, "depreciation", source)
+
+        # AS-05 折旧公式 + 累计折旧上限校验
+        enforce_rules(self.db, ["AS-05"], {"asset_id": asset_id})
 
         return dep
 
@@ -127,6 +138,7 @@ class FixedAssetEngine:
                 results.append(dep)
         return results
 
+    @derives("FixedAsset.accumulated_depreciation_l4", from_fields=["FixedAssetDepreciation.amount_l2"])
     def record_disposal(self, asset_id: int, disposal_price: Decimal = Decimal("0"),
                         disposal_date: Optional[date] = None,
                         bank_account_id: Optional[int] = None) -> None:
@@ -138,8 +150,9 @@ class FixedAssetEngine:
            - 创建 BankTransaction（inflow，投资活动现金流）
            - 同步银行账户余额（与 1002 总账科目保持一致）
 
-        处置价格 > 账面净值 → 资产处置收益（6111）
-        处置价格 < 账面净值 → 营业外支出（6711）
+        小企业会计准则：固定资产处置损益一律计入营业外收支，不使用"资产处置损益"科目。
+        处置价格 > 账面净值 → 营业外收入（6301）
+        处置价格 < 账面净值 → 营业外支出（6701）
         处置价格 = 账面净值 → 无损益
 
         BR-22: disposal_date 默认用今天，但允许调用方传入业务日期，
@@ -158,8 +171,8 @@ class FixedAssetEngine:
         asset.status = "报废"
         self.db.flush()
 
-        original = Decimal(str(asset.original_value))
-        accumulated = Decimal(str(asset.accumulated_depreciation))
+        original = Decimal(str(asset.original_value_l1))
+        accumulated = Decimal(str(asset.accumulated_depreciation_l4))
         net_value = original - accumulated
         disposal_price = Decimal(str(disposal_price))
         diff = disposal_price - net_value
@@ -186,6 +199,12 @@ class FixedAssetEngine:
         }
         post_journal(self.db, self.account_id, "asset_disposal", source)
 
+<<<<<<< Updated upstream
+=======
+        # AS-07 处置凭证科目校验(必须用 6301/6701 营业外收支,非 6111/6711 资产处置损益)
+        enforce_rules(self.db, ["AS-07"], {"asset_id": asset_id})
+
+>>>>>>> Stashed changes
         # 处置价格 > 0 → 银行收到处置款，同步创建银行流水（与 1002 总账科目保持一致）
         # 未提供 bank_account_id 时按原逻辑仅更新总账（向后兼容）
         if disposal_price > 0 and bank_account_id is not None:
@@ -195,23 +214,39 @@ class FixedAssetEngine:
                 models.BankAccount.account_id == self.account_id,
             ).with_for_update().first()
             if bank_account:
+<<<<<<< Updated upstream
                 new_balance = _d(bank_account.balance) + _d(disposal_price)
+=======
+                new_balance = _d(bank_account.balance_l4) + _d(disposal_price)
+>>>>>>> Stashed changes
                 # 处置固定资产属于投资活动现金流（CAS 31）
                 bank_tx = models.BankTransaction(
                     account_id=self.account_id,
                     bank_account_id=bank_account_id,
                     transaction_type="inflow",
+<<<<<<< Updated upstream
                     amount=_d(disposal_price),
                     balance_after=new_balance,
                     transaction_date=disposal_date,
                     description=f"固定资产处置款: {asset.name}",
                     flow_category="investing",
+=======
+                    amount_l2=_d(disposal_price),
+                    balance_after_l4=new_balance,
+                    transaction_date_l1=disposal_date,
+                    description=f"固定资产处置款: {asset.name}",
+                    flow_category_l2="investing",
+>>>>>>> Stashed changes
                     related_entity_type="fixed_asset_disposal",
                     related_entity_id=asset_id,
                 )
                 self.db.add(bank_tx)
                 self.db.flush()
+<<<<<<< Updated upstream
                 bank_account.balance = new_balance
+=======
+                bank_account.balance_l4 = new_balance
+>>>>>>> Stashed changes
 
 
 def _period_to_date(period: str) -> date:

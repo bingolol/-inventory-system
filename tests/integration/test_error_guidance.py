@@ -36,6 +36,13 @@ def setup_db(monkeypatch):
     monkeypatch.setattr(database, 'SessionLocal', TestingSessionLocal)
     Base.metadata.create_all(bind=test_engine)
 
+    from factories import ensure_default_account
+    _db = TestingSessionLocal()
+    try:
+        ensure_default_account(_db)
+    finally:
+        _db.close()
+
     def override_get_db():
         db = TestingSessionLocal()
         try:

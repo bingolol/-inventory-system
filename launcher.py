@@ -4,17 +4,15 @@ PyInstaller 打包入口脚本。双击运行时：
 1. 初始化工作区目录（%APPDATA%/进销存管理系统）
 2. 检测端口冲突，自动选择可用端口（8000~8099）
 3. 将选定端口写入 port.txt（供外部工具读取）
-4. 启动 FastAPI 后端服务
-5. 自动打开浏览器访问系统
+4. 启动 FastAPI 后端服务（后台线程）
+5. 打开 pywebview 原生窗口访问系统
 
-注意：前端静态文件已内嵌在后端服务中，通过 FastAPI StaticFiles 直接提供。
-用户只需运行此 exe，无需安装 Python 或 Node.js。
+注意：使用 OS 原生 WebView2 渲染，无需安装浏览器。
 """
 
 import sys
 import os
 import socket
-import webbrowser
 import threading
 import time
 import logging
@@ -22,15 +20,12 @@ import traceback
 
 # 将 backend 目录加入 Python 路径
 if getattr(sys, 'frozen', False):
-    # 打包模式：backend 代码在 _MEIPASS/backend 中
     _base = sys._MEIPASS
     sys.path.insert(0, os.path.join(_base, 'backend'))
 else:
-    # 开发模式
     _base = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(_base, 'backend'))
 
-# 默认端口与搜索范围
 DEFAULT_PORT = 8000
 MAX_PORT_TRIES = 100
 
@@ -47,10 +42,7 @@ def setup_logging():
 
 
 def is_port_available(port: int) -> bool:
-    """检测指定端口是否可用（未被其他进程监听）
-
-    通过尝试 bind 判断端口是否空闲，同时检测 127.0.0.1 和 0.0.0.0。
-    """
+    """检测指定端口是否可用（未被其他进程监听）"""
     for host in ('127.0.0.1', '0.0.0.0'):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -62,18 +54,7 @@ def is_port_available(port: int) -> bool:
 
 
 def find_available_port(start: int = DEFAULT_PORT, max_tries: int = MAX_PORT_TRIES) -> int:
-    """从 start 端口开始，逐个检测直到找到可用端口
-
-    Args:
-        start: 起始端口号（默认 8000）
-        max_tries: 最大尝试次数（默认 100，即搜索 8000~8099）
-
-    Returns:
-        可用的端口号
-
-    Raises:
-        RuntimeError: 在搜索范围内无可用端口
-    """
+    """从 start 端口开始，逐个检测直到找到可用端口"""
     for port in range(start, start + max_tries):
         if is_port_available(port):
             return port
@@ -84,11 +65,7 @@ def find_available_port(start: int = DEFAULT_PORT, max_tries: int = MAX_PORT_TRI
 
 
 def save_port(port: int):
-    """将运行端口写入工作区 port.txt 文件
-
-    打包模式下，外部工具（如安装器/快捷方式）可读取此文件获取实际端口。
-    文件格式为纯文本，内容为端口号。
-    """
+    """将运行端口写入工作区 port.txt 文件"""
     import workspace
     port_path = workspace.get_port_path()
     try:
@@ -100,28 +77,30 @@ def save_port(port: int):
         logging.getLogger("launcher").warning(f"写入端口文件失败: {e}")
 
 
-def open_browser(port: int):
-    """延迟3秒后打开浏览器"""
-    time.sleep(3)
-    url = f"http://localhost:{port}"
-    print(f"\n正在打开浏览器: {url}")
-    print("如浏览器未自动打开，请手动访问上述地址\n")
-    webbrowser.open(url)
+def wait_for_server(port: int, timeout: int = 30):
+    """等待后端服务就绪，轮询 /api/health"""
+    import urllib.request
+    url = f"http://127.0.0.1:{port}/api/health"
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as r:
+                if r.status == 200:
+                    return
+        except Exception:
+            pass
+        time.sleep(0.5)
+    raise TimeoutError(f"后端服务启动超时（{timeout}s）")
 
 
-def ensure_workspace_and_start(port: int):
-    """初始化工作区并启动后端服务
-
-    Args:
-        port: 服务监听端口号
-    """
+def run_backend(port: int):
+    """在后台线程中运行 uvicorn 后端服务"""
     import workspace
     import uvicorn
     from main import app
 
     # console=False (PyInstaller) 下 sys.stdout/stderr 可能为 None，
     # uvicorn 的 ColourizedFormatter 会调用 sys.stderr.isatty() 导致崩溃。
-    # 必须在 uvicorn.run() 之前确保它们不是 None。
     if sys.stdout is None:
         sys.stdout = open(os.devnull, 'w', encoding='utf-8')
     if sys.stderr is None:
@@ -148,7 +127,6 @@ def ensure_workspace_and_start(port: int):
     save_port(port)
 
     # 自定义 log_config，绕过 uvicorn 默认的 ColourizedFormatter
-    # ColourizedFormatter 在 isatty() 检查时会崩溃（console=False 下 sys.stderr=None）
     log_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -182,14 +160,11 @@ def ensure_workspace_and_start(port: int):
     }
 
     # 启动 uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", log_config=log_config)
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info", log_config=log_config)
 
 
 def _write_crash_log(error_msg: str):
-    """console=False 模式下，将致命错误写入日志文件和桌面上的崩溃文件
-
-    因为 console=False 时用户看不到任何输出，必须将错误持久化到文件。
-    """
+    """将致命错误写入日志文件和桌面崩溃报告"""
     import workspace
 
     # 1. 写入工作区日志
@@ -201,7 +176,7 @@ def _write_crash_log(error_msg: str):
     except Exception:
         pass
 
-    # 2. 在桌面写入崩溃报告（最显眼的位置，用户一定能看到）
+    # 2. 在桌面写入崩溃报告
     try:
         desktop = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Desktop')
         crash_file = os.path.join(desktop, '进销存管理系统_启动失败.txt')
@@ -216,11 +191,12 @@ def _write_crash_log(error_msg: str):
         pass
 
 
-if __name__ == "__main__":
+def main():
+    """主入口：检测端口 → 启动后端 → 打开原生窗口"""
     setup_logging()
     logger = logging.getLogger("launcher")
 
-    # 确定端口：环境变量 > 自动检测
+    # ── 1. 确定端口 ──
     env_port = os.environ.get('INVENTORY_PORT')
     if env_port:
         try:
@@ -240,25 +216,52 @@ if __name__ == "__main__":
             else:
                 logger.info(f"使用默认端口 {DEFAULT_PORT}")
         except RuntimeError as e:
-            # 端口全部被占用，致命错误
             logger.error(str(e))
             _write_crash_log(str(e))
-            # console=False 下无法显示信息，写入桌面文件后退出
-            # console=True 下也写桌面文件，双保险
             sys.exit(1)
 
-    # 在后台线程中打开浏览器
-    browser_thread = threading.Thread(target=open_browser, args=(selected_port,), daemon=True)
-    browser_thread.start()
+    # ── 2. 后台启动 uvicorn ──
+    server_thread = threading.Thread(target=run_backend, args=(selected_port,), daemon=True)
+    server_thread.start()
 
+    # ── 3. 等待服务就绪 ──
     try:
-        ensure_workspace_and_start(selected_port)
-    except KeyboardInterrupt:
-        print("\n系统已停止")
-    except Exception as e:
-        error_detail = f"启动失败: {e}\n\n{traceback.format_exc()}"
-        logger.error(error_detail)
-        _write_crash_log(error_detail)
-        # console=False 下 input() 不显示，但也不报错，用户会看到桌面崩溃文件
+        wait_for_server(selected_port)
+        logger.info("后端服务已就绪，正在打开应用窗口...")
+    except TimeoutError as e:
+        logger.error(str(e))
+        _write_crash_log(str(e))
         input("\n按回车键退出...")
         sys.exit(1)
+
+    # ── 4. 创建 pywebview 原生窗口 ──
+    try:
+        import webview
+        window = webview.create_window(
+            title="进销存管理系统",
+            url=f"http://127.0.0.1:{selected_port}",
+            width=1280,
+            height=800,
+            resizable=True,
+            fullscreen=False,
+            min_size=(1024, 600),
+            text_select=True,
+        )
+        webview.start(
+            debug=os.environ.get('WEBVIEW_DEBUG', '0') == '1',
+            private_mode=False,
+        )
+    except ImportError:
+        logger.warning("pywebview 未安装，切换到浏览器模式...")
+        import webbrowser
+        webbrowser.open(f"http://127.0.0.1:{selected_port}")
+    except Exception as e:
+        error_detail = f"窗口创建失败: {e}\n\n{traceback.format_exc()}"
+        logger.error(error_detail)
+        _write_crash_log(error_detail)
+        input("\n按回车键退出...")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

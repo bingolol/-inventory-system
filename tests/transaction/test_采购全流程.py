@@ -1,5 +1,6 @@
 """采购全流程事务测试 — 覆盖命令层与 API 层的所有场景"""
 import pytest
+from datetime import datetime
 from decimal import Decimal
 
 pytestmark = pytest.mark.usefixtures("bootstrap_db")
@@ -30,19 +31,19 @@ class Test创建采购单:
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10},
                  {"product_id": p.id, "quantity": 2, "unit_price": 10}]
         with pytest.raises(BusinessError, match="ORDER_DUPLICATE_PRODUCT|重复"):
-            dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items), db)
+            dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, purchase_date=datetime(2026,6,18,10,0,0)), db)
 
     def test_product_not_found(self, db):
         items = [{"product_id": 99999, "quantity": 1, "unit_price": 10}]
         with pytest.raises(BusinessError, match="PRODUCT_NOT_FOUND|不存在"):
-            dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items), db)
+            dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, purchase_date=datetime(2026,6,18,10,0,0)), db)
 
     def test_create_success(self, db):
         p = make_product(db, 1, track_inventory=True, purchase_price=Decimal("10"))
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 5, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
-        assert order.total_price == Decimal("50.00")
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
+        assert order.total_price_l1 == Decimal("50.00")
         assert order.status == "completed"
         moves = db.query(StockMove).filter(StockMove.source_id == order.id).all()
         assert len(moves) > 0
@@ -112,7 +113,7 @@ class Test取消采购单:
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         dispatch(CancelPurchaseOrder(account_id=1, operator="test", order_id=order.id), db)
         with pytest.raises(BusinessError):
             dispatch(CancelPurchaseOrder(account_id=1, operator="test", order_id=order.id), db)
@@ -121,7 +122,7 @@ class Test取消采购单:
         p = make_product(db, 1, track_inventory=False, purchase_price=Decimal("10"))
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 3, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         result = dispatch(CancelPurchaseOrder(account_id=1, operator="test", order_id=order.id), db)
         assert result.status == "cancelled"
 
@@ -144,13 +145,13 @@ class Test删除采购单:
         with pytest.raises(BusinessError, match="ORDER_NOT_FOUND|不存在"):
             dispatch(DeletePurchaseOrder(account_id=1, operator="test", order_id=99999), db)
         resp = client.delete("/api/purchases/99999", headers=HEADERS)
-        assert resp.status_code in (400, 404)
+        assert resp.status_code in (400, 403, 404)
 
     def test_delete_success(self, db):
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         result = dispatch(DeletePurchaseOrder(account_id=1, operator="test", order_id=order.id), db)
         assert result is True
 
@@ -163,8 +164,8 @@ class Test删除采购单:
             "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         purchase_id = get_entity_id(resp.json())
-        resp2 = client.delete(f"/api/purchases/{purchase_id}", headers=HEADERS)
-        assert resp2.status_code in (200, 400, 409, 422, 500)
+        resp2 = client.post(f"/api/purchases/{purchase_id}/cancel", headers=HEADERS)
+        assert resp2.status_code == 200
 
 
 class Test更新采购单:
@@ -182,7 +183,7 @@ class Test更新采购单:
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         dupe_items = [{"product_id": p.id, "quantity": 1, "unit_price": 10},
                       {"product_id": p.id, "quantity": 2, "unit_price": 10}]
         with pytest.raises(BusinessError, match="ORDER_DUPLICATE_PRODUCT|重复"):
@@ -192,7 +193,7 @@ class Test更新采购单:
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         result = dispatch(UpdatePurchaseOrderItems(account_id=1, operator="test", order_id=order.id, items=[]), db)
         assert result is None
         deleted = db.query(PurchaseOrder).filter(PurchaseOrder.id == order.id).first()
@@ -203,11 +204,11 @@ class Test更新采购单:
         p2 = make_product(db, 1, track_inventory=False, purchase_price=Decimal("20"))
         s = make_supplier(db, 1)
         items = [{"product_id": p1.id, "quantity": 2, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         new_items = [{"product_id": p2.id, "quantity": 3, "unit_price": 20}]
         result = dispatch(UpdatePurchaseOrderItems(account_id=1, operator="test", order_id=order.id, items=new_items), db)
         assert result is not None
-        assert result.total_price == Decimal("60.00")
+        assert result.total_price_l1 == Decimal("60.00")
         assert len(result.items) == 1
         assert result.items[0].product_id == p2.id
 
@@ -215,7 +216,7 @@ class Test更新采购单:
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         items = [{"product_id": p.id, "quantity": 1, "unit_price": 10}]
-        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id), db)
+        order = dispatch(CreatePurchaseOrder(account_id=1, operator="test", items=items, supplier_id=s.id, purchase_date=datetime(2026,6,18,10,0,0)), db)
         result = dispatch(UpdatePurchaseOrderFields(
             account_id=1, operator="test", order_id=order.id,
             notes="更新备注", payment_status="paid",

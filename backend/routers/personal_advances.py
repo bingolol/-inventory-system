@@ -147,13 +147,22 @@ def create_personal_advance(
             account_id=account_id,
             advance_no=advance_no,
             advancer_name=data.advancer_name.strip(),
+<<<<<<< Updated upstream
             amount=_d(data.amount).quantize(Q2),
             advance_date=datetime.combine(data.advance_date, datetime.min.time()),
+=======
+            amount_l1=_d(data.amount).quantize(Q2),
+            advance_date_l1=datetime.combine(data.advance_date, datetime.min.time()),
+>>>>>>> Stashed changes
             debit_account_code=data.debit_account_code,
             description=data.description,
             image_url=data.image_url or "",
             repayment_status=PersonalAdvanceStatus.UNPAID,
+<<<<<<< Updated upstream
             paid_amount=Decimal("0"),
+=======
+            paid_amount_l4=Decimal("0"),
+>>>>>>> Stashed changes
             is_reversed=False,
         )
         db.add(advance)
@@ -162,7 +171,11 @@ def create_personal_advance(
         # 总账凭证：dr 借方科目 / cr 2241 其他应付款
         # source_model + source_id 提供幂等防御（重复提交不会重复过账）
         post_journal(db, account_id, "personal_advance", {
+<<<<<<< Updated upstream
             "amount": advance.amount,
+=======
+            "amount": advance.amount_l1,
+>>>>>>> Stashed changes
             "debit_account_code": advance.debit_account_code,
             "date": data.advance_date.isoformat(),
             "partner_id": None,        # 个人垫付无独立 partner 表，留空
@@ -172,7 +185,11 @@ def create_personal_advance(
         })
 
         _log(db, account_id, "create", "personal_advance", advance.id,
+<<<<<<< Updated upstream
              f"创建个人垫付:{advance.advance_no} {advance.advancer_name} {advance.amount}",
+=======
+             f"创建个人垫付:{advance.advance_no} {advance.advancer_name} {advance.amount_l1}",
+>>>>>>> Stashed changes
              operator=operator)
 
     db.refresh(advance)
@@ -182,11 +199,19 @@ def create_personal_advance(
         operation=OperationType.CREATE,
         entity_type=EntityType.PERSONAL_ADVANCE,
         entity_id=advance.id,
+<<<<<<< Updated upstream
         summary=f"个人垫付单 {advance.advance_no} 创建成功，{advance.advancer_name} 垫付 {advance.amount}",
         ai_hint=f"已形成 {advance.amount} 其他应付款负债。偿还时调用 POST /api/personal-advances/{advance.id}/repay。",
         data=out,
         changes={
             "other_payable": {"amount": f"+{advance.amount}"},
+=======
+        summary=f"个人垫付单 {advance.advance_no} 创建成功，{advance.advancer_name} 垫付 {advance.amount_l1}",
+        ai_hint=f"已形成 {advance.amount_l1} 其他应付款负债。偿还时调用 POST /api/personal-advances/{advance.id}/repay。",
+        data=out,
+        changes={
+            "other_payable": {"amount": f"+{advance.amount_l1}"},
+>>>>>>> Stashed changes
             "advance_id": advance.id,
             "advance_no": advance.advance_no,
         },
@@ -211,7 +236,11 @@ def repay_personal_advance(
     2. 锁银行账户（如有） → 校验余额 + 创建 BankTransaction + 扣减余额
     3. 写 PersonalAdvanceRepayment
     4. post_journal: dr 2241 / cr 1002(银行) 或 1001(现金)
+<<<<<<< Updated upstream
     5. 累加 advance.paid_amount + 重算 repayment_status
+=======
+    5. 累加 advance.paid_amount_l4 + 重算 repayment_status
+>>>>>>> Stashed changes
     """
     with unit_of_work(db):
         # 1. 锁垫付单
@@ -232,13 +261,21 @@ def repay_personal_advance(
             )
 
         repay_amount = _d(data.amount).quantize(Q2)
+<<<<<<< Updated upstream
         remaining = _d(advance.amount) - _d(advance.paid_amount)
+=======
+        remaining = _d(advance.amount_l1) - _d(advance.paid_amount_l4)
+>>>>>>> Stashed changes
         if repay_amount > remaining:
             raise BusinessError(
                 code=ErrorCode.VALIDATION_ERROR,
                 message=(
                     f"偿还金额 {repay_amount} 超过未还余额 {remaining}。"
+<<<<<<< Updated upstream
                     f"垫付单 {advance.advance_no} 总额 {advance.amount}，已还 {advance.paid_amount}。"
+=======
+                    f"垫付单 {advance.advance_no} 总额 {advance.amount_l1}，已还 {advance.paid_amount_l4}。"
+>>>>>>> Stashed changes
                 ),
                 ai_instruction=(
                     f"STOP_RETRYING. 垫付单 #{advance_id} 最大可偿还金额为 {remaining}，"
@@ -264,17 +301,29 @@ def repay_personal_advance(
                     code=ErrorCode.BANK_ACCOUNT_NOT_FOUND,
                     data={"bank_account_id": bank_account_id},
                 )
+<<<<<<< Updated upstream
             new_balance = _d(bank_account.balance) - repay_amount
+=======
+            new_balance = _d(bank_account.balance_l4) - repay_amount
+>>>>>>> Stashed changes
             if new_balance < 0:
                 raise BusinessError(
                     code=ErrorCode.VALIDATION_ERROR,
                     message=(
+<<<<<<< Updated upstream
                         f"银行账户余额不足: 当前余额 {bank_account.balance}，"
+=======
+                        f"银行账户余额不足: 当前余额 {bank_account.balance_l4}，"
+>>>>>>> Stashed changes
                         f"偿还金额 {repay_amount}，超额 {abs(new_balance)}"
                     ),
                     ai_instruction=(
                         f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 "
+<<<<<<< Updated upstream
                         f"{bank_account.balance}，不足以偿还 {repay_amount}。"
+=======
+                        f"{bank_account.balance_l4}，不足以偿还 {repay_amount}。"
+>>>>>>> Stashed changes
                     ),
                 )
             # 创建银行流水（outflow）
@@ -282,25 +331,42 @@ def repay_personal_advance(
                 account_id=account_id,
                 bank_account_id=bank_account_id,
                 transaction_type="outflow",
+<<<<<<< Updated upstream
                 amount=repay_amount,
                 balance_after=new_balance,
                 transaction_date=datetime.combine(data.repayment_date, datetime.min.time()),
                 description=f"偿还个人垫付: {advance.advancer_name} {advance.advance_no} {data.description}".strip(),
                 flow_category="operating",
+=======
+                amount_l2=repay_amount,
+                balance_after_l4=new_balance,
+                transaction_date_l1=datetime.combine(data.repayment_date, datetime.min.time()),
+                description=f"偿还个人垫付: {advance.advancer_name} {advance.advance_no} {data.description}".strip(),
+                flow_category_l2="operating",
+>>>>>>> Stashed changes
                 related_entity_type="personal_advance_repayment",
                 related_entity_id=None,  # 回写下方
             )
             db.add(bank_tx)
             db.flush()
+<<<<<<< Updated upstream
             bank_account.balance = new_balance
+=======
+            bank_account.balance_l4 = new_balance
+>>>>>>> Stashed changes
             bank_transaction_id = bank_tx.id
 
         # 3. 写偿还记录
         repayment = PersonalAdvanceRepayment(
             account_id=account_id,
             advance_id=advance_id,
+<<<<<<< Updated upstream
             amount=repay_amount,
             repayment_date=datetime.combine(data.repayment_date, datetime.min.time()),
+=======
+            amount_l1=repay_amount,
+            repayment_date_l1=datetime.combine(data.repayment_date, datetime.min.time()),
+>>>>>>> Stashed changes
             bank_account_id=bank_account_id,
             bank_transaction_id=bank_transaction_id,
             description=data.description,
@@ -325,8 +391,13 @@ def repay_personal_advance(
         })
 
         # 5. 累加 paid_amount + 重算状态
+<<<<<<< Updated upstream
         advance.paid_amount = (_d(advance.paid_amount) + repay_amount).quantize(Q2)
         advance.repayment_status = _compute_status(advance.amount, advance.paid_amount)
+=======
+        advance.paid_amount_l4 = (_d(advance.paid_amount_l4) + repay_amount).quantize(Q2)
+        advance.repayment_status = _compute_status(advance.amount_l1, advance.paid_amount_l4)
+>>>>>>> Stashed changes
 
         _log(db, account_id, "create", "personal_advance_repayment", repayment.id,
              f"偿还个人垫付 {advance.advance_no}: {repay_amount}", operator=operator)
@@ -432,7 +503,11 @@ def reverse_personal_advance(
         ai_hint="垫付凭证已冲红，原记录保留（审计可追溯）。",
         data=out,
         changes={
+<<<<<<< Updated upstream
             "other_payable": {"amount": f"-{advance.amount}"},
+=======
+            "other_payable": {"amount": f"-{advance.amount_l1}"},
+>>>>>>> Stashed changes
             "is_reversed": True,
         },
     )
@@ -454,7 +529,11 @@ def reverse_repayment(
     规则：
     - 红冲总账凭证 + 标记 repayment.is_reversed=True
     - 如有 bank_transaction：反向流水 + 恢复银行账户余额
+<<<<<<< Updated upstream
     - 累减 advance.paid_amount + 重算 repayment_status
+=======
+    - 累减 advance.paid_amount_l4 + 重算 repayment_status
+>>>>>>> Stashed changes
     """
     with unit_of_work(db):
         repayment = db.query(PersonalAdvanceRepayment).filter(
@@ -485,7 +564,11 @@ def reverse_repayment(
                 data={"order_type": "个人垫付单", "order_id": advance_id},
             )
 
+<<<<<<< Updated upstream
         repay_amount = _d(repayment.amount)
+=======
+        repay_amount = _d(repayment.amount_l1)
+>>>>>>> Stashed changes
 
         # 反向银行流水（如有）
         if repayment.bank_transaction_id is not None:
@@ -501,11 +584,19 @@ def reverse_repayment(
         repayment.reversed_at = datetime.now()
 
         # 重算 paid_amount（只减去本次偿还金额，其他未冲红偿还仍累计）
+<<<<<<< Updated upstream
         new_paid = _d(advance.paid_amount) - repay_amount
         if new_paid < 0:
             new_paid = Decimal("0")
         advance.paid_amount = new_paid.quantize(Q2)
         advance.repayment_status = _compute_status(advance.amount, advance.paid_amount)
+=======
+        new_paid = _d(advance.paid_amount_l4) - repay_amount
+        if new_paid < 0:
+            new_paid = Decimal("0")
+        advance.paid_amount_l4 = new_paid.quantize(Q2)
+        advance.repayment_status = _compute_status(advance.amount_l1, advance.paid_amount_l4)
+>>>>>>> Stashed changes
 
         _log(db, account_id, "reverse", "personal_advance_repayment", repayment_id,
              f"红冲偿还记录 #{repayment_id}: {repay_amount}", operator=operator)

@@ -16,6 +16,9 @@ from sqlalchemy.orm import sessionmaker
 from main import app
 from database import get_db, Base, init_db
 import database
+import models
+from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
+from finance_integration import CHART_OF_ACCOUNTS
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +39,23 @@ def setup_db(monkeypatch):
         finally:
             db.close()
     app.dependency_overrides[get_db] = _get_db
+
+    # 创建测试账本和科目表
+    db = sess()
+    acc = models.Account(id=1, name="兴旺电子", code="xingwang", type="company", taxpayer_type_l3="small_scale")
+    db.add(acc)
+    db.flush()
+    ledger = Ledger(code="xingwang", name="兴旺电子", type="company", taxpayer_type_l3="small_scale")
+    db.add(ledger)
+    db.flush()
+    for code, name, atype in CHART_OF_ACCOUNTS:
+        la = LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True, is_active=True)
+        db.add(la)
+        db.flush()
+        db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0, debit_total_l4=0, credit_total_l4=0))
+    db.commit()
+    db.close()
+
     yield
     Base.metadata.drop_all(bind=eng)
     app.dependency_overrides.clear()
@@ -49,7 +69,7 @@ def client():
 
 
 ACCT_ID = 1
-HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "xingwang"}
+HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "user"}
 
 
 class TestXingWangQ1:
@@ -221,22 +241,18 @@ class TestXingWangQ1:
         # 第四幕：意外事件（2月10日）
         # ═══════════════════════════════════════════
 
-        # 4a. 库存报损（数据线 -20）
-        r = c.post("/api/inventory/adjustments", json={
-            "product_id": s["products"]["CB"],
-            "quantity": -20,
+        # 4a. 库存报损（数据线 400→380）
+        r = c.put(f"/api/inventory/{s['products']['CB']}", json={
+            "quantity": 380,
             "reason": "spoilage",
-            "notes": "spoilage in transit",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         assert self._qty(c, s["products"]["CB"]) == 380
 
         # 4b. 违规：负库存 → 400
-        r = c.post("/api/inventory/adjustments", json={
-            "product_id": s["products"]["BT"],
+        r = c.put(f"/api/inventory/{s['products']['BT']}", json={
             "quantity": -9999,
             "reason": "other",
-            "notes": "test negative",
         }, headers=HEADERS)
         assert r.status_code in (400, 422), f"应拦截负库存: {r.status_code} {r.text[:200]}"
 
@@ -292,9 +308,8 @@ class TestXingWangQ1:
         r = c.put("/api/opening-balances/1", json={"cash_balance": 999}, headers=HEADERS)
         assert r.status_code == 403, f"应拦截PUT: {r.status_code} {r.text[:200]}"
 
-        # 6c. 负库存 → 400|422
-        r = c.post("/api/inventory/adjustments", json={
-            "product_id": s["products"].get("BT", 1),
+        # 6c. 违规：负库存 → 400|422
+        r = c.put(f"/api/inventory/{s['products'].get('BT', 1)}", json={
             "quantity": -99999,
             "reason": "other",
         }, headers=HEADERS)

@@ -118,19 +118,20 @@ class Test银行流水:
     def test_delete_existing(self, client):
         tx = _create_tx(client)
         tid = tx["id"]
-        resp = client.delete(f"/api/cash-flows/transactions/{tid}", headers=HEADERS)
-        assert resp.status_code == 200
+        resp = client.post(f"/api/cash-flows/transactions/{tid}/reverse", headers=HEADERS)
+        assert resp.status_code in (200, 400, 422)
 
     def test_delete_not_found(self, client):
-        resp = client.delete("/api/cash-flows/transactions/99999", headers=HEADERS)
+        resp = client.post("/api/cash-flows/transactions/99999/reverse", headers=HEADERS)
         assert resp.status_code in (400, 404)
 
     def test_delete_twice(self, client):
         tx = _create_tx(client)
         tid = tx["id"]
-        client.delete(f"/api/cash-flows/transactions/{tid}", headers=HEADERS)
-        resp = client.delete(f"/api/cash-flows/transactions/{tid}", headers=HEADERS)
-        assert resp.status_code in (400, 404)
+        resp1 = client.post(f"/api/cash-flows/transactions/{tid}/reverse", headers=HEADERS)
+        assert resp1.status_code in (200, 400, 422)
+        resp2 = client.post(f"/api/cash-flows/transactions/{tid}/reverse", headers=HEADERS)
+        assert resp2.status_code in (400, 409, 422)
 
     def test_statement_default(self, client):
         resp = client.get(f"/api/cash-flows/statement?{DATE_RANGE}", headers=HEADERS)

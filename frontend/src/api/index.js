@@ -3,7 +3,6 @@ import { useAccountStore } from '../stores/account'
 import { useAuthStore } from '../stores/auth'
 import { handleError } from '../utils/errorHandler'
 
-// 优先使用 Vite 环境变量，开发环境走 proxy，生产环境走绝对路径
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const baseURL = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
@@ -14,18 +13,27 @@ const api = axios.create({
   timeout: 10000
 })
 
-// 导出baseURL供组件使用
 export { API_BASE_URL, handleError }
 
-// 统一处理image_url：相对路径→完整URL
 export const resolveImageUrl = (url) => {
   if (!url) return ''
   if (url.startsWith('http')) return url
   return `${API_BASE_URL}${url}`
 }
 
+let _isRefreshing = false
+let _pendingRequests = []
+
+function _onRefreshed(token) {
+  _pendingRequests.forEach(cb => cb(token))
+  _pendingRequests = []
+}
+
+function _addPendingRequest(cb) {
+  _pendingRequests.push(cb)
+}
+
 api.interceptors.request.use(config => {
-  // 白名单：不需要账本ID的端点（获取列表/新建账本）
   const method = config.method?.toUpperCase() || 'GET'
   const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts']
   const isPublic = PUBLIC_ENDPOINTS.includes(`${method} ${config.url}`)
@@ -37,7 +45,6 @@ api.interceptors.request.use(config => {
       || (accountStore.accounts.length > 0 && String(accountStore.accounts[0].id))
       || ''
 
-    // 尝试从登录时回传的默认账本初始化
     if (!accountId) {
       const authStore = useAuthStore()
       if (authStore.accountId) {
@@ -57,8 +64,7 @@ api.interceptors.request.use(config => {
     }
   }
 
-  // 登录 token：如果存在，自动带 Authorization 头
-  const token = localStorage.getItem('auth_token')
+  const token = localStorage.getItem('auth_access_token')
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
   }
@@ -67,27 +73,75 @@ api.interceptors.request.use(config => {
 
 api.interceptors.response.use(
   res => {
-    // 202 是确认中间件返回的：AI 危险操作等待用户确认
     if (res.status === 202 && res.data?._pending_confirm === undefined && res.data?.confirm_token) {
       console.log('[Confirm] AI危险操作需确认:', res.data.summary, 'token:', res.data.confirm_token)
-      // 通知确认对话框组件刷新
       if (typeof window !== 'undefined' && window.__confirmDialogPoll) {
         window.__confirmDialogPoll()
       }
       return { _pending_confirm: true, ...res.data }
     }
-    // blob 请求返回完整响应对象，让调用方通过 res.data 获取 Blob
     if (res.config.responseType === 'blob') {
       return res
     }
     return res.data
   },
-  err => {
-    // 统一错误日志（结构化）
+  async err => {
+    const originalRequest = err.config
+
+    // 401 自动刷新 token（跳过认证相关请求自身）
+    if (err.response?.status === 401
+      && !originalRequest._retry
+      && !originalRequest.url?.includes('/auth/login')
+      && !originalRequest.url?.includes('/auth/refresh')
+      && !originalRequest.url?.includes('/auth/logout')
+      && !originalRequest.url?.includes('/auth/change-password')
+    ) {
+      if (_isRefreshing) {
+        return new Promise(resolve => {
+          _addPendingRequest(newToken => {
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`
+            resolve(api(originalRequest))
+          })
+        })
+      }
+
+      originalRequest._retry = true
+      _isRefreshing = true
+
+      const authStore = useAuthStore()
+      const refreshToken = authStore.refreshToken
+
+      if (!refreshToken) {
+        _isRefreshing = false
+        authStore.logout()
+        window.location.href = '/login'
+        return Promise.reject(err)
+      }
+
+      try {
+        const data = await api.post('/auth/refresh', { refresh_token: refreshToken })
+        const newToken = data.access_token
+        authStore.accessToken = newToken
+        authStore.expiresAt = Date.now() + (data.expires_in || 7200) * 1000
+        authStore._persist()
+
+        _onRefreshed(newToken)
+        _isRefreshing = false
+
+        originalRequest.headers['Authorization'] = `Bearer ${newToken}`
+        return api(originalRequest)
+      } catch {
+        _isRefreshing = false
+        _pendingRequests = []
+        authStore.logout()
+        window.location.href = '/login'
+        return Promise.reject(err)
+      }
+    }
+
     const errData = err.response?.data
     if (errData?.error) {
       console.error(`[API Error] ${errData.error.code}: ${errData.error.message}`, errData.error)
-      // 如果后端返回账本不存在，清除 localStorage 中的 stale ID
       if (errData.error.code === 'ORDER_NOT_FOUND' && errData.error.message?.includes('账本不存在')) {
         localStorage.removeItem('currentAccountId')
         const store = useAccountStore()

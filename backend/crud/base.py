@@ -44,7 +44,7 @@ def get_or_create_inventory(db: Session, account_id: int, product_id: int) -> mo
         models.Inventory.product_id == product_id
     ).first()
     if not inv:
-        inv = models.Inventory(account_id=account_id, product_id=product_id, quantity=0)
+        inv = models.Inventory(account_id=account_id, product_id=product_id, quantity_l4=0)
         db.add(inv)
         db.flush()
     return inv
@@ -75,7 +75,7 @@ def create_account(db: Session, name: str, type: str = "company", code: str = ""
         # 自动生成 code：取名字拼音首字母或用递增数字
         import time
         code = f"acc_{int(time.time() * 1000) % 1000000}"
-    account = models.Account(name=name, type=type, code=code, taxpayer_type=taxpayer_type)
+    account = models.Account(name=name, type=type, code=code, taxpayer_type_l3=taxpayer_type)
     db.add(account)
     db.flush()
     return account

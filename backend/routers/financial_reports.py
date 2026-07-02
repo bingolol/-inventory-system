@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
-import schemas, crud
+import schemas, crud, models
 
 router = APIRouter()
 
@@ -49,3 +49,19 @@ def get_financial_summary(
         "opening_balance_exists": opening_balance is not None,
         "opening_balance_date": opening_balance.date.isoformat() if opening_balance else None
     }
+
+
+@router.get("/cwbb-xqykjzz")
+def get_cwbb_xqykjzz(
+    report_type: str = Query(..., description="报表类型: monthly / quarterly / annual"),
+    date: str = Query(..., description="报表日期 (YYYY-MM-DD)"),
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db)
+):
+    """小企业会计准则财务报表（会小企01/02/03表）模板数据聚合接口"""
+    if report_type not in ("monthly", "quarterly", "annual"):
+        from errors import BusinessError, ErrorCode
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="report_type 必须是 monthly / quarterly / annual")
+
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    return crud.generate_cwbb_xqykjzz(db, account_id, report_type, date, account)

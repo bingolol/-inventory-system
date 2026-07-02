@@ -1,13 +1,13 @@
 import io
 import csv
 from urllib.parse import quote
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
-import crud
+import crud, models
 from openpyxl import Workbook
 
 router = APIRouter()
@@ -44,8 +44,8 @@ def _stream_csv(rows: list[list], headers: list[str], filename: str):
 def export_products(format: str = "excel", search: str = None, category: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     _, products = crud.list_products(db, account_id, limit=10000, search=search, category=category)
     headers = ["ID", "编码", "名称", "分类", "单位", "进价", "售价", "库存", "预警线", "描述"]
-    rows = [[p.id, p.sku, p.name, p.category, p.unit, p.purchase_price, p.sale_price,
-             p.inventory.quantity if p.inventory else 0, p.min_stock, p.description] for p in products]
+    rows = [[p.id, p.sku, p.name, p.category, p.unit, p.purchase_price_l3, p.sale_price_l3,
+             p.inventory.quantity_l4 if p.inventory else 0, p.min_stock_l3, p.description] for p in products]
     filename = "商品列表"
     if format == "csv":
         return _stream_csv(rows, headers, filename)
@@ -69,14 +69,14 @@ def export_inventory(format: str = "excel", alert_only: bool = False, account_id
     rows = []
     for inv in items:
         p = inv.product
-        qty = inv.quantity if inv.quantity is not None else 0
-        status = "负库存" if qty < 0 else ("不足" if qty < (p.min_stock if p else 0) else "正常")
+        qty = inv.quantity_l4 if inv.quantity_l4 is not None else 0
+        status = "负库存" if qty < 0 else ("不足" if qty < (p.min_stock_l3 if p else 0) else "正常")
         rows.append([inv.id, p.sku if p else "", p.name if p else "", p.category if p else "",
-                     p.unit if p else "", qty, p.min_stock if p else 0, status,
-                     p.purchase_price if p else 0, p.sale_price if p else 0,
+                     p.unit if p else "", qty, p.min_stock_l3 if p else 0, status,
+                     p.purchase_price_l3 if p else 0, p.sale_price_l3 if p else 0,
                      # 单一真相源：库存价值读 Inventory.total_value（引擎维护的移动加权平均缓存），
                      # 禁止用 qty × Product.purchase_price（主数据静态字段，不反映实际采购成本）
-                     float(inv.total_value) if inv.total_value is not None else 0])
+                     float(inv.total_value_l4) if inv.total_value_l4 is not None else 0])
     filename = "库存清单"
     if format == "csv":
         return _stream_csv(rows, headers, filename)
@@ -100,14 +100,14 @@ def export_purchases(format: str = "excel", start_date: str = None, end_date: st
         for item in o.items:
             rows.append([
                 o.order_no or "", o.id,
-                o.purchase_date.strftime("%Y-%m-%d %H:%M") if o.purchase_date else "",
+                o.purchase_date_l1.strftime("%Y-%m-%d %H:%M") if o.purchase_date_l1 else "",
                 o.supplier.name if o.supplier else "",
-                o.total_price, o.status,
-                item.product.name if item.product else "", item.quantity,
-                item.unit_price, item.total_price, o.notes
+                o.total_price_l1, o.status,
+                item.product.name if item.product else "", item.quantity_l1,
+                item.unit_price_l1, item.total_price_l1, o.notes
             ])
-            total_qty += item.quantity
-            total_amount += item.total_price
+            total_qty += item.quantity_l1
+            total_amount += item.total_price_l1
     filename = "采购报表"
     if format == "csv":
         return _stream_csv(rows, headers, filename)
@@ -115,7 +115,7 @@ def export_purchases(format: str = "excel", start_date: str = None, end_date: st
     ws = wb.active
     ws.title = "采购报表"
     ws.append(headers)
-    ws.append(["", "", "", "合计", sum(o.total_price for o in orders), "", total_qty, "", total_amount, ""])
+    ws.append(["", "", "", "合计", sum(o.total_price_l1 for o in orders), "", total_qty, "", total_amount, ""])
     for row in rows:
         ws.append(row)
     return _stream_excel(wb, filename)
@@ -132,14 +132,14 @@ def export_sales(format: str = "excel", start_date: str = None, end_date: str = 
         for item in o.items:
             rows.append([
                 o.order_no or "", o.id,
-                o.sale_date.strftime("%Y-%m-%d %H:%M") if o.sale_date else "",
+                o.sale_date_l1.strftime("%Y-%m-%d %H:%M") if o.sale_date_l1 else "",
                 o.customer.name if o.customer else "散客",
-                o.total_price, o.status,
-                item.product.name if item.product else "", item.quantity,
-                item.unit_price, item.total_price, o.notes
+                o.total_price_l1, o.status,
+                item.product.name if item.product else "", item.quantity_l1,
+                item.unit_price_l1, item.total_price_l1, o.notes
             ])
-            total_qty += item.quantity
-            total_amount += item.total_price
+            total_qty += item.quantity_l1
+            total_amount += item.total_price_l1
     filename = "销售报表"
     if format == "csv":
         return _stream_csv(rows, headers, filename)
@@ -147,7 +147,7 @@ def export_sales(format: str = "excel", start_date: str = None, end_date: str = 
     ws = wb.active
     ws.title = "销售报表"
     ws.append(headers)
-    ws.append(["", "", "", "合计", sum(o.total_price for o in orders), "", total_qty, "", total_amount, ""])
+    ws.append(["", "", "", "合计", sum(o.total_price_l1 for o in orders), "", total_qty, "", total_amount, ""])
     for row in rows:
         ws.append(row)
     return _stream_excel(wb, filename)
@@ -181,9 +181,9 @@ def export_products_batch(
     for p in products:
         rows.append([
             p.id, p.sku, p.name, p.category, p.unit,
-            p.purchase_price, p.sale_price,
-            p.inventory.quantity if p.inventory else 0,
-            p.min_stock, p.description,
+            p.purchase_price_l3, p.sale_price_l3,
+            p.inventory.quantity_l4 if p.inventory else 0,
+            p.min_stock_l3, p.description,
             p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else ""
         ])
 
@@ -221,17 +221,17 @@ def export_profit(format: str = "excel", start_date: str = None, end_date: str =
     ws.append(["单号", "订单ID", "日期", "供应商", "商品", "数量", "单价", "小计", "状态"])
     for o in purchase_orders:
         for item in o.items:
-            ws.append([o.order_no or "", o.id, o.purchase_date.strftime("%Y-%m-%d %H:%M") if o.purchase_date else "",
+            ws.append([o.order_no or "", o.id, o.purchase_date_l1.strftime("%Y-%m-%d %H:%M") if o.purchase_date_l1 else "",
                        o.supplier.name if o.supplier else "", item.product.name if item.product else "",
-                       item.quantity, item.unit_price, item.total_price, o.status])
+                       item.quantity_l1, item.unit_price_l1, item.total_price_l1, o.status])
     ws.append([])
     ws.append(["销售明细"])
     ws.append(["单号", "订单ID", "日期", "客户", "商品", "数量", "单价", "小计", "状态"])
     for o in sale_orders:
         for item in o.items:
-            ws.append([o.order_no or "", o.id, o.sale_date.strftime("%Y-%m-%d %H:%M") if o.sale_date else "",
+            ws.append([o.order_no or "", o.id, o.sale_date_l1.strftime("%Y-%m-%d %H:%M") if o.sale_date_l1 else "",
                        o.customer.name if o.customer else "散客", item.product.name if item.product else "",
-                       item.quantity, item.unit_price, item.total_price, o.status])
+                       item.quantity_l1, item.unit_price_l1, item.total_price_l1, o.status])
     filename = "利润报表"
     if format == "csv":
         buf = io.StringIO()
@@ -242,3 +242,25 @@ def export_profit(format: str = "excel", start_date: str = None, end_date: str =
         return StreamingResponse(buf, media_type="text/csv",
                                  headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(f'{filename}.csv', safe='')}"})
     return _stream_excel(wb, filename)
+
+
+@router.get("/cwbb-xqykjzz")
+def export_cwbb_xqykjzz(
+    report_type: str = Query(..., description="报表类型: monthly / quarterly / annual"),
+    date: str = Query(..., description="报表日期 (YYYY-MM-DD)"),
+    account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db)
+):
+    """导出小企业会计准则财务报表（会小企01/02/03表）.xls"""
+    if report_type not in ("monthly", "quarterly", "annual"):
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="report_type 必须是 monthly / quarterly / annual")
+
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    xls_bytes = crud.export_cwbb_xqykjzz(db, account_id, report_type, date, account)
+    filename = f"财务报表_{report_type}_{date}"
+    encoded = quote(f"{filename}.xls", safe='')
+    return StreamingResponse(
+        io.BytesIO(xls_bytes),
+        media_type="application/vnd.ms-excel",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"}
+    )

@@ -1,6 +1,6 @@
 """集成测试：采购单 API (routers/purchases.py)"""
 import pytest
-from helpers import get_account_id
+from helpers import get_account_id, get_entity_id
 from factories import api_create_product, api_create_supplier
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
@@ -38,7 +38,7 @@ class TestGetPurchase:
             "purchase_date": "2026-06-01",
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
-        purchase_id = resp.json().get("entity_id") or resp.json().get("id")
+        purchase_id = get_entity_id(resp.json())
         resp2 = client.get(f"/api/purchases/{purchase_id}", headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -55,7 +55,7 @@ class TestCreatePurchase:
         }, headers=HEADERS)
         assert resp.status_code in (200, 201)
         data = resp.json()
-        assert "entity_id" in data or "id" in data
+        assert get_entity_id(data) is not None
 
 
 class TestUpdatePurchase:
@@ -67,7 +67,7 @@ class TestUpdatePurchase:
             "items": [{"product_id": pid, "quantity": 2, "unit_price": 10}],
             "purchase_date": "2026-06-01",
         }, headers=HEADERS)
-        purchase_id = resp.json().get("entity_id") or resp.json().get("id")
+        purchase_id = get_entity_id(resp.json())
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -89,7 +89,7 @@ class TestCancelPurchase:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
             "purchase_date": "2026-06-01",
         }, headers=HEADERS)
-        purchase_id = resp.json().get("entity_id") or resp.json().get("id")
+        purchase_id = get_entity_id(resp.json())
         resp2 = client.post(f"/api/purchases/{purchase_id}/cancel", headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -97,7 +97,7 @@ class TestCancelPurchase:
 class TestDeletePurchase:
     def test_delete_not_found(self, client):
         resp = client.delete("/api/purchases/99999", headers=HEADERS)
-        assert resp.status_code in (400, 404)
+        assert resp.status_code == 403
 
     def test_delete_with_items_blocked(self, client):
         sid, _ = api_create_supplier(client, HEADERS)
@@ -107,6 +107,6 @@ class TestDeletePurchase:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 10}],
             "purchase_date": "2026-06-01",
         }, headers=HEADERS)
-        purchase_id = resp.json().get("entity_id") or resp.json().get("id")
+        purchase_id = get_entity_id(resp.json())
         resp2 = client.delete(f"/api/purchases/{purchase_id}", headers=HEADERS)
-        assert resp2.status_code in (400, 409, 422, 500)
+        assert resp2.status_code == 403

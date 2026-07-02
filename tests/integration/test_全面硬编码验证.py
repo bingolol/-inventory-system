@@ -18,10 +18,22 @@ import time
 import pytest
 from decimal import Decimal, ROUND_HALF_UP
 from test_helpers import ensure_test_product
+from helpers import get_entity_id
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
 
 _inv_counter = 0
+
+
+def _extract_data(resp_json):
+    """从 AI Gateway 响应中提取 data 字段"""
+    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
+        ent = resp_json["entity"]
+        if "data" in ent:
+            return ent["data"]
+    if isinstance(resp_json, dict) and "data" in resp_json:
+        return resp_json["data"]
+    return resp_json
 
 
 def round2(v):
@@ -48,19 +60,19 @@ def ids(client):
         "purchase_price": 100.00, "sale_price": 150.00,
         "track_inventory": True, "category": "测试"
     }, headers=HEADERS)
-    pid = resp.json().get("entity_id") or resp.json().get("data", {}).get("id")
+    pid = get_entity_id(resp.json())
     
     # 客户
     resp = client.post("/api/customers", json={
         "name": f"客户-{u}", "contact": "测试", "phone": "13800000001"
     }, headers=HEADERS)
-    cid = resp.json().get("entity_id") or resp.json().get("data", {}).get("id")
+    cid = get_entity_id(resp.json())
     
     # 供应商
     resp = client.post("/api/suppliers", json={
         "name": f"供应商-{u}", "contact": "测试", "phone": "13900000001"
     }, headers=HEADERS)
-    sid = resp.json().get("entity_id") or resp.json().get("data", {}).get("id")
+    sid = get_entity_id(resp.json())
     
     return {"pid": pid, "cid": cid, "sid": sid}
 

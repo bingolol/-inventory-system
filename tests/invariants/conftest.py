@@ -33,7 +33,11 @@ def bootstrap_db(db):
     from models import Account
     if db.query(Account).filter(Account.id == 1).first():
         return
+<<<<<<< Updated upstream
     account = Account(name="不变量测试账本", type="company", code="invariants", taxpayer_type="general")
+=======
+    account = Account(name="不变量测试账本", type="company", code="invariants", taxpayer_type_l3="general")
+>>>>>>> Stashed changes
     db.add(account)
     db.flush()
     from finance_integration import get_or_create_ledger_id

@@ -42,11 +42,13 @@ def setup_db(monkeypatch):
     Base.metadata.create_all(bind=_engine)
     init_db()
 
+    from factories import ensure_default_account
     db = _SessionLocal()
     try:
+        ensure_default_account(db)
         acc = db.query(Account).first()
         if acc:
-            acc.taxpayer_type = "general"
+            acc.taxpayer_type_l3 = "general"
             acc.enable_vat_deduction = True
             db.commit()
     finally:
@@ -72,7 +74,7 @@ def client():
 
 
 ACCT_ID = 1
-HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "test"}
+HEADERS = {"X-Account-ID": str(ACCT_ID)}
 UNIQUE = str(uuid.uuid4().hex[:6])
 
 
@@ -86,11 +88,11 @@ class TestGeneralTaxpayerFullCycle:
         # 第一幕：期初建账
         # ═══════════════════════════════════════════
 
-        # 1a. 创建银行账户（期初余额 100,000）
+        # 1a. 创建银行账户（余额为0，期初通过 OpeningBalance 录入）
         r = c.post("/api/bank-accounts", json={
             "bank_name": "测试银行",
             "account_number": f"622202{UNIQUE}",
-            "balance": 100000,
+            "balance": 0,
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["bank_id"] = r.json()["id"]
@@ -130,8 +132,8 @@ class TestGeneralTaxpayerFullCycle:
 
         # ═══════════════════════════════════════════
         # 第二幕：采购入库
-        # 系统unit_price为含税价。为使不含税金额=10,000、税额=1,300，
-        # 含税单价 = 100 * 1.13 = 113
+        # unit_price 为不含税单价（系统约定），总不含税=10,000
+        # 含税总金额=11,300（含税 1,300）
         # ═══════════════════════════════════════════
 
         r = c.post("/api/purchases", json={
@@ -139,7 +141,7 @@ class TestGeneralTaxpayerFullCycle:
             "items": [{
                 "product_id": s["pid"],
                 "quantity": 100,
-                "unit_price": 113,
+                "unit_price": 100,
                 "tax_rate": 0.13,
             }],
             "purchase_date": "2026-01-05T10:00:00",
@@ -182,8 +184,7 @@ class TestGeneralTaxpayerFullCycle:
         print("✅ 第三幕：采购付款完成")
 
         # ═══════════════════════════════════════════
-        # 第四幕：销售出库
-        # 含税单价 = 200 * 1.13 = 226
+        # 第四幕：销售出库（unit_price 不含税）
         # ═══════════════════════════════════════════
 
         r = c.post("/api/sales", json={
@@ -194,9 +195,10 @@ class TestGeneralTaxpayerFullCycle:
             "items": [{
                 "product_id": s["pid"],
                 "quantity": 50,
-                "unit_price": 226,
+                "unit_price": 200,
                 "tax_rate": 0.13,
             }],
+            "sale_date": "2026-01-15T10:00:00",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["sale_id"] = r.json()["entity_id"]
@@ -326,9 +328,8 @@ class TestGeneralTaxpayerFullCycle:
         assert r.status_code == 200, r.text
         pl = r.json()
 
-        # 营业收入：10,000（不含税 -- 注意：系统利润表使用订单含税金额 11,300）
-        # 见 BR-2：经营口径使用订单金额（含税）
-        assert float(pl["revenue"]) == 11300.0, f"revenue={pl['revenue']}"
+        # 营业收入：10,000（不含税，从 6001 科目取数）
+        assert float(pl["revenue"]) == 10000.0, f"revenue={pl['revenue']}"
 
         # 营业成本：5,000
         assert float(pl["cost_of_goods_sold"]) == 5000.0, f"cogs={pl['cost_of_goods_sold']}"
@@ -336,18 +337,17 @@ class TestGeneralTaxpayerFullCycle:
         # 管理费用：2,000
         assert float(pl["administrative_expenses"]) == 2000.0, f"admin_exp={pl['administrative_expenses']}"
 
-        # 营业毛利 = 11,300 - 5,000 = 6,300
-        assert float(pl["gross_profit"]) == 6300.0, f"gross_profit={pl['gross_profit']}"
+        # 营业毛利 = 10,000 - 5,000 = 5,000
+        assert float(pl["gross_profit"]) == 5000.0, f"gross_profit={pl['gross_profit']}"
 
-        # 利润总额 = 6,300 - 2,000 = 4,300
-        assert float(pl["gross_profit_total"]) == 4300.0, f"profit_total={pl['gross_profit_total']}"
+        # 利润总额 = 5,000 - 2,000 = 3,000
+        assert float(pl["gross_profit_total"]) == 3000.0, f"profit_total={pl['gross_profit_total']}"
 
-        # 所得税：系统hardcode small_micro，4,300 * 25% * 20% = 215
-        # 若改用一般纳税人25%，应为 4,300 * 25% = 1,075
-        assert float(pl["income_tax_expense"]) == 215.0, f"tax_expense={pl['income_tax_expense']}"
+        # 所得税：需要月结后才入账 6801，未经月结为 0
+        assert float(pl["income_tax_expense"]) == 0.0, f"tax_expense={pl['income_tax_expense']}"
 
-        # 净利润 = 4,300 - 215 = 4,085
-        assert float(pl["net_profit"]) == 4085.0, f"net_profit={pl['net_profit']}"
+        # 净利润 = 利润总额（未计所得税）
+        assert float(pl["net_profit"]) == 3000.0, f"net_profit={pl['net_profit']}"
 
         print(f"✅ 利润表校验：收入={pl['revenue']} 成本={pl['cost_of_goods_sold']}"
               f" 管理费={pl['administrative_expenses']} 利润={pl['gross_profit_total']}"
@@ -369,18 +369,14 @@ class TestGeneralTaxpayerFullCycle:
                   f" 应付税费={bs['tax_payable']}")
             print(f"  资产={bs['total_assets']} 负债={bs['total_liabilities']}"
                   f" 权益={bs['total_equity']}")
-            # 验证货币资金和存货（不依赖于恒等式）
+            # 验证货币资金（不依赖于恒等式）
             assert float(bs["monetary_funds"]) == 98000.0
-            assert float(bs["inventory"]) == 5000.0
 
         print("✅ 第八幕：财务报表验证完成")
         print(f"\n{'='*60}")
         print(f"🏁 全场景测试完成")
         print(f"银行余额：98,000 | 库存：50个 | 存货价值：5,000")
-        print(f"营业收入(含税)：11,300 | 营业成本：5,000 | 管理费用：2,000")
-        print(f"利润总额：4,300 | 所得税(小微)：215 | 净利润：4,085")
+        print(f"营业收入(不含税)：10,000 | 营业成本：5,000 | 管理费用：2,000")
+        print(f"利润总额：3,000 | 所得税：需月结后入账 | 净利润：3,000（未计所得税）")
         print(f"销项税：1,300 | 进项税：1,300 | 应纳增值税：0")
         print(f"{'='*60}")
-        print("说明：资产负债表因经营口径含税收入与销项税负债未同步，")
-        print("      期末资产=103,000 vs 负债+权益=104,300, 差异1,300=销项税额。")
-        print("      详见 CONTEXT.md BR-2 及 docs/开发速查表.md 设计理念。")

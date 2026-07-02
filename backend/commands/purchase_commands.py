@@ -24,6 +24,7 @@ from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
+from lineage import reads, TIER_L3
 
 
 # ═══════════════════════════════════════════════════════════
@@ -42,6 +43,7 @@ class CreatePurchaseOrder(Command):
 
 @register(CreatePurchaseOrder)
 class CreatePurchaseOrderHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreatePurchaseOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
@@ -68,13 +70,13 @@ class CreatePurchaseOrderHandler(CommandHandler):
             account_id=cmd.account_id,
             order_no=order_no,
             supplier_id=cmd.supplier_id,
-            purchase_date=purchase_dt,
+            purchase_date_l1=purchase_dt,
             order_type=OrderType.RETAIL,
             payment_method=cmd.payment_method,
             status=OrderStatus.COMPLETED,
             notes=cmd.notes,
             image_url=cmd.image_url,
-            total_price=0,
+            total_price_l1=0,
         )
         db.add(order)
         db.flush()
@@ -90,13 +92,13 @@ class CreatePurchaseOrderHandler(CommandHandler):
             item = models.PurchaseItem(
                 order_id=order.id,
                 product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it.get('tax_rate', Decimal('0.13')),
-                total_price=line_total,
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it.get('tax_rate', Decimal('0.13')),
+                total_price_l1=line_total,
             )
             db.add(item)
-            if product.track_inventory:
+            if product.track_inventory_l3:
                 calc = InventoryEngine(db).inbound(
                     account_id=cmd.account_id,
                     product_id=it['product_id'],
@@ -110,7 +112,7 @@ class CreatePurchaseOrderHandler(CommandHandler):
                 calculated_data.append(calc)
             total += line_total
 
-        order.total_price = total.quantize(Q2)
+        order.total_price_l1 = total.quantize(Q2)
         db.flush()
 
         # 5. 生成会计凭证
@@ -135,6 +137,7 @@ class CancelPurchaseOrder(Command):
 
 @register(CancelPurchaseOrder)
 class CancelPurchaseOrderHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CancelPurchaseOrder, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
@@ -151,11 +154,11 @@ class CancelPurchaseOrderHandler(CommandHandler):
         if old_status == OrderStatus.COMPLETED:
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
-                if product and product.track_inventory:
+                if product and product.track_inventory_l3:
                     InventoryEngine(db).reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         unit_cost=Decimal("0"),
                         source_type="purchase_order",
                         source_id=order.id,
@@ -187,6 +190,8 @@ class ReturnPurchaseOrder(Command):
 
 @register(ReturnPurchaseOrder)
 class ReturnPurchaseOrderHandler(CommandHandler):
+    @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: ReturnPurchaseOrder, db: Any) -> Any:
         from finance_integration import post_journal
         # StockMove 定义在 models.py（库存真相源），不在 models_finance.py
@@ -209,7 +214,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                                 data={"order_type": "采购退货单"})
 
         # 1. 校验退货数量不超原采购数量
-        original_qty_map = {item.product_id: item.quantity for item in order.items}
+        original_qty_map = {item.product_id: item.quantity_l1 for item in order.items}
         for ret in cmd.items:
             pid = ret['product_id']
             if pid not in original_qty_map:
@@ -226,7 +231,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
         # enable_vat_deduction 不是 Account 字段，而是基于 taxpayer_type 派生
         # （与 engine_finance.py:30 _vat_deduction() 保持一致：一般纳税人=true，小规模=false）
         account = db.query(models.Account).filter(models.Account.id == cmd.account_id).first()
-        enable_vat_deduction = (account is not None and account.taxpayer_type == "general")
+        enable_vat_deduction = (account is not None and account.taxpayer_type_l3 == "general")
 
         # 3. 库存退回 + 按行计算退货金额
         total_with_tax_ret = Decimal("0")
@@ -246,7 +251,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                 models.Product.id == pid,
                 models.Product.account_id == cmd.account_id,
             ).first()
-            if product and product.track_inventory:
+            if product and product.track_inventory_l3:
                 # 库存退回（InventoryEngine.reverse 会创建 quantity<0 的反向流水）
                 eng.reverse(
                     account_id=cmd.account_id,
@@ -261,7 +266,11 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                 # 取原采购单明细单价计算库存退回金额
                 # ⚠️ 必须用 orig_item.unit_price（原发票不含税单价），不能用 StockMove.unit_cost
                 # （unit_cost 是移动加权平均成本，会让贷方库存与借方应付账款不一致 → 借贷不平衡）
+<<<<<<< Updated upstream
                 orig_unit_price = Decimal(str(orig_item.unit_price))
+=======
+                orig_unit_price = Decimal(str(orig_item.unit_price_l1))
+>>>>>>> Stashed changes
                 # 一般纳税人：不含税金额进成本；小规模：价税合计进成本
                 if enable_vat_deduction:
                     inventory_cost_ret += (qty_ret * orig_unit_price).quantize(Q2)
@@ -271,8 +280,8 @@ class ReturnPurchaseOrderHandler(CommandHandler):
             # 退货的税额/价税合计计算（按纳税人类型区分）
             # - 一般纳税人：unit_price 不含税，total_with_tax = qty*price*(1+rate)
             # - 小规模：unit_price 含税，total_with_tax = qty*price（无分离）
-            unit_price = Decimal(str(orig_item.unit_price))
-            rate = orig_item.tax_rate
+            unit_price = Decimal(str(orig_item.unit_price_l1))
+            rate = orig_item.tax_rate_l1
             if enable_vat_deduction:
                 line_without_tax = (unit_price * qty_ret).quantize(Q2)
                 line_tax = (line_without_tax * Decimal(str(rate))).quantize(Q2) if rate else Decimal("0")
@@ -324,7 +333,11 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                 # 解析退货日期
                 ret_dt = datetime.fromisoformat(cmd.return_date) if isinstance(cmd.return_date, str) else cmd.return_date
                 # 红字进项发票：若原发票已认证，红字发票也设为 certified（让 get_tax_report 自动扣除进项税）
+<<<<<<< Updated upstream
                 red_cert_status = original_invoice.certification_status if (
+=======
+                red_cert_status = original_invoice.certification_status_l3 if (
+>>>>>>> Stashed changes
                     enable_vat_deduction and original_invoice.invoice_type == "special"
                 ) else CertificationStatus.N_A
                 red_invoice = models.Invoice(
@@ -332,6 +345,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                     invoice_no=red_invoice_no,
                     direction=InvoiceDirection.IN,
                     invoice_type=original_invoice.invoice_type,
+<<<<<<< Updated upstream
                     tax_rate=original_invoice.tax_rate,
                     amount_without_tax=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
                     tax_amount=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
@@ -341,6 +355,17 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                     buyer_name=original_invoice.buyer_name,
                     issue_date=ret_dt,
                     certification_status=red_cert_status,
+=======
+                    tax_rate_l1=original_invoice.tax_rate_l1,
+                    amount_without_tax_l1=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
+                    tax_amount_l1=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
+                    amount_with_tax_l1=-total_with_tax_ret,
+                    counterparty_name=order.supplier.name if order.supplier else (original_invoice.counterparty_name or ""),
+                    seller_name=original_invoice.seller_name,
+                    buyer_name=original_invoice.buyer_name,
+                    issue_date_l1=ret_dt,
+                    certification_status_l3=red_cert_status,
+>>>>>>> Stashed changes
                     related_order_id=order.id,
                     related_order_type="purchase_order",
                     notes=f"红字进项发票（采购退货）: {cmd.reason or '未提供'}",
@@ -377,11 +402,11 @@ class DeletePurchaseOrderHandler(CommandHandler):
         if order.status == OrderStatus.COMPLETED:
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
-                if product and product.track_inventory:
+                if product and product.track_inventory_l3:
                     InventoryEngine(db).reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         unit_cost=Decimal("0"),
                         source_type="purchase_order",
                         source_id=order.id,
@@ -418,6 +443,7 @@ class UpdatePurchaseOrderItems(Command):
 
 @register(UpdatePurchaseOrderItems)
 class UpdatePurchaseOrderItemsHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdatePurchaseOrderItems, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
@@ -437,11 +463,11 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
             eng = InventoryEngine(db)
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
-                if product and product.track_inventory:
+                if product and product.track_inventory_l3:
                     eng.reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         unit_cost=Decimal("0"),
                         source_type="purchase_order",
                         source_id=order.id,
@@ -489,13 +515,13 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
             new_item = models.PurchaseItem(
                 order_id=order.id,
                 product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it.get('tax_rate', Decimal('0.13')),
-                total_price=line_total,
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it.get('tax_rate', Decimal('0.13')),
+                total_price_l1=line_total,
             )
             db.add(new_item)
-            if new_status == OrderStatus.COMPLETED and product.track_inventory:
+            if new_status == OrderStatus.COMPLETED and product.track_inventory_l3:
                 calc = InventoryEngine(db).force_inbound(
                     account_id=cmd.account_id,
                     product_id=it['product_id'],
@@ -509,7 +535,7 @@ class UpdatePurchaseOrderItemsHandler(CommandHandler):
                 calculated_data.append(calc)
             total += line_total
 
-        order.total_price = total.quantize(Q2)
+        order.total_price_l1 = total.quantize(Q2)
 
         # 重建会计凭证（BR-8: force 跳过幂等，source_id 复用原单）
         if new_status == OrderStatus.COMPLETED:
@@ -540,6 +566,7 @@ class UpdatePurchaseOrderFields(Command):
 
 @register(UpdatePurchaseOrderFields)
 class UpdatePurchaseOrderFieldsHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdatePurchaseOrderFields, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:
@@ -571,11 +598,11 @@ class UpdatePurchaseOrderFieldsHandler(CommandHandler):
         if old_status == OrderStatus.COMPLETED and new_status == OrderStatus.CANCELLED:
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
-                if product and product.track_inventory:
+                if product and product.track_inventory_l3:
                     eng.reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         unit_cost=Decimal("0"),
                         source_type="purchase_order",
                         source_id=order.id,
@@ -587,15 +614,15 @@ class UpdatePurchaseOrderFieldsHandler(CommandHandler):
             calculated_data = []
             for item in order.items:
                 product = db.query(models.Product).get(item.product_id)
-                if product and product.track_inventory:
+                if product and product.track_inventory_l3:
                     calc = eng.force_inbound(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
-                        unit_price=item.unit_price,
+                        quantity=item.quantity_l1,
+                        unit_price=item.unit_price_l1,
                         source_type="purchase_order",
                         source_id=order.id,
-                        tax_rate=item.tax_rate,
+                        tax_rate=item.tax_rate_l1,
                         operator=cmd.operator,
                     )
                     calculated_data.append(calc)

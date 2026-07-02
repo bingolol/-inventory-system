@@ -12,6 +12,7 @@ from . import partner_commands  # noqa: F401
 from . import personal_commands  # noqa: F401
 from . import month_end  # noqa: F401
 from . import bank_reconcile  # noqa: F401
+from . import cash_commands  # noqa: F401
 
 # 从子模块导出具体命令类
 from .product_commands import (
@@ -39,6 +40,16 @@ from .bank_reconcile import (
     ForceMatchBankReconciliation,
     ConfirmBankReconciliation,
     GenerateReconciliationEntry,
+)
+from .cash_commands import (
+    CreateExpense,
+    UpdateExpense,
+    ReverseExpense,
+    DeleteExpense,
+    CreatePayment,
+    ReversePayment,
+    CreateReceipt,
+    ReverseReceipt,
 )
 
 __all__ = [
@@ -70,4 +81,13 @@ __all__ = [
     "ReconcileBank",
     "ForceMatchBankReconciliation",
     "ConfirmBankReconciliation",
+    # Cash commands
+    "CreateExpense",
+    "UpdateExpense",
+    "ReverseExpense",
+    "DeleteExpense",
+    "CreatePayment",
+    "ReversePayment",
+    "CreateReceipt",
+    "ReverseReceipt",
 ]

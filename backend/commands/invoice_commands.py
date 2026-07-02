@@ -18,7 +18,10 @@ from .base import Command, CommandHandler, register
 from crud.base import _log
 from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
+from lineage import reads, TIER_L3
+from lineage import writes, TIER_L3
 from crud.invoice_linkage import validate_link_target
+from rules import enforce_rules
 
 # 全局 AccountingEngine 实例
 _engine = AccountingEngine()
@@ -65,6 +68,8 @@ class CreateInvoice(Command):
 
 @register(CreateInvoice)
 class CreateInvoiceHandler(CommandHandler):
+    @writes("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.certification_date_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreateInvoice, db: Any) -> Any:
         # 1. 校验发票号码唯一性
         existing = db.query(models.Invoice).filter(
@@ -104,18 +109,18 @@ class CreateInvoiceHandler(CommandHandler):
             invoice_no=cmd.invoice_no,
             direction=cmd.direction,
             invoice_type=cmd.invoice_type,
-            tax_rate=cmd.tax_rate,
-            amount_without_tax=cmd.amount_without_tax,
-            tax_amount=cmd.tax_amount,
-            amount_with_tax=cmd.amount_with_tax,
+            tax_rate_l1=cmd.tax_rate,
+            amount_without_tax_l1=cmd.amount_without_tax,
+            tax_amount_l1=cmd.tax_amount,
+            amount_with_tax_l1=cmd.amount_with_tax,
             counterparty_name=cmd.counterparty_name,
             seller_name=cmd.seller_name,
             buyer_name=cmd.buyer_name,
-            issue_date=issue_date,
+            issue_date_l1=issue_date,
             pdf_path=cmd.pdf_path,
             image_url=cmd.image_url,
-            certification_status=cmd.certification_status,
-            certification_date=cmd.certification_date,
+            certification_status_l3=cmd.certification_status,
+            certification_date_l3=cmd.certification_date,
             related_order_id=cmd.related_order_id,
             related_order_type=cmd.related_order_type,
             notes=cmd.notes,
@@ -129,10 +134,10 @@ class CreateInvoiceHandler(CommandHandler):
             inv_item = models.InvoiceItem(
                 invoice_id=db_invoice.id,
                 product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it.get('tax_rate', cmd.tax_rate),
-                total_price=line_total,
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it.get('tax_rate', cmd.tax_rate),
+                total_price_l1=line_total,
             )
             db.add(inv_item)
 
@@ -172,6 +177,9 @@ class CreateInvoiceHandler(CommandHandler):
 
         db.flush()
 
+        # AS-02 价税分离校验(发票三段平衡 + 税率合法性)
+        enforce_rules(db, ["AS-02"], {"invoice_id": db_invoice.id})
+
         # 6. 日志
         _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
              f"创建发票: {db_invoice.invoice_no} ({db_invoice.direction}/{db_invoice.invoice_type})",
@@ -207,6 +215,8 @@ class UpdateInvoice(Command):
 
 @register(UpdateInvoice)
 class UpdateInvoiceHandler(CommandHandler):
+    @writes("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.certification_date_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdateInvoice, db: Any) -> Any:
         # 1. 查记录
         invoice = db.query(models.Invoice).filter(
@@ -237,15 +247,15 @@ class UpdateInvoiceHandler(CommandHandler):
             'invoice_no': cmd.invoice_no,
             'direction': cmd.direction,
             'invoice_type': cmd.invoice_type,
-            'tax_rate': cmd.tax_rate,
-            'amount_without_tax': cmd.amount_without_tax,
-            'tax_amount': cmd.tax_amount,
-            'amount_with_tax': cmd.amount_with_tax,
+            'tax_rate_l1': cmd.tax_rate,
+            'amount_without_tax_l1': cmd.amount_without_tax,
+            'tax_amount_l1': cmd.tax_amount,
+            'amount_with_tax_l1': cmd.amount_with_tax,
             'counterparty_name': cmd.counterparty_name,
-            'issue_date': cmd.issue_date,
+            'issue_date_l1': cmd.issue_date,
             'pdf_path': cmd.pdf_path,
-            'certification_status': cmd.certification_status,
-            'certification_date': cmd.certification_date,
+            'certification_status_l3': cmd.certification_status,
+            'certification_date_l3': cmd.certification_date,
             'related_order_id': cmd.related_order_id,
             'related_order_type': cmd.related_order_type,
             'notes': cmd.notes,
@@ -309,6 +319,8 @@ class CertifyInvoice(Command):
 
 @register(CertifyInvoice)
 class CertifyInvoiceHandler(CommandHandler):
+    @writes("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.certification_date_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CertifyInvoice, db: Any) -> Any:
         # 1. 查记录
         invoice = db.query(models.Invoice).filter(
@@ -337,8 +349,8 @@ class CertifyInvoiceHandler(CommandHandler):
             )
 
         # 3. 认证
-        invoice.certification_status = "certified"
-        invoice.certification_date = datetime.now()
+        invoice.certification_status_l3 = "certified"
+        invoice.certification_date_l3 = datetime.now()
 
         # 4. 日志
         _log(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
@@ -381,6 +393,11 @@ class CreateInvoiceWithFixedAsset(Command):
 
 @register(CreateInvoiceWithFixedAsset)
 class CreateInvoiceWithFixedAssetHandler(CommandHandler):
+    @writes("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.certification_date_l3", tier=TIER_L3, source="policy")
+    @writes("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
+    @writes("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
+    @writes("FixedAsset.depreciation_method_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreateInvoiceWithFixedAsset, db: Any) -> Any:
         # 使用 AccountingEngine 计算发票金额
         amounts = _engine.calculate_invoice_amounts(
@@ -400,14 +417,14 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             invoice_no=cmd.invoice_no,
             direction=cmd.direction,
             invoice_type=cmd.invoice_type,
-            tax_rate=_d(cmd.tax_rate),
-            amount_without_tax=amount_without_tax,
-            tax_amount=tax_amount,
-            amount_with_tax=amount_with_tax,
+            tax_rate_l1=_d(cmd.tax_rate),
+            amount_without_tax_l1=amount_without_tax,
+            tax_amount_l1=tax_amount,
+            amount_with_tax_l1=amount_with_tax,
             counterparty_name=cmd.counterparty_name,
             seller_name=cmd.seller_name,
             buyer_name=cmd.buyer_name,
-            issue_date=issue_date,
+            issue_date_l1=issue_date,
             notes=cmd.notes,
             related_order_type="fixed_asset",
             # 默认 n_a，下方根据纳税人类型 + 发票类型 + 是否抵扣决定是否自动认证
@@ -421,10 +438,17 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             inv_item = models.InvoiceItem(
                 invoice_id=db_invoice.id,
                 product_id=it['product_id'],
+<<<<<<< Updated upstream
                 quantity=it['quantity'],
                 unit_price=it['unit_price'],
                 tax_rate=it.get('tax_rate', cmd.tax_rate),
                 total_price=line_total,
+=======
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it.get('tax_rate', cmd.tax_rate),
+                total_price_l1=line_total,
+>>>>>>> Stashed changes
             )
             db.add(inv_item)
 
@@ -448,8 +472,13 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         # 必须同步为 "certified"，否则 crud/invoices.py 与 crud/finance/tax_declarations.py
         # 按 "certified" 过滤会漏掉这笔税额 → 申报 input_vat 与 222102 总账不一致。
         if enable_vat_deduction:
+<<<<<<< Updated upstream
             db_invoice.certification_status = CertificationStatus.CERTIFIED
             db_invoice.certification_date = datetime.combine(issue_date, datetime.min.time())
+=======
+            db_invoice.certification_status_l3 = CertificationStatus.CERTIFIED
+            db_invoice.certification_date_l3 = datetime.combine(issue_date, datetime.min.time())
+>>>>>>> Stashed changes
             db.flush()
 
         # 创建固定资产（原值口径与总账分录保持一致，确保 BS 平衡）
@@ -458,12 +487,21 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             asset_code=cmd.asset_code,
             name=cmd.asset_name,
             category=cmd.category,
+<<<<<<< Updated upstream
             original_value=asset_original_value,
             salvage_rate=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
             useful_life=cmd.useful_life,
             depreciation_method=cmd.depreciation_method,
             start_date=start_date,
             accumulated_depreciation=_d(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
+=======
+            original_value_l1=asset_original_value,
+            salvage_rate_l3=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
+            useful_life_l3=cmd.useful_life,
+            depreciation_method_l3=cmd.depreciation_method,
+            start_date_l1=start_date,
+            accumulated_depreciation_l4=_d(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
+>>>>>>> Stashed changes
             status=cmd.asset_status,
         )
         db.add(db_asset)
@@ -473,6 +511,12 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         db_invoice.related_order_id = db_asset.id
         db.flush()
 
+<<<<<<< Updated upstream
+=======
+        # AS-02 价税分离校验(固定资产发票同普通发票,三段平衡 + 税率合法性)
+        enforce_rules(db, ["AS-02"], {"invoice_id": db_invoice.id})
+
+>>>>>>> Stashed changes
         # 5.2 总账过账：dr 1601(不含税或价税合计) / dr 222102(进项税额) / cr 2202(价税合计)
         # source_model + source_id 提供幂等防御（重复提交不会重复过账）
         # 按 counterparty_name 匹配供应商作为 partner_id（与 _auto_generate_purchase_order 一致）
@@ -522,6 +566,8 @@ class ReverseInvoice(Command):
 
 @register(ReverseInvoice)
 class ReverseInvoiceHandler(CommandHandler):
+    @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: ReverseInvoice, db: Any) -> Any:
         """红字发票冲红：标记原发票 + 创建红字发票 + 级联冲红凭证和库存
 
@@ -571,20 +617,23 @@ class ReverseInvoiceHandler(CommandHandler):
             invoice_no=red_invoice_no,
             direction=invoice.direction,
             invoice_type=invoice.invoice_type,
-            tax_rate=invoice.tax_rate,
-            amount_without_tax=-_d(invoice.amount_without_tax),
-            tax_amount=-_d(invoice.tax_amount),
-            amount_with_tax=-_d(invoice.amount_with_tax),
+            tax_rate_l1=invoice.tax_rate_l1,
+            amount_without_tax_l1=-_d(invoice.amount_without_tax_l1),
+            tax_amount_l1=-_d(invoice.tax_amount_l1),
+            amount_with_tax_l1=-_d(invoice.amount_with_tax_l1),
             counterparty_name=invoice.counterparty_name,
             seller_name=invoice.seller_name,
             buyer_name=invoice.buyer_name,
-            issue_date=datetime.now().date(),
+            issue_date_l1=datetime.now().date(),
             related_order_id=invoice.related_order_id,
             related_order_type=invoice.related_order_type,
             notes=f"红字发票：冲红原发票 {invoice.invoice_no}(ID:{invoice.id})。原因：{cmd.reason}",
         )
         db.add(red_invoice)
         db.flush()
+
+        # AS-06 红字发票金额为负校验(防止冲红方向错误)
+        enforce_rules(db, ["AS-06"], {"invoice_id": red_invoice.id})
 
         # 5. 级联冲红凭证和库存
         # 修复 #12：检查已有部分退货，冲红剩余部分而非整单
@@ -613,7 +662,7 @@ class ReverseInvoiceHandler(CommandHandler):
                 reversed_qty_map = {}
                 reversal_moves = db.query(
                     models.StockMove.product_id,
-                    sqlfunc.sum(models.StockMove.quantity).label('rev_qty')
+                    sqlfunc.sum(models.StockMove.quantity_l1).label('rev_qty')
                 ).filter(
                     models.StockMove.source_type == "sale_order_reversal",
                     models.StockMove.account_id == cmd.account_id,
@@ -627,7 +676,7 @@ class ReverseInvoiceHandler(CommandHandler):
                 remaining_items = []
                 for item in sale_order.items:
                     already_reversed = reversed_qty_map.get(item.product_id, 0)
-                    remaining_qty = item.quantity - already_reversed
+                    remaining_qty = item.quantity_l1 - already_reversed
                     if remaining_qty > 0:
                         remaining_items.append((item, remaining_qty))
 
@@ -647,7 +696,7 @@ class ReverseInvoiceHandler(CommandHandler):
                         account = db.query(models.Account).filter(
                             models.Account.id == cmd.account_id
                         ).first()
-                        taxpayer_type = account.taxpayer_type if account else "general"
+                        taxpayer_type = account.taxpayer_type_l3 if account else "general"
 
                         total_wt_ret = Decimal("0")
                         total_wot_ret = Decimal("0")
@@ -661,7 +710,7 @@ class ReverseInvoiceHandler(CommandHandler):
                                 models.Product.id == item.product_id,
                                 models.Product.account_id == cmd.account_id,
                             ).first()
-                            if product and product.track_inventory:
+                            if product and product.track_inventory_l3:
                                 eng_inv.reverse(
                                     account_id=cmd.account_id,
                                     product_id=item.product_id,
@@ -677,13 +726,13 @@ class ReverseInvoiceHandler(CommandHandler):
                                     models.StockMove.source_id == sale_order.id,
                                     models.StockMove.product_id == item.product_id,
                                 ).first()
-                                uc = move.unit_cost if move and move.unit_cost else Decimal("0")
+                                uc = move.unit_cost_l2 if move and move.unit_cost_l2 else Decimal("0")
                                 cost_ret += (Decimal(str(rem_qty)) * uc).quantize(Q2)
 
-                            line_total = Decimal(str(item.total_price))
-                            ratio = Decimal(str(rem_qty)) / Decimal(str(item.quantity))
+                            line_total = Decimal(str(item.total_price_l1))
+                            ratio = Decimal(str(rem_qty)) / Decimal(str(item.quantity_l1))
                             rev_ret = (line_total * ratio).quantize(Q2)
-                            rate = item.tax_rate
+                            rate = item.tax_rate_l1
                             if taxpayer_type == "small_scale" and rate and rate > 0:
                                 rate = Decimal("0.01")
                             t_ret = (rev_ret * Decimal(str(rate))).quantize(Q2) if rate else Decimal("0")
@@ -701,7 +750,7 @@ class ReverseInvoiceHandler(CommandHandler):
                             "taxpayer_type": taxpayer_type,
                             "source_model": "sale_return",
                             "source_id": red_return_id,
-                            "date": red_invoice.issue_date,
+                            "date": red_invoice.issue_date_l1,
                         })
                         cascade_lines.append(
                             f"冲红剩余销售部分({len(remaining_items)}项，已扣减部分退货)"
@@ -713,11 +762,11 @@ class ReverseInvoiceHandler(CommandHandler):
 
                         eng_inv = InventoryEngine(db)
                         for item in sale_order.items:
-                            unit_cost = _d(item.unit_cost) if item.unit_cost else Decimal('0')
+                            unit_cost = _d(item.unit_cost_l2) if item.unit_cost_l2 else Decimal('0')
                             engine_inv_res = eng_inv.reverse(
                                 account_id=cmd.account_id,
                                 product_id=item.product_id,
-                                quantity=item.quantity,
+                                quantity=item.quantity_l1,
                                 unit_cost=unit_cost,
                                 source_type="sale_order",
                                 source_id=sale_order.id,
@@ -742,11 +791,11 @@ class ReverseInvoiceHandler(CommandHandler):
             ).first()
             if purchase_order:
                 for item in purchase_order.items:
-                    unit_cost = _d(item.unit_price) if item.unit_price else Decimal('0')
+                    unit_cost = _d(item.unit_price_l1) if item.unit_price_l1 else Decimal('0')
                     engine_inv.reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         unit_cost=unit_cost,
                         source_type="purchase_order",
                         source_id=purchase_order.id,
@@ -808,7 +857,7 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     from crud.products import get_product
     from datetime import datetime as dt_mod
 
-    issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
+    issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
     order_no = _generate_order_no(db, "SO", issue_dt)
 
     # 从发票 counterparty_name 查找或创建客户
@@ -833,9 +882,9 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
         payment_status=PaymentStatus.UNPAID,
         status=OrderStatus.COMPLETED,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price=_d(invoice.amount_with_tax),
-        tax_amount=_d(invoice.tax_amount),
-        sale_date=invoice.issue_date,
+        total_price_l1=_d(invoice.amount_with_tax_l1),
+        tax_amount_l1=_d(invoice.tax_amount_l1),
+        sale_date_l1=invoice.issue_date_l1,
     )
     db.add(order)
     db.flush()
@@ -845,10 +894,10 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
         item = models.SaleItem(
             order_id=order.id,
             product_id=it['product_id'],
-            quantity=it['quantity'],
-            unit_price=it['unit_price'],
-            tax_rate=it.get('tax_rate', invoice.tax_rate),
-            total_price=line_total,
+            quantity_l1=it['quantity'],
+            unit_price_l1=it['unit_price'],
+            tax_rate_l1=it.get('tax_rate', invoice.tax_rate_l1),
+            total_price_l1=line_total,
         )
         db.add(item)
 
@@ -858,11 +907,11 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     eng = InventoryEngine(db)
     for item in order.items:
         product = get_product(db, account_id, item.product_id)
-        if product and product.track_inventory:
+        if product and product.track_inventory_l3:
             unit_cost = eng.outbound(
                 account_id=account_id,
                 product_id=item.product_id,
-                quantity=item.quantity,
+                quantity=item.quantity_l1,
                 source_type="sale_order",
                 source_id=order.id,
                 operator=operator,
@@ -876,7 +925,7 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     FinanceEngine(db, account_id).record_sale(order)
 
     _log(db, account_id, "create", "sale_order", order.id,
-         f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",
+         f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
          operator=operator)
     db.flush()
     return order
@@ -904,7 +953,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         supplier_id = supplier.id
 
     from datetime import datetime as dt_mod
-    issue_dt = invoice.issue_date if isinstance(invoice.issue_date, dt_mod) else dt_mod.combine(invoice.issue_date, dt_mod.min.time())
+    issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
     order_no = _generate_order_no(db, "PO", issue_dt)
     order = models.PurchaseOrder(
         account_id=account_id,
@@ -914,9 +963,9 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         payment_method=PaymentMethod.COMPANY,
         status=OrderStatus.COMPLETED,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price=Decimal("0"),  # 下面逐行累加
-        tax_amount=_d(invoice.tax_amount),
-        purchase_date=invoice.issue_date,
+        total_price_l1=Decimal("0"),  # 下面逐行累加
+        tax_amount_l1=_d(invoice.tax_amount_l1),
+        purchase_date_l1=invoice.issue_date_l1,
     )
     db.add(order)
     db.flush()
@@ -931,13 +980,13 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         item = models.PurchaseItem(
             order_id=order.id,
             product_id=it['product_id'],
-            quantity=it['quantity'],
-            unit_price=it['unit_price'],
-            tax_rate=it.get('tax_rate', invoice.tax_rate),
-            total_price=line_total,
+            quantity_l1=it['quantity'],
+            unit_price_l1=it['unit_price'],
+            tax_rate_l1=it.get('tax_rate', invoice.tax_rate_l1),
+            total_price_l1=line_total,
         )
         db.add(item)
-        if product.track_inventory:
+        if product.track_inventory_l3:
             calc = InventoryEngine(db).inbound(
                 account_id=account_id,
                 product_id=it['product_id'],
@@ -951,7 +1000,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
             calculated_data.append(calc)
         total += line_total
 
-    order.total_price = total.quantize(Q2)
+    order.total_price_l1 = total.quantize(Q2)
     db.flush()
 
     # 生成会计凭证
@@ -959,7 +1008,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         FinanceEngine(db, account_id).record_purchase(order, calculated_data)
 
     _log(db, account_id, "create", "purchase_order", order.id,
-         f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax}, 税额={invoice.tax_amount}",
+         f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
          operator=operator)
     db.flush()
     return order
@@ -985,6 +1034,9 @@ class UpdateAssetWithInvoice(Command):
 
 @register(UpdateAssetWithInvoice)
 class UpdateAssetWithInvoiceHandler(CommandHandler):
+    @writes("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
+    @writes("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
+    @writes("FixedAsset.depreciation_method_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdateAssetWithInvoice, db: Any) -> Any:
         # 1. 查找资产
         asset = db.query(models.FixedAsset).filter(
@@ -1004,18 +1056,66 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
         # 3. 更新资产原值（如果传了）
         if cmd.original_value is not None:
             original_value = _d(cmd.original_value)
+<<<<<<< Updated upstream
             old_value = _d(asset.original_value)
             asset.original_value = original_value
+=======
+            old_value = _d(asset.original_value_l1)
+            asset.original_value_l1 = original_value
+>>>>>>> Stashed changes
 
             # 联动：发票金额同步（使用 AccountingEngine）
             if invoice:
                 amounts = _engine.calculate_invoice_amounts(
                     amount_with_tax=original_value,
-                    tax_rate=invoice.tax_rate
+                    tax_rate=invoice.tax_rate_l1
                 )
-                invoice.amount_without_tax = amounts.amount_without_tax
-                invoice.tax_amount = amounts.tax_amount
-                invoice.amount_with_tax = amounts.amount_with_tax
+                invoice.amount_without_tax_l1 = amounts.amount_without_tax
+                invoice.tax_amount_l1 = amounts.tax_amount
+                invoice.amount_with_tax_l1 = amounts.amount_with_tax
+
+                # 同步总账：原值变更必须冲红原 fixed_asset_purchase 凭证 + 按新金额重过账
+                # 否则 BS 上 1601 余额与资产卡片原值不一致（资产卡片改了总账没改）
+                if original_value != old_value:
+                    from finance_integration import reverse_journal, post_journal
+                    from engine_finance import FinanceEngine
+                    fe = FinanceEngine(db, cmd.account_id)
+                    acct_conf = fe._account_config()
+                    # 进项税抵扣需同时满足「一般纳税人」+「专票」（与创建时口径一致）
+                    enable_vat_deduction = acct_conf["enable_vat_deduction"] and invoice.invoice_type == InvoiceType.SPECIAL
+                    acct_conf["enable_vat_deduction"] = enable_vat_deduction
+                    # 新原值口径：小规模/普票含税 / 一般纳税人专票不含税（与创建时一致）
+                    new_asset_value = amounts.amount_with_tax if not enable_vat_deduction else amounts.amount_without_tax
+
+                    # 1. 冲红旧凭证（force=True 跳过幂等：允许反复"冲红+重过"）
+                    reverse_journal(db, cmd.account_id, "fixed_asset_purchase", asset.id, force=True)
+
+                    # 2. 修正资产卡片原值口径（若与新计算口径不一致则覆盖）
+                    if asset.original_value_l1 != new_asset_value:
+                        asset.original_value_l1 = new_asset_value
+
+                    # 3. 按 new_asset_value 重新过账（force=True：跳过幂等防御创建新正向凭证）
+                    # 按 counterparty_name 匹配供应商
+                    supplier_id = None
+                    if invoice.counterparty_name:
+                        supplier = db.query(models.Supplier).filter(
+                            models.Supplier.account_id == cmd.account_id,
+                            models.Supplier.name == invoice.counterparty_name,
+                        ).first()
+                        if supplier:
+                            supplier_id = supplier.id
+
+                    post_journal(db, cmd.account_id, "fixed_asset_purchase", {
+                        "original_value": new_asset_value,
+                        "tax_amount": amounts.tax_amount if enable_vat_deduction else Decimal("0"),
+                        "amount_with_tax": amounts.amount_with_tax,
+                        "asset_id": asset.id,
+                        "partner_id": supplier_id,
+                        "date": _date_iso(invoice.issue_date_l1),
+                        "source_model": "fixed_asset_purchase",
+                        "source_id": asset.id,
+                        "account_config": acct_conf,
+                    }, force=True)
 
                 # 同步总账：原值变更必须冲红原 fixed_asset_purchase 凭证 + 按新金额重过账
                 # 否则 BS 上 1601 余额与资产卡片原值不一致（资产卡片改了总账没改）
@@ -1066,13 +1166,13 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
         if cmd.category is not None:
             asset.category = cmd.category
         if cmd.salvage_rate is not None:
-            asset.salvage_rate = _d(cmd.salvage_rate)
+            asset.salvage_rate_l3 = _d(cmd.salvage_rate)
         if cmd.useful_life is not None:
-            asset.useful_life = cmd.useful_life
+            asset.useful_life_l3 = cmd.useful_life
         if cmd.depreciation_method is not None:
-            asset.depreciation_method = cmd.depreciation_method
+            asset.depreciation_method_l3 = cmd.depreciation_method
         if cmd.start_date is not None:
-            asset.start_date = datetime.strptime(cmd.start_date, "%Y-%m-%d").date()
+            asset.start_date_l1 = datetime.strptime(cmd.start_date, "%Y-%m-%d").date()
         if cmd.status is not None:
             asset.status = cmd.status
 

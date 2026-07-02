@@ -12,6 +12,7 @@ from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
 from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+from lineage import reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 
 _engine = AccountingEngine()
 
@@ -30,8 +31,16 @@ def _quarter_range(year: int, quarter: int):
     return start_date, end_date
 
 
+@reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+@reads("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
+@reads("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+@reads("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
+@reads("SaleOrder.has_invoice_l1", tier=TIER_L1, source="external")
+@reads("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
+@reads("SaleOrder.tax_amount_l1", tier=TIER_L1, source="external")
+@reads("SaleItem.tax_rate_l1", tier=TIER_L1, source="external")
 def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, end_date_exclusive: datetime):
-    """汇总一个增值税属期内的发票数据（销项 + 进项抵扣）—— 单一真相源。
+    """汇总一个增值税属期内的发票数据（销项 + 进项抵扣）+ 未开票收入 —— 单一真相源。
 
     被 routers/tax.py（报表页）与 generate_vat_declaration（申报表）共用，
     避免双轨计算导致一般纳税人进项抵扣在某一路径遗漏（历史 bug：
@@ -40,6 +49,10 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
 
     日期边界：左闭右开 [start_date, end_date_exclusive)。
     进项抵扣规则：仅一般纳税人，且仅已认证的增值税专用发票可抵扣。
+
+    未开票收入：散客现金销售(has_invoice_l1=False)仍需申报销项税(业务因果链 A1)。
+    从 SaleOrder + SaleItem 汇总不含税收入和销项税,与已开票收入合并。
+    未开票收入按普通收入处理(享受小规模季度≤30万免税判定)。
     """
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     if not account:
@@ -48,8 +61,8 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
     out_invoices = db.query(models.Invoice).filter(
         models.Invoice.account_id == account_id,
         models.Invoice.direction == InvoiceDirection.OUT,
-        models.Invoice.issue_date >= start_date,
-        models.Invoice.issue_date < end_date_exclusive,
+        models.Invoice.issue_date_l1 >= start_date,
+        models.Invoice.issue_date_l1 < end_date_exclusive,
     ).all()
 
     output_total = Decimal('0')
@@ -57,51 +70,86 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
     special_revenue = Decimal('0')
     output_tax = Decimal('0')
     for inv in out_invoices:
-        rev = _d(inv.amount_without_tax)
+        rev = _d(inv.amount_without_tax_l1)
         output_total += rev
-        output_tax += _d(inv.tax_amount)
+        output_tax += _d(inv.tax_amount_l1)
         # 按发票类型拆分：小规模普票可享受免税，专票不享受
         if inv.invoice_type == InvoiceType.SPECIAL:
             special_revenue += rev
         else:
             ordinary_revenue += rev
 
+    # 未开票收入:散客现金销售(has_invoice_l1=False)仍需申报销项税(业务因果链 A1)
+    unrecorded_orders = db.query(models.SaleOrder).filter(
+        models.SaleOrder.account_id == account_id,
+        models.SaleOrder.has_invoice_l1 == False,  # noqa: E712
+        models.SaleOrder.sale_date_l1 >= start_date,
+        models.SaleOrder.sale_date_l1 < end_date_exclusive,
+        models.SaleOrder.status != OrderStatus.CANCELLED,
+    ).all()
+
+    unrecorded_revenue = Decimal('0')
+    unrecorded_tax = Decimal('0')
+    for order in unrecorded_orders:
+        for item in order.items:
+            line_total = _d(item.total_price_l1)
+            tax_rate = _d(item.tax_rate_l1)
+            if tax_rate > 0:
+                amount_without_tax = (line_total / (1 + tax_rate)).quantize(Q2)
+                tax_amount = (line_total - amount_without_tax).quantize(Q2)
+            else:
+                amount_without_tax = line_total
+                tax_amount = Decimal('0')
+            unrecorded_revenue += amount_without_tax
+            unrecorded_tax += tax_amount
+
+    # 未开票收入按普通收入处理(享受小规模季度≤30万免税判定)
+    output_total += unrecorded_revenue
+    ordinary_revenue += unrecorded_revenue
+    output_tax += unrecorded_tax
+
     input_total = Decimal('0')
     input_tax = Decimal('0')
     in_invoices = []
-    if account.taxpayer_type == TaxpayerType.GENERAL:
+    if account.taxpayer_type_l3 == TaxpayerType.GENERAL:
         in_invoices = db.query(models.Invoice).filter(
             models.Invoice.account_id == account_id,
             models.Invoice.direction == InvoiceDirection.IN,
-            models.Invoice.issue_date >= start_date,
-            models.Invoice.issue_date < end_date_exclusive,
+            models.Invoice.issue_date_l1 >= start_date,
+            models.Invoice.issue_date_l1 < end_date_exclusive,
         ).all()
         for inv in in_invoices:
             # 进项抵扣：仅已认证的增值税专用发票
-            if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status == CertificationStatus.CERTIFIED:
-                input_total += _d(inv.amount_without_tax)
-                input_tax += _d(inv.tax_amount)
+            if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status_l3 == CertificationStatus.CERTIFIED:
+                input_total += _d(inv.amount_without_tax_l1)
+                input_tax += _d(inv.tax_amount_l1)
 
     return {
         "account": account,
         "out_invoices": out_invoices,
         "in_invoices": in_invoices,
+        "unrecorded_orders": unrecorded_orders,
         "output_total": output_total,
         "ordinary_revenue": ordinary_revenue,
         "special_revenue": special_revenue,
         "output_tax": output_tax,
+        "unrecorded_revenue": unrecorded_revenue,
+        "unrecorded_tax": unrecorded_tax,
         "input_total": input_total,
         "input_tax": input_tax,
     }
 
 
+@reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+@reads("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+@reads("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
 def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: int):
     """生成增值税纳税申报表"""
     start_date, end_date_exclusive = _quarter_range(year, quarter)
 
     agg = aggregate_vat_invoices(db, account_id, start_date, end_date_exclusive)
     account = agg["account"]
-    taxpayer_type = account.taxpayer_type if account else "small_scale"
+    taxpayer_type = account.taxpayer_type_l3 if account else "small_scale"
 
     # 使用 AccountingEngine 计算增值税（单一真相源：传入销项+进项，避免硬编码估算）
     vat_result = _engine.calculate_vat(
@@ -137,23 +185,32 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "surcharge_total": vat_result.surcharge_total,
         "reduction_item": vat_result.reduction_item,
         "reduction_amount": vat_result.reduction_amount,
-        "invoice_list": agg["out_invoices"]
+        "invoice_list": agg["out_invoices"],
+        "unrecorded_revenue": agg["unrecorded_revenue"].quantize(Q2),
+        "unrecorded_tax": agg["unrecorded_tax"].quantize(Q2),
+        "unrecorded_order_count": len(agg["unrecorded_orders"]),
     }
 
 
 # ── 企业所得税预缴申报表 (A类) ──
 
+@reads("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+@reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+@reads("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
+@reads("SaleItem.quantity_l1", tier=TIER_L1, source="external")
+@reads("SaleItem.unit_cost_l2", tier=TIER_L2, source="engine")
+@reads("Expense.amount_l1", tier=TIER_L1, source="external")
 def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quarter: int):
     """生成企业所得税预缴申报表"""
     # 确定季度日期范围（左闭右开，与 VAT 申报一致）
     start_date, end_date_exclusive = _quarter_range(year, quarter)
 
     # 营业收入 = 销项发票不含税金额（发票说话，取消经营口径的含税订单收入）
-    operating_revenue = _d(db.query(sqlfunc.sum(models.Invoice.amount_without_tax)).filter(
+    operating_revenue = _d(db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
         models.Invoice.account_id == account_id,
         models.Invoice.direction == InvoiceDirection.OUT,
-        models.Invoice.issue_date >= start_date,
-        models.Invoice.issue_date < end_date_exclusive
+        models.Invoice.issue_date_l1 >= start_date,
+        models.Invoice.issue_date_l1 < end_date_exclusive
     ).scalar())
 
     # 增值税减免加回收入（财税〔2008〕151号：减免的增值税需计入应纳税所得额）
@@ -162,36 +219,36 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
         models.Account.id == account_id).first().code if db.query(models.Account).filter(
         models.Account.id == account_id).first() else "")).first()
     if ledger:
-        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit)).join(
+        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit_l2)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
-            AccountMove.date >= start_date, AccountMove.date < end_date_exclusive
+            AccountMove.date_l1 >= start_date, AccountMove.date_l1 < end_date_exclusive
         ).scalar())
     else:
         vat_exemption_income = Decimal('0')
     operating_revenue += vat_exemption_income
 
-    # 营业成本 = Σ(SaleItem.quantity × SaleItem.unit_cost)（移动加权平均出库成本，单一真相源）
+    # 营业成本 = Σ(SaleItem.quantity_l1 × SaleItem.unit_cost_l2)（移动加权平均出库成本，单一真相源）
     operating_cost = Decimal('0')
     completed_sales = db.query(models.SaleOrder).filter(
         models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date >= start_date,
-        models.SaleOrder.sale_date < end_date_exclusive,
+        models.SaleOrder.sale_date_l1 >= start_date,
+        models.SaleOrder.sale_date_l1 < end_date_exclusive,
         models.SaleOrder.status == OrderStatus.COMPLETED
     ).all()
     for order in completed_sales:
         for item in order.items:
-            # 单一真相源：读 SaleItem.unit_cost（出库时锁定的加权平均成本），
+            # 单一真相源：读 SaleItem.unit_cost_l2（出库时锁定的加权平均成本），
             # 禁止用 Product.purchase_price（主数据静态字段，不反映实际采购成本）
-            unit_cost = Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0')
-            operating_cost += Decimal(str(item.quantity)) * unit_cost
+            unit_cost = Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0')
+            operating_cost += Decimal(str(item.quantity_l1)) * unit_cost
 
     # 营业费用
-    operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount)).filter(
+    operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount_l1)).filter(
         models.Expense.account_id == account_id,
-        models.Expense.expense_date >= start_date,
-        models.Expense.expense_date < end_date_exclusive
+        models.Expense.expense_date_l1 >= start_date,
+        models.Expense.expense_date_l1 < end_date_exclusive
     ).scalar())
 
     # 税金及附加（增值税附加税）
@@ -209,7 +266,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     # 单一真相源：从账本读取纳税人类型和主体类型，禁止硬编码
     # 所得税纳税人类型映射：VAT 口径 small_scale → 所得税口径 small_micro（5%实际税负：25%×20%）
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    raw_type = account.taxpayer_type if account and account.taxpayer_type else "small_scale"
+    raw_type = account.taxpayer_type_l3 if account and account.taxpayer_type_l3 else "small_scale"
     income_tax_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
     entity_type = account.type if account and account.type else "company"
     tax_result = _engine.calculate_income_tax(
@@ -252,6 +309,11 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
 
 # ── 资产加速折旧明细表 (A201020) ──
 
+@reads("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
+@reads("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
+@reads("FixedAsset.depreciation_method_l3", tier=TIER_L3, source="policy")
+@reads("FixedAsset.original_value_l1", tier=TIER_L1, source="external")
+@reads("FixedAssetDepreciation.accumulated_after_l2", tier=TIER_L2, source="engine")
 def generate_asset_depreciation_detail(db: Session, account_id: int, year: int, quarter: int):
     """生成资产加速折旧明细表"""
     # 确定季度日期范围（统一用 _quarter_range 左闭右开，与其他税务函数一致）
@@ -270,33 +332,37 @@ def generate_asset_depreciation_detail(db: Session, account_id: int, year: int, 
     ).all()
 
     for asset in fixed_assets:
-        if asset.start_date and asset.start_date <= end_date.date():
+        if asset.start_date_l1 and asset.start_date_l1 <= end_date.date():
             # 计算本期折旧（使用 AccountingEngine）
-            months = (end_date.year - asset.start_date.year) * 12 + (end_date.month - asset.start_date.month)
-            if 0 < months <= asset.useful_life:
+            months = (end_date.year - asset.start_date_l1.year) * 12 + (end_date.month - asset.start_date_l1.month)
+            if 0 < months <= asset.useful_life_l3:
                 result = _engine.calculate_depreciation_straight_line(
-                    original_value=_d(asset.original_value),
-                    salvage_rate=_d(asset.salvage_rate),
-                    useful_life=asset.useful_life,
+                    original_value=_d(asset.original_value_l1),
+                    salvage_rate=_d(asset.salvage_rate_l3),
+                    useful_life=asset.useful_life_l3,
                     months_used=months
                 )
                 period_depreciation = result.monthly_depreciation
                 accumulated = result.accumulated_depreciation
             else:
                 period_depreciation = Decimal('0')
-                accumulated = _d(asset.accumulated_depreciation)
+                last_dep = db.query(sqlfunc.max(models.FixedAssetDepreciation.accumulated_after_l2)).filter(
+                    models.FixedAssetDepreciation.asset_id == asset.id,
+                    models.FixedAssetDepreciation.account_id == account_id
+                ).scalar()
+                accumulated = _d(last_dep) if last_dep else Decimal('0')
 
             assets.append({
                 "name": asset.name,
                 "category": asset.category or "固定资产",
-                "original_value": _d(asset.original_value).quantize(Q2),
-                "depreciation_method": asset.depreciation_method,
-                "useful_life": asset.useful_life,
+                "original_value": _d(asset.original_value_l1).quantize(Q2),
+                "depreciation_method": asset.depreciation_method_l3,
+                "useful_life": asset.useful_life_l3,
                 "period_depreciation": period_depreciation.quantize(Q2),
                 "accumulated_depreciation": accumulated.quantize(Q2)
             })
 
-            total_original_value += _d(asset.original_value)
+            total_original_value += _d(asset.original_value_l1)
             total_depreciation += period_depreciation
             total_accumulated += accumulated
 

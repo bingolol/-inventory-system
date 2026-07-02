@@ -346,15 +346,15 @@ def _sync_bank_account_balance_from_ledger():
             rows = conn.execute(text(
                 """
                 SELECT ba.id AS bank_account_id, ba.account_id, ba.bank_name,
-                       COALESCE(SUM(aml.debit), 0) - COALESCE(SUM(aml.credit), 0) AS ledger_balance,
-                       ba.balance AS current_balance
+                       COALESCE(SUM(aml.debit_l2), 0) - COALESCE(SUM(aml.credit_l2), 0) AS ledger_balance,
+                       ba.balance_l4 AS current_balance
                 FROM bank_accounts ba
                 LEFT JOIN accounts a ON a.id = ba.account_id
                 LEFT JOIN ledgers l ON l.code = a.code
                 LEFT JOIN ledger_accounts la ON la.ledger_id = l.id AND la.code = '1002'
                 LEFT JOIN account_move_lines aml ON aml.ledger_account_id = la.id
                 LEFT JOIN account_moves am ON am.id = aml.move_id
-                GROUP BY ba.id, ba.account_id, ba.bank_name, ba.balance
+                GROUP BY ba.id, ba.account_id, ba.bank_name, ba.balance_l4
                 """
             )).fetchall()
 
@@ -367,7 +367,7 @@ def _sync_bank_account_balance_from_ledger():
                 current_balance = Decimal(str(r._mapping["current_balance"] or 0)).quantize(Decimal("0.01"))
                 if ledger_balance != current_balance:
                     conn.execute(text(
-                        "UPDATE bank_accounts SET balance = :bal WHERE id = :id"
+                        "UPDATE bank_accounts SET balance_l4 = :bal WHERE id = :id"
                     ), {"bal": float(ledger_balance), "id": bank_account_id})
                     print(f"[BankSync] bank_account#{bank_account_id} balance: "
                           f"{current_balance} → {ledger_balance}")

@@ -17,31 +17,31 @@ def db():
     s = sessionmaker(bind=e)(); yield s; s.close()
 
 def _acc(db):
-    a = models.Account(name="T", code=f"BR{uuid.uuid4().hex[:4]}", taxpayer_type="general")
+    a = models.Account(name="T", code=f"BR{uuid.uuid4().hex[:4]}", taxpayer_type_l3="general")
     db.add(a); db.flush()
     from finance_integration import get_or_create_ledger_id
     get_or_create_ledger_id(db, a.id)
     return a
 def _bank(db, aid):
-    b = models.BankAccount(account_id=aid, bank_name="X", account_number="6222", balance=0)
+    b = models.BankAccount(account_id=aid, bank_name="X", account_number="6222", balance_l4=0)
     db.add(b); db.flush(); return b
 def _tx(db, baid, aid, amt, dr, dt, lid=None):
-    tx = models.BankTransaction(bank_account_id=baid, account_id=aid, amount=amt,
-        transaction_type="inflow" if dr=="in" else "outflow", transaction_date=dt,
-        description=f"t{amt}", balance_after=amt if dr=="in" else 0)
+    tx = models.BankTransaction(bank_account_id=baid, account_id=aid, amount_l2=amt,
+        transaction_type="inflow" if dr=="in" else "outflow", transaction_date_l1=dt,
+        description=f"t{amt}", balance_after_l4=amt if dr=="in" else 0)
     db.add(tx); db.flush()
     ba = db.query(models.BankAccount).filter(models.BankAccount.id==baid, models.BankAccount.account_id==aid).first()
-    if ba: ba.balance += (Decimal(str(amt)) if dr=="in" else -Decimal(str(amt)))
+    if ba: ba.balance_l4 += (Decimal(str(amt)) if dr=="in" else -Decimal(str(amt)))
     if lid:
         ac = db.query(LedgerAccount).filter(LedgerAccount.ledger_id==lid, LedgerAccount.code=="1002").first()
         if ac:
-            m = AccountMove(ledger_id=lid, move_type="bank", date=dt, state="posted")
+            m = AccountMove(ledger_id=lid, move_type="bank", date_l1=dt, state="posted")
             db.add(m); db.flush()
             deb = Decimal(str(amt)) if dr=="in" else 0
             cre = 0 if dr=="in" else Decimal(str(amt))
-            db.add(AccountMoveLine(move_id=m.id, ledger_account_id=ac.id, debit=deb, credit=cre, amount_residual=deb or cre))
+            db.add(AccountMoveLine(move_id=m.id, ledger_account_id=ac.id, debit_l2=deb, credit_l2=cre, amount_residual_l2=deb or cre))
             bal = db.query(LedgerAccountBalance).filter(LedgerAccountBalance.ledger_account_id==ac.id).first()
-            if bal: bal.balance += (deb - cre); bal.debit_total += deb; bal.credit_total += cre
+            if bal: bal.balance_l4 += (deb - cre); bal.debit_total_l4 += deb; bal.credit_total_l4 += cre
     db.flush(); return tx
 
 
@@ -56,7 +56,7 @@ class TestBankEngine:
             {"item_type":"book_paid_not_bank","amount":500,"direction":"out","source_dates":["2024-12-28"],"notes":"支票"},
             {"item_type":"bank_received_not_book","amount":200,"direction":"in","source_dates":["2024-12-30"],"notes":"利息"},
         ])
-        assert rec.period=="2025-01" and rec.book_balance==Decimal("1000")
+        assert rec.period=="2025-01" and rec.book_balance_l4==Decimal("1000")
         items=db.query(models_bank.ReconciliationItem).filter(models_bank.ReconciliationItem.reconciliation_id==rec.id).all()
         assert len(items)==2
 
@@ -67,10 +67,10 @@ class TestBankEngine:
         d1,d2=date(2025,1,5),date(2025,1,8)
         _tx(db,bank.id,acc.id,500,"in",d1,lid);_tx(db,bank.id,acc.id,200,"out",d2,lid);db.commit()
         stmt=models_bank.BankStatement(bank_account_id=bank.id,account_id=acc.id,
-            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance=1000,closing_balance=1300)
+            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance_l1=1000,closing_balance_l1=1300)
         db.add(stmt);db.flush()
-        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=d1,amount=500))
-        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=d2,amount=-200))
+        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=d1,amount_l1=500))
+        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=d2,amount_l1=-200))
         db.commit()
         from engine_bank_reconcile import BankReconcileEngine
         e=BankReconcileEngine(db,acc.id,bank.id,"2025-01")
@@ -86,9 +86,9 @@ class TestBankEngine:
         _tx(db,bank.id,acc.id,200,"in",date(2025,1,5),lid)
         _tx(db,bank.id,acc.id,300,"in",date(2025,1,8),lid);db.commit()
         stmt=models_bank.BankStatement(bank_account_id=bank.id,account_id=acc.id,
-            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance=1000,closing_balance=1600)
+            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance_l1=1000,closing_balance_l1=1600)
         db.add(stmt);db.flush()
-        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=date(2025,1,10),amount=600))
+        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=date(2025,1,10),amount_l1=600))
         db.commit()
         from engine_bank_reconcile import BankReconcileEngine
         e=BankReconcileEngine(db,acc.id,bank.id,"2025-01")
@@ -102,9 +102,9 @@ class TestBankEngine:
         _tx(db,bank.id,acc.id,5000,"in",datetime(2024,12,31,23,59,59),lid)
         _tx(db,bank.id,acc.id,500,"in",date(2025,1,5),lid);db.commit()
         stmt=models_bank.BankStatement(bank_account_id=bank.id,account_id=acc.id,
-            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance=5000,closing_balance=5500)
+            period_start=date(2025,1,1),period_end=date(2025,1,31),opening_balance_l1=5000,closing_balance_l1=5500)
         db.add(stmt);db.flush()
-        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date=date(2025,1,5),amount=500))
+        db.add(models_bank.BankStatementLine(statement_id=stmt.id,transaction_date_l1=date(2025,1,5),amount_l1=500))
         db.commit()
         from engine_bank_reconcile import BankReconcileEngine
         e=BankReconcileEngine(db,acc.id,bank.id,"2025-01")
@@ -145,10 +145,10 @@ class TestBankAPI:
 
     def test_statement_import(self):
         s = self.TS()
-        acc = models.Account(name="X", code=f"A{uuid.uuid4().hex[:4]}", taxpayer_type="general")
+        acc = models.Account(name="X", code=f"A{uuid.uuid4().hex[:4]}", taxpayer_type_l3="general")
         s.add(acc); s.flush(); aid = acc.id
         from finance_integration import get_or_create_ledger_id; get_or_create_ledger_id(s, aid)
-        ba = models.BankAccount(account_id=aid, bank_name="X", account_number="6222", balance=0)
+        ba = models.BankAccount(account_id=aid, bank_name="X", account_number="6222", balance_l4=0)
         s.add(ba); s.flush()
         s.commit(); s.close()
         h = {"X-Account-ID": "1", "X-Operator": "user"}
@@ -171,7 +171,7 @@ class TestMonthEndGuard:
 
         # 创建未确认调节表
         stmt = models_bank.BankStatement(bank_account_id=bank.id, account_id=acc.id,
-            period_start=date(2025, 1, 1), period_end=date(2025, 1, 31), opening_balance=1000, closing_balance=1000)
+            period_start=date(2025, 1, 1), period_end=date(2025, 1, 31), opening_balance_l1=1000, closing_balance_l1=1000)
         db.add(stmt); db.flush()
         from engine_bank_reconcile import BankReconcileEngine
         e = BankReconcileEngine(db, acc.id, bank.id, "2025-01")

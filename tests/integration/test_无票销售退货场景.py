@@ -18,18 +18,11 @@ import time
 import pytest
 from decimal import Decimal
 from datetime import datetime
-from database import SessionLocal
-from models import Account
 from helpers import get_entity_id
 
 # ── 获取测试用 account_id ──
-_db = SessionLocal()
-_account = _db.query(Account).first()
-ACCOUNT_ID = _account.id if _account else 1
-_db.close()
-
-# 公共请求头
-HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "verify_test"}
+# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
+HEADERS = {"X-Account-ID": "1", "X-Operator": "verify_test"}
 
 # 数据变化记录
 DATA_CHANGES = []

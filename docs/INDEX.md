@@ -32,6 +32,10 @@ doc-type: catalog
 | 查看文件位置 | [文件索引.md](./文件索引.md) |
 | 开发新功能 | [开发速查表.md](./开发速查表.md) |
 | 了解功能模块 | [功能模块说明.md](./功能模块说明.md) |
+<<<<<<< Updated upstream
+=======
+| 查看调用链 | [代码调用逻辑图.md](./代码调用逻辑图.md) |
+>>>>>>> Stashed changes
 | 查看设计决策 | [adr/设计决策.md](./adr/设计决策.md) |
 | 查看枚举值 | [财务Agent手册.md §5](./财务Agent手册.md#5-关键字段速查) |
 | 排查错误 | [财务Agent手册.md §7](./财务Agent手册.md#7-错误码) |
@@ -39,9 +43,13 @@ doc-type: catalog
 | 查会计公式 | [小企业会计准则.md](./小企业会计准则.md) |
 | 理解会计实务逻辑 | [会计实务.md](./会计实务.md) |
 | 查看真相源映射 | [单一真相源原则.md](./单一真相源原则.md) |
+<<<<<<< Updated upstream
 | 查看调用链 | [代码调用逻辑图.md](./代码调用逻辑图.md) |
 | 查看数据因果链 | [数据因果链.md](./数据因果链.md) |
 | 修改后自查 | [开发速查表.md](./开发速查表.md#改动后自查) |
+=======
+| 查看数据因果链 | [数据因果链.md](./数据因果链.md) |
+>>>>>>> Stashed changes
 | 选 AI 技能 | [agent_skills.md](./agent_skills.md) |
 | 提交 Issue | [agents/issue-tracker.md](./agents/issue-tracker.md) |
 
@@ -71,7 +79,10 @@ doc-type: catalog
 
 | 文档 | 用途 |
 |------|------|
+<<<<<<< Updated upstream
 | [前端规范.md](./前端规范.md) | 前端代码规范、设计原则、反模式红线 |
+=======
+>>>>>>> Stashed changes
 | [adr/设计决策.md](./adr/设计决策.md) | 架构决策记录（看似 bug 实为故意的设计） |
 
 ### 架构与技术参考
@@ -86,7 +97,11 @@ doc-type: catalog
 
 | 文档 | 用途 |
 |------|------|
+<<<<<<< Updated upstream
 | [agent_skills.md](./agent_skills.md) | `.agents/skills/` 19 个技能分类与使用时机 |
+=======
+| [agent_skills.md](./agent_skills.md) | `.agents/skills/` + `.opencode/skills/` 23 个技能分类与使用时机 |
+>>>>>>> Stashed changes
 | [agents/issue-tracker.md](./agents/issue-tracker.md) | Issue 追踪规范 |
 | [agents/triage-labels.md](./agents/triage-labels.md) | 分类标签映射 |
 
@@ -117,6 +132,7 @@ README.md (项目入口)
     │        ├──→ docs/文件索引.md (文件分类)
     │        ├──→ docs/功能模块说明.md (模块详解)
     │        ├──→ docs/小企业会计准则.md (会计公式 + 法规依据)
+<<<<<<< Updated upstream
     │        ├──→ docs/会计实务.md (会计实践逻辑)
     │        ├──→ docs/单一真相源原则.md (真相源映射)
     │        ├──→ docs/错误信息规范.md (错误码规范)
@@ -128,6 +144,11 @@ README.md (项目入口)
     │        ├──→ docs/数据因果链.md (因果链)
     │        ├──→ docs/adr/设计决策.md (设计决策)
     │        └──→ docs/设计/双保险安全方案.md (安全架构)
+=======
+    │        ├──→ docs/代码调用逻辑图.md (调用链)
+    │        ├──→ docs/数据因果链.md (数据因果链)
+    │        └──→ docs/adr/设计决策.md (设计决策)
+>>>>>>> Stashed changes
     │
     └──→ CONTEXT.md (项目上下文 + Agent 工作流)
              │
@@ -187,4 +208,8 @@ cat docs/文件索引.md
 
 ---
 
+<<<<<<< Updated upstream
 *文档索引 v3.0 | 2026-06-30*
+=======
+*文档索引 v3.0 | 2026-06-30 | doc-type: catalog*
+>>>>>>> Stashed changes

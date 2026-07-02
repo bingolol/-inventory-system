@@ -44,7 +44,7 @@ def check_sale(
         Inventory.product_id == product_id,
         Inventory.account_id == account_id
     ).first()
-    current_stock = inventory.quantity if inventory else 0
+    current_stock = inventory.quantity_l4 if inventory else 0
     if current_stock < quantity:
         can_proceed = False
         warnings.append(f"库存不足: 当前库存{current_stock}，需要{quantity}")

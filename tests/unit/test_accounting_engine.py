@@ -291,53 +291,6 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
 
 
 # ═══════════════════════════════════════════════════════════
-# Behavior 1: 一般纳税人增值税计算（销项-进项）
-# ═══════════════════════════════════════════════════════════
-
-def test_calculate_vat_general_taxpayer_basic(engine):
-    """一般纳税人：销项税额 - 进项税额 = 应纳税额"""
-    result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),  # 不含税销售额
-        taxpayer_type='general',
-        input_tax=Decimal('8000')  # 进项税额
-    )
-    # 销项税额 = 100000 * 13% = 13000
-    # 应纳税额 = 13000 - 8000 = 5000
-    assert result.tax_payable_gross == Decimal('13000.00')
-    assert result.tax_payable == Decimal('5000.00')
-    assert result.tax_rate == Decimal('0.13')
-
-
-def test_calculate_vat_general_taxpayer_zero_input(engine):
-    """一般纳税人：无进项税额"""
-    result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
-        taxpayer_type='general',
-        input_tax=Decimal('0')
-    )
-    # 销项税额 = 100000 * 13% = 13000
-    # 应纳税额 = 13000 - 0 = 13000
-    assert result.tax_payable_gross == Decimal('13000.00')
-    assert result.tax_payable == Decimal('13000.00')
-
-
-def test_calculate_vat_general_taxpayer_surcharge(engine):
-    """一般纳税人：附加税计算"""
-    result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
-        taxpayer_type='general',
-        input_tax=Decimal('8000')
-    )
-    # 应纳税额 = 5000
-    # 城市维护建设税 = 5000 * 7% = 350
-    # 教育费附加 = 5000 * 3% = 150
-    # 地方教育附加 = 5000 * 2% = 100
-    assert result.surcharge_urban_construction == Decimal('350.00')
-    assert result.surcharge_education == Decimal('150.00')
-    assert result.surcharge_local_education == Decimal('100.00')
-
-
-# ═══════════════════════════════════════════════════════════
 # Behavior 7: 企业所得税计算（High）
 # ═══════════════════════════════════════════════════════════
 

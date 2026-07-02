@@ -58,7 +58,7 @@ def create_bank_account(
             account_id=account_id,
             bank_name=data.bank_name,
             account_number=data.account_number,
-            balance=Decimal('0'),
+            balance_l4=Decimal('0'),
             description=data.description
         )
         db.add(bank_account)
@@ -69,9 +69,9 @@ def create_bank_account(
         # 此处处理"先录期初、后建银行账户"的时序场景）
         latest_ob = db.query(models.OpeningBalance).filter(
             models.OpeningBalance.account_id == account_id,
-        ).order_by(models.OpeningBalance.date.desc()).first()
-        if latest_ob and latest_ob.bank_balance and latest_ob.bank_balance > 0:
-            bank_account.balance = Decimal(str(latest_ob.bank_balance)).quantize(Decimal("0.01"))
+        ).order_by(models.OpeningBalance.date_l1.desc()).first()
+        if latest_ob and latest_ob.bank_balance_l1 and latest_ob.bank_balance_l1 > 0:
+            bank_account.balance_l4 = Decimal(str(latest_ob.bank_balance_l1)).quantize(Decimal("0.01"))
 
         _log(db, account_id, "create", "bank_account", bank_account.id,
              f"创建银行账户: {data.bank_name} {data.account_number}", operator=operator)

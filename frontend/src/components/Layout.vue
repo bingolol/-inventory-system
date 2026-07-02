@@ -39,6 +39,19 @@
           <span class="app-bar-desc" v-if="currentDesc">{{ currentDesc }}</span>
         </div>
         <div class="app-bar-right">
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <span class="user-dropdown-trigger">
+              <span class="user-avatar">{{ username.charAt(0).toUpperCase() }}</span>
+              <span class="user-name">{{ username }}</span>
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="change-password">🔑 修改密码</el-dropdown-item>
+                <el-dropdown-item divided command="logout">🚪 退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <span class="app-bar-date">{{ currentDate }}</span>
         </div>
       </el-header>
@@ -67,22 +80,92 @@
   </el-dialog>
 
   <ConfirmDialog ref="confirmDialogRef" />
+
+  <!-- 修改密码对话框 -->
+  <el-dialog v-model="pwdDialogVisible" title="修改密码" width="400px" :close-on-click-modal="false">
+    <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="90px">
+      <el-form-item label="当前密码" prop="old_password">
+        <el-input v-model="pwdForm.old_password" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="新密码" prop="new_password">
+        <el-input v-model="pwdForm.new_password" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="确认新密码" prop="confirm">
+        <el-input v-model="pwdForm.confirm" type="password" show-password />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pwdDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="pwdLoading" @click="handleChangePassword">确认修改</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import accountsApi from '../api/accounts'
 import productsApi from '../api/products'
 import { useAccountStore } from '../stores/account'
+import { useAuthStore } from '../stores/auth'
 import { companyMenuItems, personalMenuItems } from '../composables/useMenuConfig'
 import { useAccountManagement } from '../composables/useAccountManagement'
 import ConfirmDialog from './ConfirmDialog.vue'
+import { ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import api from '../api/index'
 
 const accountStore = useAccountStore()
+const authStore = useAuthStore()
 const confirmDialogRef = ref(null)
 const route = useRoute()
 const router = useRouter()
+
+const username = computed(() => authStore.username || '用户')
+
+// ── 修改密码 ──
+const pwdDialogVisible = ref(false)
+const pwdLoading = ref(false)
+const pwdFormRef = ref(null)
+const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })
+const pwdRules = {
+  old_password: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
+  new_password: [{ required: true, min: 6, message: '新密码至少6位', trigger: 'blur' }],
+  confirm: [
+    { required: true, message: '请确认新密码', trigger: 'blur' },
+    { validator: (rule, value, cb) => value === pwdForm.new_password ? cb() : cb(new Error('两次密码不一致')), trigger: 'blur' },
+  ],
+}
+
+async function handleChangePassword() {
+  const valid = await pwdFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  pwdLoading.value = true
+  try {
+    await api.post('/auth/change-password', { old_password: pwdForm.old_password, new_password: pwdForm.new_password })
+    ElMessage.success('密码修改成功，请重新登录')
+    pwdDialogVisible.value = false
+    authStore.logout()
+    router.push('/login')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '修改密码失败')
+  } finally {
+    pwdLoading.value = false
+  }
+}
+
+function handleUserCommand(cmd) {
+  if (cmd === 'change-password') {
+    pwdForm.old_password = ''
+    pwdForm.new_password = ''
+    pwdForm.confirm = ''
+    pwdFormRef.value?.clearValidate()
+    pwdDialogVisible.value = true
+  } else if (cmd === 'logout') {
+    authStore.logout()
+    router.push('/login')
+  }
+}
 
 const currentRoute = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title ?? '仪表盘')
@@ -169,6 +252,12 @@ onUnmounted(() => { clearInterval(dateTimer) })
 .app-bar-title { font-size: 15px; font-weight: 700; color: var(--primary); }
 .app-bar-desc { font-size: 12px; color: var(--text-placeholder); }
 .app-bar-date { font-size: 12px; color: var(--text-secondary); background: var(--primary-light); padding: 2px 12px; border-radius: 8px; border: 1px solid var(--primary-lighter); font-weight: 500; }
+
+/* User dropdown */
+.user-dropdown-trigger { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 10px; border-radius: 8px; margin-right: 12px; }
+.user-dropdown-trigger:hover { background: var(--primary-light); }
+.user-avatar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; }
+.user-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 
 /* Content — Claude 暗色背景 */
 .app-body { padding: 24px; overflow-y: auto; background: var(--bg-page); }

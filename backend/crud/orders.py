@@ -70,9 +70,9 @@ def list_purchase_orders(db: Session, account_id: int, skip: int = 0, limit: int
     if order_type:
         q = q.filter(models.PurchaseOrder.order_type == order_type)
     if start_date:
-        q = q.filter(models.PurchaseOrder.purchase_date >= start_date)
+        q = q.filter(models.PurchaseOrder.purchase_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PurchaseOrder.purchase_date <= end_date + " 23:59:59")
+        q = q.filter(models.PurchaseOrder.purchase_date_l1 <= end_date + " 23:59:59")
     if status:
         q = q.filter(models.PurchaseOrder.status == status)
     if keyword:
@@ -81,7 +81,7 @@ def list_purchase_orders(db: Session, account_id: int, skip: int = 0, limit: int
             models.PurchaseOrder.supplier.has(models.Supplier.name.contains(keyword))
         )
     total = q.count()
-    items = q.order_by(models.PurchaseOrder.purchase_date.desc()).offset(skip).limit(limit).all()
+    items = q.order_by(models.PurchaseOrder.purchase_date_l1.desc()).offset(skip).limit(limit).all()
     return total, items
 
 
@@ -99,13 +99,13 @@ def list_sale_orders(db: Session, account_id: int, skip: int = 0, limit: int = 1
     if order_type:
         q = q.filter(models.SaleOrder.order_type == order_type)
     if start_date:
-        q = q.filter(models.SaleOrder.sale_date >= start_date)
+        q = q.filter(models.SaleOrder.sale_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.SaleOrder.sale_date <= end_date + " 23:59:59")
+        q = q.filter(models.SaleOrder.sale_date_l1 <= end_date + " 23:59:59")
     if status:
         q = q.filter(models.SaleOrder.status == status)
     total = q.count()
-    items = q.order_by(models.SaleOrder.sale_date.desc()).offset(skip).limit(limit).all()
+    items = q.order_by(models.SaleOrder.sale_date_l1.desc()).offset(skip).limit(limit).all()
     return total, items
 
 

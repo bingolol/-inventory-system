@@ -82,9 +82,9 @@ def get_bank_statement(
     return {
         "id": stmt.id, "period_start": stmt.period_start.isoformat(),
         "period_end": stmt.period_end.isoformat(),
-        "opening_balance": float(stmt.opening_balance), "closing_balance": float(stmt.closing_balance),
-        "lines": [{"id": l.id, "transaction_date": l.transaction_date.isoformat(),
-                    "amount": float(l.amount), "description": l.description,
+        "opening_balance": float(stmt.opening_balance_l1), "closing_balance": float(stmt.closing_balance_l1),
+        "lines": [{"id": l.id, "transaction_date": l.transaction_date_l1.isoformat(),
+                    "amount": float(l.amount_l2), "description": l.description,
                     "matched_tx_ids": l.matched_tx_ids} for l in lines],
     }
 
@@ -153,7 +153,7 @@ def get_reconciliation(
         "book_balance": float(rec.book_balance), "statement_balance": float(rec.statement_balance),
         "adjusted_book": float(rec.adjusted_book), "adjusted_statement": float(rec.adjusted_statement),
         "balanced": rec.balanced,
-        "items": [{"id": i.id, "item_type": i.item_type, "amount": float(i.amount),
+        "items": [{"id": i.id, "item_type": i.item_type, "amount": float(i.amount_l2),
                     "direction": i.direction, "resolved": i.resolved,
                     "action": i.action, "notes": i.notes} for i in items],
     }
@@ -251,17 +251,17 @@ def create_bank_entry(
 
         # 1. 先更新余额
         if direction == "in":
-            ba.balance += amt
+            ba.balance_l4 += amt
         else:
-            ba.balance -= amt
+            ba.balance_l4 -= amt
 
         # 2. 创建 BankTransaction → flush 获取 tx.id（作为凭证锚点）
         tx = models.BankTransaction(
             account_id=account_id, bank_account_id=ba.id,
             transaction_type="inflow" if direction == "in" else "outflow",
-            amount=amt, balance_after=ba.balance,
-            transaction_date=dt, description=body.description or body.entry_type,
-            flow_category="operating",
+            amount_l2=amt, balance_after_l4=ba.balance_l4,
+            transaction_date_l1=dt, description=body.description or body.entry_type,
+            flow_category_l2="operating",
         )
         db.add(tx)
         db.flush()

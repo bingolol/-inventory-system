@@ -44,15 +44,15 @@ def _invoice_to_out(inv: Invoice) -> InvoiceOut:
         invoice_no=inv.invoice_no,
         direction=inv.direction,
         invoice_type=inv.invoice_type,
-        tax_rate=inv.tax_rate,
-        amount_without_tax=inv.amount_without_tax,
-        tax_amount=inv.tax_amount,
-        amount_with_tax=inv.amount_with_tax,
+        tax_rate=inv.tax_rate_l1,
+        amount_without_tax=inv.amount_without_tax_l1,
+        tax_amount=inv.tax_amount_l1,
+        amount_with_tax=inv.amount_with_tax_l1,
         counterparty_name=inv.counterparty_name,
-        issue_date=inv.issue_date.strftime("%Y-%m-%d") if inv.issue_date else None,
+        issue_date=inv.issue_date_l1.strftime("%Y-%m-%d") if inv.issue_date_l1 else None,
         pdf_path=inv.pdf_path,
-        certification_status=inv.certification_status,
-        certification_date=inv.certification_date.strftime("%Y-%m-%d") if inv.certification_date else None,
+        certification_status=inv.certification_status_l3,
+        certification_date=inv.certification_date_l3.strftime("%Y-%m-%d") if inv.certification_date_l3 else None,
         related_order_id=inv.related_order_id,
         related_order_type=inv.related_order_type,
         notes=inv.notes,
@@ -90,14 +90,14 @@ async def get_invoices(
                 end_date = datetime(year + 1, 1, 1)
             else:
                 end_date = datetime(year, end_month + 1, 1)
-            query = query.filter(Invoice.issue_date >= start_date, Invoice.issue_date < end_date)
+            query = query.filter(Invoice.issue_date_l1 >= start_date, Invoice.issue_date_l1 < end_date)
         else:
             # 筛选全年
             start_date = datetime(year, 1, 1)
             end_date = datetime(year + 1, 1, 1)
-            query = query.filter(Invoice.issue_date >= start_date, Invoice.issue_date < end_date)
+            query = query.filter(Invoice.issue_date_l1 >= start_date, Invoice.issue_date_l1 < end_date)
     if certification_status:
-        query = query.filter(Invoice.certification_status == certification_status)
+        query = query.filter(Invoice.certification_status_l3 == certification_status)
     
     total = query.count()
     invoices = query.offset(skip).limit(limit).all()
@@ -147,7 +147,7 @@ async def create_invoice(
         operation=OperationType.CREATE,
         entity_type=EntityType.INVOICE,
         entity_id=db_invoice.id,
-        summary=f"发票 {db_invoice.invoice_no} 创建成功，金额 {db_invoice.amount_with_tax}",
+        summary=f"发票 {db_invoice.invoice_no} 创建成功，金额 {db_invoice.amount_with_tax_l1}",
         ai_hint="发票已创建。",
         data=_invoice_to_out(db_invoice).model_dump()
     )
@@ -243,7 +243,7 @@ async def quick_create_invoice(
         operation=OperationType.CREATE,
         entity_type=EntityType.INVOICE,
         entity_id=db_invoice.id,
-        summary=f"发票 {db_invoice.invoice_no} 创建成功，金额 {db_invoice.amount_with_tax}",
+        summary=f"发票 {db_invoice.invoice_no} 创建成功，金额 {db_invoice.amount_with_tax_l1}",
         ai_hint="发票 + 固定资产已原子创建并关联。" if db_asset else "发票已创建。",
         data=_invoice_to_out(db_invoice).model_dump(),
     )
@@ -253,8 +253,8 @@ async def quick_create_invoice(
             "id": db_asset.id,
             "asset_code": db_asset.asset_code,
             "name": db_asset.name,
-            "original_value": str(db_asset.original_value),
-            "start_date": db_asset.start_date.isoformat() if db_asset.start_date else None,
+            "original_value": str(db_asset.original_value_l1),
+            "start_date": db_asset.start_date_l1.isoformat() if db_asset.start_date_l1 else None,
         }
     return out
 
@@ -397,7 +397,7 @@ async def reverse_invoice(
             "original_invoice_no": original.invoice_no,
             "red_invoice_id": red.id,
             "red_invoice_no": red.invoice_no,
-            "red_amount_with_tax": str(red.amount_with_tax),
+            "red_amount_with_tax": str(red.amount_with_tax_l1),
             "cascade": cascade,
         },
     )

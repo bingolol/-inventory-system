@@ -26,6 +26,7 @@ from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
+from lineage import reads, TIER_L3
 
 
 # ═══════════════════════════════════════════════════════════
@@ -37,6 +38,7 @@ class CreateSaleOrder(Command):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
     payment_status: str = PaymentStatus.UNPAID
+    has_invoice: bool = True  # 散客现金销售不开发票时传 False(未开票收入仍需申报销项税)
     notes: str = ""
     image_url: str = ""
     total_price: Optional[Decimal] = None
@@ -46,6 +48,8 @@ class CreateSaleOrder(Command):
 
 @register(CreateSaleOrder)
 class CreateSaleOrderHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreateSaleOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
@@ -74,11 +78,12 @@ class CreateSaleOrderHandler(CommandHandler):
             customer_id=cmd.customer_id,
             order_type=OrderType.RETAIL,
             payment_status=cmd.payment_status,
+            has_invoice_l1=cmd.has_invoice,
             status=OrderStatus.PENDING,
             notes=cmd.notes,
             image_url=cmd.image_url,
-            total_price=0,
-            sale_date=sale_dt,
+            total_price_l1=0,
+            sale_date_l1=sale_dt,
         )
         db.add(order)
         db.flush()
@@ -109,15 +114,15 @@ class CreateSaleOrderHandler(CommandHandler):
             item = models.SaleItem(
                 order_id=order.id,
                 product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it['tax_rate'],
-                total_price=it['total_price'],
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it['tax_rate'],
+                total_price_l1=it['total_price'],
             )
             db.add(item)
 
         final_total = sum(_d(it['total_price']) for it in items_data)
-        order.total_price = _d(cmd.total_price) if cmd.total_price is not None else final_total.quantize(Q2)
+        order.total_price_l1 = _d(cmd.total_price) if cmd.total_price is not None else final_total.quantize(Q2)
         db.flush()
 
         # 7. Domain 状态机转换：pending → completed
@@ -133,11 +138,11 @@ class CreateSaleOrderHandler(CommandHandler):
         if cmd.deduct_inventory:
             for item in order.items:
                 product = get_product(db, cmd.account_id, item.product_id)
-                if product.track_inventory:
+                if product.track_inventory_l3:
                     unit_cost = InventoryEngine(db).outbound(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         source_type="sale_order",
                         source_id=order.id,
                         operator=cmd.operator,
@@ -187,8 +192,8 @@ class CancelSaleOrderHandler(CommandHandler):
             eng.reverse(
                 account_id=cmd.account_id,
                 product_id=item.product_id,
-                quantity=item.quantity,
-                unit_cost=Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0'),
+                quantity=item.quantity_l1,
+                unit_cost=Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0'),
                 source_type="sale_order",
                 source_id=order.id,
                 operator=cmd.operator,
@@ -245,7 +250,7 @@ class ReturnSaleOrderHandler(CommandHandler):
                                 data={"order_type": "销售退货单"})
 
         # 1. 校验退货数量不超原销售数量
-        original_qty_map = {item.product_id: item.quantity for item in order.items}
+        original_qty_map = {item.product_id: item.quantity_l1 for item in order.items}
         for ret in cmd.items:
             pid = ret['product_id']
             if pid not in original_qty_map:
@@ -260,7 +265,7 @@ class ReturnSaleOrderHandler(CommandHandler):
 
         # 2. 获取账本配置
         account = db.query(models.Account).filter(models.Account.id == cmd.account_id).first()
-        taxpayer_type = account.taxpayer_type if account else "general"
+        taxpayer_type = account.taxpayer_type_l3 if account else "general"
 
         # 3. 库存回补 + 按行计算退货金额
         total_with_tax_ret = Decimal("0")
@@ -283,7 +288,7 @@ class ReturnSaleOrderHandler(CommandHandler):
                 models.Product.id == pid,
                 models.Product.account_id == cmd.account_id,
             ).first()
-            if product and product.track_inventory:
+            if product and product.track_inventory_l3:
                 eng.reverse(
                     account_id=cmd.account_id,
                     product_id=pid,
@@ -300,16 +305,16 @@ class ReturnSaleOrderHandler(CommandHandler):
                     StockMove.source_id == order.id,
                     StockMove.product_id == pid,
                 ).first()
-                unit_cost = move.unit_cost if move and move.unit_cost else Decimal("0")
+                unit_cost = move.unit_cost_l2 if move and move.unit_cost_l2 else Decimal("0")
                 cost_return += (qty_ret * unit_cost).quantize(Q2)
 
             # 3b. 收入/税额按比例计算
-            line_total = Decimal(str(orig_item.total_price))
-            ratio = qty_ret / Decimal(str(orig_item.quantity))
+            line_total = Decimal(str(orig_item.total_price_l1))
+            ratio = qty_ret / Decimal(str(orig_item.quantity_l1))
             revenue_ret = (line_total * ratio).quantize(Q2)
 
             # 税额：小规模纳税人按账本税率，一般纳税人按行税率
-            rate = orig_item.tax_rate
+            rate = orig_item.tax_rate_l1
             if taxpayer_type == "small_scale" and rate and rate > 0:
                 # 小规模实际征收率
                 rate = Decimal("0.01")  # 小规模 1% 征收率
@@ -364,6 +369,7 @@ class ReturnSaleOrderHandler(CommandHandler):
                     invoice_no=red_invoice_no,
                     direction=InvoiceDirection.OUT,
                     invoice_type=original_invoice.invoice_type,
+<<<<<<< Updated upstream
                     tax_rate=original_invoice.tax_rate,
                     amount_without_tax=-total_without_tax_ret,
                     tax_amount=-tax_amount_ret,
@@ -373,6 +379,17 @@ class ReturnSaleOrderHandler(CommandHandler):
                     buyer_name=original_invoice.buyer_name,
                     issue_date=ret_dt,
                     certification_status=CertificationStatus.N_A,  # 销项发票不需认证
+=======
+                    tax_rate_l1=original_invoice.tax_rate_l1,
+                    amount_without_tax_l1=-total_without_tax_ret,
+                    tax_amount_l1=-tax_amount_ret,
+                    amount_with_tax_l1=-total_with_tax_ret,
+                    counterparty_name=order.customer.name if order.customer else (original_invoice.counterparty_name or ""),
+                    seller_name=original_invoice.seller_name,
+                    buyer_name=original_invoice.buyer_name,
+                    issue_date_l1=ret_dt,
+                    certification_status_l3=CertificationStatus.N_A,  # 销项发票不需认证
+>>>>>>> Stashed changes
                     related_order_id=order.id,
                     related_order_type="sale_order",
                     notes=f"红字销项发票（销售退货）: {cmd.reason or '未提供'}",
@@ -425,11 +442,11 @@ class RestoreSaleOrderHandler(CommandHandler):
         eng = InventoryEngine(db)
         for item in order.items:
             product = get_product(db, cmd.account_id, item.product_id)
-            if product.track_inventory:
+            if product.track_inventory_l3:
                 unit_cost = eng.force_outbound(
                     account_id=cmd.account_id,
                     product_id=item.product_id,
-                    quantity=item.quantity,
+                    quantity=item.quantity_l1,
                     source_type="sale_order",
                     source_id=order.id,
                     operator=cmd.operator,
@@ -476,8 +493,8 @@ class DeleteSaleOrderHandler(CommandHandler):
                 eng.reverse(
                     account_id=cmd.account_id,
                     product_id=item.product_id,
-                    quantity=item.quantity,
-                    unit_cost=Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0'),
+                    quantity=item.quantity_l1,
+                    unit_cost=Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0'),
                     source_type="sale_order",
                     source_id=order.id,
                     operator=cmd.operator,
@@ -515,6 +532,7 @@ class UpdateSaleOrderItems(Command):
 
 @register(UpdateSaleOrderItems)
 class UpdateSaleOrderItemsHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdateSaleOrderItems, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
@@ -531,8 +549,8 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
 
         # 记录旧行数据（含 unit_cost，用于红冲）
         old_items = [
-            {'product_id': item.product_id, 'quantity': item.quantity,
-             'unit_cost': Decimal(str(item.unit_cost)) if item.unit_cost else Decimal('0')}
+            {'product_id': item.product_id, 'quantity': item.quantity_l1,
+             'unit_cost': Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0')}
             for item in order.items
         ]
 
@@ -593,15 +611,15 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
             new_item = models.SaleItem(
                 order_id=order.id,
                 product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it['tax_rate'],
-                total_price=it['total_price'],
+                quantity_l1=it['quantity'],
+                unit_price_l1=it['unit_price'],
+                tax_rate_l1=it['tax_rate'],
+                total_price_l1=it['total_price'],
             )
             db.add(new_item)
 
         final_total = sum(_d(it['total_price']) for it in items_data)
-        order.total_price = _d(cmd.total_price) if cmd.total_price is not None else final_total.quantize(Q2)
+        order.total_price_l1 = _d(cmd.total_price) if cmd.total_price is not None else final_total.quantize(Q2)
 
         db.flush()
 
@@ -612,11 +630,11 @@ class UpdateSaleOrderItemsHandler(CommandHandler):
             eng = InventoryEngine(db)
             for item in order.items:
                 product = get_product(db, cmd.account_id, item.product_id)
-                if product.track_inventory:
+                if product.track_inventory_l3:
                     unit_cost = eng.force_outbound(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
-                        quantity=item.quantity,
+                        quantity=item.quantity_l1,
                         source_type="sale_order",
                         source_id=order.id,
                         operator=cmd.operator,
@@ -651,6 +669,7 @@ class UpdateSaleOrderFields(Command):
 
 @register(UpdateSaleOrderFields)
 class UpdateSaleOrderFieldsHandler(CommandHandler):
+    @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: UpdateSaleOrderFields, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:

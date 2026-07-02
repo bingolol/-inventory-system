@@ -1,0 +1,3381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>数据来源链图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 0; background: #fafafa; }
+.header { background: #fff; padding: 16px 24px; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
+.header h1 { margin: 0 0 8px 0; color: #333; font-size: 20px; }
+.stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #666; }
+.stats span { background: #f5f5f5; padding: 4px 10px; border-radius: 12px; }
+.stats .error { background: #ffebee; color: #c62828; }
+.stats .warning { background: #fff8e1; color: #f57f17; }
+.legend { display: flex; gap: 12px; margin-top: 8px; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.legend-color { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #333; }
+.container { display: flex; height: calc(100vh - 140px); }
+.graph-container { flex: 1; overflow: auto; padding: 20px; background: #fff; }
+.graph-container .mermaid { background: #fff; padding: 20px; border-radius: 8px; }
+.sidebar { width: 400px; border-left: 1px solid #e0e0e0; background: #fff; overflow-y: auto; padding: 16px; }
+.sidebar h2 { font-size: 16px; margin: 0 0 12px 0; color: #333; }
+.search-box { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin-bottom: 12px; }
+.field-card { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: background 0.2s; }
+.field-card:hover { background: #e3f2fd; }
+.field-card.selected { background: #fff9c4; border-color: #f57f17; }
+.field-card .field-name { font-weight: 600; font-size: 14px; }
+.field-card .field-tier { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 6px; }
+.tier-L1 { background: #c8e6c9; }
+.tier-L2 { background: #bbdefb; }
+.tier-L3 { background: #ffe0b2; }
+.tier-L4 { background: #e1bee7; }
+.field-card .violation-badge { background: #ffcdd2; color: #c62828; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 6px; }
+.detail-section { margin-top: 12px; }
+.detail-section h3 { font-size: 13px; color: #666; margin: 8px 0 4px 0; }
+.detail-section .item { background: #f5f5f5; padding: 6px 10px; border-radius: 4px; margin-bottom: 4px; font-size: 12px; font-family: monospace; }
+.violations-list { margin-top: 16px; }
+.violation-item { background: #ffebee; border-left: 3px solid #f44336; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; }
+.violation-item .code { font-weight: bold; color: #c62828; }
+.empty-state { color: #999; text-align: center; padding: 40px 20px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>数据来源链图</h1>
+    <div class="stats">
+        <span>字段: 32 写 / 41 读</span>
+        <span>声明: 61 @writes + 103 @reads</span>
+        <span class="error">违规: 2 ERROR</span>
+        <span class="warning">0 WARNING</span>
+    </div>
+    <div class="legend">
+        <div class="legend-item"><div class="legend-color" style="background:#c8e6c9"></div>L1 外部输入</div>
+        <div class="legend-item"><div class="legend-color" style="background:#bbdefb"></div>L2 引擎计算</div>
+        <div class="legend-item"><div class="legend-color" style="background:#ffe0b2"></div>L3 政策配置</div>
+        <div class="legend-item"><div class="legend-color" style="background:#e1bee7"></div>L4 派生汇总</div>
+        <div class="legend-item"><div class="legend-color" style="background:#ffcdd2;border-color:#f44336"></div>违规字段</div>
+    </div>
+</div>
+<div class="container">
+    <div class="graph-container">
+        <div class="mermaid">
+graph LR
+    subgraph Account ["Account"]
+    Account_taxpayer_type_l3["Account.taxpayer_type_l3"]:::tierL3
+    end
+
+    subgraph AccountMove ["AccountMove"]
+    AccountMove_amount_total_l2["AccountMove.amount_total_l2"]:::tierL2
+    AccountMove_date_l1["AccountMove.date_l1"]:::tierL1
+    end
+
+    subgraph AccountMoveLine ["AccountMoveLine"]
+    AccountMoveLine_amount_residual_l2["AccountMoveLine.amount_residual_l2"]:::tierL2
+    AccountMoveLine_credit_l2["AccountMoveLine.credit_l2"]:::tierL2
+    AccountMoveLine_debit_l2["AccountMoveLine.debit_l2"]:::tierL2
+    end
+
+    subgraph BankAccount ["BankAccount"]
+    BankAccount_balance_l4["BankAccount.balance_l4"]:::tierL4
+    end
+
+    subgraph BankTransaction ["BankTransaction"]
+    BankTransaction_amount_l2["BankTransaction.amount_l2"]:::tierL2
+    end
+
+    subgraph CashFlowTransaction ["CashFlowTransaction"]
+    CashFlowTransaction_amount_l2["CashFlowTransaction.amount_l2"]:::tierL2
+    CashFlowTransaction_flow_category_l2["CashFlowTransaction.flow_category_l2"]:::tierL2
+    end
+
+    subgraph Expense ["Expense"]
+    Expense_amount_l1["Expense.amount_l1"]:::tierL1
+    end
+
+    subgraph FixedAsset ["FixedAsset"]
+    FixedAsset_accumulated_depreciation_l4["FixedAsset.accumulated_depreciation_l4"]:::tierL4
+    FixedAsset_depreciation_method_l3["FixedAsset.depreciation_method_l3"]:::tierL3
+    FixedAsset_original_value_l1["FixedAsset.original_value_l1"]:::tierL1
+    FixedAsset_salvage_rate_l3["FixedAsset.salvage_rate_l3"]:::tierL3
+    FixedAsset_useful_life_l3["FixedAsset.useful_life_l3"]:::tierL3
+    end
+
+    subgraph FixedAssetDepreciation ["FixedAssetDepreciation"]
+    FixedAssetDepreciation_accumulated_after_l2["FixedAssetDepreciation.accumulated_after_l2"]:::tierL2
+    FixedAssetDepreciation_accumulated_before_l2["FixedAssetDepreciation.accumulated_before_l2"]:::tierL2
+    FixedAssetDepreciation_amount_l2["FixedAssetDepreciation.amount_l2"]:::tierL2
+    end
+
+    subgraph IntangibleAsset ["IntangibleAsset"]
+    IntangibleAsset_useful_life_l3["IntangibleAsset.useful_life_l3"]:::tierL3
+    end
+
+    subgraph Inventory ["Inventory"]
+    Inventory_average_cost_l4["Inventory.average_cost_l4"]:::tierL4
+    Inventory_quantity_l4["Inventory.quantity_l4"]:::violation
+    Inventory_total_value_l4["Inventory.total_value_l4"]:::tierL4
+    end
+
+    subgraph Invoice ["Invoice"]
+    Invoice_amount_without_tax_l1["Invoice.amount_without_tax_l1"]:::tierL1
+    Invoice_certification_date_l3["Invoice.certification_date_l3"]:::tierL3
+    Invoice_certification_status_l3["Invoice.certification_status_l3"]:::tierL3
+    Invoice_tax_amount_l1["Invoice.tax_amount_l1"]:::tierL1
+    end
+
+    subgraph Ledger ["Ledger"]
+    Ledger_taxpayer_type_l3["Ledger.taxpayer_type_l3"]:::tierL3
+    end
+
+    subgraph LedgerAccountBalance ["LedgerAccountBalance"]
+    LedgerAccountBalance_balance_l4["LedgerAccountBalance.balance_l4"]:::tierL4
+    LedgerAccountBalance_credit_total_l4["LedgerAccountBalance.credit_total_l4"]:::tierL4
+    LedgerAccountBalance_debit_total_l4["LedgerAccountBalance.debit_total_l4"]:::tierL4
+    end
+
+    subgraph OpeningBalance ["OpeningBalance"]
+    OpeningBalance_accounts_payable_l1["OpeningBalance.accounts_payable_l1"]:::tierL1
+    OpeningBalance_accumulated_amortization_l1["OpeningBalance.accumulated_amortization_l1"]:::tierL1
+    OpeningBalance_accumulated_depreciation_l1["OpeningBalance.accumulated_depreciation_l1"]:::tierL1
+    OpeningBalance_bank_balance_l1["OpeningBalance.bank_balance_l1"]:::tierL1
+    OpeningBalance_cash_balance_l1["OpeningBalance.cash_balance_l1"]:::tierL1
+    OpeningBalance_fixed_assets_original_l1["OpeningBalance.fixed_assets_original_l1"]:::tierL1
+    OpeningBalance_intangible_assets_original_l1["OpeningBalance.intangible_assets_original_l1"]:::tierL1
+    OpeningBalance_long_term_borrowings_l1["OpeningBalance.long_term_borrowings_l1"]:::tierL1
+    OpeningBalance_paid_in_capital_l1["OpeningBalance.paid_in_capital_l1"]:::tierL1
+    OpeningBalance_retained_earnings_l1["OpeningBalance.retained_earnings_l1"]:::tierL1
+    OpeningBalance_tax_payable_l1["OpeningBalance.tax_payable_l1"]:::tierL1
+    end
+
+    subgraph Payment ["Payment"]
+    Payment_amount_l1["Payment.amount_l1"]:::tierL1
+    end
+
+    subgraph Product ["Product"]
+    Product_min_stock_l3["Product.min_stock_l3"]:::tierL3
+    Product_purchase_price_l3["Product.purchase_price_l3"]:::tierL3
+    Product_sale_price_l3["Product.sale_price_l3"]:::tierL3
+    Product_track_inventory_l3["Product.track_inventory_l3"]:::tierL3
+    end
+
+    subgraph PurchaseOrder ["PurchaseOrder"]
+    PurchaseOrder_purchase_date_l1["PurchaseOrder.purchase_date_l1"]:::tierL1
+    PurchaseOrder_total_price_l1["PurchaseOrder.total_price_l1"]:::tierL1
+    end
+
+    subgraph Receipt ["Receipt"]
+    Receipt_amount_l1["Receipt.amount_l1"]:::tierL1
+    end
+
+    subgraph SaleItem ["SaleItem"]
+    SaleItem_quantity_l1["SaleItem.quantity_l1"]:::tierL1
+    SaleItem_unit_cost_l2["SaleItem.unit_cost_l2"]:::tierL2
+    end
+
+    subgraph SaleOrder ["SaleOrder"]
+    SaleOrder_sale_date_l1["SaleOrder.sale_date_l1"]:::tierL1
+    SaleOrder_total_price_l1["SaleOrder.total_price_l1"]:::tierL1
+    end
+
+    subgraph StockMove ["StockMove"]
+    StockMove_move_date_l1["StockMove.move_date_l1"]:::tierL1
+    StockMove_quantity_l1["StockMove.quantity_l1"]:::tierL1
+    StockMove_total_cost_l2["StockMove.total_cost_l2"]:::tierL2
+    StockMove_unit_cost_l2["StockMove.unit_cost_l2"]:::tierL2
+    end
+
+    subgraph Functions ["函数 / 引擎"]
+    func_AdjustInventoryHandler_handle("AdjustInventoryHandler"):::func
+    func_BankEngine_update_balance("update_balance"):::func
+    func_CancelPurchaseOrderHandler_handle("CancelPurchaseOrderHandler"):::func
+    func_CertifyInvoiceHandler_handle("CertifyInvoiceHandler"):::func
+    func_CreateAccountHandler_handle("CreateAccountHandler"):::func
+    func_CreateInvoiceHandler_handle("CreateInvoiceHandler"):::func
+    func_CreateInvoiceWithFixedAssetHandler_handle("CreateInvoiceWithFixedAssetHandler"):::func
+    func_CreateProductHandler_handle("CreateProductHandler"):::func
+    func_CreatePurchaseOrderHandler_handle("CreatePurchaseOrderHandler"):::func
+    func_CreateSaleOrderHandler_handle("CreateSaleOrderHandler"):::func
+    func_FinanceEngine__account_config("_account_config"):::func
+    func_FinanceEngine__vat_deduction("_vat_deduction"):::func
+    func_FinanceEngine__vat_rate("_vat_rate"):::func
+    func_FixedAssetEngine_calculate_monthly("calculate_monthly"):::func
+    func_FixedAssetEngine_record_depreciation("record_depreciation"):::func
+    func_FixedAssetEngine_record_disposal("record_disposal"):::func
+    func_InventoryEngine__record_outbound("_record_outbound"):::func
+    func_InventoryEngine_inbound("inbound"):::func
+    func_InventoryEngine_outbound("outbound"):::func
+    func_InventoryEngine_reverse("reverse"):::func
+    func_JournalEngine_post("post"):::func
+    func_LedgerEngine_update_balance("update_balance"):::func
+    func_ReturnPurchaseOrderHandler_handle("ReturnPurchaseOrderHandler"):::func
+    func_ReverseInvoiceHandler_handle("ReverseInvoiceHandler"):::func
+    func_TaxAccrualEngine_execute("execute"):::func
+    func_UpdateAssetWithInvoiceHandler_handle("UpdateAssetWithInvoiceHandler"):::func
+    func_UpdateInvoiceHandler_handle("UpdateInvoiceHandler"):::func
+    func_UpdateProductHandler_handle("UpdateProductHandler"):::func
+    func_UpdatePurchaseOrderFieldsHandler_handle("UpdatePurchaseOrderFieldsHandler"):::func
+    func_UpdatePurchaseOrderItemsHandler_handle("UpdatePurchaseOrderItemsHandler"):::func
+    func_UpdateSaleOrderFieldsHandler_handle("UpdateSaleOrderFieldsHandler"):::func
+    func_UpdateSaleOrderItemsHandler_handle("UpdateSaleOrderItemsHandler"):::func
+    func_aggregate_vat_invoices("aggregate_vat_invoices"):::func
+    func_create_fixed_asset("create_fixed_asset"):::func
+    func_create_intangible_asset("create_intangible_asset"):::func
+    func_generate_asset_depreciation_detail("generate_asset_depreciation_detail"):::func
+    func_generate_balance_sheet("generate_balance_sheet"):::func
+    func_generate_cash_flow_statement("generate_cash_flow_statement"):::func
+    func_generate_income_statement("generate_income_statement"):::func
+    func_generate_income_tax_prepayment("generate_income_tax_prepayment"):::func
+    func_generate_vat_declaration("generate_vat_declaration"):::func
+    func_get_or_create_ledger_id("get_or_create_ledger_id"):::func
+    func_get_overview("get_overview"):::func
+    func_get_profit_report("get_profit_report"):::func
+    func_get_purchase_report("get_purchase_report"):::func
+    func_get_sale_report("get_sale_report"):::func
+    func_get_stock_alerts("get_stock_alerts"):::func
+    func_get_trend("get_trend"):::func
+    func_list_cash_flow_transactions("list_cash_flow_transactions"):::func
+    func_list_inventory("list_inventory"):::func
+    end
+
+    %% 写入边：func --> field
+    func_InventoryEngine_inbound --> Inventory_total_value_l4
+    func_InventoryEngine_inbound --> Inventory_average_cost_l4
+    func_InventoryEngine_inbound --> Inventory_quantity_l4
+    func_InventoryEngine_inbound --> StockMove_move_date_l1
+    func_InventoryEngine_inbound --> StockMove_total_cost_l2
+    func_InventoryEngine_inbound --> StockMove_unit_cost_l2
+    func_InventoryEngine_inbound --> StockMove_quantity_l1
+    func_InventoryEngine__record_outbound --> Inventory_total_value_l4
+    func_InventoryEngine__record_outbound --> Inventory_quantity_l4
+    func_InventoryEngine__record_outbound --> StockMove_move_date_l1
+    func_InventoryEngine__record_outbound --> StockMove_total_cost_l2
+    func_InventoryEngine__record_outbound --> StockMove_unit_cost_l2
+    func_InventoryEngine__record_outbound --> StockMove_quantity_l1
+    func_InventoryEngine_reverse --> Inventory_total_value_l4
+    func_InventoryEngine_reverse --> Inventory_quantity_l4
+    func_InventoryEngine_reverse --> StockMove_move_date_l1
+    func_InventoryEngine_reverse --> StockMove_total_cost_l2
+    func_InventoryEngine_reverse --> StockMove_unit_cost_l2
+    func_InventoryEngine_reverse --> StockMove_quantity_l1
+    func_LedgerEngine_update_balance --> LedgerAccountBalance_credit_total_l4
+    func_LedgerEngine_update_balance --> LedgerAccountBalance_debit_total_l4
+    func_LedgerEngine_update_balance --> LedgerAccountBalance_balance_l4
+    func_JournalEngine_post --> AccountMoveLine_amount_residual_l2
+    func_JournalEngine_post --> AccountMoveLine_credit_l2
+    func_JournalEngine_post --> AccountMoveLine_debit_l2
+    func_JournalEngine_post --> AccountMove_amount_total_l2
+    func_JournalEngine_post --> AccountMove_date_l1
+    func_BankEngine_update_balance --> BankAccount_balance_l4
+    func_create_fixed_asset --> FixedAsset_depreciation_method_l3
+    func_create_fixed_asset --> FixedAsset_useful_life_l3
+    func_create_fixed_asset --> FixedAsset_salvage_rate_l3
+    func_create_intangible_asset --> IntangibleAsset_useful_life_l3
+    func_get_or_create_ledger_id --> Ledger_taxpayer_type_l3
+    func_FixedAssetEngine_record_depreciation --> FixedAsset_accumulated_depreciation_l4
+    func_FixedAssetEngine_record_depreciation --> FixedAssetDepreciation_accumulated_after_l2
+    func_FixedAssetEngine_record_depreciation --> FixedAssetDepreciation_accumulated_before_l2
+    func_FixedAssetEngine_record_depreciation --> FixedAssetDepreciation_amount_l2
+    func_FixedAssetEngine_record_disposal --> FixedAsset_accumulated_depreciation_l4
+    func_CreateInvoiceHandler_handle --> Invoice_certification_date_l3
+    func_CreateInvoiceHandler_handle --> Invoice_certification_status_l3
+    func_UpdateInvoiceHandler_handle --> Invoice_certification_date_l3
+    func_UpdateInvoiceHandler_handle --> Invoice_certification_status_l3
+    func_CertifyInvoiceHandler_handle --> Invoice_certification_date_l3
+    func_CertifyInvoiceHandler_handle --> Invoice_certification_status_l3
+    func_CreateInvoiceWithFixedAssetHandler_handle --> FixedAsset_depreciation_method_l3
+    func_CreateInvoiceWithFixedAssetHandler_handle --> FixedAsset_useful_life_l3
+    func_CreateInvoiceWithFixedAssetHandler_handle --> FixedAsset_salvage_rate_l3
+    func_CreateInvoiceWithFixedAssetHandler_handle --> Invoice_certification_date_l3
+    func_CreateInvoiceWithFixedAssetHandler_handle --> Invoice_certification_status_l3
+    func_UpdateAssetWithInvoiceHandler_handle --> FixedAsset_depreciation_method_l3
+    func_UpdateAssetWithInvoiceHandler_handle --> FixedAsset_useful_life_l3
+    func_UpdateAssetWithInvoiceHandler_handle --> FixedAsset_salvage_rate_l3
+    func_CreateProductHandler_handle --> Product_track_inventory_l3
+    func_CreateProductHandler_handle --> Product_min_stock_l3
+    func_CreateProductHandler_handle --> Product_sale_price_l3
+    func_CreateProductHandler_handle --> Product_purchase_price_l3
+    func_UpdateProductHandler_handle --> Product_track_inventory_l3
+    func_UpdateProductHandler_handle --> Product_min_stock_l3
+    func_UpdateProductHandler_handle --> Product_sale_price_l3
+    func_UpdateProductHandler_handle --> Product_purchase_price_l3
+    func_CreateAccountHandler_handle --> Account_taxpayer_type_l3
+
+    %% 读取边：field --> func
+    StockMove_total_cost_l2 --> func_InventoryEngine_inbound
+    StockMove_unit_cost_l2 --> func_InventoryEngine_inbound
+    StockMove_quantity_l1 --> func_InventoryEngine_inbound
+    Account_taxpayer_type_l3 --> func_InventoryEngine_inbound
+    Product_track_inventory_l3 --> func_InventoryEngine_inbound
+    Product_track_inventory_l3 --> func_InventoryEngine_outbound
+    StockMove_total_cost_l2 --> func_InventoryEngine__record_outbound
+    StockMove_quantity_l1 --> func_InventoryEngine__record_outbound
+    StockMove_total_cost_l2 --> func_InventoryEngine_reverse
+    StockMove_unit_cost_l2 --> func_InventoryEngine_reverse
+    StockMove_quantity_l1 --> func_InventoryEngine_reverse
+    Product_track_inventory_l3 --> func_InventoryEngine_reverse
+    AccountMoveLine_credit_l2 --> func_LedgerEngine_update_balance
+    AccountMoveLine_debit_l2 --> func_LedgerEngine_update_balance
+    BankTransaction_amount_l2 --> func_BankEngine_update_balance
+    Inventory_quantity_l4 ==> func_list_inventory:::violationEdge
+    Product_min_stock_l3 --> func_list_inventory
+    Product_track_inventory_l3 --> func_list_inventory
+    Inventory_quantity_l4 ==> func_get_stock_alerts:::violationEdge
+    Product_min_stock_l3 --> func_get_stock_alerts
+    Product_track_inventory_l3 --> func_get_stock_alerts
+    BankTransaction_amount_l2 --> func_generate_balance_sheet
+    AccountMoveLine_credit_l2 --> func_generate_balance_sheet
+    AccountMoveLine_debit_l2 --> func_generate_balance_sheet
+    StockMove_total_cost_l2 --> func_generate_balance_sheet
+    StockMove_quantity_l1 --> func_generate_balance_sheet
+    Receipt_amount_l1 --> func_generate_balance_sheet
+    Payment_amount_l1 --> func_generate_balance_sheet
+    Expense_amount_l1 --> func_generate_balance_sheet
+    PurchaseOrder_total_price_l1 --> func_generate_balance_sheet
+    SaleOrder_total_price_l1 --> func_generate_balance_sheet
+    OpeningBalance_paid_in_capital_l1 --> func_generate_balance_sheet
+    OpeningBalance_long_term_borrowings_l1 --> func_generate_balance_sheet
+    OpeningBalance_tax_payable_l1 --> func_generate_balance_sheet
+    OpeningBalance_accounts_payable_l1 --> func_generate_balance_sheet
+    OpeningBalance_accumulated_amortization_l1 --> func_generate_balance_sheet
+    OpeningBalance_intangible_assets_original_l1 --> func_generate_balance_sheet
+    OpeningBalance_accumulated_depreciation_l1 --> func_generate_balance_sheet
+    OpeningBalance_fixed_assets_original_l1 --> func_generate_balance_sheet
+    OpeningBalance_retained_earnings_l1 --> func_generate_balance_sheet
+    OpeningBalance_bank_balance_l1 --> func_generate_balance_sheet
+    OpeningBalance_cash_balance_l1 --> func_generate_balance_sheet
+    AccountMoveLine_credit_l2 --> func_generate_income_statement
+    AccountMoveLine_debit_l2 --> func_generate_income_statement
+    CashFlowTransaction_flow_category_l2 --> func_list_cash_flow_transactions
+    BankTransaction_amount_l2 --> func_generate_cash_flow_statement
+    CashFlowTransaction_amount_l2 --> func_generate_cash_flow_statement
+    OpeningBalance_bank_balance_l1 --> func_generate_cash_flow_statement
+    OpeningBalance_cash_balance_l1 --> func_generate_cash_flow_statement
+    Invoice_tax_amount_l1 --> func_aggregate_vat_invoices
+    Invoice_amount_without_tax_l1 --> func_aggregate_vat_invoices
+    Invoice_certification_status_l3 --> func_aggregate_vat_invoices
+    Account_taxpayer_type_l3 --> func_aggregate_vat_invoices
+    Invoice_tax_amount_l1 --> func_generate_vat_declaration
+    Invoice_amount_without_tax_l1 --> func_generate_vat_declaration
+    Account_taxpayer_type_l3 --> func_generate_vat_declaration
+    Expense_amount_l1 --> func_generate_income_tax_prepayment
+    SaleItem_unit_cost_l2 --> func_generate_income_tax_prepayment
+    SaleItem_quantity_l1 --> func_generate_income_tax_prepayment
+    AccountMoveLine_credit_l2 --> func_generate_income_tax_prepayment
+    Account_taxpayer_type_l3 --> func_generate_income_tax_prepayment
+    Invoice_amount_without_tax_l1 --> func_generate_income_tax_prepayment
+    FixedAssetDepreciation_accumulated_after_l2 --> func_generate_asset_depreciation_detail
+    FixedAsset_original_value_l1 --> func_generate_asset_depreciation_detail
+    FixedAsset_depreciation_method_l3 --> func_generate_asset_depreciation_detail
+    FixedAsset_useful_life_l3 --> func_generate_asset_depreciation_detail
+    FixedAsset_salvage_rate_l3 --> func_generate_asset_depreciation_detail
+    SaleOrder_total_price_l1 --> func_get_overview
+    PurchaseOrder_total_price_l1 --> func_get_overview
+    StockMove_total_cost_l2 --> func_get_overview
+    StockMove_quantity_l1 --> func_get_overview
+    PurchaseOrder_purchase_date_l1 --> func_get_purchase_report
+    SaleOrder_sale_date_l1 --> func_get_sale_report
+    SaleItem_unit_cost_l2 --> func_get_profit_report
+    SaleItem_quantity_l1 --> func_get_profit_report
+    SaleOrder_total_price_l1 --> func_get_profit_report
+    SaleOrder_total_price_l1 --> func_get_trend
+    PurchaseOrder_total_price_l1 --> func_get_trend
+    Account_taxpayer_type_l3 --> func_get_or_create_ledger_id
+    FixedAsset_useful_life_l3 --> func_FixedAssetEngine_calculate_monthly
+    FixedAsset_salvage_rate_l3 --> func_FixedAssetEngine_calculate_monthly
+    FixedAssetDepreciation_amount_l2 --> func_FixedAssetEngine_record_depreciation
+    FixedAssetDepreciation_amount_l2 --> func_FixedAssetEngine_record_disposal
+    Account_taxpayer_type_l3 --> func_FinanceEngine__vat_deduction
+    Account_taxpayer_type_l3 --> func_FinanceEngine__vat_rate
+    Account_taxpayer_type_l3 --> func_FinanceEngine__account_config
+    Account_taxpayer_type_l3 --> func_TaxAccrualEngine_execute
+    Account_taxpayer_type_l3 --> func_CreateSaleOrderHandler_handle
+    Product_track_inventory_l3 --> func_CreateSaleOrderHandler_handle
+    Product_track_inventory_l3 --> func_UpdateSaleOrderItemsHandler_handle
+    Product_track_inventory_l3 --> func_UpdateSaleOrderFieldsHandler_handle
+    Product_track_inventory_l3 --> func_CreatePurchaseOrderHandler_handle
+    Product_track_inventory_l3 --> func_CancelPurchaseOrderHandler_handle
+    Product_track_inventory_l3 --> func_ReturnPurchaseOrderHandler_handle
+    Account_taxpayer_type_l3 --> func_ReturnPurchaseOrderHandler_handle
+    Product_track_inventory_l3 --> func_UpdatePurchaseOrderItemsHandler_handle
+    Product_track_inventory_l3 --> func_UpdatePurchaseOrderFieldsHandler_handle
+    Product_track_inventory_l3 --> func_ReverseInvoiceHandler_handle
+    Account_taxpayer_type_l3 --> func_ReverseInvoiceHandler_handle
+    Product_track_inventory_l3 --> func_AdjustInventoryHandler_handle
+
+    %% 派生关系：L2 source -.-> L4 derived
+    StockMove_total_cost_l2 -.-> Inventory_total_value_l4
+    StockMove_unit_cost_l2 -.-> Inventory_average_cost_l4
+    StockMove_quantity_l1 -.-> Inventory_quantity_l4
+    AccountMoveLine_credit_l2 -.-> LedgerAccountBalance_credit_total_l4
+    AccountMoveLine_debit_l2 -.-> LedgerAccountBalance_debit_total_l4
+    AccountMoveLine_debit_l2 -.-> LedgerAccountBalance_balance_l4
+    AccountMoveLine_credit_l2 -.-> LedgerAccountBalance_balance_l4
+    BankTransaction_amount_l2 -.-> BankAccount_balance_l4
+    FixedAssetDepreciation_amount_l2 -.-> FixedAsset_accumulated_depreciation_l4
+
+    %% 层级样式
+    classDef tierL1 fill:#c8e6c9,stroke:#333,stroke-width:1px
+    classDef tierL2 fill:#bbdefb,stroke:#333,stroke-width:1px
+    classDef tierL3 fill:#ffe0b2,stroke:#333,stroke-width:1px
+    classDef tierL4 fill:#e1bee7,stroke:#333,stroke-width:1px
+    classDef violation fill:#ffcdd2,stroke:#f44336,stroke-width:3px
+    classDef highlight fill:#fff9c4,stroke:#f57f17,stroke-width:3px
+    classDef func fill:#fff,stroke:#666,stroke-width:1px
+    classDef violationEdge stroke:#f44336,stroke-width:3px
+        </div>
+    </div>
+    <div class="sidebar">
+        <h2>字段搜索</h2>
+        <input type="text" class="search-box" id="searchBox" placeholder="输入字段名搜索（如 unit_cost）...">
+        <div id="fieldList"></div>
+        <div id="fieldDetail"></div>
+        <div class="violations-list" id="violationsList"></div>
+    </div>
+</div>
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { curve: 'basis', useMaxWidth: false } });
+
+const lineageData = {
+  "nodes": [
+    {
+      "id": "Account.taxpayer_type_l3",
+      "model": "Account",
+      "field": "taxpayer_type_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateAccountHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "aggregate_vat_invoices",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "generate_vat_declaration",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "get_or_create_ledger_id",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "FinanceEngine._vat_deduction",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "FinanceEngine._vat_rate",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "FinanceEngine._account_config",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "TaxAccrualEngine.execute",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "CreateSaleOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "ReturnPurchaseOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "ReverseInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "AccountMove.amount_total_l2",
+      "model": "AccountMove",
+      "field": "amount_total_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "JournalEngine.post",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "AccountMove.date_l1",
+      "model": "AccountMove",
+      "field": "date_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "JournalEngine.post",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "AccountMoveLine.amount_residual_l2",
+      "model": "AccountMoveLine",
+      "field": "amount_residual_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "JournalEngine.post",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "AccountMoveLine.credit_l2",
+      "model": "AccountMoveLine",
+      "field": "credit_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "JournalEngine.post",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_income_statement",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "AccountMoveLine.debit_l2",
+      "model": "AccountMoveLine",
+      "field": "debit_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "JournalEngine.post",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_income_statement",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "BankAccount.balance_l4",
+      "model": "BankAccount",
+      "field": "balance_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "BankEngine.update_balance",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "BankTransaction.amount_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "BankTransaction.amount_l2",
+      "model": "BankTransaction",
+      "field": "amount_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "BankEngine.update_balance",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_cash_flow_statement",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "CashFlowTransaction.amount_l2",
+      "model": "CashFlowTransaction",
+      "field": "amount_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_cash_flow_statement",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "CashFlowTransaction.flow_category_l2",
+      "model": "CashFlowTransaction",
+      "field": "flow_category_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "list_cash_flow_transactions",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "Expense.amount_l1",
+      "model": "Expense",
+      "field": "amount_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "FixedAsset.accumulated_depreciation_l4",
+      "model": "FixedAsset",
+      "field": "accumulated_depreciation_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "FixedAssetEngine.record_depreciation",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "FixedAssetDepreciation.amount_l2"
+          ]
+        },
+        {
+          "func": "FixedAssetEngine.record_disposal",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "FixedAssetDepreciation.amount_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "FixedAsset.depreciation_method_l3",
+      "model": "FixedAsset",
+      "field": "depreciation_method_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "create_fixed_asset",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CreateInvoiceWithFixedAssetHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateAssetWithInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "generate_asset_depreciation_detail",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "FixedAsset.original_value_l1",
+      "model": "FixedAsset",
+      "field": "original_value_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_asset_depreciation_detail",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "FixedAsset.salvage_rate_l3",
+      "model": "FixedAsset",
+      "field": "salvage_rate_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "create_fixed_asset",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CreateInvoiceWithFixedAssetHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateAssetWithInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "generate_asset_depreciation_detail",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "FixedAssetEngine.calculate_monthly",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "FixedAsset.useful_life_l3",
+      "model": "FixedAsset",
+      "field": "useful_life_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "create_fixed_asset",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CreateInvoiceWithFixedAssetHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateAssetWithInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "generate_asset_depreciation_detail",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "FixedAssetEngine.calculate_monthly",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "FixedAssetDepreciation.accumulated_after_l2",
+      "model": "FixedAssetDepreciation",
+      "field": "accumulated_after_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "FixedAssetEngine.record_depreciation",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "generate_asset_depreciation_detail",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "FixedAssetDepreciation.accumulated_before_l2",
+      "model": "FixedAssetDepreciation",
+      "field": "accumulated_before_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "FixedAssetEngine.record_depreciation",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "FixedAssetDepreciation.amount_l2",
+      "model": "FixedAssetDepreciation",
+      "field": "amount_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "FixedAssetEngine.record_depreciation",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "FixedAssetEngine.record_depreciation",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "FixedAssetEngine.record_disposal",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "IntangibleAsset.useful_life_l3",
+      "model": "IntangibleAsset",
+      "field": "useful_life_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "create_intangible_asset",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Inventory.average_cost_l4",
+      "model": "Inventory",
+      "field": "average_cost_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.unit_cost_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Inventory.quantity_l4",
+      "model": "Inventory",
+      "field": "quantity_l4",
+      "tier": "L4",
+      "is_violation": true,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.quantity_l1"
+          ]
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.quantity_l1"
+          ]
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.quantity_l1"
+          ]
+        }
+      ],
+      "readers": [
+        {
+          "func": "list_inventory",
+          "tier": "L4",
+          "source": "derived"
+        },
+        {
+          "func": "get_stock_alerts",
+          "tier": "L4",
+          "source": "derived"
+        }
+      ]
+    },
+    {
+      "id": "Inventory.total_value_l4",
+      "model": "Inventory",
+      "field": "total_value_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.total_cost_l2"
+          ]
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.total_cost_l2"
+          ]
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "StockMove.total_cost_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Invoice.amount_without_tax_l1",
+      "model": "Invoice",
+      "field": "amount_without_tax_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "aggregate_vat_invoices",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_vat_declaration",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "Invoice.certification_date_l3",
+      "model": "Invoice",
+      "field": "certification_date_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CertifyInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CreateInvoiceWithFixedAssetHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Invoice.certification_status_l3",
+      "model": "Invoice",
+      "field": "certification_status_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CertifyInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "CreateInvoiceWithFixedAssetHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "aggregate_vat_invoices",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "Invoice.tax_amount_l1",
+      "model": "Invoice",
+      "field": "tax_amount_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "aggregate_vat_invoices",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_vat_declaration",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "Ledger.taxpayer_type_l3",
+      "model": "Ledger",
+      "field": "taxpayer_type_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "get_or_create_ledger_id",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "LedgerAccountBalance.balance_l4",
+      "model": "LedgerAccountBalance",
+      "field": "balance_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "AccountMoveLine.debit_l2",
+            "AccountMoveLine.credit_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "LedgerAccountBalance.credit_total_l4",
+      "model": "LedgerAccountBalance",
+      "field": "credit_total_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "AccountMoveLine.credit_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "LedgerAccountBalance.debit_total_l4",
+      "model": "LedgerAccountBalance",
+      "field": "debit_total_l4",
+      "tier": "L4",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "LedgerEngine.update_balance",
+          "tier": "L4",
+          "source": "derived",
+          "is_derived": true,
+          "from_fields": [
+            "AccountMoveLine.debit_l2"
+          ]
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "OpeningBalance.accounts_payable_l1",
+      "model": "OpeningBalance",
+      "field": "accounts_payable_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.accumulated_amortization_l1",
+      "model": "OpeningBalance",
+      "field": "accumulated_amortization_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.accumulated_depreciation_l1",
+      "model": "OpeningBalance",
+      "field": "accumulated_depreciation_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.bank_balance_l1",
+      "model": "OpeningBalance",
+      "field": "bank_balance_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_cash_flow_statement",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.cash_balance_l1",
+      "model": "OpeningBalance",
+      "field": "cash_balance_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "generate_cash_flow_statement",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.fixed_assets_original_l1",
+      "model": "OpeningBalance",
+      "field": "fixed_assets_original_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.intangible_assets_original_l1",
+      "model": "OpeningBalance",
+      "field": "intangible_assets_original_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.long_term_borrowings_l1",
+      "model": "OpeningBalance",
+      "field": "long_term_borrowings_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.paid_in_capital_l1",
+      "model": "OpeningBalance",
+      "field": "paid_in_capital_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.retained_earnings_l1",
+      "model": "OpeningBalance",
+      "field": "retained_earnings_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "OpeningBalance.tax_payable_l1",
+      "model": "OpeningBalance",
+      "field": "tax_payable_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "Payment.amount_l1",
+      "model": "Payment",
+      "field": "amount_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "Product.min_stock_l3",
+      "model": "Product",
+      "field": "min_stock_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "list_inventory",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "get_stock_alerts",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "Product.purchase_price_l3",
+      "model": "Product",
+      "field": "purchase_price_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Product.sale_price_l3",
+      "model": "Product",
+      "field": "sale_price_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "Product.track_inventory_l3",
+      "model": "Product",
+      "field": "track_inventory_l3",
+      "tier": "L3",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "CreateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "UpdateProductHandler.handle",
+          "tier": "L3",
+          "source": "policy",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "InventoryEngine.outbound",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "list_inventory",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "get_stock_alerts",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "CreateSaleOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "UpdateSaleOrderItemsHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "UpdateSaleOrderFieldsHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "CreatePurchaseOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "CancelPurchaseOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "ReturnPurchaseOrderHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "UpdatePurchaseOrderItemsHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "UpdatePurchaseOrderFieldsHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "ReverseInvoiceHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        },
+        {
+          "func": "AdjustInventoryHandler.handle",
+          "tier": "L3",
+          "source": "policy"
+        }
+      ]
+    },
+    {
+      "id": "PurchaseOrder.purchase_date_l1",
+      "model": "PurchaseOrder",
+      "field": "purchase_date_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "get_purchase_report",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "PurchaseOrder.total_price_l1",
+      "model": "PurchaseOrder",
+      "field": "total_price_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_overview",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_trend",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "Receipt.amount_l1",
+      "model": "Receipt",
+      "field": "amount_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "SaleItem.quantity_l1",
+      "model": "SaleItem",
+      "field": "quantity_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_profit_report",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "SaleItem.unit_cost_l2",
+      "model": "SaleItem",
+      "field": "unit_cost_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_income_tax_prepayment",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "get_profit_report",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "SaleOrder.sale_date_l1",
+      "model": "SaleOrder",
+      "field": "sale_date_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "get_sale_report",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "SaleOrder.total_price_l1",
+      "model": "SaleOrder",
+      "field": "total_price_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [],
+      "readers": [
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_overview",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_profit_report",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_trend",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "StockMove.move_date_l1",
+      "model": "StockMove",
+      "field": "move_date_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": []
+    },
+    {
+      "id": "StockMove.quantity_l1",
+      "model": "StockMove",
+      "field": "quantity_l1",
+      "tier": "L1",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L1",
+          "source": "external",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L1",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L1",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L1",
+          "source": "engine"
+        },
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L1",
+          "source": "external"
+        },
+        {
+          "func": "get_overview",
+          "tier": "L1",
+          "source": "external"
+        }
+      ]
+    },
+    {
+      "id": "StockMove.total_cost_l2",
+      "model": "StockMove",
+      "field": "total_cost_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "generate_balance_sheet",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "get_overview",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    },
+    {
+      "id": "StockMove.unit_cost_l2",
+      "model": "StockMove",
+      "field": "unit_cost_l2",
+      "tier": "L2",
+      "is_violation": false,
+      "writers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine._record_outbound",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L2",
+          "source": "engine",
+          "is_derived": false,
+          "from_fields": []
+        }
+      ],
+      "readers": [
+        {
+          "func": "InventoryEngine.inbound",
+          "tier": "L2",
+          "source": "engine"
+        },
+        {
+          "func": "InventoryEngine.reverse",
+          "tier": "L2",
+          "source": "engine"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "AdjustInventoryHandler.handle",
+      "type": "function",
+      "label": "AdjustInventoryHandler"
+    },
+    {
+      "id": "BankEngine.update_balance",
+      "type": "function",
+      "label": "update_balance"
+    },
+    {
+      "id": "CancelPurchaseOrderHandler.handle",
+      "type": "function",
+      "label": "CancelPurchaseOrderHandler"
+    },
+    {
+      "id": "CertifyInvoiceHandler.handle",
+      "type": "function",
+      "label": "CertifyInvoiceHandler"
+    },
+    {
+      "id": "CreateAccountHandler.handle",
+      "type": "function",
+      "label": "CreateAccountHandler"
+    },
+    {
+      "id": "CreateInvoiceHandler.handle",
+      "type": "function",
+      "label": "CreateInvoiceHandler"
+    },
+    {
+      "id": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "function",
+      "label": "CreateInvoiceWithFixedAssetHandler"
+    },
+    {
+      "id": "CreateProductHandler.handle",
+      "type": "function",
+      "label": "CreateProductHandler"
+    },
+    {
+      "id": "CreatePurchaseOrderHandler.handle",
+      "type": "function",
+      "label": "CreatePurchaseOrderHandler"
+    },
+    {
+      "id": "CreateSaleOrderHandler.handle",
+      "type": "function",
+      "label": "CreateSaleOrderHandler"
+    },
+    {
+      "id": "FinanceEngine._account_config",
+      "type": "function",
+      "label": "_account_config"
+    },
+    {
+      "id": "FinanceEngine._vat_deduction",
+      "type": "function",
+      "label": "_vat_deduction"
+    },
+    {
+      "id": "FinanceEngine._vat_rate",
+      "type": "function",
+      "label": "_vat_rate"
+    },
+    {
+      "id": "FixedAssetEngine.calculate_monthly",
+      "type": "function",
+      "label": "calculate_monthly"
+    },
+    {
+      "id": "FixedAssetEngine.record_depreciation",
+      "type": "function",
+      "label": "record_depreciation"
+    },
+    {
+      "id": "FixedAssetEngine.record_disposal",
+      "type": "function",
+      "label": "record_disposal"
+    },
+    {
+      "id": "InventoryEngine._record_outbound",
+      "type": "function",
+      "label": "_record_outbound"
+    },
+    {
+      "id": "InventoryEngine.inbound",
+      "type": "function",
+      "label": "inbound"
+    },
+    {
+      "id": "InventoryEngine.outbound",
+      "type": "function",
+      "label": "outbound"
+    },
+    {
+      "id": "InventoryEngine.reverse",
+      "type": "function",
+      "label": "reverse"
+    },
+    {
+      "id": "JournalEngine.post",
+      "type": "function",
+      "label": "post"
+    },
+    {
+      "id": "LedgerEngine.update_balance",
+      "type": "function",
+      "label": "update_balance"
+    },
+    {
+      "id": "ReturnPurchaseOrderHandler.handle",
+      "type": "function",
+      "label": "ReturnPurchaseOrderHandler"
+    },
+    {
+      "id": "ReverseInvoiceHandler.handle",
+      "type": "function",
+      "label": "ReverseInvoiceHandler"
+    },
+    {
+      "id": "TaxAccrualEngine.execute",
+      "type": "function",
+      "label": "execute"
+    },
+    {
+      "id": "UpdateAssetWithInvoiceHandler.handle",
+      "type": "function",
+      "label": "UpdateAssetWithInvoiceHandler"
+    },
+    {
+      "id": "UpdateInvoiceHandler.handle",
+      "type": "function",
+      "label": "UpdateInvoiceHandler"
+    },
+    {
+      "id": "UpdateProductHandler.handle",
+      "type": "function",
+      "label": "UpdateProductHandler"
+    },
+    {
+      "id": "UpdatePurchaseOrderFieldsHandler.handle",
+      "type": "function",
+      "label": "UpdatePurchaseOrderFieldsHandler"
+    },
+    {
+      "id": "UpdatePurchaseOrderItemsHandler.handle",
+      "type": "function",
+      "label": "UpdatePurchaseOrderItemsHandler"
+    },
+    {
+      "id": "UpdateSaleOrderFieldsHandler.handle",
+      "type": "function",
+      "label": "UpdateSaleOrderFieldsHandler"
+    },
+    {
+      "id": "UpdateSaleOrderItemsHandler.handle",
+      "type": "function",
+      "label": "UpdateSaleOrderItemsHandler"
+    },
+    {
+      "id": "aggregate_vat_invoices",
+      "type": "function",
+      "label": "aggregate_vat_invoices"
+    },
+    {
+      "id": "create_fixed_asset",
+      "type": "function",
+      "label": "create_fixed_asset"
+    },
+    {
+      "id": "create_intangible_asset",
+      "type": "function",
+      "label": "create_intangible_asset"
+    },
+    {
+      "id": "generate_asset_depreciation_detail",
+      "type": "function",
+      "label": "generate_asset_depreciation_detail"
+    },
+    {
+      "id": "generate_balance_sheet",
+      "type": "function",
+      "label": "generate_balance_sheet"
+    },
+    {
+      "id": "generate_cash_flow_statement",
+      "type": "function",
+      "label": "generate_cash_flow_statement"
+    },
+    {
+      "id": "generate_income_statement",
+      "type": "function",
+      "label": "generate_income_statement"
+    },
+    {
+      "id": "generate_income_tax_prepayment",
+      "type": "function",
+      "label": "generate_income_tax_prepayment"
+    },
+    {
+      "id": "generate_vat_declaration",
+      "type": "function",
+      "label": "generate_vat_declaration"
+    },
+    {
+      "id": "get_or_create_ledger_id",
+      "type": "function",
+      "label": "get_or_create_ledger_id"
+    },
+    {
+      "id": "get_overview",
+      "type": "function",
+      "label": "get_overview"
+    },
+    {
+      "id": "get_profit_report",
+      "type": "function",
+      "label": "get_profit_report"
+    },
+    {
+      "id": "get_purchase_report",
+      "type": "function",
+      "label": "get_purchase_report"
+    },
+    {
+      "id": "get_sale_report",
+      "type": "function",
+      "label": "get_sale_report"
+    },
+    {
+      "id": "get_stock_alerts",
+      "type": "function",
+      "label": "get_stock_alerts"
+    },
+    {
+      "id": "get_trend",
+      "type": "function",
+      "label": "get_trend"
+    },
+    {
+      "id": "list_cash_flow_transactions",
+      "type": "function",
+      "label": "list_cash_flow_transactions"
+    },
+    {
+      "id": "list_inventory",
+      "type": "function",
+      "label": "list_inventory"
+    }
+  ],
+  "edges": [
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "Inventory.total_value_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "Inventory.average_cost_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "Inventory.quantity_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "StockMove.move_date_l1",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "StockMove.total_cost_l2",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "StockMove.unit_cost_l2",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.inbound",
+      "target": "StockMove.quantity_l1",
+      "func": "InventoryEngine.inbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "Inventory.total_value_l4",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "Inventory.quantity_l4",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "StockMove.move_date_l1",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "StockMove.total_cost_l2",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "StockMove.unit_cost_l2",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine._record_outbound",
+      "target": "StockMove.quantity_l1",
+      "func": "InventoryEngine._record_outbound",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "Inventory.total_value_l4",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "Inventory.quantity_l4",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "StockMove.move_date_l1",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "StockMove.total_cost_l2",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "StockMove.unit_cost_l2",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "InventoryEngine.reverse",
+      "target": "StockMove.quantity_l1",
+      "func": "InventoryEngine.reverse",
+      "type": "write"
+    },
+    {
+      "source": "LedgerEngine.update_balance",
+      "target": "LedgerAccountBalance.credit_total_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "write"
+    },
+    {
+      "source": "LedgerEngine.update_balance",
+      "target": "LedgerAccountBalance.debit_total_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "write"
+    },
+    {
+      "source": "LedgerEngine.update_balance",
+      "target": "LedgerAccountBalance.balance_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "write"
+    },
+    {
+      "source": "JournalEngine.post",
+      "target": "AccountMoveLine.amount_residual_l2",
+      "func": "JournalEngine.post",
+      "type": "write"
+    },
+    {
+      "source": "JournalEngine.post",
+      "target": "AccountMoveLine.credit_l2",
+      "func": "JournalEngine.post",
+      "type": "write"
+    },
+    {
+      "source": "JournalEngine.post",
+      "target": "AccountMoveLine.debit_l2",
+      "func": "JournalEngine.post",
+      "type": "write"
+    },
+    {
+      "source": "JournalEngine.post",
+      "target": "AccountMove.amount_total_l2",
+      "func": "JournalEngine.post",
+      "type": "write"
+    },
+    {
+      "source": "JournalEngine.post",
+      "target": "AccountMove.date_l1",
+      "func": "JournalEngine.post",
+      "type": "write"
+    },
+    {
+      "source": "BankEngine.update_balance",
+      "target": "BankAccount.balance_l4",
+      "func": "BankEngine.update_balance",
+      "type": "write"
+    },
+    {
+      "source": "create_fixed_asset",
+      "target": "FixedAsset.depreciation_method_l3",
+      "func": "create_fixed_asset",
+      "type": "write"
+    },
+    {
+      "source": "create_fixed_asset",
+      "target": "FixedAsset.useful_life_l3",
+      "func": "create_fixed_asset",
+      "type": "write"
+    },
+    {
+      "source": "create_fixed_asset",
+      "target": "FixedAsset.salvage_rate_l3",
+      "func": "create_fixed_asset",
+      "type": "write"
+    },
+    {
+      "source": "create_intangible_asset",
+      "target": "IntangibleAsset.useful_life_l3",
+      "func": "create_intangible_asset",
+      "type": "write"
+    },
+    {
+      "source": "get_or_create_ledger_id",
+      "target": "Ledger.taxpayer_type_l3",
+      "func": "get_or_create_ledger_id",
+      "type": "write"
+    },
+    {
+      "source": "FixedAssetEngine.record_depreciation",
+      "target": "FixedAsset.accumulated_depreciation_l4",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "write"
+    },
+    {
+      "source": "FixedAssetEngine.record_depreciation",
+      "target": "FixedAssetDepreciation.accumulated_after_l2",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "write"
+    },
+    {
+      "source": "FixedAssetEngine.record_depreciation",
+      "target": "FixedAssetDepreciation.accumulated_before_l2",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "write"
+    },
+    {
+      "source": "FixedAssetEngine.record_depreciation",
+      "target": "FixedAssetDepreciation.amount_l2",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "write"
+    },
+    {
+      "source": "FixedAssetEngine.record_disposal",
+      "target": "FixedAsset.accumulated_depreciation_l4",
+      "func": "FixedAssetEngine.record_disposal",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceHandler.handle",
+      "target": "Invoice.certification_date_l3",
+      "func": "CreateInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceHandler.handle",
+      "target": "Invoice.certification_status_l3",
+      "func": "CreateInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateInvoiceHandler.handle",
+      "target": "Invoice.certification_date_l3",
+      "func": "UpdateInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateInvoiceHandler.handle",
+      "target": "Invoice.certification_status_l3",
+      "func": "UpdateInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CertifyInvoiceHandler.handle",
+      "target": "Invoice.certification_date_l3",
+      "func": "CertifyInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CertifyInvoiceHandler.handle",
+      "target": "Invoice.certification_status_l3",
+      "func": "CertifyInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceWithFixedAssetHandler.handle",
+      "target": "FixedAsset.depreciation_method_l3",
+      "func": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceWithFixedAssetHandler.handle",
+      "target": "FixedAsset.useful_life_l3",
+      "func": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceWithFixedAssetHandler.handle",
+      "target": "FixedAsset.salvage_rate_l3",
+      "func": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceWithFixedAssetHandler.handle",
+      "target": "Invoice.certification_date_l3",
+      "func": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateInvoiceWithFixedAssetHandler.handle",
+      "target": "Invoice.certification_status_l3",
+      "func": "CreateInvoiceWithFixedAssetHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateAssetWithInvoiceHandler.handle",
+      "target": "FixedAsset.depreciation_method_l3",
+      "func": "UpdateAssetWithInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateAssetWithInvoiceHandler.handle",
+      "target": "FixedAsset.useful_life_l3",
+      "func": "UpdateAssetWithInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateAssetWithInvoiceHandler.handle",
+      "target": "FixedAsset.salvage_rate_l3",
+      "func": "UpdateAssetWithInvoiceHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateProductHandler.handle",
+      "target": "Product.track_inventory_l3",
+      "func": "CreateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateProductHandler.handle",
+      "target": "Product.min_stock_l3",
+      "func": "CreateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateProductHandler.handle",
+      "target": "Product.sale_price_l3",
+      "func": "CreateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateProductHandler.handle",
+      "target": "Product.purchase_price_l3",
+      "func": "CreateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateProductHandler.handle",
+      "target": "Product.track_inventory_l3",
+      "func": "UpdateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateProductHandler.handle",
+      "target": "Product.min_stock_l3",
+      "func": "UpdateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateProductHandler.handle",
+      "target": "Product.sale_price_l3",
+      "func": "UpdateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "UpdateProductHandler.handle",
+      "target": "Product.purchase_price_l3",
+      "func": "UpdateProductHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "CreateAccountHandler.handle",
+      "target": "Account.taxpayer_type_l3",
+      "func": "CreateAccountHandler.handle",
+      "type": "write"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "InventoryEngine.inbound",
+      "func": "InventoryEngine.inbound",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.unit_cost_l2",
+      "target": "InventoryEngine.inbound",
+      "func": "InventoryEngine.inbound",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "InventoryEngine.inbound",
+      "func": "InventoryEngine.inbound",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "InventoryEngine.inbound",
+      "func": "InventoryEngine.inbound",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "InventoryEngine.inbound",
+      "func": "InventoryEngine.inbound",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "InventoryEngine.outbound",
+      "func": "InventoryEngine.outbound",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "InventoryEngine._record_outbound",
+      "func": "InventoryEngine._record_outbound",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "InventoryEngine._record_outbound",
+      "func": "InventoryEngine._record_outbound",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "InventoryEngine.reverse",
+      "func": "InventoryEngine.reverse",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.unit_cost_l2",
+      "target": "InventoryEngine.reverse",
+      "func": "InventoryEngine.reverse",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "InventoryEngine.reverse",
+      "func": "InventoryEngine.reverse",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "InventoryEngine.reverse",
+      "func": "InventoryEngine.reverse",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "LedgerEngine.update_balance",
+      "func": "LedgerEngine.update_balance",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.debit_l2",
+      "target": "LedgerEngine.update_balance",
+      "func": "LedgerEngine.update_balance",
+      "type": "read"
+    },
+    {
+      "source": "BankTransaction.amount_l2",
+      "target": "BankEngine.update_balance",
+      "func": "BankEngine.update_balance",
+      "type": "read"
+    },
+    {
+      "source": "Inventory.quantity_l4",
+      "target": "list_inventory",
+      "func": "list_inventory",
+      "type": "read"
+    },
+    {
+      "source": "Product.min_stock_l3",
+      "target": "list_inventory",
+      "func": "list_inventory",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "list_inventory",
+      "func": "list_inventory",
+      "type": "read"
+    },
+    {
+      "source": "Inventory.quantity_l4",
+      "target": "get_stock_alerts",
+      "func": "get_stock_alerts",
+      "type": "read"
+    },
+    {
+      "source": "Product.min_stock_l3",
+      "target": "get_stock_alerts",
+      "func": "get_stock_alerts",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "get_stock_alerts",
+      "func": "get_stock_alerts",
+      "type": "read"
+    },
+    {
+      "source": "BankTransaction.amount_l2",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.debit_l2",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "Receipt.amount_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "Payment.amount_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "Expense.amount_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "PurchaseOrder.total_price_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "SaleOrder.total_price_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.paid_in_capital_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.long_term_borrowings_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.tax_payable_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.accounts_payable_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.accumulated_amortization_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.intangible_assets_original_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.accumulated_depreciation_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.fixed_assets_original_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.retained_earnings_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.bank_balance_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.cash_balance_l1",
+      "target": "generate_balance_sheet",
+      "func": "generate_balance_sheet",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "generate_income_statement",
+      "func": "generate_income_statement",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.debit_l2",
+      "target": "generate_income_statement",
+      "func": "generate_income_statement",
+      "type": "read"
+    },
+    {
+      "source": "CashFlowTransaction.flow_category_l2",
+      "target": "list_cash_flow_transactions",
+      "func": "list_cash_flow_transactions",
+      "type": "read"
+    },
+    {
+      "source": "BankTransaction.amount_l2",
+      "target": "generate_cash_flow_statement",
+      "func": "generate_cash_flow_statement",
+      "type": "read"
+    },
+    {
+      "source": "CashFlowTransaction.amount_l2",
+      "target": "generate_cash_flow_statement",
+      "func": "generate_cash_flow_statement",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.bank_balance_l1",
+      "target": "generate_cash_flow_statement",
+      "func": "generate_cash_flow_statement",
+      "type": "read"
+    },
+    {
+      "source": "OpeningBalance.cash_balance_l1",
+      "target": "generate_cash_flow_statement",
+      "func": "generate_cash_flow_statement",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.tax_amount_l1",
+      "target": "aggregate_vat_invoices",
+      "func": "aggregate_vat_invoices",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.amount_without_tax_l1",
+      "target": "aggregate_vat_invoices",
+      "func": "aggregate_vat_invoices",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.certification_status_l3",
+      "target": "aggregate_vat_invoices",
+      "func": "aggregate_vat_invoices",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "aggregate_vat_invoices",
+      "func": "aggregate_vat_invoices",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.tax_amount_l1",
+      "target": "generate_vat_declaration",
+      "func": "generate_vat_declaration",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.amount_without_tax_l1",
+      "target": "generate_vat_declaration",
+      "func": "generate_vat_declaration",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "generate_vat_declaration",
+      "func": "generate_vat_declaration",
+      "type": "read"
+    },
+    {
+      "source": "Expense.amount_l1",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "SaleItem.unit_cost_l2",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "SaleItem.quantity_l1",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "Invoice.amount_without_tax_l1",
+      "target": "generate_income_tax_prepayment",
+      "func": "generate_income_tax_prepayment",
+      "type": "read"
+    },
+    {
+      "source": "FixedAssetDepreciation.accumulated_after_l2",
+      "target": "generate_asset_depreciation_detail",
+      "func": "generate_asset_depreciation_detail",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.original_value_l1",
+      "target": "generate_asset_depreciation_detail",
+      "func": "generate_asset_depreciation_detail",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.depreciation_method_l3",
+      "target": "generate_asset_depreciation_detail",
+      "func": "generate_asset_depreciation_detail",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.useful_life_l3",
+      "target": "generate_asset_depreciation_detail",
+      "func": "generate_asset_depreciation_detail",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.salvage_rate_l3",
+      "target": "generate_asset_depreciation_detail",
+      "func": "generate_asset_depreciation_detail",
+      "type": "read"
+    },
+    {
+      "source": "SaleOrder.total_price_l1",
+      "target": "get_overview",
+      "func": "get_overview",
+      "type": "read"
+    },
+    {
+      "source": "PurchaseOrder.total_price_l1",
+      "target": "get_overview",
+      "func": "get_overview",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "get_overview",
+      "func": "get_overview",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "get_overview",
+      "func": "get_overview",
+      "type": "read"
+    },
+    {
+      "source": "PurchaseOrder.purchase_date_l1",
+      "target": "get_purchase_report",
+      "func": "get_purchase_report",
+      "type": "read"
+    },
+    {
+      "source": "SaleOrder.sale_date_l1",
+      "target": "get_sale_report",
+      "func": "get_sale_report",
+      "type": "read"
+    },
+    {
+      "source": "SaleItem.unit_cost_l2",
+      "target": "get_profit_report",
+      "func": "get_profit_report",
+      "type": "read"
+    },
+    {
+      "source": "SaleItem.quantity_l1",
+      "target": "get_profit_report",
+      "func": "get_profit_report",
+      "type": "read"
+    },
+    {
+      "source": "SaleOrder.total_price_l1",
+      "target": "get_profit_report",
+      "func": "get_profit_report",
+      "type": "read"
+    },
+    {
+      "source": "SaleOrder.total_price_l1",
+      "target": "get_trend",
+      "func": "get_trend",
+      "type": "read"
+    },
+    {
+      "source": "PurchaseOrder.total_price_l1",
+      "target": "get_trend",
+      "func": "get_trend",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "get_or_create_ledger_id",
+      "func": "get_or_create_ledger_id",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.useful_life_l3",
+      "target": "FixedAssetEngine.calculate_monthly",
+      "func": "FixedAssetEngine.calculate_monthly",
+      "type": "read"
+    },
+    {
+      "source": "FixedAsset.salvage_rate_l3",
+      "target": "FixedAssetEngine.calculate_monthly",
+      "func": "FixedAssetEngine.calculate_monthly",
+      "type": "read"
+    },
+    {
+      "source": "FixedAssetDepreciation.amount_l2",
+      "target": "FixedAssetEngine.record_depreciation",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "read"
+    },
+    {
+      "source": "FixedAssetDepreciation.amount_l2",
+      "target": "FixedAssetEngine.record_disposal",
+      "func": "FixedAssetEngine.record_disposal",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "FinanceEngine._vat_deduction",
+      "func": "FinanceEngine._vat_deduction",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "FinanceEngine._vat_rate",
+      "func": "FinanceEngine._vat_rate",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "FinanceEngine._account_config",
+      "func": "FinanceEngine._account_config",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "TaxAccrualEngine.execute",
+      "func": "TaxAccrualEngine.execute",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "CreateSaleOrderHandler.handle",
+      "func": "CreateSaleOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "CreateSaleOrderHandler.handle",
+      "func": "CreateSaleOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "UpdateSaleOrderItemsHandler.handle",
+      "func": "UpdateSaleOrderItemsHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "UpdateSaleOrderFieldsHandler.handle",
+      "func": "UpdateSaleOrderFieldsHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "CreatePurchaseOrderHandler.handle",
+      "func": "CreatePurchaseOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "CancelPurchaseOrderHandler.handle",
+      "func": "CancelPurchaseOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "ReturnPurchaseOrderHandler.handle",
+      "func": "ReturnPurchaseOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "ReturnPurchaseOrderHandler.handle",
+      "func": "ReturnPurchaseOrderHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "UpdatePurchaseOrderItemsHandler.handle",
+      "func": "UpdatePurchaseOrderItemsHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "UpdatePurchaseOrderFieldsHandler.handle",
+      "func": "UpdatePurchaseOrderFieldsHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "ReverseInvoiceHandler.handle",
+      "func": "ReverseInvoiceHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Account.taxpayer_type_l3",
+      "target": "ReverseInvoiceHandler.handle",
+      "func": "ReverseInvoiceHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "Product.track_inventory_l3",
+      "target": "AdjustInventoryHandler.handle",
+      "func": "AdjustInventoryHandler.handle",
+      "type": "read"
+    },
+    {
+      "source": "StockMove.total_cost_l2",
+      "target": "Inventory.total_value_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "derive"
+    },
+    {
+      "source": "StockMove.unit_cost_l2",
+      "target": "Inventory.average_cost_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "derive"
+    },
+    {
+      "source": "StockMove.quantity_l1",
+      "target": "Inventory.quantity_l4",
+      "func": "InventoryEngine.inbound",
+      "type": "derive"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "LedgerAccountBalance.credit_total_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "derive"
+    },
+    {
+      "source": "AccountMoveLine.debit_l2",
+      "target": "LedgerAccountBalance.debit_total_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "derive"
+    },
+    {
+      "source": "AccountMoveLine.debit_l2",
+      "target": "LedgerAccountBalance.balance_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "derive"
+    },
+    {
+      "source": "AccountMoveLine.credit_l2",
+      "target": "LedgerAccountBalance.balance_l4",
+      "func": "LedgerEngine.update_balance",
+      "type": "derive"
+    },
+    {
+      "source": "BankTransaction.amount_l2",
+      "target": "BankAccount.balance_l4",
+      "func": "BankEngine.update_balance",
+      "type": "derive"
+    },
+    {
+      "source": "FixedAssetDepreciation.amount_l2",
+      "target": "FixedAsset.accumulated_depreciation_l4",
+      "func": "FixedAssetEngine.record_depreciation",
+      "type": "derive"
+    }
+  ],
+  "violations": [
+    {
+      "code": "TS02",
+      "severity": "ERROR",
+      "rule": "no_l4_as_truth_source",
+      "message": "L4 派生字段 Inventory.quantity_l4 被 list_inventory 读取，L4 不可作为下游真相源",
+      "field": "Inventory.quantity_l4"
+    },
+    {
+      "code": "TS02",
+      "severity": "ERROR",
+      "rule": "no_l4_as_truth_source",
+      "message": "L4 派生字段 Inventory.quantity_l4 被 get_stock_alerts 读取，L4 不可作为下游真相源",
+      "field": "Inventory.quantity_l4"
+    }
+  ],
+  "stats": {
+    "total_writes": 61,
+    "total_reads": 103,
+    "unique_written_fields": 32,
+    "unique_read_fields": 41,
+    "total_violations": 2,
+    "error_violations": 2,
+    "warning_violations": 0
+  }
+};
+
+// 渲染字段列表
+function renderFieldList(filter = '') {
+    const list = document.getElementById('fieldList');
+    const filtered = lineageData.nodes.filter(n =>
+        n.id.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+        list.innerHTML = '<div class="empty-state">无匹配字段</div>';
+        return;
+    }
+
+    list.innerHTML = filtered.map(n => `
+        <div class="field-card" onclick="selectField('${n.id}')">
+            <span class="field-name">${n.field}</span>
+            <span class="field-tier tier-${n.tier}">${n.tier}</span>
+            ${n.is_violation ? '<span class="violation-badge">违规</span>' : ''}
+            <div style="font-size:11px;color:#999;margin-top:4px">${n.model}</div>
+        </div>
+    `).join('');
+}
+
+// 选中字段显示详情
+function selectField(fieldId) {
+    const node = lineageData.nodes.find(n => n.id === fieldId);
+    if (!node) return;
+
+    // 高亮选中
+    document.querySelectorAll('.field-card').forEach(c => c.classList.remove('selected'));
+    event.target.closest('.field-card').classList.add('selected');
+
+    const detail = document.getElementById('fieldDetail');
+    detail.innerHTML = `
+        <div class="detail-section">
+            <h3>字段路径</h3>
+            <div class="item">${node.id}</div>
+            <h3>层级</h3>
+            <div class="item"><span class="field-tier tier-${node.tier}">${node.tier}</span> ${{'L1':'外部输入','L2':'引擎计算','L3':'政策配置','L4':'派生汇总'}[node.tier]}</div>
+            ${node.writers.length > 0 ? `<h3>写入方 (${node.writers.length})</h3>` + node.writers.map(w => `<div class="item">${w.func}<br><small>${w.is_derived ? '派生自: ' + w.from_fields.join(', ') : w.source}</small></div>`).join('') : ''}
+            ${node.readers.length > 0 ? `<h3>读取方 (${node.readers.length})</h3>` + node.readers.map(r => `<div class="item">${r.func}</div>`).join('') : ''}
+            ${node.is_violation ? '<div class="violation-badge">⚠️ 此字段涉及违规</div>' : ''}
+        </div>
+    `;
+}
+
+// 渲染违规列表
+function renderViolations() {
+    const list = document.getElementById('violationsList');
+    if (lineageData.violations.length === 0) {
+        list.innerHTML = '<h2>违规检查</h2><div class="empty-state">✅ 无违规</div>';
+        return;
+    }
+    list.innerHTML = '<h2>违规检查 (' + lineageData.violations.length + ')</h2>' +
+        lineageData.violations.map(v => `
+            <div class="violation-item">
+                <span class="code">${v.code}</span> ${v.severity}
+                <div style="margin-top:4px"><strong>${v.rule}</strong></div>
+                <div style="margin-top:4px;color:#666">${v.message}</div>
+                ${v.field ? `<div style="margin-top:4px;font-family:monospace">字段: ${v.field}</div>` : ''}
+            </div>
+        `).join('');
+}
+
+// 搜索
+document.getElementById('searchBox').addEventListener('input', e => {
+    renderFieldList(e.target.value);
+});
+
+// 初始渲染
+renderFieldList();
+renderViolations();
+</script>
+</body>
+</html>

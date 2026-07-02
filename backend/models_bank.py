@@ -12,8 +12,8 @@ class BankStatement(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)
-    opening_balance = Column(Numeric(14, 2), default=Decimal("0"))
-    closing_balance = Column(Numeric(14, 2), default=Decimal("0"))
+    opening_balance_l1 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L1","source":"external"})
+    closing_balance_l1 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L1","source":"external"})
     status = Column(String(20), default="draft")
     created_at = Column(DateTime, default=datetime.now)
 
@@ -22,9 +22,9 @@ class BankStatementLine(Base):
     __tablename__ = "bank_statement_lines"
     id = Column(Integer, primary_key=True, index=True)
     statement_id = Column(Integer, ForeignKey("bank_statements.id"), nullable=False, index=True)
-    transaction_date = Column(Date, nullable=False)
+    transaction_date_l1 = Column(Date, nullable=False, info={"tier":"L1","source":"external"})
     description = Column(String(200))
-    amount = Column(Numeric(14, 2), nullable=False)  # 正=收入 负=支出
+    amount_l1 = Column(Numeric(14, 2), nullable=False, info={"tier":"L1","source":"external"})  # 正=收入 负=支出
     is_fee = Column(Boolean, default=False)
     match_group_id = Column(Integer, nullable=True)
     matched_tx_ids = Column(JSON, nullable=True)
@@ -36,10 +36,10 @@ class BankReconciliation(Base):
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
     period = Column(String(7), nullable=False)  # YYYY-MM
-    book_balance = Column(Numeric(14, 2), default=Decimal("0"))
-    statement_balance = Column(Numeric(14, 2), default=Decimal("0"))
-    adjusted_book = Column(Numeric(14, 2), default=Decimal("0"))
-    adjusted_statement = Column(Numeric(14, 2), default=Decimal("0"))
+    book_balance_l4 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
+    statement_balance_l1 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L1","source":"external"})
+    adjusted_book_l4 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
+    adjusted_statement_l4 = Column(Numeric(14, 2), default=Decimal("0"), info={"tier":"L4","source":"derived"})
     balanced = Column(Boolean, default=False)
     status = Column(String(20), default="draft")  # draft/matching/balanced/confirmed
     confirmed_at = Column(DateTime, nullable=True)
@@ -56,7 +56,7 @@ class ReconciliationItem(Base):
     # book_received_not_bank | book_paid_not_bank | adjustment | seed
     source_ids = Column(JSON, nullable=True)
     source_dates = Column(JSON, nullable=True)
-    amount = Column(Numeric(14, 2), nullable=False)
+    amount_l2 = Column(Numeric(14, 2), nullable=False, info={"tier":"L2","source":"engine"})
     direction = Column(String(10), nullable=False)  # in / out
     match_group_id = Column(Integer, nullable=True)
     forced_match = Column(Boolean, default=False)

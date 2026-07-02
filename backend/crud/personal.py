@@ -20,30 +20,30 @@ def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limi
     if category:
         q = q.filter(models.PersonalTransaction.category == category)
     if start_date:
-        q = q.filter(models.PersonalTransaction.date >= start_date)
+        q = q.filter(models.PersonalTransaction.date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PersonalTransaction.date <= end_date + " 23:59:59")
+        q = q.filter(models.PersonalTransaction.date_l1 <= end_date + " 23:59:59")
     total = q.count()
-    sum_income = q.filter(models.PersonalTransaction.type == "income").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar()
+    sum_income = q.filter(models.PersonalTransaction.type == "income").with_entities(sqlfunc.sum(models.PersonalTransaction.amount_l1)).scalar()
     sum_income = sum_income if sum_income is not None else 0
-    sum_expense = q.filter(models.PersonalTransaction.type == "expense").with_entities(sqlfunc.sum(models.PersonalTransaction.amount)).scalar()
+    sum_expense = q.filter(models.PersonalTransaction.type == "expense").with_entities(sqlfunc.sum(models.PersonalTransaction.amount_l1)).scalar()
     sum_expense = sum_expense if sum_expense is not None else 0
-    items = q.order_by(models.PersonalTransaction.date.desc()).offset(skip).limit(limit).all()
+    items = q.order_by(models.PersonalTransaction.date_l1.desc()).offset(skip).limit(limit).all()
     return total, items, _d(sum_income).quantize(Q2), _d(sum_expense).quantize(Q2)
 
 
 def get_personal_category_summary(db: Session, account_id: int, type: str = None, start_date: str = None, end_date: str = None):
     q = db.query(
         models.PersonalTransaction.category,
-        sqlfunc.sum(models.PersonalTransaction.amount).label("total")
+        sqlfunc.sum(models.PersonalTransaction.amount_l1).label("total")
     ).filter(models.PersonalTransaction.account_id == account_id)
     if type:
         q = q.filter(models.PersonalTransaction.type == type)
     if start_date:
-        q = q.filter(models.PersonalTransaction.date >= start_date)
+        q = q.filter(models.PersonalTransaction.date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PersonalTransaction.date <= end_date + " 23:59:59")
-    results = q.group_by(models.PersonalTransaction.category).order_by(sqlfunc.sum(models.PersonalTransaction.amount).desc()).all()
+        q = q.filter(models.PersonalTransaction.date_l1 <= end_date + " 23:59:59")
+    results = q.group_by(models.PersonalTransaction.category).order_by(sqlfunc.sum(models.PersonalTransaction.amount_l1).desc()).all()
     return [{"category": r[0] or "未分类", "total": _d(r[1]).quantize(Q2)} for r in results]
 
 
@@ -65,10 +65,10 @@ def get_personal_monthly_summary(db: Session, account_id: int, type: str = None,
         import calendar
         last_day = calendar.monthrange(y, m)[1]
         month_end = datetime(y, m, last_day, 23, 59, 59)
-        q = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
+        q = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
             models.PersonalTransaction.account_id == account_id,
-            models.PersonalTransaction.date >= month_start,
-            models.PersonalTransaction.date <= month_end
+            models.PersonalTransaction.date_l1 >= month_start,
+            models.PersonalTransaction.date_l1 <= month_end
         )
         if type:
             q = q.filter(models.PersonalTransaction.type == type)
@@ -86,27 +86,27 @@ def get_personal_summary(db: Session, account_id: int):
     now = datetime.now()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    month_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
+    month_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "income",
-        models.PersonalTransaction.date >= month_start
+        models.PersonalTransaction.date_l1 >= month_start
     ).scalar()
     month_income = month_income if month_income is not None else 0
 
-    month_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
+    month_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "expense",
-        models.PersonalTransaction.date >= month_start
+        models.PersonalTransaction.date_l1 >= month_start
     ).scalar()
     month_expense = month_expense if month_expense is not None else 0
 
-    total_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
+    total_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "income"
     ).scalar()
     total_income = total_income if total_income is not None else 0
 
-    total_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount)).filter(
+    total_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "expense"
     ).scalar()

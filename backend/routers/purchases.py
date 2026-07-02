@@ -27,10 +27,10 @@ def _build_purchase_out(order, invoiced: bool = False):
             id=item.id,
             product_id=item.product_id,
             product_name=item.product.name if item.product else None,
-            quantity=item.quantity,
-            unit_price=item.unit_price,
-            tax_rate=item.tax_rate,
-            total_price=item.total_price,
+            quantity=item.quantity_l1,
+            unit_price=item.unit_price_l1,
+            tax_rate=item.tax_rate_l1,
+            total_price=item.total_price_l1,
             notes=item.notes or "",
         ))
     return schemas.PurchaseOrderOut(
@@ -39,13 +39,13 @@ def _build_purchase_out(order, invoiced: bool = False):
         supplier_id=order.supplier_id,
         supplier_name=order.supplier.name if order.supplier else None,
         order_type=order.order_type if order.order_type is not None else OrderType.RETAIL,
-        total_price=order.total_price,
+        total_price=order.total_price_l1,
         payment_method=order.payment_method,
         payment_status=order.payment_status,
         status=order.status,
         notes=order.notes,
         image_url=order.image_url or "",
-        purchase_date=order.purchase_date,
+        purchase_date=order.purchase_date_l1,
         created_at=order.created_at,
         items=items
     )
@@ -89,7 +89,7 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
         inventory_changes.append({
             "product_id": item.product_id,
             "product_name": product.name if product else f"商品{item.product_id}",
-            "quantity": f"+{item.quantity}"
+            "quantity": f"+{item.quantity_l1}"
         })
     
     # 返回 OperationResult 格式
@@ -97,12 +97,12 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
         operation=OperationType.CREATE,
         entity_type=EntityType.PURCHASE_ORDER,
         entity_id=order.id,
-        summary=f"采购单 {order.order_no} 创建成功，金额 {order.total_price}，商品数量 {len(order.items)}",
+        summary=f"采购单 {order.order_no} 创建成功，金额 {order.total_price_l1}，商品数量 {len(order.items)}",
         ai_hint="采购单已创建，库存已增加。如需付款，请调用 POST /api/payments。",
         data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
         changes={
             "inventory": inventory_changes,
-            "payable": {"amount": f"+{order.total_price}"}
+            "payable": {"amount": f"+{order.total_price_l1}"}
         }
     )
     return result.to_dict()

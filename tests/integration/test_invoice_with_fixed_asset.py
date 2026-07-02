@@ -28,6 +28,20 @@ from database import get_db, Base
 import database
 import models
 from helpers import get_entity_id
+<<<<<<< Updated upstream
+=======
+
+
+def _extract_data(resp_json):
+    """从 AI Gateway 响应中提取 data 字段"""
+    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
+        ent = resp_json["entity"]
+        if "data" in ent:
+            return ent["data"]
+    if isinstance(resp_json, dict) and "data" in resp_json:
+        return resp_json["data"]
+    return resp_json
+>>>>>>> Stashed changes
 from accounting_engine import AccountingEngine
 
 
@@ -52,6 +66,13 @@ def setup_db(monkeypatch):
 
     # 创建表
     Base.metadata.create_all(bind=test_engine)
+
+    from factories import ensure_default_account
+    _db = TestingSessionLocal()
+    try:
+        ensure_default_account(_db)
+    finally:
+        _db.close()
 
     # 覆盖 FastAPI 依赖
     def override_get_db():
@@ -127,7 +148,7 @@ def test_invoice_amount_equals_asset_original_value(client):
         "seller_name": "供应商A",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-001",
@@ -138,7 +159,7 @@ def test_invoice_amount_equals_asset_original_value(client):
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    data = response.json()["data"]
+    data = _extract_data(response.json())
 
     invoice_amount = Decimal(data["amount_with_tax"])
     asset_value = Decimal(data["fixed_asset"]["original_value"])
@@ -162,7 +183,7 @@ def test_invoice_amounts_auto_calculated_and_balanced(client):
         "seller_name": "供应商B",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-002",
@@ -173,7 +194,7 @@ def test_invoice_amounts_auto_calculated_and_balanced(client):
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    inv = response.json()["data"]
+    inv = _extract_data(response.json())
 
     amount_without_tax = Decimal(inv["amount_without_tax"])
     tax_amount = Decimal(inv["tax_amount"])
@@ -201,7 +222,7 @@ def test_rollback_on_duplicate_invoice(client):
         "seller_name": "供应商C",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-ROLLBACK",
@@ -223,7 +244,7 @@ def test_rollback_on_duplicate_invoice(client):
         "seller_name": "供应商D",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-ROLLBACK-2",
@@ -261,7 +282,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "seller_name": "供应商E",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-DUP",
@@ -281,7 +302,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "seller_name": "供应商F",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-DUP-2",
@@ -314,7 +335,7 @@ def test_response_contains_complete_invoice_and_asset_info(client):
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
         "notes": "测试完整信息",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.09}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-COMPLETE",
@@ -329,7 +350,7 @@ def test_response_contains_complete_invoice_and_asset_info(client):
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    data = response.json()["data"]
+    data = _extract_data(response.json())
 
     inv = data
     assert inv["invoice_no"] == "FA-INV-COMPLETE"
@@ -371,7 +392,7 @@ def test_update_invoice_amount_syncs_asset(client):
         "seller_name": "供应商H",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-UPD",
@@ -382,7 +403,7 @@ def test_update_invoice_amount_syncs_asset(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
-    cr_data = create_resp.json()["data"]
+    cr_data = _extract_data(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
     update_resp = client.put(f"/api/fixed-assets/{asset_id}/with-invoice", json={
@@ -414,7 +435,7 @@ def test_delete_invoice_cascades_to_asset(client):
         "seller_name": "供应商I",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-DEL",
@@ -425,7 +446,11 @@ def test_delete_invoice_cascades_to_asset(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
+<<<<<<< Updated upstream
     cr_data = create_resp.json()["data"]
+=======
+    cr_data = _extract_data(create_resp.json())
+>>>>>>> Stashed changes
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
@@ -458,7 +483,7 @@ def test_update_asset_syncs_invoice_amount(client):
         "seller_name": "供应商J",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-SYNC",
@@ -469,7 +494,7 @@ def test_update_asset_syncs_invoice_amount(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
-    cr_data = create_resp.json()["data"]
+    cr_data = _extract_data(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
     update_resp = client.put(f"/api/fixed-assets/{asset_id}/with-invoice", json={
@@ -501,7 +526,7 @@ def test_delete_asset_clears_invoice_link(client):
         "seller_name": "供应商K",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-CLEAR",
@@ -512,7 +537,11 @@ def test_delete_asset_clears_invoice_link(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
+<<<<<<< Updated upstream
     cr_data = create_resp.json()["data"]
+=======
+    cr_data = _extract_data(create_resp.json())
+>>>>>>> Stashed changes
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
@@ -552,7 +581,7 @@ def test_invoice_calculation_uses_accounting_engine(client):
         "seller_name": "供应商L",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         "purchase_order_action": "auto_create",
         "fixed_asset": {
             "asset_code": "FA-ENGINE",
@@ -563,7 +592,7 @@ def test_invoice_calculation_uses_accounting_engine(client):
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    inv = response.json()["data"]
+    inv = _extract_data(response.json())
 
     assert Decimal(str(inv["amount_without_tax"])) == expected.amount_without_tax
     assert Decimal(str(inv["tax_amount"])) == expected.tax_amount

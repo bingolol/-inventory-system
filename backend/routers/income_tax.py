@@ -42,26 +42,26 @@ def _get_date_range(year: int, quarter: Optional[int]):
 def _calc_tax_caliber(db: Session, account_id: int, start_date: datetime, end_date: datetime):
     """税务口径计算（发票说话）"""
     # 收入 = 销项发票不含税金额
-    invoice_revenue = _d(db.query(func.sum(Invoice.amount_without_tax)).filter(
+    invoice_revenue = _d(db.query(func.sum(Invoice.amount_without_tax_l1)).filter(
         Invoice.account_id == account_id,
         Invoice.direction == InvoiceDirection.OUT,
-        Invoice.issue_date >= start_date,
-        Invoice.issue_date < end_date
+        Invoice.issue_date_l1 >= start_date,
+        Invoice.issue_date_l1 < end_date
     ).scalar())
 
     # 成本 = 进项发票不含税金额
-    invoice_cost = _d(db.query(func.sum(Invoice.amount_without_tax)).filter(
+    invoice_cost = _d(db.query(func.sum(Invoice.amount_without_tax_l1)).filter(
         Invoice.account_id == account_id,
         Invoice.direction == InvoiceDirection.IN,
-        Invoice.issue_date >= start_date,
-        Invoice.issue_date < end_date
+        Invoice.issue_date_l1 >= start_date,
+        Invoice.issue_date_l1 < end_date
     ).scalar())
 
     # 有票费用
-    invoiced_expenses = _d(db.query(func.sum(Expense.amount)).filter(
+    invoiced_expenses = _d(db.query(func.sum(Expense.amount_l1)).filter(
         Expense.account_id == account_id,
-        Expense.expense_date >= start_date,
-        Expense.expense_date < end_date,
+        Expense.expense_date_l1 >= start_date,
+        Expense.expense_date_l1 < end_date,
         sa_exists().where(
             Invoice.account_id == account_id,
             Invoice.related_order_type == "expense",
@@ -70,10 +70,10 @@ def _calc_tax_caliber(db: Session, account_id: int, start_date: datetime, end_da
     ).scalar())
 
     # 无票费用
-    non_invoice_expenses = _d(db.query(func.sum(Expense.amount)).filter(
+    non_invoice_expenses = _d(db.query(func.sum(Expense.amount_l1)).filter(
         Expense.account_id == account_id,
-        Expense.expense_date >= start_date,
-        Expense.expense_date < end_date,
+        Expense.expense_date_l1 >= start_date,
+        Expense.expense_date_l1 < end_date,
         ~sa_exists().where(
             Invoice.account_id == account_id,
             Invoice.related_order_type == "expense",
@@ -118,11 +118,11 @@ async def get_income_tax_report(
     from sqlalchemy import func as sqlfunc
     ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
     if ledger:
-        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit)).join(
+        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit_l2)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
-            AccountMove.date >= start_date, AccountMove.date <= end_date
+            AccountMove.date_l1 >= start_date, AccountMove.date_l1 <= end_date
         ).scalar())
     else:
         vat_exemption_income = Decimal('0')
@@ -139,7 +139,7 @@ async def get_income_tax_report(
     # 使用 AccountingEngine 计算所得税
     # 所得税纳税人类型映射：VAT 口径 small_scale → 所得税口径 small_micro（小型微利企业优惠）
     # 小规模纳税人通常同时也是小型微利企业，适用 5% 实际税负（25%×20%）
-    raw_type = account.taxpayer_type if account.taxpayer_type else "small_scale"
+    raw_type = account.taxpayer_type_l3 if account.taxpayer_type_l3 else "small_scale"
     taxpayer_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
     entity_type = account.type if account.type else "company"
     tax_result = _engine.calculate_income_tax(

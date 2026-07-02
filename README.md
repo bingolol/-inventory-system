@@ -1,7 +1,19 @@
+<<<<<<< Updated upstream
 ﻿---
 doc-type: reference
 ---
 # 杩涢攢瀛樼鐞嗙郴缁燂紙Inventory System锛?
+=======
+---
+doc-type: reference
+---
+
+---
+doc-type: reference
+---
+
+# 进销存管理系统（Inventory System）
+>>>>>>> Stashed changes
 
 > 闈㈠悜涓皬浼佷笟鐨勫叏鏍堜笟鍔＄鐞嗗钩鍙?鈥斺€?搴撳瓨 路 閲囪喘閿€鍞?路 璐㈠姟绋庡姟鎶ヨ〃 路 涓汉娴佹按锛屼竴绔欏紡璁拌处銆?
 

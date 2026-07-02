@@ -18,12 +18,12 @@ from errors import BusinessError
 @pytest.fixture
 def seed_data(db):
     """创建测试基础数据：账本 + 销售单 + 采购单 + 费用"""
-    account = models.Account(id=1, name="测试账本", type="company", code="test", taxpayer_type="small_scale")
+    account = models.Account(id=1, name="测试账本", type="company", code="test", taxpayer_type_l3="small_scale")
     db.add(account)
 
-    sale = models.SaleOrder(id=100, account_id=1, order_no="SO-001", total_price=Decimal("1000"))
-    purchase = models.PurchaseOrder(id=200, account_id=1, order_no="PO-001", total_price=Decimal("500"))
-    expense = models.Expense(id=300, account_id=1, category="房租", amount=Decimal("2000"), expense_date=datetime.now())
+    sale = models.SaleOrder(id=100, account_id=1, order_no="SO-001", total_price_l1=Decimal("1000"))
+    purchase = models.PurchaseOrder(id=200, account_id=1, order_no="PO-001", total_price_l1=Decimal("500"))
+    expense = models.Expense(id=300, account_id=1, category="房租", amount_l1=Decimal("2000"), expense_date_l1=datetime.now())
     db.add_all([sale, purchase, expense])
     db.flush()
     return {"sale_id": 100, "purchase_id": 200, "expense_id": 300}
@@ -36,9 +36,9 @@ class TestHasInvoice:
     def test_with_invoice_returns_true(self, db, seed_data):
         inv = models.Invoice(
             account_id=1, invoice_no="INV-001", direction="out", invoice_type="ordinary",
-            tax_rate=Decimal("0.13"), amount_without_tax=Decimal("1000"),
-            tax_amount=Decimal("130"), amount_with_tax=Decimal("1130"),
-            counterparty_name="客户A", issue_date=datetime.now(),
+            tax_rate_l1=Decimal("0.13"), amount_without_tax_l1=Decimal("1000"),
+            tax_amount_l1=Decimal("130"), amount_with_tax_l1=Decimal("1130"),
+            counterparty_name="客户A", issue_date_l1=datetime.now(),
             related_order_type="sale_order", related_order_id=100,
         )
         db.add(inv)
@@ -48,9 +48,9 @@ class TestHasInvoice:
     def test_different_type_returns_false(self, db, seed_data):
         inv = models.Invoice(
             account_id=1, invoice_no="INV-002", direction="out", invoice_type="ordinary",
-            tax_rate=Decimal("0.13"), amount_without_tax=Decimal("1000"),
-            tax_amount=Decimal("130"), amount_with_tax=Decimal("1130"),
-            counterparty_name="客户A", issue_date=datetime.now(),
+            tax_rate_l1=Decimal("0.13"), amount_without_tax_l1=Decimal("1000"),
+            tax_amount_l1=Decimal("130"), amount_with_tax_l1=Decimal("1130"),
+            counterparty_name="客户A", issue_date_l1=datetime.now(),
             related_order_type="sale_order", related_order_id=100,
         )
         db.add(inv)
@@ -63,9 +63,9 @@ class TestHasInvoice:
     def test_expense_has_invoice(self, db, seed_data):
         inv = models.Invoice(
             account_id=1, invoice_no="INV-003", direction="in", invoice_type="ordinary",
-            tax_rate=Decimal("0.06"), amount_without_tax=Decimal("2000"),
-            tax_amount=Decimal("120"), amount_with_tax=Decimal("2120"),
-            counterparty_name="房东", issue_date=datetime.now(),
+            tax_rate_l1=Decimal("0.06"), amount_without_tax_l1=Decimal("2000"),
+            tax_amount_l1=Decimal("120"), amount_with_tax_l1=Decimal("2120"),
+            counterparty_name="房东", issue_date_l1=datetime.now(),
             related_order_type="expense", related_order_id=300,
         )
         db.add(inv)
@@ -81,15 +81,15 @@ class TestBulkHasInvoice:
         assert bulk_has_invoice(db, 1, "sale_order", [100]) == set()
 
     def test_returns_correct_ids(self, db, seed_data):
-        sale2 = models.SaleOrder(id=101, account_id=1, order_no="SO-002", total_price=Decimal("500"))
+        sale2 = models.SaleOrder(id=101, account_id=1, order_no="SO-002", total_price_l1=Decimal("500"))
         db.add(sale2)
         db.flush()
 
         inv = models.Invoice(
             account_id=1, invoice_no="INV-004", direction="out", invoice_type="ordinary",
-            tax_rate=Decimal("0.13"), amount_without_tax=Decimal("1000"),
-            tax_amount=Decimal("130"), amount_with_tax=Decimal("1130"),
-            counterparty_name="客户A", issue_date=datetime.now(),
+            tax_rate_l1=Decimal("0.13"), amount_without_tax_l1=Decimal("1000"),
+            tax_amount_l1=Decimal("130"), amount_with_tax_l1=Decimal("1130"),
+            counterparty_name="客户A", issue_date_l1=datetime.now(),
             related_order_type="sale_order", related_order_id=100,
         )
         db.add(inv)
@@ -109,9 +109,9 @@ class TestListInvoices:
     def test_returns_related_invoices(self, db, seed_data):
         inv = models.Invoice(
             account_id=1, invoice_no="INV-005", direction="out", invoice_type="ordinary",
-            tax_rate=Decimal("0.13"), amount_without_tax=Decimal("1000"),
-            tax_amount=Decimal("130"), amount_with_tax=Decimal("1130"),
-            counterparty_name="客户A", issue_date=datetime.now(),
+            tax_rate_l1=Decimal("0.13"), amount_without_tax_l1=Decimal("1000"),
+            tax_amount_l1=Decimal("130"), amount_with_tax_l1=Decimal("1130"),
+            counterparty_name="客户A", issue_date_l1=datetime.now(),
             related_order_type="sale_order", related_order_id=100,
         )
         db.add(inv)

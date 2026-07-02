@@ -38,6 +38,11 @@ hidden_imports = [
     'pydantic.deprecated.decorator',
     'openpyxl',
     'multipart',
+    'webview',
+    'webview.platforms.winforms',
+    'webview.platforms.edgechromium',
+    'webview.platforms.mshtml',
+    'webview.dom',
 ]
 
 # 收集 backend 下所有子模块

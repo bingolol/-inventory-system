@@ -27,17 +27,17 @@ def get_purchase_report(start_date: str = None, end_date: str = None, account_id
             items.append({
                 "id": item.id, "product_id": item.product_id,
                 "product_name": item.product.name if item.product else None,
-                "quantity": item.quantity, "unit_price": item.unit_price,
-                "total_price": item.total_price
+                "quantity": item.quantity_l1, "unit_price": item.unit_price_l1,
+                "total_price": item.total_price_l1
             })
         result.append({
             "id": o.id, "order_no": o.order_no,
             "supplier_name": o.supplier.name if o.supplier else None,
-            "total_price": o.total_price, "status": o.status,
-            "purchase_date": o.purchase_date.isoformat() if o.purchase_date else None,
+            "total_price": o.total_price_l1, "status": o.status,
+            "purchase_date": o.purchase_date_l1.isoformat() if o.purchase_date_l1 else None,
             "notes": o.notes, "items": items
         })
-    total = sum((_d(o.total_price) for o in orders), Decimal('0'))
+    total = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
     return {"total_amount": total.quantize(Q2), "count": len(orders), "items": result}
 
 
@@ -51,17 +51,17 @@ def get_sale_report(start_date: str = None, end_date: str = None, account_id: in
             items.append({
                 "id": item.id, "product_id": item.product_id,
                 "product_name": item.product.name if item.product else None,
-                "quantity": item.quantity, "unit_price": item.unit_price,
-                "total_price": item.total_price
+                "quantity": item.quantity_l1, "unit_price": item.unit_price_l1,
+                "total_price": item.total_price_l1
             })
         result.append({
             "id": o.id, "order_no": o.order_no,
             "customer_name": o.customer.name if o.customer else "散客",
-            "total_price": o.total_price, "status": o.status,
-            "sale_date": o.sale_date.isoformat() if o.sale_date else None,
+            "total_price": o.total_price_l1, "status": o.status,
+            "sale_date": o.sale_date_l1.isoformat() if o.sale_date_l1 else None,
             "notes": o.notes, "items": items
         })
-    total = sum((_d(o.total_price) for o in orders), Decimal('0'))
+    total = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
     return {"total_amount": total.quantize(Q2), "count": len(orders), "items": result}
 
 

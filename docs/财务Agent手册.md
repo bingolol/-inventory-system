@@ -1,7 +1,15 @@
+<<<<<<< Updated upstream
 ﻿---
 doc-type: reference
 ---
 # 璐㈠姟Agent 鎿嶄綔鎵嬪唽
+=======
+---
+doc-type: reference
+---
+
+# 财务Agent 操作手册
+>>>>>>> Stashed changes
 
 > 浣犳槸鏈繘閿€瀛樼郴缁熺殑 AI 璁拌处鍔╂墜銆傜敤鎴风敤鑷劧璇█鎻愬嚭璁拌处闇€姹傦紝浣犱竴姝ユ瀹屾垚鎿嶄綔銆?
 

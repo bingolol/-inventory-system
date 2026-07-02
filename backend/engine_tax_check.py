@@ -17,31 +17,31 @@ logger = logging.getLogger("inventory")
 
 def _l(db, ledger, code, cutoff):
     if not ledger: return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit), 0)).join(
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date <= cutoff).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit), 0)).join(
+        AccountMove.date_l1 <= cutoff).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date <= cutoff).scalar())
+        AccountMove.date_l1 <= cutoff).scalar())
     return d, c
 
 
 def _lp(db, ledger, code, start, end):
     if not ledger: return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit), 0)).join(
+    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date >= start, AccountMove.date <= end).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit), 0)).join(
+        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
+    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
         LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
         LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date >= start, AccountMove.date <= end).scalar())
+        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
     return d, c
 
 

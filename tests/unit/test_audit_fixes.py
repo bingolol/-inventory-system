@@ -46,7 +46,7 @@ from errors import BusinessError
 def small_scale_account(db):
     """小规模纳税人账本"""
     a = Account(id=1, name="小规模测试", type="company", code="ss-test",
-                taxpayer_type="small_scale")
+                taxpayer_type_l3="small_scale")
     db.add(a)
     db.commit()
     return a
@@ -56,7 +56,7 @@ def small_scale_account(db):
 def general_account(db):
     """一般纳税人账本"""
     a = Account(id=2, name="一般纳税人测试", type="company", code="gn-test",
-                taxpayer_type="general")
+                taxpayer_type_l3="general")
     db.add(a)
     db.commit()
     return a
@@ -65,7 +65,7 @@ def general_account(db):
 @pytest.fixture
 def ledger(db, small_scale_account):
     l = Ledger(id=1, name="小规模账本", type="company", code="ss-test",
-               taxpayer_type="small_scale")
+               taxpayer_type_l3="small_scale")
     db.add(l)
     db.commit()
     return l
@@ -74,7 +74,7 @@ def ledger(db, small_scale_account):
 @pytest.fixture
 def ledger_general(db, general_account):
     l = Ledger(id=2, name="一般纳税人账本", type="company", code="gn-test",
-               taxpayer_type="general")
+               taxpayer_type_l3="general")
     db.add(l)
     db.commit()
     return l
@@ -97,12 +97,12 @@ def full_accts(db, ledger):
 @pytest.fixture
 def product(db, small_scale_account):
     p = Product(id=1, account_id=1, name="测试商品", sku="T-001",
-                purchase_price=Decimal("100"), sale_price=Decimal("200"),
-                track_inventory=True)
+                purchase_price_l3=Decimal("100"), sale_price_l3=Decimal("200"),
+                track_inventory_l3=True)
     db.add(p)
     # 初始库存
-    inv = Inventory(account_id=1, product_id=1, quantity=100,
-                    average_cost=Decimal("100"), total_value=Decimal("10000"))
+    inv = Inventory(account_id=1, product_id=1, quantity_l4=100,
+                    average_cost_l4=Decimal("100"), total_value_l4=Decimal("10000"))
     db.add(inv)
     db.commit()
     return p
@@ -116,15 +116,15 @@ def _make_sale_order(db, account_id=1, customer_id=1, order_id=1,
         id=order_id, account_id=account_id, order_no=f"SO-TEST-{order_id}",
         customer_id=customer_id, order_type=OrderType.RETAIL,
         payment_status=PaymentStatus.UNPAID, status=OrderStatus.COMPLETED,
-        total_price=(unit_price * quantity).quantize(Decimal("0.01")),
-        sale_date=datetime(2026, 6, 15),
+        total_price_l1=(unit_price * quantity).quantize(Decimal("0.01")),
+        sale_date_l1=datetime(2026, 6, 15),
     )
     db.add(so)
     db.flush()
     si = SaleItem(
-        order_id=so.id, product_id=1, quantity=quantity,
-        unit_price=unit_price, tax_rate=tax_rate,
-        total_price=(unit_price * quantity).quantize(Decimal("0.01")),
+        order_id=so.id, product_id=1, quantity_l1=quantity,
+        unit_price_l1=unit_price, tax_rate_l1=tax_rate,
+        total_price_l1=(unit_price * quantity).quantize(Decimal("0.01")),
     )
     si.set_calculated_cost(unit_cost)
     db.add(si)
@@ -144,8 +144,8 @@ def _get_line_map(db, move_id):
         ).first()
         if la:
             result[la.code] = {
-                "debit": Decimal(str(line.debit)),
-                "credit": Decimal(str(line.credit)),
+                "debit": Decimal(str(line.debit_l2)),
+                "credit": Decimal(str(line.credit_l2)),
             }
     return result
 
@@ -222,26 +222,26 @@ class TestFix10RecordSaleTaxRate:
 
         # 一般纳税人的库存和商品
         p = Product(id=2, account_id=2, name="一般纳税人商品", sku="G-001",
-                    purchase_price=Decimal("100"), sale_price=Decimal("200"),
-                    track_inventory=True)
+                    purchase_price_l3=Decimal("100"), sale_price_l3=Decimal("200"),
+                    track_inventory_l3=True)
         db.add(p)
-        inv = Inventory(account_id=2, product_id=2, quantity=100,
-                        average_cost=Decimal("100"), total_value=Decimal("10000"))
+        inv = Inventory(account_id=2, product_id=2, quantity_l4=100,
+                        average_cost_l4=Decimal("100"), total_value_l4=Decimal("10000"))
         db.add(inv)
         db.commit()
 
         so = SaleOrder(
             id=10, account_id=2, order_no="SO-GN-001", customer_id=1,
             order_type=OrderType.RETAIL, payment_status=PaymentStatus.UNPAID,
-            status=OrderStatus.COMPLETED, total_price=Decimal("2000.00"),
-            sale_date=datetime(2026, 6, 15),
+            status=OrderStatus.COMPLETED, total_price_l1=Decimal("2000.00"),
+            sale_date_l1=datetime(2026, 6, 15),
         )
         db.add(so)
         db.flush()
         si = SaleItem(
-            order_id=so.id, product_id=2, quantity=10,
-            unit_price=Decimal("200"), tax_rate=Decimal("0.13"),
-            total_price=Decimal("2000.00"),
+            order_id=so.id, product_id=2, quantity_l1=10,
+            unit_price_l1=Decimal("200"), tax_rate_l1=Decimal("0.13"),
+            total_price_l1=Decimal("2000.00"),
         )
         si.set_calculated_cost(Decimal("100"))
         db.add(si)
@@ -268,8 +268,8 @@ class TestFix10RecordSaleTaxRate:
             ).first()
             if la:
                 codes[la.code] = {
-                    "debit": Decimal(str(line.debit)),
-                    "credit": Decimal(str(line.credit)),
+                    "debit": Decimal(str(line.debit_l2)),
+                    "credit": Decimal(str(line.credit_l2)),
                 }
 
         # 一般纳税人 13% 税率不变
@@ -311,15 +311,15 @@ class TestFix1MonthlyCloseSupplement:
         so2 = SaleOrder(
             id=2, account_id=1, order_no="SO-TEST-002", customer_id=1,
             order_type=OrderType.RETAIL, payment_status=PaymentStatus.UNPAID,
-            status=OrderStatus.COMPLETED, total_price=Decimal("5000.00"),
-            sale_date=datetime(2026, 6, 20),
+            status=OrderStatus.COMPLETED, total_price_l1=Decimal("5000.00"),
+            sale_date_l1=datetime(2026, 6, 20),
         )
         db.add(so2)
         db.flush()
         si2 = SaleItem(
-            order_id=so2.id, product_id=1, quantity=25,
-            unit_price=Decimal("200"), tax_rate=Decimal("0.01"),
-            total_price=Decimal("5000.00"),
+            order_id=so2.id, product_id=1, quantity_l1=25,
+            unit_price_l1=Decimal("200"), tax_rate_l1=Decimal("0.01"),
+            total_price_l1=Decimal("5000.00"),
         )
         si2.set_calculated_cost(Decimal("100"))
         db.add(si2)
@@ -383,16 +383,16 @@ class TestFix4SmallScaleExemption:
         ordinary_inv = Invoice(
             account_id=1, invoice_no="INV-ORD-001",
             direction=InvoiceDirection.OUT, invoice_type=InvoiceType.ORDINARY,
-            tax_rate=Decimal("0.03"), amount_without_tax=Decimal("1500"),
-            tax_amount=Decimal("45"), amount_with_tax=Decimal("1545"),
-            issue_date=date(2026, 6, 10), counterparty_name="客户A",
+            tax_rate_l1=Decimal("0.03"), amount_without_tax_l1=Decimal("1500"),
+            tax_amount_l1=Decimal("45"), amount_with_tax_l1=Decimal("1545"),
+            issue_date_l1=date(2026, 6, 10), counterparty_name="客户A",
         )
         special_inv = Invoice(
             account_id=1, invoice_no="INV-SPC-001",
             direction=InvoiceDirection.OUT, invoice_type=InvoiceType.SPECIAL,
-            tax_rate=Decimal("0.03"), amount_without_tax=Decimal("500"),
-            tax_amount=Decimal("15"), amount_with_tax=Decimal("515"),
-            issue_date=date(2026, 6, 15), counterparty_name="客户B",
+            tax_rate_l1=Decimal("0.03"), amount_without_tax_l1=Decimal("500"),
+            tax_amount_l1=Decimal("15"), amount_with_tax_l1=Decimal("515"),
+            issue_date_l1=date(2026, 6, 15), counterparty_name="客户B",
         )
         db.add(ordinary_inv)
         db.add(special_inv)
@@ -435,11 +435,11 @@ class TestFix7DisposalDateRequired:
     def asset(self, db, small_scale_account, ledger, full_accts):
         asset = FixedAsset(
             account_id=1, asset_code="FA-001", name="测试设备",
-            category="机器设备", original_value=Decimal("120000"),
-            salvage_rate=Decimal("0.05"), useful_life=60,
-            depreciation_method="年限平均法",
-            start_date=date(2025, 1, 1),
-            accumulated_depreciation=Decimal("22800"),  # 已折旧12个月
+            category="机器设备", original_value_l1=Decimal("120000"),
+            salvage_rate_l3=Decimal("0.05"), useful_life_l3=60,
+            depreciation_method_l3="年限平均法",
+            start_date_l1=date(2025, 1, 1),
+            accumulated_depreciation_l4=Decimal("22800"),  # 已折旧12个月
             status="在用",
         )
         db.add(asset)
@@ -473,7 +473,7 @@ class TestFix7DisposalDateRequired:
             AccountMove.source_id == asset.id,
         ).first()
         assert move is not None
-        assert move.date == date(2026, 6, 15)
+        assert move.date_l1 == date(2026, 6, 15)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -621,7 +621,7 @@ class TestFix6ReverseNoneOriginal:
             StockMove.source_id == 1,
         ).first()
         assert rev_move is not None
-        assert rev_move.quantity < 0  # 入库红冲为负
+        assert rev_move.quantity_l1 < 0  # 入库红冲为负
 
 
 # ═══════════════════════════════════════════════════════════
@@ -651,7 +651,7 @@ class TestRegression2NoOffByOne:
     def test_account_move_date_is_date_type(self):
         """回归：AccountMove.date 列类型应为 Date"""
         from sqlalchemy import Date as SQLDate
-        col = AccountMove.__table__.c.date
+        col = AccountMove.__table__.c.date_l1
         assert isinstance(col.type, SQLDate)
 
 
@@ -672,15 +672,15 @@ class TestRegression11ReturnCostUsesOriginalUnitCost:
         so1 = SaleOrder(
             id=1, account_id=1, order_no="SO-1", customer_id=1,
             order_type=OrderType.RETAIL, payment_status=PaymentStatus.UNPAID,
-            status=OrderStatus.COMPLETED, total_price=Decimal("2000"),
-            sale_date=datetime(2026, 6, 10),
+            status=OrderStatus.COMPLETED, total_price_l1=Decimal("2000"),
+            sale_date_l1=datetime(2026, 6, 10),
         )
         db.add(so1)
         db.flush()
         si1 = SaleItem(
-            order_id=1, product_id=1, quantity=10,
-            unit_price=Decimal("200"), tax_rate=Decimal("0.01"),
-            total_price=Decimal("2000"),
+            order_id=1, product_id=1, quantity_l1=10,
+            unit_price_l1=Decimal("200"), tax_rate_l1=Decimal("0.01"),
+            total_price_l1=Decimal("2000"),
         )
         db.add(si1)
         db.commit()
@@ -706,7 +706,7 @@ class TestRegression11ReturnCostUsesOriginalUnitCost:
         inv = db.query(Inventory).filter(
             Inventory.account_id == 1, Inventory.product_id == 1
         ).first()
-        assert inv.average_cost != original_cost  # 不再是 100
+        assert inv.average_cost_l4 != original_cost  # 不再是 100
 
         # T3: 退货 3 件 — 应用原始 unit_cost
         import time
@@ -726,7 +726,8 @@ class TestRegression11ReturnCostUsesOriginalUnitCost:
         ).first()
         assert rev_move is not None
         # 成本应为原始出库成本（100），而非当前 average_cost
-        assert rev_move.unit_cost == original_cost
+        # 红冲流水 quantity 和 unit_cost 均为负数，取 abs 比较
+        assert abs(rev_move.unit_cost_l2) == original_cost
         # 修复 #12: ref_source_id 应记录原销售单 ID
         assert rev_move.ref_source_id == 1
 
@@ -757,7 +758,7 @@ class TestFix12RedInvoiceNoDoubleReverse:
         for item in so.items:
             uc = eng_inv.outbound(
                 account_id=1, product_id=item.product_id,
-                quantity=item.quantity,
+                quantity=item.quantity_l1,
                 source_type="sale_order", source_id=so.id,
             )
             item.set_calculated_cost(uc)
@@ -787,11 +788,11 @@ class TestFix12RedInvoiceNoDoubleReverse:
         invoice = Invoice(
             account_id=1, invoice_no="INV-TEST-001",
             direction=InvoiceDirection.OUT, invoice_type=InvoiceType.ORDINARY,
-            tax_rate=Decimal("0.03"),
-            amount_without_tax=Decimal("2000"),
-            tax_amount=Decimal("60"),
-            amount_with_tax=Decimal("2060"),
-            issue_date=date(2026, 6, 15),
+            tax_rate_l1=Decimal("0.03"),
+            amount_without_tax_l1=Decimal("2000"),
+            tax_amount_l1=Decimal("60"),
+            amount_with_tax_l1=Decimal("2060"),
+            issue_date_l1=date(2026, 6, 15),
             counterparty_name="测试客户",
             related_order_type="sale_order",
             related_order_id=1,
@@ -846,7 +847,7 @@ class TestFix12RedInvoiceNoDoubleReverse:
         for item in so.items:
             uc = eng_inv.outbound(
                 account_id=1, product_id=item.product_id,
-                quantity=item.quantity,
+                quantity=item.quantity_l1,
                 source_type="sale_order", source_id=so.id,
             )
             item.set_calculated_cost(uc)
@@ -856,11 +857,11 @@ class TestFix12RedInvoiceNoDoubleReverse:
         invoice = Invoice(
             account_id=1, invoice_no="INV-TEST-002",
             direction=InvoiceDirection.OUT, invoice_type=InvoiceType.ORDINARY,
-            tax_rate=Decimal("0.03"),
-            amount_without_tax=Decimal("2000"),
-            tax_amount=Decimal("60"),
-            amount_with_tax=Decimal("2060"),
-            issue_date=date(2026, 6, 15),
+            tax_rate_l1=Decimal("0.03"),
+            amount_without_tax_l1=Decimal("2000"),
+            tax_amount_l1=Decimal("60"),
+            amount_with_tax_l1=Decimal("2060"),
+            issue_date_l1=date(2026, 6, 15),
             counterparty_name="测试客户",
             related_order_type="sale_order",
             related_order_id=2,
@@ -894,4 +895,4 @@ class TestFix12RedInvoiceNoDoubleReverse:
             StockMove.source_id == 2,
         ).all()
         assert len(rev_stock_moves) == 1
-        assert rev_stock_moves[0].quantity > 0  # 出库红冲为正
+        assert rev_stock_moves[0].quantity_l1 > 0  # 出库红冲为正

@@ -52,12 +52,15 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   document.title = `${to.meta.title || '进销存'} - 进销存管理系统`
   if (to.name !== 'Login') {
     const auth = useAuthStore()
     if (!auth.isLoggedIn) {
-      return '/login'
+      const refreshed = auth.refreshToken ? await auth.refresh() : false
+      if (!refreshed) {
+        return '/login'
+      }
     }
   }
 })

@@ -1,7 +1,15 @@
+<<<<<<< Updated upstream
 ﻿---
 doc-type: reference
 ---
 # 寮€鍙慉gent 鎵嬪唽
+=======
+---
+doc-type: reference
+---
+
+# 开发Agent 手册
+>>>>>>> Stashed changes
 
 > 鏈墜鍐屼緵 AI Agent 鍔犺浇涓?skill锛屽湪鏈粨搴撹繘琛屼唬鐮佸紑鍙戞椂浣跨敤銆?
 
