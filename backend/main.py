@@ -439,7 +439,15 @@ if os.path.exists(uploads_dir):
 # 前端静态文件（生产环境）
 frontend_dist = workspace.get_frontend_dist_dir()
 if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    class NoCacheStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            response = await super().get_response(path, scope)
+            if path == "" or path.endswith(".html") or "text/html" in response.headers.get("content-type", ""):
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            return response
+    app.mount("/", NoCacheStaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 if __name__ == "__main__":
     import sys
