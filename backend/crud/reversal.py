@@ -37,11 +37,7 @@ def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
 
     for receipt in receipts:
         # 跳过已冲销的反向收款（负金额）
-<<<<<<< Updated upstream
-        if _d(receipt.amount) < 0:
-=======
         if _d(receipt.amount_l1) < 0:
->>>>>>> Stashed changes
             continue
 
         # 幂等检查：原 Receipt 是否已被红冲过（description 匹配 "冲销收款 #{原id}"）
@@ -49,21 +45,13 @@ def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
             models.Receipt.account_id == account_id,
             models.Receipt.related_entity_type == "sale_order",
             models.Receipt.related_entity_id == sale_order_id,
-<<<<<<< Updated upstream
-            models.Receipt.amount < 0,
-=======
             models.Receipt.amount_l1 < 0,
->>>>>>> Stashed changes
             models.Receipt.description == f"冲销收款 #{receipt.id}",
         ).first()
         if existing_reversal:
             continue
 
-<<<<<<< Updated upstream
-        original_amount = _d(receipt.amount)
-=======
         original_amount = _d(receipt.amount_l1)
->>>>>>> Stashed changes
 
         # 生成反向收款记录
         reversal_receipt = models.Receipt(
@@ -138,11 +126,7 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
 
     for payment in payments:
         # 跳过已冲销的反向付款（负金额）
-<<<<<<< Updated upstream
-        if _d(payment.amount) < 0:
-=======
         if _d(payment.amount_l1) < 0:
->>>>>>> Stashed changes
             continue
 
         # 幂等检查：原 Payment 是否已被红冲过（description 匹配 "冲销付款 #{原id}"）
@@ -150,21 +134,13 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
             models.Payment.account_id == account_id,
             models.Payment.related_entity_type == "purchase_order",
             models.Payment.related_entity_id == purchase_order_id,
-<<<<<<< Updated upstream
-            models.Payment.amount < 0,
-=======
             models.Payment.amount_l1 < 0,
->>>>>>> Stashed changes
             models.Payment.description == f"冲销付款 #{payment.id}",
         ).first()
         if existing_reversal:
             continue
 
-<<<<<<< Updated upstream
-        original_amount = _d(payment.amount)
-=======
         original_amount = _d(payment.amount_l1)
->>>>>>> Stashed changes
 
         # 生成反向付款记录
         reversal_payment = models.Payment(
@@ -242,11 +218,7 @@ def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> mod
     # 幂等检查：原 Receipt 是否已被红冲过（description 匹配 "冲销收款 #{原id}"）
     existing_reversal = db.query(models.Receipt).filter(
         models.Receipt.account_id == account_id,
-<<<<<<< Updated upstream
-        models.Receipt.amount < 0,
-=======
         models.Receipt.amount_l1 < 0,
->>>>>>> Stashed changes
         models.Receipt.description == f"冲销收款 #{receipt.id}",
     ).first()
     if existing_reversal:
@@ -386,11 +358,7 @@ def reverse_single_payment(db: Session, account_id: int, payment_id: int) -> mod
     # 幂等检查：原 Payment 是否已被红冲过（description 匹配 "冲销付款 #{原id}"）
     existing_reversal = db.query(models.Payment).filter(
         models.Payment.account_id == account_id,
-<<<<<<< Updated upstream
-        models.Payment.amount < 0,
-=======
         models.Payment.amount_l1 < 0,
->>>>>>> Stashed changes
         models.Payment.description == f"冲销付款 #{payment.id}",
     ).first()
     if existing_reversal:

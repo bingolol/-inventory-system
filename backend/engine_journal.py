@@ -270,20 +270,28 @@ class JournalEngine:
         return lines, "GEN", {"balance_check": True}
 
     def _build_depreciation(self, source):
-        """折旧凭证：借:6601（管理费用）贷:1602（累计折旧）"""
+        """折旧/摊销凭证：借:6601（管理费用）贷:累计折旧/累计摊销
+
+        source 中可指定 contra_account_code（固定资产 1602 / 无形资产 1702），
+        未指定时默认使用 1602。
+        """
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
+        contra_account_code = source.get("contra_account_code", "1602")
         return [
             {"account_code": "6601", "debit": amount, "credit": Decimal("0")},
-            {"account_code": "1602", "debit": Decimal("0"), "credit": amount},
+            {"account_code": contra_account_code, "debit": Decimal("0"), "credit": amount},
         ], "FA", {"balance_check": True}
 
     def _build_asset_disposal(self, source):
-        """处置凭证：借:1602 借:1002(收款) 贷:1601 + 损益科目
+        """处置凭证：借:累计折旧/摊销 借:1002(收款) 贷:资产原值科目 + 损益科目
 
-        小企业会计准则：固定资产处置损益一律计入营业外收支，不使用"资产处置损益"科目。
+        小企业会计准则：资产处置损益一律计入营业外收支，不使用"资产处置损益"科目。
         处置价格 > 账面净值 → 营业外收入（6301）
         处置价格 < 账面净值 → 营业外支出（6701）
+
+        source 中可指定 asset_account_code / contra_account_code，
+        未指定时默认固定资产 1601/1602。
         """
         self._check_required(source, ["original_value", "accumulated_depreciation", "net_value"])
         original = Decimal(str(source["original_value"]))
@@ -291,10 +299,12 @@ class JournalEngine:
         net_value = Decimal(str(source["net_value"]))
         disposal_price = Decimal(str(source.get("disposal_price", 0)))
         diff = Decimal(str(source.get("diff", disposal_price - net_value)))
+        asset_account_code = source.get("asset_account_code", "1601")
+        contra_account_code = source.get("contra_account_code", "1602")
 
         lines = [
-            {"account_code": "1602", "debit": accumulated, "credit": Decimal("0")},
-            {"account_code": "1601", "debit": Decimal("0"), "credit": original},
+            {"account_code": contra_account_code, "debit": accumulated, "credit": Decimal("0")},
+            {"account_code": asset_account_code, "debit": Decimal("0"), "credit": original},
         ]
 
         # 收到的处置款 → 借:银行存款

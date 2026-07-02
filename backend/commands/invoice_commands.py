@@ -438,17 +438,10 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             inv_item = models.InvoiceItem(
                 invoice_id=db_invoice.id,
                 product_id=it['product_id'],
-<<<<<<< Updated upstream
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                tax_rate=it.get('tax_rate', cmd.tax_rate),
-                total_price=line_total,
-=======
                 quantity_l1=it['quantity'],
                 unit_price_l1=it['unit_price'],
                 tax_rate_l1=it.get('tax_rate', cmd.tax_rate),
                 total_price_l1=line_total,
->>>>>>> Stashed changes
             )
             db.add(inv_item)
 
@@ -472,13 +465,8 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         # 必须同步为 "certified"，否则 crud/invoices.py 与 crud/finance/tax_declarations.py
         # 按 "certified" 过滤会漏掉这笔税额 → 申报 input_vat 与 222102 总账不一致。
         if enable_vat_deduction:
-<<<<<<< Updated upstream
-            db_invoice.certification_status = CertificationStatus.CERTIFIED
-            db_invoice.certification_date = datetime.combine(issue_date, datetime.min.time())
-=======
             db_invoice.certification_status_l3 = CertificationStatus.CERTIFIED
             db_invoice.certification_date_l3 = datetime.combine(issue_date, datetime.min.time())
->>>>>>> Stashed changes
             db.flush()
 
         # 创建固定资产（原值口径与总账分录保持一致，确保 BS 平衡）
@@ -487,21 +475,12 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             asset_code=cmd.asset_code,
             name=cmd.asset_name,
             category=cmd.category,
-<<<<<<< Updated upstream
-            original_value=asset_original_value,
-            salvage_rate=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
-            useful_life=cmd.useful_life,
-            depreciation_method=cmd.depreciation_method,
-            start_date=start_date,
-            accumulated_depreciation=_d(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
-=======
             original_value_l1=asset_original_value,
             salvage_rate_l3=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
             useful_life_l3=cmd.useful_life,
             depreciation_method_l3=cmd.depreciation_method,
             start_date_l1=start_date,
             accumulated_depreciation_l4=_d(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
->>>>>>> Stashed changes
             status=cmd.asset_status,
         )
         db.add(db_asset)
@@ -511,12 +490,9 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         db_invoice.related_order_id = db_asset.id
         db.flush()
 
-<<<<<<< Updated upstream
-=======
         # AS-02 价税分离校验(固定资产发票同普通发票,三段平衡 + 税率合法性)
         enforce_rules(db, ["AS-02"], {"invoice_id": db_invoice.id})
 
->>>>>>> Stashed changes
         # 5.2 总账过账：dr 1601(不含税或价税合计) / dr 222102(进项税额) / cr 2202(价税合计)
         # source_model + source_id 提供幂等防御（重复提交不会重复过账）
         # 按 counterparty_name 匹配供应商作为 partner_id（与 _auto_generate_purchase_order 一致）
@@ -1056,13 +1032,8 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
         # 3. 更新资产原值（如果传了）
         if cmd.original_value is not None:
             original_value = _d(cmd.original_value)
-<<<<<<< Updated upstream
-            old_value = _d(asset.original_value)
-            asset.original_value = original_value
-=======
             old_value = _d(asset.original_value_l1)
             asset.original_value_l1 = original_value
->>>>>>> Stashed changes
 
             # 联动：发票金额同步（使用 AccountingEngine）
             if invoice:

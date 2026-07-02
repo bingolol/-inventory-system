@@ -266,11 +266,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                 # 取原采购单明细单价计算库存退回金额
                 # ⚠️ 必须用 orig_item.unit_price（原发票不含税单价），不能用 StockMove.unit_cost
                 # （unit_cost 是移动加权平均成本，会让贷方库存与借方应付账款不一致 → 借贷不平衡）
-<<<<<<< Updated upstream
-                orig_unit_price = Decimal(str(orig_item.unit_price))
-=======
                 orig_unit_price = Decimal(str(orig_item.unit_price_l1))
->>>>>>> Stashed changes
                 # 一般纳税人：不含税金额进成本；小规模：价税合计进成本
                 if enable_vat_deduction:
                     inventory_cost_ret += (qty_ret * orig_unit_price).quantize(Q2)
@@ -333,11 +329,7 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                 # 解析退货日期
                 ret_dt = datetime.fromisoformat(cmd.return_date) if isinstance(cmd.return_date, str) else cmd.return_date
                 # 红字进项发票：若原发票已认证，红字发票也设为 certified（让 get_tax_report 自动扣除进项税）
-<<<<<<< Updated upstream
-                red_cert_status = original_invoice.certification_status if (
-=======
                 red_cert_status = original_invoice.certification_status_l3 if (
->>>>>>> Stashed changes
                     enable_vat_deduction and original_invoice.invoice_type == "special"
                 ) else CertificationStatus.N_A
                 red_invoice = models.Invoice(
@@ -345,17 +337,6 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                     invoice_no=red_invoice_no,
                     direction=InvoiceDirection.IN,
                     invoice_type=original_invoice.invoice_type,
-<<<<<<< Updated upstream
-                    tax_rate=original_invoice.tax_rate,
-                    amount_without_tax=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
-                    tax_amount=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
-                    amount_with_tax=-total_with_tax_ret,
-                    counterparty_name=order.supplier.name if order.supplier else (original_invoice.counterparty_name or ""),
-                    seller_name=original_invoice.seller_name,
-                    buyer_name=original_invoice.buyer_name,
-                    issue_date=ret_dt,
-                    certification_status=red_cert_status,
-=======
                     tax_rate_l1=original_invoice.tax_rate_l1,
                     amount_without_tax_l1=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
                     tax_amount_l1=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
@@ -365,7 +346,6 @@ class ReturnPurchaseOrderHandler(CommandHandler):
                     buyer_name=original_invoice.buyer_name,
                     issue_date_l1=ret_dt,
                     certification_status_l3=red_cert_status,
->>>>>>> Stashed changes
                     related_order_id=order.id,
                     related_order_type="purchase_order",
                     notes=f"红字进项发票（采购退货）: {cmd.reason or '未提供'}",

@@ -1,135 +1,121 @@
-"""所得税引擎测试 — 税务口径（发票说话）
+"""所得税报表测试 — 会计准则口径（利润表说话）
 
-测试 routers/income_tax.py 和 crud/finance.py 的所得税计算：
-- 收入取销项发票不含税金额
-- 成本取 SaleItem.unit_cost（移动加权平均出库成本，单一真相源）
-- 费用区分有票/无票
+测试 routers/income_tax.py 和 crud/finance/tax_declarations.py 的所得税计算：
+- 收入/成本/费用/利润全部取自《小企业会计准则》利润表（总账科目）。
+- 确保企业所得税申报数据与财务报表一致。
 """
 import pytest
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date
 
 import models
+import models_finance
+from finance_integration import get_or_create_ledger_id
 from crud.finance import generate_income_tax_prepayment
 
 
 @pytest.fixture
 def seed_data(db):
-    """创建测试基础数据"""
+    """创建测试基础数据：账本、标准科目、一期凭证。"""
     account = models.Account(
         id=1, name="测试账本", type="company", code="test",
         taxpayer_type_l3="small_scale"
     )
     db.add(account)
-
-    # 销售单
-    sale = models.SaleOrder(
-        id=100, account_id=1, order_no="SO-001",
-        total_price_l1=Decimal("11300"),  # 含税
-        status="completed",
-        sale_date_l1=datetime(2026, 1, 15)
-    )
-    db.add(sale)
-
-    # 销售明细
-    sale_item = models.SaleItem(
-        order_id=100, product_id=1, quantity_l1=10,
-        unit_price_l1=Decimal("1130"), tax_rate_l1=Decimal("0.13"),
-        total_price_l1=Decimal("11300")
-    )
-    db.add(sale_item)
-
-    # 商品（进价用于计算成本）
-    product = models.Product(
-        id=1, account_id=1, name="测试商品",
-        purchase_price_l3=Decimal("500"), sale_price_l3=Decimal("1000")
-    )
-    db.add(product)
-
-    # 销项发票（收入取数来源）
-    invoice_out = models.Invoice(
-        account_id=1, invoice_no="INV-OUT-001", direction="out",
-        invoice_type="ordinary", tax_rate_l1=Decimal("0.13"),
-        amount_without_tax_l1=Decimal("10000"),  # 不含税
-        tax_amount_l1=Decimal("1300"),
-        amount_with_tax_l1=Decimal("11300"),
-        counterparty_name="客户A", issue_date_l1=datetime(2026, 1, 15),
-        related_order_type="sale_order", related_order_id=100,
-    )
-    db.add(invoice_out)
-
-    # 费用（有票）
-    expense = models.Expense(
-        id=200, account_id=1, category="房租",
-        amount_l1=Decimal("2000"), expense_date_l1=datetime(2026, 2, 1)
-    )
-    db.add(expense)
-
-    # 费用发票
-    expense_invoice = models.Invoice(
-        account_id=1, invoice_no="INV-EXP-001", direction="in",
-        invoice_type="ordinary", tax_rate_l1=Decimal("0.06"),
-        amount_without_tax_l1=Decimal("1886.79"),
-        tax_amount_l1=Decimal("113.21"),
-        amount_with_tax_l1=Decimal("2000"),
-        counterparty_name="房东", issue_date_l1=datetime(2026, 2, 1),
-        related_order_type="expense", related_order_id=200,
-    )
-    db.add(expense_invoice)
-
-    # 无票费用
-    expense_no_invoice = models.Expense(
-        id=201, account_id=1, category="办公用品",
-        amount_l1=Decimal("500"), expense_date_l1=datetime(2026, 2, 15)
-    )
-    db.add(expense_no_invoice)
-
     db.flush()
-    # 设置销售成本（实际由 InventoryEngine.outbound 写入，此处用进价模拟）
-    sale_item.set_calculated_cost(product.purchase_price_l3)
+
+    ledger_id = get_or_create_ledger_id(db, account.id)
+
+    # 获取需要使用的科目 ID
+    def _la(code):
+        return db.query(models_finance.LedgerAccount).filter(
+            models_finance.LedgerAccount.ledger_id == ledger_id,
+            models_finance.LedgerAccount.code == code
+        ).first().id
+
+    # 模拟一期业务凭证：
+    # 1) 确认收入 10000（借：应收账款 10000 / 贷：主营业务收入 10000）
+    move1 = models_finance.AccountMove(
+        ledger_id=ledger_id, name="确认收入", move_type="manual",
+        date_l1=date(2026, 1, 15), state="posted"
+    )
+    db.add(move1)
     db.flush()
-    return {"account_id": 1, "sale_id": 100, "expense_id": 200}
+    db.add_all([
+        models_finance.AccountMoveLine(move_id=move1.id, ledger_account_id=_la("1122"), debit_l2=Decimal("10000"), credit_l2=Decimal("0")),
+        models_finance.AccountMoveLine(move_id=move1.id, ledger_account_id=_la("6001"), debit_l2=Decimal("0"), credit_l2=Decimal("10000")),
+    ])
+
+    # 2) 结转销售成本 5000（借：主营业务成本 5000 / 贷：库存商品 5000）
+    move2 = models_finance.AccountMove(
+        ledger_id=ledger_id, name="结转成本", move_type="manual",
+        date_l1=date(2026, 1, 15), state="posted"
+    )
+    db.add(move2)
+    db.flush()
+    db.add_all([
+        models_finance.AccountMoveLine(move_id=move2.id, ledger_account_id=_la("6401"), debit_l2=Decimal("5000"), credit_l2=Decimal("0")),
+        models_finance.AccountMoveLine(move_id=move2.id, ledger_account_id=_la("1405"), debit_l2=Decimal("0"), credit_l2=Decimal("5000")),
+    ])
+
+    # 3) 计提附加税 300（借：税金及附加 300 / 贷：应交税费-附加税 300）
+    move3 = models_finance.AccountMove(
+        ledger_id=ledger_id, name="计提附加税", move_type="manual",
+        date_l1=date(2026, 1, 31), state="posted"
+    )
+    db.add(move3)
+    db.flush()
+    db.add_all([
+        models_finance.AccountMoveLine(move_id=move3.id, ledger_account_id=_la("6403"), debit_l2=Decimal("300"), credit_l2=Decimal("0")),
+        models_finance.AccountMoveLine(move_id=move3.id, ledger_account_id=_la("222104"), debit_l2=Decimal("0"), credit_l2=Decimal("300")),
+    ])
+
+    # 4) 发生管理费用 2000（借：管理费用 2000 / 贷：银行存款 2000）
+    move4 = models_finance.AccountMove(
+        ledger_id=ledger_id, name="支付费用", move_type="manual",
+        date_l1=date(2026, 2, 1), state="posted"
+    )
+    db.add(move4)
+    db.flush()
+    db.add_all([
+        models_finance.AccountMoveLine(move_id=move4.id, ledger_account_id=_la("6601"), debit_l2=Decimal("2000"), credit_l2=Decimal("0")),
+        models_finance.AccountMoveLine(move_id=move4.id, ledger_account_id=_la("1002"), debit_l2=Decimal("0"), credit_l2=Decimal("2000")),
+    ])
+
+    db.commit()
+    return {"account_id": account.id, "ledger_id": ledger_id}
 
 
 class TestIncomeTaxCaliber:
-    def test_tax_caliber_uses_invoices(self, db, seed_data):
-        """税务口径：收入取发票不含税金额"""
+    def test_tax_caliber_uses_income_statement(self, db, seed_data):
+        """会计准则口径：收入/成本取自利润表"""
         from routers.income_tax import get_income_tax_report
         import asyncio
 
         report = asyncio.run(get_income_tax_report(
             year=2026, quarter=None, db=db, account_id=1
         ))
-        # 收入 = 销项发票不含税 = 10000
+        # 营业收入 = 总账 6001 贷方 = 10000
         assert report.total_revenue == Decimal("10000.00")
-        # 成本 = 进项发票不含税 = 1886.79（费用发票 direction=in 被计入）
-        assert report.total_cost == Decimal("1886.79")
-
-    def test_prepayment_revenue_uses_invoices(self, db, seed_data):
-        """预缴表：收入取销项发票不含税金额（取消经营口径后统一发票说话）"""
-        result = generate_income_tax_prepayment(db, 1, 2026, 1)
-        # 营业收入 = 销项发票不含税 = 10000
-        assert result["operating_revenue"] == Decimal("10000.00")
-        # 营业成本 = quantity * unit_cost = 10 * 500 = 5000
-        assert result["operating_cost"] == Decimal("5000.00")
-
-    def test_tax_caliber_expenses_only_invoiced(self, db, seed_data):
-        """税务口径：费用仅有票费用可税前扣除"""
-        from routers.income_tax import get_income_tax_report
-        import asyncio
-
-        report = asyncio.run(get_income_tax_report(
-            year=2026, quarter=None, db=db, account_id=1
-        ))
-        # 有票费用 = 2000
-        assert report.invoiced_expenses == Decimal("2000.00")
-        # 无票费用 = 500
-        assert report.non_invoice_expenses == Decimal("500.00")
-        # operating_expenses = 有票费用 = 2000
+        # 营业成本 = 总账 6401 借方 = 5000
+        assert report.total_cost == Decimal("5000.00")
+        # 毛利 = 10000 - 5000 = 5000
+        assert report.gross_profit == Decimal("5000.00")
+        # 期间费用 = 6601 = 2000（不含税金及附加 300）
         assert report.operating_expenses == Decimal("2000.00")
+        # 应纳税所得额 = 利润总额 = 10000 - 5000 - 300 - 2000 = 2700
+        assert report.taxable_income == Decimal("2700.00")
 
-    def test_prepayment_all_expenses(self, db, seed_data):
-        """预缴表：所有费用都计入"""
+    def test_prepayment_uses_income_statement(self, db, seed_data):
+        """预缴表：会计准则口径取数"""
         result = generate_income_tax_prepayment(db, 1, 2026, 1)
-        # 营业费用 = 所有费用 = 2000 + 500 = 2500
-        assert result["operating_expenses"] == Decimal("2500.00")
+        # 营业收入 = 10000
+        assert result["operating_revenue"] == Decimal("10000.00")
+        # 营业成本 = 5000
+        assert result["operating_cost"] == Decimal("5000.00")
+        # 利润总额 = 2700
+        assert result["gross_profit"] == Decimal("2700.00")
+        # 期间费用 = 2000
+        assert result["operating_expenses"] == Decimal("2000.00")
+        # 税金及附加 = 300
+        assert result["tax_and_surcharge"] == Decimal("300.00")

@@ -201,70 +201,29 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
 @reads("SaleItem.unit_cost_l2", tier=TIER_L2, source="engine")
 @reads("Expense.amount_l1", tier=TIER_L1, source="external")
 def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quarter: int):
-    """生成企业所得税预缴申报表"""
+    """生成企业所得税预缴申报表（会计准则口径）"""
     # 确定季度日期范围（左闭右开，与 VAT 申报一致）
     start_date, end_date_exclusive = _quarter_range(year, quarter)
+    end_date_str = (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # 营业收入 = 销项发票不含税金额（发票说话，取消经营口径的含税订单收入）
-    operating_revenue = _d(db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
-        models.Invoice.account_id == account_id,
-        models.Invoice.direction == InvoiceDirection.OUT,
-        models.Invoice.issue_date_l1 >= start_date,
-        models.Invoice.issue_date_l1 < end_date_exclusive
-    ).scalar())
+    # 会计准则口径：直接复用利润表，与 /api/income-tax-report 一致。
+    from .income_statement import generate_income_statement
+    is_data = generate_income_statement(
+        db, account_id,
+        start_date.strftime("%Y-%m-%d"),
+        end_date_str
+    )
 
-    # 增值税减免加回收入（财税〔2008〕151号：减免的增值税需计入应纳税所得额）
-    # 从总账 6301（营业外收入-税收减免）贷方发生额获取
-    ledger = db.query(Ledger).filter(Ledger.code == (db.query(models.Account).filter(
-        models.Account.id == account_id).first().code if db.query(models.Account).filter(
-        models.Account.id == account_id).first() else "")).first()
-    if ledger:
-        vat_exemption_income = _d(db.query(sqlfunc.sum(AccountMoveLine.credit_l2)).join(
-            LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
-        ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
-            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "6301",
-            AccountMove.date_l1 >= start_date, AccountMove.date_l1 < end_date_exclusive
-        ).scalar())
-    else:
-        vat_exemption_income = Decimal('0')
-    operating_revenue += vat_exemption_income
-
-    # 营业成本 = Σ(SaleItem.quantity_l1 × SaleItem.unit_cost_l2)（移动加权平均出库成本，单一真相源）
-    operating_cost = Decimal('0')
-    completed_sales = db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.sale_date_l1 >= start_date,
-        models.SaleOrder.sale_date_l1 < end_date_exclusive,
-        models.SaleOrder.status == OrderStatus.COMPLETED
-    ).all()
-    for order in completed_sales:
-        for item in order.items:
-            # 单一真相源：读 SaleItem.unit_cost_l2（出库时锁定的加权平均成本），
-            # 禁止用 Product.purchase_price（主数据静态字段，不反映实际采购成本）
-            unit_cost = Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0')
-            operating_cost += Decimal(str(item.quantity_l1)) * unit_cost
-
-    # 营业费用
-    operating_expenses = _d(db.query(sqlfunc.sum(models.Expense.amount_l1)).filter(
-        models.Expense.account_id == account_id,
-        models.Expense.expense_date_l1 >= start_date,
-        models.Expense.expense_date_l1 < end_date_exclusive
-    ).scalar())
-
-    # 税金及附加（增值税附加税）
-    # 从增值税申报表获取附加税金额（quarter 已是入参，无需从日期反推）
-    vat_data = generate_vat_declaration(db, account_id, year, quarter)
-    tax_and_surcharge = vat_data['surcharge_total']
-
-    # 利润总额 = 营业收入 - 营业成本 - 税金及附加 - 营业费用
-    gross_profit = operating_revenue - operating_cost - tax_and_surcharge - operating_expenses
+    operating_revenue = _d(is_data.get("revenue", 0))
+    operating_cost = _d(is_data.get("cost_of_goods_sold", 0))
+    tax_and_surcharge = _d(is_data.get("tax_surcharges", 0))
+    operating_expenses = _d(is_data.get("total_operating_expenses", 0)) - tax_and_surcharge
+    gross_profit = _d(is_data.get("gross_profit_total", 0))  # 利润总额
 
     # 实际利润额（简化，不考虑纳税调整）
     actual_profit = gross_profit
 
     # 使用 AccountingEngine 计算企业所得税
-    # 单一真相源：从账本读取纳税人类型和主体类型，禁止硬编码
-    # 所得税纳税人类型映射：VAT 口径 small_scale → 所得税口径 small_micro（5%实际税负：25%×20%）
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     raw_type = account.taxpayer_type_l3 if account and account.taxpayer_type_l3 else "small_scale"
     income_tax_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
@@ -285,7 +244,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
         "year": year,
         "quarter": quarter,
         "period_start": start_date.strftime("%Y-%m-%d"),
-        "period_end": (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d"),
+        "period_end": end_date_str,
         "operating_revenue": operating_revenue.quantize(Q2),
         "operating_cost": operating_cost.quantize(Q2),
         "tax_and_surcharge": tax_and_surcharge.quantize(Q2),

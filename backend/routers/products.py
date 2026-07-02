@@ -20,13 +20,8 @@ def list_products(page: int = 1, page_size: int = 20, search: str = None, sku: s
         inv = p.inventory
         result.append(schemas.ProductOut(
             id=p.id, name=p.name, sku=p.sku, category=p.category,
-<<<<<<< Updated upstream
-            unit=p.unit, purchase_price=p.purchase_price, sale_price=p.sale_price,
-            min_stock=p.min_stock, track_inventory=p.track_inventory, description=p.description,
-=======
             unit=p.unit, purchase_price=p.purchase_price_l3, sale_price=p.sale_price_l3,
             min_stock=p.min_stock_l3, track_inventory=p.track_inventory_l3, description=p.description,
->>>>>>> Stashed changes
             created_at=p.created_at, updated_at=p.updated_at,
             current_stock=inv.quantity_l4 if inv else 0
         ))
@@ -62,13 +57,8 @@ def create_product(data: schemas.ProductCreate, account_id: int = Depends(get_ac
         ai_hint="商品已创建。如需采购入库，请调用 POST /api/purchases。",
         data={
             "id": product.id, "name": product.name, "sku": product.sku, "category": product.category,
-<<<<<<< Updated upstream
-            "unit": product.unit, "purchase_price": float(product.purchase_price), "sale_price": float(product.sale_price),
-            "min_stock": product.min_stock, "track_inventory": product.track_inventory,
-=======
             "unit": product.unit, "purchase_price": float(product.purchase_price_l3), "sale_price": float(product.sale_price_l3),
             "min_stock": product.min_stock_l3, "track_inventory": product.track_inventory_l3,
->>>>>>> Stashed changes
             "description": product.description,
             "created_at": product.created_at.isoformat() if product.created_at else None,
             "updated_at": product.updated_at.isoformat() if product.updated_at else None,
@@ -97,13 +87,8 @@ def get_product(product_id: int, account_id: int = Depends(get_account_id), db: 
     inv = p.inventory
     return schemas.ProductOut(
         id=p.id, name=p.name, sku=p.sku, category=p.category,
-<<<<<<< Updated upstream
-        unit=p.unit, purchase_price=p.purchase_price, sale_price=p.sale_price,
-        min_stock=p.min_stock, track_inventory=p.track_inventory, description=p.description,
-=======
         unit=p.unit, purchase_price=p.purchase_price_l3, sale_price=p.sale_price_l3,
         min_stock=p.min_stock_l3, track_inventory=p.track_inventory_l3, description=p.description,
->>>>>>> Stashed changes
         created_at=p.created_at, updated_at=p.updated_at,
         current_stock=inv.quantity_l4 if inv else 0
     )

@@ -14,7 +14,10 @@ from utils import _d, Q2
 
 
 def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limit: int = 100, type: str = None, category: str = None, start_date: str = None, end_date: str = None):
-    q = db.query(models.PersonalTransaction).filter(models.PersonalTransaction.account_id == account_id)
+    q = db.query(models.PersonalTransaction).filter(
+        models.PersonalTransaction.account_id == account_id,
+        models.PersonalTransaction.is_reversed == False,
+    )
     if type:
         q = q.filter(models.PersonalTransaction.type == type)
     if category:
@@ -36,7 +39,10 @@ def get_personal_category_summary(db: Session, account_id: int, type: str = None
     q = db.query(
         models.PersonalTransaction.category,
         sqlfunc.sum(models.PersonalTransaction.amount_l1).label("total")
-    ).filter(models.PersonalTransaction.account_id == account_id)
+    ).filter(
+        models.PersonalTransaction.account_id == account_id,
+        models.PersonalTransaction.is_reversed == False,
+    )
     if type:
         q = q.filter(models.PersonalTransaction.type == type)
     if start_date:
@@ -68,7 +74,8 @@ def get_personal_monthly_summary(db: Session, account_id: int, type: str = None,
         q = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
             models.PersonalTransaction.account_id == account_id,
             models.PersonalTransaction.date_l1 >= month_start,
-            models.PersonalTransaction.date_l1 <= month_end
+            models.PersonalTransaction.date_l1 <= month_end,
+            models.PersonalTransaction.is_reversed == False,
         )
         if type:
             q = q.filter(models.PersonalTransaction.type == type)
@@ -89,26 +96,30 @@ def get_personal_summary(db: Session, account_id: int):
     month_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "income",
-        models.PersonalTransaction.date_l1 >= month_start
+        models.PersonalTransaction.date_l1 >= month_start,
+        models.PersonalTransaction.is_reversed == False,
     ).scalar()
     month_income = month_income if month_income is not None else 0
 
     month_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
         models.PersonalTransaction.type == "expense",
-        models.PersonalTransaction.date_l1 >= month_start
+        models.PersonalTransaction.date_l1 >= month_start,
+        models.PersonalTransaction.is_reversed == False,
     ).scalar()
     month_expense = month_expense if month_expense is not None else 0
 
     total_income = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
-        models.PersonalTransaction.type == "income"
+        models.PersonalTransaction.type == "income",
+        models.PersonalTransaction.is_reversed == False,
     ).scalar()
     total_income = total_income if total_income is not None else 0
 
     total_expense = db.query(sqlfunc.sum(models.PersonalTransaction.amount_l1)).filter(
         models.PersonalTransaction.account_id == account_id,
-        models.PersonalTransaction.type == "expense"
+        models.PersonalTransaction.type == "expense",
+        models.PersonalTransaction.is_reversed == False,
     ).scalar()
     total_expense = total_expense if total_expense is not None else 0
 

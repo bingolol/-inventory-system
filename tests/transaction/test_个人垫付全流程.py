@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
-﻿"""事务测试：其他应付款/个人垫付全流程
-=======
 """事务测试：其他应付款/个人垫付全流程
->>>>>>> Stashed changes
 
 覆盖：
   1. 创建垫付单 → 生成 PA-YYYY-NNNN 单号 + dr 借方科目 / cr 2241 凭证
@@ -51,26 +47,15 @@ def _seed_ledger_balance(db, account_code, amount):
     if not lab:
         lab = LedgerAccountBalance(
             ledger_account_id=la.id,
-<<<<<<< Updated upstream
-            balance=_D("0"),
-            debit_total=_D("0"),
-            credit_total=_D("0"),
-=======
             balance_l4=_D("0"),
             debit_total_l4=_D("0"),
             credit_total_l4=_D("0"),
->>>>>>> Stashed changes
         )
         db.add(lab)
         db.flush()
     amt = _D(str(amount))
-<<<<<<< Updated upstream
-    lab.balance = (lab.balance or 0) + amt
-    lab.debit_total = (lab.debit_total or 0) + amt
-=======
     lab.balance_l4 = (lab.balance_l4 or 0) + amt
     lab.debit_total_l4 = (lab.debit_total_l4 or 0) + amt
->>>>>>> Stashed changes
     db.commit()
 
 
@@ -94,11 +79,7 @@ def _create_bank_account(client, db, balance=10000):
         # 直接 db 写银行账户余额（绕过 API 限制）
         from decimal import Decimal as _D
         bank = db.query(BankAccount).filter(BankAccount.id == bid).first()
-<<<<<<< Updated upstream
-        bank.balance = _D(str(balance)).quantize(_D("0.01"))
-=======
         bank.balance_l4 = _D(str(balance)).quantize(_D("0.01"))
->>>>>>> Stashed changes
         db.commit()
         # 同步总账 1002 借方余额
         _seed_ledger_balance(db, "1002", balance)
@@ -157,11 +138,7 @@ class Test创建垫付单:
         ).all()
         assert len(moves) == 1
         # 验证余额：6601 借 2000，2241 贷 2000
-<<<<<<< Updated upstream
-        assert Decimal(str(moves[0].amount_total)) == Decimal("2000.00")
-=======
         assert Decimal(str(moves[0].amount_total_l2)) == Decimal("2000.00")
->>>>>>> Stashed changes
 
     def test_create_invalid_debit_account_rejected(self, client):
         """借方科目不在白名单 → 422"""
@@ -229,22 +206,14 @@ class Test偿还:
 
         # 银行余额扣减 1000
         bank = db.query(BankAccount).filter(BankAccount.id == bid).first()
-<<<<<<< Updated upstream
-        assert Decimal(str(bank.balance)) == Decimal("9000.00")
-=======
         assert Decimal(str(bank.balance_l4)) == Decimal("9000.00")
->>>>>>> Stashed changes
 
         # 银行流水已生成
         tx = db.query(BankTransaction).filter(
             BankTransaction.related_entity_type == "personal_advance_repayment"
         ).first()
         assert tx is not None
-<<<<<<< Updated upstream
-        assert Decimal(str(tx.amount)) == Decimal("1000.00")
-=======
         assert Decimal(str(tx.amount_l2)) == Decimal("1000.00")
->>>>>>> Stashed changes
         assert tx.transaction_type == "outflow"
 
         # 偿还凭证已过账：dr 2241 / cr 1002
@@ -365,11 +334,7 @@ class Test红冲:
 
         # 红冲前：余额 9500，状态 partial
         bank = db.query(BankAccount).filter(BankAccount.id == bid).first()
-<<<<<<< Updated upstream
-        assert Decimal(str(bank.balance)) == Decimal("9500.00")
-=======
         assert Decimal(str(bank.balance_l4)) == Decimal("9500.00")
->>>>>>> Stashed changes
         advance = db.query(PersonalAdvance).filter(PersonalAdvance.id == aid).first()
         assert advance.repayment_status == "partial"
 
@@ -381,17 +346,10 @@ class Test红冲:
 
         # 红冲后：余额恢复 10000，状态 unpaid
         db.refresh(bank)
-<<<<<<< Updated upstream
-        assert Decimal(str(bank.balance)) == Decimal("10000.00")
-        db.refresh(advance)
-        assert advance.repayment_status == "unpaid"
-        assert Decimal(str(advance.paid_amount)) == Decimal("0.00")
-=======
         assert Decimal(str(bank.balance_l4)) == Decimal("10000.00")
         db.refresh(advance)
         assert advance.repayment_status == "unpaid"
         assert Decimal(str(advance.paid_amount_l4)) == Decimal("0.00")
->>>>>>> Stashed changes
 
         # 偿还记录已标记冲红
         db.expire_all()

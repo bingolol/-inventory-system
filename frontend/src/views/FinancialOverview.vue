@@ -3,26 +3,14 @@
     <!-- Row 1 -->
     <div class="fo-bh"><span class="fo-bt">核心指标</span></div>
     <div class="fo-row">
-      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--primary);" @click="router.push('/finance/receivable/aging')">
-        <div class="fo-ml">别人欠我</div>
-        <div class="fo-mv c-primary">{{ formatMoney(bs?.accounts_receivable || 0) }}</div>
-        <div class="fo-ms">应收账款 · 查看往来 →</div>
-      </div>
-      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--danger);" @click="router.push('/finance/receivable/aging')">
-        <div class="fo-ml">我欠别人</div>
-        <div class="fo-mv c-danger">{{ formatMoney(bs?.accounts_payable || 0) }}</div>
-        <div class="fo-ms">应付账款 · 查看往来 →</div>
-      </div>
-      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--success);" @click="router.push('/financial-reports')">
-        <div class="fo-ml">本月净利润</div>
-        <div class="fo-mv c-success">{{ formatMoney(income?.net_profit || 0) }}</div>
-        <div class="fo-ms">收入 − 成本 − 费用 · 查看利润表 →</div>
-      </div>
-      <div class="fo-metric fo-clickable" style="border-left:3px solid var(--warning);" @click="router.push('/inventory-goods')">
-        <div class="fo-ml">库存资金</div>
-        <div class="fo-mv c-warning">{{ formatMoney(inventory?.total_stock_value || 0) }}</div>
-        <div class="fo-ms">{{ inventory?.total_quantity || 0 }} 件 · {{ alerts.length }} 项预警 · 查看库存 →</div>
-      </div>
+      <KpiCard label="别人欠我" :value="formatMoney(bs?.accounts_receivable || 0)" color="var(--primary)" border-color="var(--primary)" hint="应收账款 · 查看往来 →" clickable @click="router.push('/finance/receivable/aging')" />
+      <KpiCard label="我欠别人" :value="formatMoney(bs?.accounts_payable || 0)" color="var(--danger)" border-color="var(--danger)" hint="应付账款 · 查看往来 →" clickable @click="router.push('/finance/receivable/aging')" />
+      <KpiCard label="本月净利润" :value="formatMoney(income?.net_profit || 0)" color="var(--success)" border-color="var(--success)" hint="收入 − 成本 − 费用 · 查看利润表 →" clickable @click="router.push('/financial-reports')" />
+      <KpiCard label="库存资金" :value="formatMoney(inventory?.total_stock_value || 0)" color="var(--warning)" border-color="var(--warning)" clickable @click="router.push('/inventory-goods')">
+        <template #default>
+          <div class="fo-ms">{{ inventory?.total_quantity || 0 }} 件 · {{ alerts.length }} 项预警 · 查看库存 →</div>
+        </template>
+      </KpiCard>
     </div>
 
     <!-- Row 2: health -->
@@ -92,6 +80,7 @@ import expensesApi from '../api/expenses'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import KpiCard from '../components/KpiCard.vue'
 
 const router = useRouter()
 const loading = ref(false)

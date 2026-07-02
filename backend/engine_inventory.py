@@ -308,13 +308,8 @@ class InventoryEngine:
         # 采购入库：total_cost/qty = 发票不含税单价（真相源）
         # 销售出库：total_cost/qty = avg_cost（与 unit_cost 等价，无副作用）
         if original:
-<<<<<<< Updated upstream
-            orig_qty = Decimal(str(original.quantity))
-            orig_total_cost = Decimal(str(original.total_cost))
-=======
             orig_qty = Decimal(str(original.quantity_l1))
             orig_total_cost = Decimal(str(original.total_cost_l2))
->>>>>>> Stashed changes
             if orig_qty != 0:
                 effective_unit_cost = (orig_total_cost / orig_qty).quantize(Decimal("0.000001"))
             else:
@@ -367,13 +362,8 @@ class InventoryEngine:
                     message=f"库存不足，无法退货。商品: {product.name}，当前库存: {old_qty}，退货数量: {rev_qty}",
                     data={"required": float(rev_qty), "current": float(old_qty)},
                 )
-<<<<<<< Updated upstream
-            inv.quantity -= quantity
-            inv.total_value = (old_value - rev_cost).quantize(Q2)
-=======
             inv.quantity_l4 -= quantity
             inv.total_value_l4 = (old_value - rev_cost).quantize(Q2)
->>>>>>> Stashed changes
         else:
             inv.quantity_l4 += quantity
             inv.total_value_l4 = (old_value + rev_cost).quantize(Q2)

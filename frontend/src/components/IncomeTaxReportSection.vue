@@ -76,7 +76,7 @@
         </div>
       </div>
 
-      <div class="it-note">按税务口径计算 · 收入/成本基于发票数据</div>
+      <div class="it-note">按会计准则口径计算 · 数据来自总账利润表</div>
     </div>
 
     <el-empty v-else-if="!loading" description="选择年份和季度后点击查询" />

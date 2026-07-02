@@ -67,16 +67,17 @@ def export_inventory(format: str = "excel", alert_only: bool = False, account_id
     _, items = crud.list_inventory(db, account_id, limit=10000, alert_only=alert_only)
     headers = ["ID", "编码", "名称", "分类", "单位", "当前库存", "预警线", "状态", "进价", "售价", "库存价值"]
     rows = []
-    for inv in items:
-        p = inv.product
-        qty = inv.quantity_l4 if inv.quantity_l4 is not None else 0
-        status = "负库存" if qty < 0 else ("不足" if qty < (p.min_stock_l3 if p else 0) else "正常")
-        rows.append([inv.id, p.sku if p else "", p.name if p else "", p.category if p else "",
-                     p.unit if p else "", qty, p.min_stock_l3 if p else 0, status,
-                     p.purchase_price_l3 if p else 0, p.sale_price_l3 if p else 0,
+    for p, qty in items:
+        qty = int(qty) if qty is not None else 0
+        status = "负库存" if qty < 0 else ("不足" if qty < p.min_stock_l3 else "正常")
+        inv_cache = p.inventory
+        total_value = float(inv_cache.total_value_l4) if inv_cache and inv_cache.total_value_l4 is not None else 0
+        rows.append([p.id, p.sku or "", p.name or "", p.category or "",
+                     p.unit or "", qty, p.min_stock_l3 or 0, status,
+                     p.purchase_price_l3 or 0, p.sale_price_l3 or 0,
                      # 单一真相源：库存价值读 Inventory.total_value（引擎维护的移动加权平均缓存），
                      # 禁止用 qty × Product.purchase_price（主数据静态字段，不反映实际采购成本）
-                     float(inv.total_value_l4) if inv.total_value_l4 is not None else 0])
+                     total_value])
     filename = "库存清单"
     if format == "csv":
         return _stream_csv(rows, headers, filename)

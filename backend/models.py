@@ -76,6 +76,7 @@ class OpeningBalance(Base):
     paid_in_capital_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 实收资本", info={"tier":"L1","source":"external"})
     retained_earnings_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 未分配利润", info={"tier":"L1","source":"external"})
     
+    is_reversed = Column(Boolean, default=False, comment="是否已冲红/作废")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -91,21 +92,12 @@ class FixedAsset(Base):
     asset_code = Column(String(50), comment="资产编码（账本内唯一）")
     name = Column(String(100), nullable=False, comment="资产名称")
     category = Column(String(50), comment="资产类别")
-<<<<<<< Updated upstream
-    original_value = Column(Numeric(12, 2), nullable=False, comment="原值")
-    salvage_rate = Column(Numeric(5, 2), default=Decimal('0.05'), comment="残值率")
-    useful_life = Column(Integer, nullable=False, comment="使用寿命(月)")
-    depreciation_method = Column(String(20), default="年限平均法", comment="折旧方法")
-    start_date = Column(Date, nullable=False, comment="开始折旧日期")
-    accumulated_depreciation = Column(Numeric(12, 2), default=Decimal('0'), comment="累计折旧")
-=======
     original_value_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 原值", info={"tier":"L1","source":"external"})
     salvage_rate_l3 = Column(Numeric(5, 2), default=Decimal('0.05'), comment="[L3-政策] 残值率", info={"tier":"L3","source":"policy"})
     useful_life_l3 = Column(Integer, nullable=False, comment="[L3-政策] 使用寿命(月)", info={"tier":"L3","source":"policy"})
     depreciation_method_l3 = Column(String(20), default="年限平均法", comment="[L3-政策] 折旧方法", info={"tier":"L3","source":"policy"})
     start_date_l1 = Column(Date, nullable=False, comment="[L1-外部] 开始折旧日期", info={"tier":"L1","source":"external"})
     accumulated_depreciation_l4 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L4-派生] 累计折旧", info={"tier":"L4","source":"derived"})
->>>>>>> Stashed changes
     status = Column(String(20), default="在用", comment="在用/停用/报废/已冲红")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -156,6 +148,24 @@ class IntangibleAsset(Base):
 
     __table_args__ = (
         UniqueConstraint('account_id', 'asset_code', name='uix_intangible_account_asset_code'),
+    )
+
+
+# 无形资产摊销流水（真相源）
+class IntangibleAssetAmortization(Base):
+    __tablename__ = "intangible_asset_amortizations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey('intangible_assets.id'), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=False, index=True)
+    period = Column(String(7), nullable=False, comment="摊销期间 YYYY-MM")
+    amount_l2 = Column(Numeric(12, 2), nullable=False, comment="[L2-计算] 本期摊销额", info={"tier":"L2","source":"engine"})
+    accumulated_before_l2 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L2-计算] 摊销前累计摊销", info={"tier":"L2","source":"engine"})
+    accumulated_after_l2 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L2-计算] 摊销后累计摊销", info={"tier":"L2","source":"engine"})
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint('asset_id', 'period', name='uix_intangible_amortization_period'),
     )
 
 
@@ -378,6 +388,7 @@ class PersonalTransaction(Base):
     description = Column(Text, default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
     date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 交易日期", info={"tier":"L1","source":"external"})
+    is_reversed = Column(Boolean, default=False, comment="是否已冲红/作废")
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -586,13 +597,8 @@ class PersonalAdvance(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     advance_no = Column(String(30), index=True, comment="垫付单号 PA-YYYY-0001")
     advancer_name = Column(String(100), nullable=False, comment="垫付人姓名（自由填写）")
-<<<<<<< Updated upstream
-    amount = Column(Numeric(12, 2), nullable=False, comment="垫付金额")
-    advance_date = Column(DateTime, nullable=False, comment="垫付日期")
-=======
     amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 垫付金额", info={"tier":"L1","source":"external"})
     advance_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 垫付日期", info={"tier":"L1","source":"external"})
->>>>>>> Stashed changes
 
     # 借方科目编码：默认 6601 管理费用，可选 1405 库存商品 / 1601 固定资产 / 6602 销售费用 等
     # 由 PERSONAL_ADVANCE_DEBIT_ACCOUNTS 白名单校验（enums.py 单一真相源）
@@ -601,15 +607,9 @@ class PersonalAdvance(Base):
     description = Column(String(500), default="", comment="用途说明")
     image_url = Column(String(500), default="", comment="附件图片URL")
 
-<<<<<<< Updated upstream
-    # 还款状态与已还金额（paid_amount 用于多次部分偿还累计）
-    repayment_status = Column(String(20), nullable=False, default="unpaid", comment="还款状态: unpaid/partial/paid")
-    paid_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="已偿还金额")
-=======
     # 还款状态与已还金额（paid_amount_l4 用于多次部分偿还累计）
     repayment_status = Column(String(20), nullable=False, default="unpaid", comment="还款状态: unpaid/partial/paid")
     paid_amount_l4 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L4-派生] 已偿还金额", info={"tier":"L4","source":"derived"})
->>>>>>> Stashed changes
 
     is_reversed = Column(Boolean, default=False, comment="是否已冲红")
     reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
@@ -627,11 +627,7 @@ class PersonalAdvance(Base):
         """未偿还余额 = 垫付金额 - 已偿还金额（冲红的垫付单余额为0）"""
         if self.is_reversed:
             return Decimal('0')
-<<<<<<< Updated upstream
-        return (Decimal(str(self.amount)) - Decimal(str(self.paid_amount or 0))).quantize(Decimal('0.01'))
-=======
         return (Decimal(str(self.amount_l1)) - Decimal(str(self.paid_amount_l4 or 0))).quantize(Decimal('0.01'))
->>>>>>> Stashed changes
 
 
 class PersonalAdvanceRepayment(Base):
@@ -645,13 +641,8 @@ class PersonalAdvanceRepayment(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="所属账本")
     advance_id = Column(Integer, ForeignKey("personal_advances.id"), nullable=False, index=True, comment="关联垫付单")
-<<<<<<< Updated upstream
-    amount = Column(Numeric(12, 2), nullable=False, comment="偿还金额")
-    repayment_date = Column(DateTime, nullable=False, comment="偿还日期")
-=======
     amount_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 偿还金额", info={"tier":"L1","source":"external"})
     repayment_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 偿还日期", info={"tier":"L1","source":"external"})
->>>>>>> Stashed changes
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True, comment="银行账户")
     bank_transaction_id = Column(Integer, ForeignKey("bank_transactions.id"), nullable=True, comment="银行流水")
     description = Column(String(500), default="", comment="描述")

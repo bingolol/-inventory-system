@@ -9,10 +9,14 @@
       <el-date-picker v-model="reportDate" type="date" placeholder="选择日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" @change="loadData" style="width:160px" />
       <el-button type="primary" @click="loadData" :loading="loading">查询</el-button>
       <el-button type="success" @click="exportXls" :loading="exporting" :disabled="!data">导出 .xls</el-button>
+      <el-radio-group v-model="viewMode" size="small" style="margin-left:auto;">
+        <el-radio-button label="template">模板预览</el-radio-button>
+        <el-radio-button label="table">表格视图</el-radio-button>
+      </el-radio-group>
     </div>
 
     <div v-if="data" class="cwbb-body">
-      <div class="cwbb-header">
+      <div v-if="viewMode === 'table'" class="cwbb-header">
         <div><strong>纳税人识别号：</strong>{{ data.taxpayer_id || '-' }}</div>
         <div><strong>纳税人名称：</strong>{{ data.taxpayer_name || '-' }}</div>
         <div><strong>所属期：</strong>{{ data.period_start }} 至 {{ data.period_end }}</div>
@@ -20,7 +24,8 @@
 
       <el-tabs v-model="activeSheet">
         <el-tab-pane label="资产负债表（会小企01表）" name="bs">
-          <el-table :data="data.balance_sheet" size="small" border class="cwbb-table">
+          <TaxTemplatePreview v-if="viewMode === 'template'" :data="data" sheet="bs" />
+          <el-table v-else :data="data.balance_sheet" size="small" border class="cwbb-table">
             <el-table-column prop="line_no" label="行次" width="60" align="center" />
             <el-table-column prop="name" label="项目" />
             <el-table-column prop="end_amount" label="期末余额" align="right">
@@ -33,7 +38,8 @@
         </el-tab-pane>
 
         <el-tab-pane label="利润表（会小企02表）" name="is">
-          <el-table :data="data.income_statement" size="small" border class="cwbb-table">
+          <TaxTemplatePreview v-if="viewMode === 'template'" :data="data" sheet="is" />
+          <el-table v-else :data="data.income_statement" size="small" border class="cwbb-table">
             <el-table-column prop="line_no" label="行次" width="60" align="center" />
             <el-table-column prop="name" label="项目" />
             <el-table-column v-if="reportType !== 'annual'" prop="period_amount" :label="periodLabel" align="right">
@@ -49,7 +55,8 @@
         </el-tab-pane>
 
         <el-tab-pane label="现金流量表（会小企03表）" name="cf">
-          <el-table :data="data.cash_flow_statement" size="small" border class="cwbb-table">
+          <TaxTemplatePreview v-if="viewMode === 'template'" :data="data" sheet="cf" />
+          <el-table v-else :data="data.cash_flow_statement" size="small" border class="cwbb-table">
             <el-table-column prop="line_no" label="行次" width="60" align="center" />
             <el-table-column prop="name" label="项目" />
             <el-table-column v-if="reportType !== 'annual'" prop="period_amount" :label="periodLabel" align="right">
@@ -80,6 +87,7 @@ import exportApi from '../api/export'
 import { formatMoney } from '../utils/format'
 import { handleError } from '../utils/errorHandler'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import TaxTemplatePreview from './TaxTemplatePreview.vue'
 
 const props = defineProps({ date: { type: String, default: () => new Date().toISOString().split('T')[0] } })
 
@@ -89,6 +97,7 @@ const data = ref(null)
 const reportType = ref('monthly')
 const reportDate = ref(props.date)
 const activeSheet = ref('bs')
+const viewMode = ref('template') // 'template' | 'table'
 
 const periodLabel = computed(() => reportType.value === 'monthly' ? '本期金额' : '本季度金额')
 const priorLabel = computed(() => reportType.value === 'annual' ? '上年金额' : '上年同期金额')

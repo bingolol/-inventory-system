@@ -290,6 +290,24 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
     assert result.surcharge_local_education == Decimal('100.00')
 
 
+def test_calculate_vat_surcharge_uses_l3_policy_constants(engine, monkeypatch):
+    """附加税必须从 L3 政策常量读取，禁止硬编码"""
+    import accounting_engine as ae
+    monkeypatch.setattr(ae, "SURCHARGE_RATE_EDUCATION", Decimal('0.06'))
+    monkeypatch.setattr(ae, "SURCHARGE_RATE_LOCAL_EDUCATION", Decimal('0.04'))
+    monkeypatch.setattr(ae, "SURCHARGE_RATE_URBAN_CONSTRUCTION", Decimal('0.14'))
+
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('8000')
+    )
+    # 应纳税额 = 5000，按修改后的常量翻倍
+    assert result.surcharge_urban_construction == Decimal('700.00')
+    assert result.surcharge_education == Decimal('300.00')
+    assert result.surcharge_local_education == Decimal('200.00')
+
+
 # ═══════════════════════════════════════════════════════════
 # Behavior 7: 企业所得税计算（High）
 # ═══════════════════════════════════════════════════════════

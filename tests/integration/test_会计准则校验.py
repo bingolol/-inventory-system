@@ -513,20 +513,22 @@ class TestFixedAssetDepreciation:
 # ═══════════════════════════════════════════════════════════════
 # 7. 双口径计算校验
 # ═══════════════════════════════════════════════════════════════
-class TestDualCaliberCalculation:
-    """双口径计算: 税务口径 vs 经营口径"""
+class TestAccountingCaliberCalculation:
+    """企业所得税报表：会计准则口径校验"""
 
-    def test_tax_caliber_uses_invoices(self, client):
-        """税务口径使用发票数据"""
+    def test_income_tax_uses_income_statement(self, client):
+        """所得税报表数据取自利润表（会计准则口径）"""
         resp = client.get("/api/income-tax-report",
-                         params={"year": 2026, "quarter": 2, "caliber": "tax"},
+                         params={"year": 2026, "quarter": 2},
                          headers=HEADERS)
-        assert resp.status_code == 200, f"税务口径报表失败: {resp.text}"
+        assert resp.status_code == 200, f"所得税报表失败: {resp.text}"
         data = resp.json()
-        
-        # 税务口径收入应基于发票
-        assert "total_revenue" in data, "税务口径报表缺少收入"
-        assert "invoice_revenue" in data, "税务口径报表缺少发票收入"
+
+        # 核心字段来自利润表
+        assert "total_revenue" in data, "所得税报表缺少营业收入"
+        assert "total_cost" in data, "所得税报表缺少营业成本"
+        assert "gross_profit" in data, "所得税报表缺少利润总额"
+        assert "taxable_income" in data, "所得税报表缺少应纳税所得额"
 
 
 # ═══════════════════════════════════════════════════════════════

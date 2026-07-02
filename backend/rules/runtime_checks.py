@@ -251,55 +251,97 @@ def check_as04(db: Session, context: dict) -> List[RuleViolation]:
 # ═══════════════════════════════════════════════════════════════
 
 def check_as05(db: Session, context: dict) -> List[RuleViolation]:
-    """AS-05 校验:折旧公式 / 累计折旧上限
+    """AS-05 校验:折旧公式 / 累计折旧上限 / 摊销上限
 
     context:
     - asset_id: 固定资产ID → 校验累计折旧不超原值×(1-残值率)
+    - intangible_asset_id: 无形资产ID → 校验累计摊销不超原值
     """
     violations = []
+
+    # ── 固定资产 ──
     asset_id = context.get("asset_id")
-    if not asset_id:
-        return violations
+    if asset_id:
+        from models import FixedAsset
+        asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+        if asset:
+            original = asset.original_value_l1 or Decimal("0")
+            salvage_rate = asset.salvage_rate_l3 or Decimal("0")
+            accum_depr = asset.accumulated_depreciation_l4 or Decimal("0")
+            useful_life = asset.useful_life_l3 or 0
 
-    from models import FixedAsset
-    asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
-    if not asset:
-        return violations
-
-    original = asset.original_value_l1 or Decimal("0")
-    salvage_rate = asset.salvage_rate_l3 or Decimal("0")
-    accum_depr = asset.accumulated_depreciation_l4 or Decimal("0")
-    useful_life = asset.useful_life_l3 or 0
-
-    # 累计折旧上限
-    max_depr = original * (Decimal("1") - salvage_rate)
-    if accum_depr > max_depr + TOLERANCE:
-        violations.append(_make_violation(
-            "AS-05",
-            f"资产 {asset_id} 累计折旧 {accum_depr} 超过上限 {max_depr} (原值×(1-残值率))",
-            fix_hint="检查 batch_depreciate 是否超提",
-            field="FixedAsset.accumulated_depreciation_l4",
-            detail={"asset_id": asset_id, "accum": float(accum_depr), "max": float(max_depr)},
-        ))
-
-    # 月折旧额公式校验(若 useful_life > 0)
-    if useful_life > 0:
-        expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life))).quantize(Q2)
-        # 取最近一条折旧记录
-        from models import FixedAssetDepreciation
-        latest = db.query(FixedAssetDepreciation).filter(
-            FixedAssetDepreciation.asset_id == asset_id
-        ).order_by(FixedAssetDepreciation.id.desc()).first()
-        if latest and latest.amount_l2:
-            diff = abs(latest.amount_l2 - expected_monthly)
-            if diff > TOLERANCE:
+            # 累计折旧上限
+            max_depr = original * (Decimal("1") - salvage_rate)
+            if accum_depr > max_depr + TOLERANCE:
                 violations.append(_make_violation(
                     "AS-05",
-                    f"资产 {asset_id} 月折旧额 {latest.amount_l2} ≠ 期望 {expected_monthly} (原值×(1-残值率)÷寿命)",
-                    fix_hint="检查 record_depreciation 计算公式",
-                    field="FixedAssetDepreciation.amount_l2",
-                    detail={"asset_id": asset_id, "actual": float(latest.amount_l2), "expected": float(expected_monthly)},
+                    f"资产 {asset_id} 累计折旧 {accum_depr} 超过上限 {max_depr} (原值×(1-残值率))",
+                    fix_hint="检查 batch_depreciate 是否超提",
+                    field="FixedAsset.accumulated_depreciation_l4",
+                    detail={"asset_id": asset_id, "accum": float(accum_depr), "max": float(max_depr)},
                 ))
+
+            # 月折旧额公式校验(若 useful_life > 0)
+            if useful_life > 0:
+                expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life))).quantize(Q2)
+                from models import FixedAssetDepreciation
+                latest = db.query(FixedAssetDepreciation).filter(
+                    FixedAssetDepreciation.asset_id == asset_id
+                ).order_by(FixedAssetDepreciation.id.desc()).first()
+                if latest and latest.amount_l2:
+                    # 尾差：最后一期剩余可计提金额可能小于月折旧额（接近残值）
+                    remaining_before = max_depr - latest.accumulated_before_l2
+                    expected_final = min(expected_monthly, remaining_before).quantize(Q2)
+                    actual = latest.amount_l2
+                    if actual != expected_monthly and actual != expected_final and actual > TOLERANCE:
+                        violations.append(_make_violation(
+                            "AS-05",
+                            f"资产 {asset_id} 月折旧额 {actual} ≠ 期望 {expected_monthly} 或尾差 {expected_final} (原值×(1-残值率)÷寿命)",
+                            fix_hint="检查 record_depreciation 计算公式",
+                            field="FixedAssetDepreciation.amount_l2",
+                            detail={"asset_id": asset_id, "actual": float(actual), "expected": float(expected_monthly), "final": float(expected_final)},
+                        ))
+
+    # ── 无形资产 ──
+    intangible_asset_id = context.get("intangible_asset_id")
+    if intangible_asset_id:
+        from models import IntangibleAsset
+        asset = db.query(IntangibleAsset).filter(IntangibleAsset.id == intangible_asset_id).first()
+        if asset:
+            original = asset.original_value_l1 or Decimal("0")
+            accum_amort = asset.accumulated_amortization_l4 or Decimal("0")
+            useful_life = asset.useful_life_l3 or 0
+
+            # 累计摊销上限：无形资产无残值，上限为原值
+            if accum_amort > original + TOLERANCE:
+                violations.append(_make_violation(
+                    "AS-05",
+                    f"无形资产 {intangible_asset_id} 累计摊销 {accum_amort} 超过原值 {original}",
+                    fix_hint="检查 batch_amortize 是否超提",
+                    field="IntangibleAsset.accumulated_amortization_l4",
+                    detail={"asset_id": intangible_asset_id, "accum": float(accum_amort), "max": float(original)},
+                ))
+
+            # 月摊销额公式校验
+            if useful_life > 0:
+                expected_monthly = (original / Decimal(str(useful_life))).quantize(Q2)
+                from models import IntangibleAssetAmortization
+                latest = db.query(IntangibleAssetAmortization).filter(
+                    IntangibleAssetAmortization.asset_id == intangible_asset_id
+                ).order_by(IntangibleAssetAmortization.id.desc()).first()
+                if latest and latest.amount_l2:
+                    # 尾差：最后一期剩余可摊销金额可能小于月摊销额
+                    remaining_before = original - latest.accumulated_before_l2
+                    expected_final = min(expected_monthly, remaining_before).quantize(Q2)
+                    actual = latest.amount_l2
+                    if actual != expected_monthly and actual != expected_final and actual > TOLERANCE:
+                        violations.append(_make_violation(
+                            "AS-05",
+                            f"无形资产 {intangible_asset_id} 月摊销额 {actual} ≠ 期望 {expected_monthly} 或尾差 {expected_final} (原值÷寿命)",
+                            fix_hint="检查 record_amortization 计算公式",
+                            field="IntangibleAssetAmortization.amount_l2",
+                            detail={"asset_id": intangible_asset_id, "actual": float(actual), "expected": float(expected_monthly), "final": float(expected_final)},
+                        ))
 
     return violations
 

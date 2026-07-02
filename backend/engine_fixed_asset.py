@@ -199,12 +199,9 @@ class FixedAssetEngine:
         }
         post_journal(self.db, self.account_id, "asset_disposal", source)
 
-<<<<<<< Updated upstream
-=======
         # AS-07 处置凭证科目校验(必须用 6301/6701 营业外收支,非 6111/6711 资产处置损益)
         enforce_rules(self.db, ["AS-07"], {"asset_id": asset_id})
 
->>>>>>> Stashed changes
         # 处置价格 > 0 → 银行收到处置款，同步创建银行流水（与 1002 总账科目保持一致）
         # 未提供 bank_account_id 时按原逻辑仅更新总账（向后兼容）
         if disposal_price > 0 and bank_account_id is not None:
@@ -214,39 +211,23 @@ class FixedAssetEngine:
                 models.BankAccount.account_id == self.account_id,
             ).with_for_update().first()
             if bank_account:
-<<<<<<< Updated upstream
-                new_balance = _d(bank_account.balance) + _d(disposal_price)
-=======
                 new_balance = _d(bank_account.balance_l4) + _d(disposal_price)
->>>>>>> Stashed changes
                 # 处置固定资产属于投资活动现金流（CAS 31）
                 bank_tx = models.BankTransaction(
                     account_id=self.account_id,
                     bank_account_id=bank_account_id,
                     transaction_type="inflow",
-<<<<<<< Updated upstream
-                    amount=_d(disposal_price),
-                    balance_after=new_balance,
-                    transaction_date=disposal_date,
-                    description=f"固定资产处置款: {asset.name}",
-                    flow_category="investing",
-=======
                     amount_l2=_d(disposal_price),
                     balance_after_l4=new_balance,
                     transaction_date_l1=disposal_date,
                     description=f"固定资产处置款: {asset.name}",
                     flow_category_l2="investing",
->>>>>>> Stashed changes
                     related_entity_type="fixed_asset_disposal",
                     related_entity_id=asset_id,
                 )
                 self.db.add(bank_tx)
                 self.db.flush()
-<<<<<<< Updated upstream
-                bank_account.balance = new_balance
-=======
                 bank_account.balance_l4 = new_balance
->>>>>>> Stashed changes
 
 
 def _period_to_date(period: str) -> date:

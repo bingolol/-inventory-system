@@ -38,14 +38,17 @@ class MonthEndCloseHandler(CommandHandler):
                             f"调节表状态为 {rec.status}，请先完成银行对账并确认"
                 )
 
-        # ── 折旧计提（影响利润 → 影响所得税）──
+        # ── 折旧/摊销计提（影响利润 → 影响所得税）──
         from engine_fixed_asset import FixedAssetEngine
+        from engine_intangible_asset import IntangibleAssetEngine
         depreciations = FixedAssetEngine(db, cmd.account_id).batch_depreciate(cmd.period)
+        amortizations = IntangibleAssetEngine(db, cmd.account_id).batch_amortize(cmd.period)
 
         engine = TaxAccrualEngine(db)
         result = engine.execute(cmd.account_id, cmd.period, cmd.taxpayer_type)
 
         result["depreciation_count"] = len(depreciations)
+        result["amortization_count"] = len(amortizations)
 
         _log(db, cmd.account_id, "close", "month_end", cmd.account_id,
              f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",

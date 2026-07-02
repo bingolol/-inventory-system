@@ -234,24 +234,19 @@ class IncomeTaxReport(BaseModel):
     year: int
     quarter: Optional[int] = None
     account_id: int
-    # ── 税务口径核心字段（发票说话）──
+    # ── 会计准则口径核心字段（利润表说话）──
     # 收入
-    total_revenue: Decimal  # 销项发票不含税金额合计
+    total_revenue: Decimal  # 利润表营业收入（总账 6001+6051 贷方净额）
     # 成本
-    total_cost: Decimal     # 进项发票不含税金额合计
+    total_cost: Decimal     # 利润表营业成本（总账 6401 借方净额）
     # 费用
-    operating_expenses: Decimal  # 有票费用合计（仅可税前扣除部分）
+    operating_expenses: Decimal  # 利润表期间费用（6601+6602+6603，不含税金及附加）
     # 利润
-    gross_profit: Decimal   # total_revenue - total_cost
-    taxable_income: Decimal # gross_profit - operating_expenses（简化，不考虑纳税调整）
+    gross_profit: Decimal   # 营业毛利 = 营业收入 - 营业成本
+    taxable_income: Decimal # 应纳税所得额 = 利润总额（简化，暂不处理纳税调整）
     # 税率
     tax_rate: Decimal       # 小微企业实际税率（如5%或更低）
     tax_amount: Decimal     # 应纳企业所得税 = taxable_income * tax_rate
-    # ── 税务口径明细（前端对比展示用）──
-    invoice_revenue: Decimal = Decimal('0')      # 销项发票不含税金额
-    invoice_cost: Decimal = Decimal('0')         # 进项发票不含税金额
-    invoiced_expenses: Decimal = Decimal('0')    # 有票费用
-    non_invoice_expenses: Decimal = Decimal('0') # 无票费用（仅供参考，不可税前扣除）
 
 
 # ── Income Tax Prepayment (企业所得税预缴申报表 - A类) ──

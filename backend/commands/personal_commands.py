@@ -65,32 +65,39 @@ class UpdatePersonalTransaction(Command):
 @register(UpdatePersonalTransaction)
 class UpdatePersonalTransactionHandler(CommandHandler):
     def handle(self, cmd: UpdatePersonalTransaction, db: Any) -> Any:
-        # 1. 查询流水
-        tx = db.query(models.PersonalTransaction).filter(
+        # 1. 查询旧流水
+        old_tx = db.query(models.PersonalTransaction).filter(
             models.PersonalTransaction.account_id == cmd.account_id,
             models.PersonalTransaction.id == cmd.tx_id,
+            models.PersonalTransaction.is_reversed == False,
         ).first()
-        if not tx:
+        if not old_tx:
             return None
 
-        # 2. 部分更新
-        updates = {
-            'type': cmd.type,
-            'amount_l1': cmd.amount,
-            'category': cmd.category,
-            'description': cmd.description,
-            'image_url': cmd.image_url,
-        }
-        for k, v in updates.items():
-            if v is not None:
-                setattr(tx, k, v)
+        # 2. 组装新值（旧值兜底）
+        tx_date = datetime.strptime(cmd.date, "%Y-%m-%d") if cmd.date is not None else old_tx.date_l1
+        new_type = cmd.type if cmd.type is not None else old_tx.type
+        new_amount = cmd.amount if cmd.amount is not None else old_tx.amount_l1
+        new_category = cmd.category if cmd.category is not None else old_tx.category
+        new_description = cmd.description if cmd.description is not None else old_tx.description
+        new_image_url = cmd.image_url if cmd.image_url is not None else old_tx.image_url
 
-        # 日期字段特殊处理（字符串 → datetime）
-        if cmd.date is not None:
-            tx.date_l1 = datetime.strptime(cmd.date, "%Y-%m-%d")
+        # 3. 标记旧流水作废
+        old_tx.is_reversed = True
 
+        # 4. 创建新流水
+        new_tx = models.PersonalTransaction(
+            account_id=cmd.account_id,
+            type=new_type,
+            amount_l1=new_amount,
+            category=new_category,
+            description=new_description,
+            image_url=new_image_url,
+            date_l1=tx_date,
+        )
+        db.add(new_tx)
         db.flush()
-        return tx
+        return new_tx
 
 
 # ═══════════════════════════════════════════════════════════
@@ -109,11 +116,12 @@ class DeletePersonalTransactionHandler(CommandHandler):
         tx = db.query(models.PersonalTransaction).filter(
             models.PersonalTransaction.account_id == cmd.account_id,
             models.PersonalTransaction.id == cmd.tx_id,
+            models.PersonalTransaction.is_reversed == False,
         ).first()
         if not tx:
             return False
 
-        # 2. 删除
-        db.delete(tx)
+        # 2. 标记作废，保留审计轨迹
+        tx.is_reversed = True
         db.flush()
         return True

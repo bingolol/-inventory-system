@@ -369,17 +369,6 @@ class ReturnSaleOrderHandler(CommandHandler):
                     invoice_no=red_invoice_no,
                     direction=InvoiceDirection.OUT,
                     invoice_type=original_invoice.invoice_type,
-<<<<<<< Updated upstream
-                    tax_rate=original_invoice.tax_rate,
-                    amount_without_tax=-total_without_tax_ret,
-                    tax_amount=-tax_amount_ret,
-                    amount_with_tax=-total_with_tax_ret,
-                    counterparty_name=order.customer.name if order.customer else (original_invoice.counterparty_name or ""),
-                    seller_name=original_invoice.seller_name,
-                    buyer_name=original_invoice.buyer_name,
-                    issue_date=ret_dt,
-                    certification_status=CertificationStatus.N_A,  # 销项发票不需认证
-=======
                     tax_rate_l1=original_invoice.tax_rate_l1,
                     amount_without_tax_l1=-total_without_tax_ret,
                     tax_amount_l1=-tax_amount_ret,
@@ -389,7 +378,6 @@ class ReturnSaleOrderHandler(CommandHandler):
                     buyer_name=original_invoice.buyer_name,
                     issue_date_l1=ret_dt,
                     certification_status_l3=CertificationStatus.N_A,  # 销项发票不需认证
->>>>>>> Stashed changes
                     related_order_id=order.id,
                     related_order_type="sale_order",
                     notes=f"红字销项发票（销售退货）: {cmd.reason or '未提供'}",

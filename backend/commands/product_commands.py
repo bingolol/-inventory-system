@@ -53,17 +53,10 @@ class CreateProductHandler(CommandHandler):
             sku=cmd.sku,
             category=cmd.category,
             unit=cmd.unit,
-<<<<<<< Updated upstream
-            purchase_price=cmd.purchase_price,
-            sale_price=cmd.sale_price,
-            min_stock=cmd.min_stock,
-            track_inventory=cmd.track_inventory,
-=======
             purchase_price_l3=cmd.purchase_price,
             sale_price_l3=cmd.sale_price,
             min_stock_l3=cmd.min_stock,
             track_inventory_l3=cmd.track_inventory,
->>>>>>> Stashed changes
             description=cmd.description,
         )
         db.add(product)
@@ -123,17 +116,10 @@ class UpdateProductHandler(CommandHandler):
             'sku': cmd.sku,
             'category': cmd.category,
             'unit': cmd.unit,
-<<<<<<< Updated upstream
-            'purchase_price': cmd.purchase_price,
-            'sale_price': cmd.sale_price,
-            'min_stock': cmd.min_stock,
-            'track_inventory': cmd.track_inventory,
-=======
             'purchase_price_l3': cmd.purchase_price,
             'sale_price_l3': cmd.sale_price,
             'min_stock_l3': cmd.min_stock,
             'track_inventory_l3': cmd.track_inventory,
->>>>>>> Stashed changes
             'description': cmd.description,
         }
         for k, v in updates.items():

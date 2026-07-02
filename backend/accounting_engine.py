@@ -15,6 +15,15 @@ from enum import Enum
 Q2 = Decimal('0.01')
 
 
+# ═══════════════════════════════════════════════════════════
+# [L3-政策] 附加税税率参数（单一政策来源，禁止在计算逻辑中硬编码）
+# ═══════════════════════════════════════════════════════════
+SURCHARGE_RATE_EDUCATION = Decimal('0.03')               # 教育费附加
+SURCHARGE_RATE_LOCAL_EDUCATION = Decimal('0.02')         # 地方教育附加
+SURCHARGE_RATE_URBAN_CONSTRUCTION = Decimal('0.07')      # 城市维护建设税（市区）
+SURCHARGE_SMALL_MICRO_REDUCTION = Decimal('0.5')         # 小微企业附加税减征比例
+
+
 class AccountingErrorCode(str, Enum):
     """会计错误码"""
     # 发票相关
@@ -564,10 +573,10 @@ class AccountingEngine:
                     }
                 )
 
-            # 附加税费
-            surcharge_education = (tax_payable * Decimal('0.03')).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_local_education = (tax_payable * Decimal('0.02')).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_urban_construction = (tax_payable * Decimal('0.07')).quantize(Q2, rounding=ROUND_HALF_UP)
+            # 附加税费（税率来自 L3 政策常量）
+            surcharge_education = (tax_payable * SURCHARGE_RATE_EDUCATION).quantize(Q2, rounding=ROUND_HALF_UP)
+            surcharge_local_education = (tax_payable * SURCHARGE_RATE_LOCAL_EDUCATION).quantize(Q2, rounding=ROUND_HALF_UP)
+            surcharge_urban_construction = (tax_payable * SURCHARGE_RATE_URBAN_CONSTRUCTION).quantize(Q2, rounding=ROUND_HALF_UP)
             surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
             tax_reduction = Decimal('0')
             reduction_item = "一般纳税人"
@@ -599,10 +608,11 @@ class AccountingEngine:
             tax_reduction = (tax_payable_gross - tax_payable).quantize(Q2, rounding=ROUND_HALF_UP)
 
             # 附加税费：基于实际缴纳的增值税（免税部分不计附加税）
-            # 2023-2027年小微企业50%减征优惠
-            surcharge_education = (tax_payable * Decimal('0.03') * Decimal('0.5')).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_local_education = (tax_payable * Decimal('0.02') * Decimal('0.5')).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_urban_construction = (tax_payable * Decimal('0.07') * Decimal('0.5')).quantize(Q2, rounding=ROUND_HALF_UP)
+            # 2023-2027年小微企业减征优惠（比例来自 L3 政策常量）
+            reduction_ratio = SURCHARGE_SMALL_MICRO_REDUCTION
+            surcharge_education = (tax_payable * SURCHARGE_RATE_EDUCATION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
+            surcharge_local_education = (tax_payable * SURCHARGE_RATE_LOCAL_EDUCATION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
+            surcharge_urban_construction = (tax_payable * SURCHARGE_RATE_URBAN_CONSTRUCTION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
             surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
 
         return VATResult(

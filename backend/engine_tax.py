@@ -16,6 +16,12 @@ from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
 from finance_integration import post_journal
 from utils import _d, Q2
 from lineage import reads, TIER_L3
+from accounting_engine import (
+    SURCHARGE_RATE_EDUCATION,
+    SURCHARGE_RATE_LOCAL_EDUCATION,
+    SURCHARGE_RATE_URBAN_CONSTRUCTION,
+    SURCHARGE_SMALL_MICRO_REDUCTION,
+)
 
 logger = logging.getLogger("inventory")
 
@@ -116,12 +122,12 @@ class TaxAccrualEngine:
 
         if curr_vat > Decimal("0"):
             # 修复 #1：附加税用 delta 模式，避免已计提后补提失效
-            # 按最新政策拆分：城建税7%、教育费附加3%、地方教育附加2%；小规模纳税人减半（2023-2027）
-            surcharge_reduction = Decimal("0.5") if taxpayer_type == "small_scale" else Decimal("1")
+            # 按最新政策拆分：城建税、教育费附加、地方教育附加；小规模纳税人减半（2023-2027）
+            surcharge_reduction = SURCHARGE_SMALL_MICRO_REDUCTION if taxpayer_type == "small_scale" else Decimal("1")
             surcharge_taxes = {
-                "640302": (curr_vat * Decimal("0.07") * surcharge_reduction).quantize(Q2),  # 城建税
-                "640303": (curr_vat * Decimal("0.03") * surcharge_reduction).quantize(Q2),  # 教育费附加
-                "640304": (curr_vat * Decimal("0.02") * surcharge_reduction).quantize(Q2),  # 地方教育附加
+                "640302": (curr_vat * SURCHARGE_RATE_URBAN_CONSTRUCTION * surcharge_reduction).quantize(Q2),  # 城建税
+                "640303": (curr_vat * SURCHARGE_RATE_EDUCATION * surcharge_reduction).quantize(Q2),  # 教育费附加
+                "640304": (curr_vat * SURCHARGE_RATE_LOCAL_EDUCATION * surcharge_reduction).quantize(Q2),  # 地方教育附加
             }
             target_surcharge = sum(surcharge_taxes.values())
 
