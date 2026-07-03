@@ -291,20 +291,20 @@ def validate_invariants() -> list[LineageViolation]:
             field_writers[w.field.path].append(w)
 
     for path, writers in field_writers.items():
-        # 提取类名（func_qualname 格式: ClassName.method 或 module.func）
-        classes = set()
+        # 提取类/模块唯一标识（ClassName.method 用 ClassName，module.func 用 module）
+        owners = set()
         for w in writers:
             qualname = w.func_qualname
             if "." in qualname:
-                classes.add(qualname.rsplit(".", 1)[0])
+                owners.add(qualname.rsplit(".", 1)[0])
             else:
-                classes.add(qualname)
-        if len(classes) > 1:
+                owners.add(w.func_module)
+        if len(owners) > 1:
             violations.append(LineageViolation(
                 code="TS01", severity="ERROR",
                 rule="writer_uniqueness",
                 message=f"L2 真相源 {path} 有多个不同类的 writer（双算法风险）: "
-                        + ", ".join(sorted(classes)),
+                        + ", ".join(sorted(owners)),
                 field=path,
                 writers=[w.func_qualname for w in writers],
             ))

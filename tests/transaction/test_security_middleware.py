@@ -54,17 +54,16 @@ class TestGatewayIntegration:
 
     def test_post_no_operator_blocked(self, client, account_id):
         """无 X-Operator → 网关 403，到不了中间件"""
-        resp = client.post("/api/products", json={
-            "name": "noop-prod", "purchase_price": 10, "sale_price": 20, "unit": "个",
-        }, headers={"X-Account-ID": str(account_id)})
-        assert resp.status_code == 403
-
-    def test_post_no_operator_blocked(self, client, account_id):
-        """无 X-Operator → 网关 403，到不了中间件"""
-        resp = client.post("/api/products", json={
-            "name": "noop-prod", "purchase_price": 10, "sale_price": 20, "unit": "个",
-        }, headers={"X-Account-ID": str(account_id)})
-        assert resp.status_code == 403
+        # fixture 默认携带 X-Operator，需要临时移除以模拟缺失该头的请求
+        saved = client.headers.pop("X-Operator", None)
+        try:
+            resp = client.post("/api/products", json={
+                "name": "noop-prod", "purchase_price": 10, "sale_price": 20, "unit": "个",
+            }, headers={"X-Account-ID": str(account_id)})
+            assert resp.status_code == 403
+        finally:
+            if saved is not None:
+                client.headers["X-Operator"] = saved
 
     def test_post_ai_whitelisted_allowed(self, client, account_id):
         """X-Operator: ai + 白名单端点 → 可写"""

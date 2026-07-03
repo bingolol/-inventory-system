@@ -3,9 +3,6 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 import models
-from ..base import _log
-
-
 def get_opening_balance(db: Session, account_id: int, opening_balance_id: int):
     return db.query(models.OpeningBalance).filter(
         models.OpeningBalance.account_id == account_id,

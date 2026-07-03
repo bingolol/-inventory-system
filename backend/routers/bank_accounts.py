@@ -1,18 +1,15 @@
 """银行账户路由"""
 
-from decimal import Decimal
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from database import get_db
-import models
 from models import BankAccount
 from schemas.bank import BankAccountCreate, BankAccountUpdate, BankAccountOut, BankAccountList
 from account_dep import get_account_id, get_operator
-from errors import BusinessError, ErrorCode
 from uow import unit_of_work
-from crud.base import log_op
+from commands.base import dispatch
+from commands.bank_commands import CreateBankAccount, UpdateBankAccount, DeleteBankAccount
 
 router = APIRouter()
 
@@ -39,44 +36,13 @@ def create_bank_account(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """创建银行账户
-
-    开户时不自动生成期初余额，期初余额统一走 OpeningBalance 流程过账到总账 1002。
-    原因：开户时自动生成 BankTransaction 但无对应 AccountMove，会导致银行账户余额
-    与总账 1002 科目不一致（资产负债表货币资金取数自总账）。
-    """
-    if data.balance is not None and data.balance > 0:
-        raise BusinessError(
-            code=ErrorCode.VALIDATION_ERROR,
-            message="开户时不支持直接录入期初余额。请先创建银行账户（余额为0），"
-                    "再通过「期初余额」功能录入银行存款期初，系统会自动过账到总账 1002 科目。",
-            ai_instruction="STOP_RETRYING. 期初余额必须走 OpeningBalance 流程，不能在开户时直接录入。"
-        )
-
+    """创建银行账户"""
     with unit_of_work(db):
-        bank_account = BankAccount(
+        return dispatch(CreateBankAccount(
             account_id=account_id,
-            bank_name=data.bank_name,
-            account_number=data.account_number,
-            balance_l4=Decimal('0'),
-            description=data.description
-        )
-        db.add(bank_account)
-        db.flush()
-
-        # 反向同步：若账本已有期初余额中的 bank_balance 但此前无银行账户导致未同步，
-        # 创建银行账户时自动补齐（期初余额录入 → finance_commands 已有正向同步，
-        # 此处处理"先录期初、后建银行账户"的时序场景）
-        latest_ob = db.query(models.OpeningBalance).filter(
-            models.OpeningBalance.account_id == account_id,
-        ).order_by(models.OpeningBalance.date_l1.desc()).first()
-        if latest_ob and latest_ob.bank_balance_l1 and latest_ob.bank_balance_l1 > 0:
-            bank_account.balance_l4 = Decimal(str(latest_ob.bank_balance_l1)).quantize(Decimal("0.01"))
-
-        log_op(db, account_id, "create", "bank_account", bank_account.id,
-             f"创建银行账户: {data.bank_name} {data.account_number}", operator=operator)
-    db.refresh(bank_account)
-    return BankAccountOut.model_validate(bank_account)
+            operator=operator,
+            data=data,
+        ), db)
 
 
 @router.put("/{bank_account_id}", response_model=BankAccountOut)
@@ -89,25 +55,12 @@ def update_bank_account(
 ):
     """更新银行账户"""
     with unit_of_work(db):
-        bank_account = db.query(BankAccount).filter(
-            BankAccount.id == bank_account_id,
-            BankAccount.account_id == account_id
-        ).first()
-        if not bank_account:
-            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": bank_account_id})
-
-        if data.bank_name is not None:
-            bank_account.bank_name = data.bank_name
-        if data.account_number is not None:
-            bank_account.account_number = data.account_number
-        if data.description is not None:
-            bank_account.description = data.description
-
-        db.flush()
-        log_op(db, account_id, "update", "bank_account", bank_account.id,
-             f"更新银行账户: {bank_account.bank_name}", operator=operator)
-    db.refresh(bank_account)
-    return BankAccountOut.model_validate(bank_account)
+        return dispatch(UpdateBankAccount(
+            account_id=account_id,
+            operator=operator,
+            bank_account_id=bank_account_id,
+            data=data,
+        ), db)
 
 
 @router.delete("/{bank_account_id}")
@@ -117,35 +70,10 @@ def delete_bank_account(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """删除银行账户（有关联数据时不能删除）"""
+    """删除银行账户"""
     with unit_of_work(db):
-        bank_account = db.query(BankAccount).filter(
-            BankAccount.id == bank_account_id,
-            BankAccount.account_id == account_id
-        ).first()
-        if not bank_account:
-            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": bank_account_id})
-
-        # 检查关联数据
-        transactions_count = db.query(models.BankTransaction).filter(
-            models.BankTransaction.bank_account_id == bank_account_id
-        ).count()
-        payments_count = db.query(models.Payment).filter(
-            models.Payment.bank_account_id == bank_account_id
-        ).count()
-        receipts_count = db.query(models.Receipt).filter(
-            models.Receipt.bank_account_id == bank_account_id
-        ).count()
-
-        if transactions_count + payments_count + receipts_count > 0:
-            raise BusinessError(
-                code=ErrorCode.DUPLICATE_ENTRY,
-                message=f"该银行账户存在关联的银行流水({transactions_count})、付款({payments_count})、收款({receipts_count})记录，无法删除",
-                ai_instruction="STOP_RETRYING. 该银行账户有关联数据，无法删除。如需删除，请先清理关联的银行流水、付款、收款记录。"
-            )
-
-        log_op(db, account_id, "delete", "bank_account", bank_account.id,
-             f"删除银行账户: {bank_account.bank_name}", operator=operator)
-        db.delete(bank_account)
-        db.flush()
-    return {"message": "银行账户已删除"}
+        return dispatch(DeleteBankAccount(
+            account_id=account_id,
+            operator=operator,
+            bank_account_id=bank_account_id,
+        ), db)

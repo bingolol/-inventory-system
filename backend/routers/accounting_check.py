@@ -217,11 +217,12 @@ def check_vat(
     total_revenue: Decimal = Query(..., description="不含税销售额"),
     taxpayer_type: str = Query(default="general", description="纳税人类型: small_scale/general"),
     input_tax: Decimal = Query(default=Decimal("0"), description="进项税额（一般纳税人）"),
+    output_tax: Optional[Decimal] = Query(default=None, description="销项税额（一般纳税人必填，取自发票明细汇总）"),
     account_id: int = Depends(get_account_id),
 ):
     """检查增值税计算是否正确"""
     try:
-        result = _engine.calculate_vat(total_revenue, taxpayer_type, input_tax)
+        result = _engine.calculate_vat(total_revenue, taxpayer_type, input_tax, output_tax)
 
         return {
             "valid": True,

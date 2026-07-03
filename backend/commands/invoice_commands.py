@@ -15,6 +15,7 @@ from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
 
 from .base import Command, CommandHandler, register
+from .order_lifecycle import OrderLifecycle
 from crud.base import log_op
 from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
@@ -836,20 +837,7 @@ class ReverseInvoiceHandler(CommandHandler):
 # ═══════════════════════════════════════════════════════════
 
 def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
-    """销项发票联动自动创建销售单：取发票金额，扣库存
-
-    使用 InventoryEngine.outbound() 创建 StockMove + set_calculated_cost 锁定成本（BR-7 合规），
-    弃用直接改 inv.quantity 的 sale_deduct。
-    """
-    from crud.base import gen_order_no, log_op
-    from enums import OrderStatus, OrderType, PaymentStatus
-    from engine_inventory import InventoryEngine
-    from crud.products import get_product
-    from datetime import datetime as dt_mod
-
-    issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
-    order_no = gen_order_no(db, "SO", issue_dt)
-
+    """销项发票联动自动创建销售单：委托 OrderLifecycle 统一编排。"""
     # 从发票 counterparty_name 查找或创建客户
     customer = db.query(models.Customer).filter(
         models.Customer.account_id == account_id,
@@ -864,75 +852,23 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
         db.flush()
     customer_id = customer.id if customer else None
 
-    order = models.SaleOrder(
+    return OrderLifecycle.create_sale_order(
+        db=db,
         account_id=account_id,
-        order_no=order_no,
+        operator=operator,
+        items=items,
+        sale_date=invoice.issue_date_l1,
         customer_id=customer_id,
-        order_type=OrderType.RETAIL,
-        payment_status=PaymentStatus.UNPAID,
-        status=OrderStatus.COMPLETED,
+        total_price=invoice.amount_with_tax_l1,
+        tax_amount=invoice.tax_amount_l1,
+        has_invoice=True,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price_l1=to_decimal(invoice.amount_with_tax_l1),
-        tax_amount_l1=to_decimal(invoice.tax_amount_l1),
-        sale_date_l1=invoice.issue_date_l1,
+        auto_generated_from=invoice.invoice_no,
     )
-    db.add(order)
-    db.flush()
-
-    for it in items:
-        line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
-        item = models.SaleItem(
-            order_id=order.id,
-            product_id=it['product_id'],
-            quantity_l1=it['quantity'],
-            unit_price_l1=it['unit_price'],
-            tax_rate_l1=it.get('tax_rate', invoice.tax_rate_l1),
-            total_price_l1=line_total,
-        )
-        db.add(item)
-
-    db.flush()
-
-    # 出库写 StockMove + 锁定 unit_cost 到 SaleItem（BR-7 合规）
-    eng = InventoryEngine(db)
-    for item in order.items:
-        product = get_product(db, account_id, item.product_id)
-        if product and product.track_inventory_l3:
-            unit_cost = eng.outbound(
-                account_id=account_id,
-                product_id=item.product_id,
-                quantity=item.quantity_l1,
-                source_type="sale_order",
-                source_id=order.id,
-                operator=operator,
-            )
-            item.set_calculated_cost(unit_cost)
-        else:
-            item.set_calculated_cost(Decimal("0"))
-
-    # 生成会计凭证: dr 1122, cr 6001+222101 + dr 6401, cr 1405
-    from engine_finance import FinanceEngine
-    FinanceEngine(db, account_id).record_sale(order)
-
-    log_op(db, account_id, "create", "sale_order", order.id,
-         f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
-         operator=operator)
-    db.flush()
-    return order
 
 
 def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, items: list):
-    """进项发票创建后自动生成采购单，金额取发票金额，入库。
-
-    使用 InventoryEngine.inbound() 创建 StockMove（BR-7 合规）。
-    按 counterparty_name 匹配已有供应商。
-    """
-    from crud.base import gen_order_no, log_op
-    from crud.products import get_product
-    from enums import OrderStatus, OrderType, PaymentMethod
-    from engine_inventory import InventoryEngine
-    from engine_finance import FinanceEngine
-
+    """进项发票创建后自动生成采购单：委托 OrderLifecycle 统一编排。"""
     # 按发票 counterparty_name 匹配已有供应商
     supplier_id = None
     supplier = db.query(models.Supplier).filter(
@@ -942,66 +878,18 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
     if supplier:
         supplier_id = supplier.id
 
-    from datetime import datetime as dt_mod
-    issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
-    order_no = gen_order_no(db, "PO", issue_dt)
-    order = models.PurchaseOrder(
+    return OrderLifecycle.create_purchase_order(
+        db=db,
         account_id=account_id,
-        order_no=order_no,
+        operator=operator,
+        items=items,
+        purchase_date=invoice.issue_date_l1,
         supplier_id=supplier_id,
-        order_type=OrderType.RETAIL,
-        payment_method=PaymentMethod.COMPANY,
-        status=OrderStatus.COMPLETED,
+        total_price=invoice.amount_with_tax_l1,
+        tax_amount=invoice.tax_amount_l1,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price_l1=Decimal("0"),  # 下面逐行累加
-        tax_amount_l1=to_decimal(invoice.tax_amount_l1),
-        purchase_date_l1=invoice.issue_date_l1,
+        auto_generated_from=invoice.invoice_no,
     )
-    db.add(order)
-    db.flush()
-
-    total = Decimal("0")
-    calculated_data = []
-    for it in items:
-        product = get_product(db, account_id, it['product_id'])
-        if not product:
-            raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
-        line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
-        item = models.PurchaseItem(
-            order_id=order.id,
-            product_id=it['product_id'],
-            quantity_l1=it['quantity'],
-            unit_price_l1=it['unit_price'],
-            tax_rate_l1=it.get('tax_rate', invoice.tax_rate_l1),
-            total_price_l1=line_total,
-        )
-        db.add(item)
-        if product.track_inventory_l3:
-            calc = InventoryEngine(db).inbound(
-                account_id=account_id,
-                product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                source_type="purchase_order",
-                source_id=order.id,
-                tax_rate=it.get('tax_rate'),
-                operator=operator,
-            )
-            calculated_data.append(calc)
-        total += line_total
-
-    order.total_price_l1 = total.quantize(Q2)
-    db.flush()
-
-    # 生成会计凭证
-    if calculated_data:
-        FinanceEngine(db, account_id).record_purchase(order, calculated_data)
-
-    log_op(db, account_id, "create", "purchase_order", order.id,
-         f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
-         operator=operator)
-    db.flush()
-    return order
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1102,49 +990,6 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                         "account_config": acct_conf,
                     }, force=True)
 
-                # 同步总账：原值变更必须冲红原 fixed_asset_purchase 凭证 + 按新金额重过账
-                # 否则 BS 上 1601 余额与资产卡片原值不一致（资产卡片改了总账没改）
-                if original_value != old_value:
-                    from finance_integration import reverse_journal, post_journal
-                    from engine_finance import FinanceEngine
-                    fe = FinanceEngine(db, cmd.account_id)
-                    acct_conf = fe._account_config()
-                    # 进项税抵扣需同时满足「一般纳税人」+「专票」（与创建时口径一致）
-                    enable_vat_deduction = acct_conf["enable_vat_deduction"] and invoice.invoice_type == InvoiceType.SPECIAL
-                    acct_conf["enable_vat_deduction"] = enable_vat_deduction
-                    # 新原值口径：小规模/普票含税 / 一般纳税人专票不含税（与创建时一致）
-                    new_asset_value = amounts.amount_with_tax if not enable_vat_deduction else amounts.amount_without_tax
-
-                    # 1. 冲红旧凭证（force=True 跳过幂等：允许反复"冲红+重过"）
-                    reverse_journal(db, cmd.account_id, "fixed_asset_purchase", asset.id, force=True)
-
-                    # 2. 修正资产卡片原值口径（若与新计算口径不一致则覆盖）
-                    if asset.original_value != new_asset_value:
-                        asset.original_value = new_asset_value
-
-                    # 3. 按 new_asset_value 重新过账（force=True：跳过幂等防御创建新正向凭证）
-                    # 按 counterparty_name 匹配供应商
-                    supplier_id = None
-                    if invoice.counterparty_name:
-                        supplier = db.query(models.Supplier).filter(
-                            models.Supplier.account_id == cmd.account_id,
-                            models.Supplier.name == invoice.counterparty_name,
-                        ).first()
-                        if supplier:
-                            supplier_id = supplier.id
-
-                    post_journal(db, cmd.account_id, "fixed_asset_purchase", {
-                        "original_value": new_asset_value,
-                        "tax_amount": amounts.tax_amount if enable_vat_deduction else Decimal("0"),
-                        "amount_with_tax": amounts.amount_with_tax,
-                        "asset_id": asset.id,
-                        "partner_id": supplier_id,
-                        "date": _date_iso(invoice.issue_date),
-                        "source_model": "fixed_asset_purchase",
-                        "source_id": asset.id,
-                        "account_config": acct_conf,
-                    }, force=True)
-
         # 4. 更新其他资产字段
         if cmd.name is not None:
             asset.name = cmd.name
@@ -1170,5 +1015,3 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                  f"联动更新发票: {invoice.invoice_no}", operator=cmd.operator)
 
         return {"asset": asset, "invoice": invoice}
-
-        return {"invoice": invoice, "asset": asset}

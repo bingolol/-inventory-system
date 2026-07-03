@@ -18,9 +18,11 @@ def db_session():
 
     session.add(models.Account(id=1, name="公司账本", type="company", code="company"))
     session.flush()
+    salt = "testsalt"
     session.add(models.User(
         username="admin",
-        password_hash=_hash_password("admin"),
+        password_hash=_hash_password("admin", salt),
+        password_salt=salt,
         account_id=1, is_active=True,
     ))
     session.commit()
@@ -35,6 +37,6 @@ class TestLogin:
 
     def test_correct_password_returns_token(self, db_session):
         result = login(LoginRequest(username="admin", password="admin"), db=db_session)
-        assert result.token
+        assert result.access_token
         assert result.username == "admin"
         assert result.account_id == 1

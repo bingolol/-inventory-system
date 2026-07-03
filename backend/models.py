@@ -676,3 +676,21 @@ def prevent_depreciation_update(mapper, connection, target):
         code=ErrorCode.DATA_INTEGRITY_ERROR,
         data={"details": "FixedAssetDepreciation 是折旧真相源，一经生成严禁修改"}
     )
+
+
+@event.listens_for(BankTransaction, 'before_update')
+def prevent_bank_transaction_update(mapper, connection, target):
+    from errors import BusinessError, ErrorCode
+    raise BusinessError(
+        code=ErrorCode.DATA_INTEGRITY_ERROR,
+        data={"details": "BankTransaction 是银行流水真相源，一经生成严禁修改"}
+    )
+
+
+@event.listens_for(IntangibleAssetAmortization, 'before_update')
+def prevent_amortization_update(mapper, connection, target):
+    from errors import BusinessError, ErrorCode
+    raise BusinessError(
+        code=ErrorCode.DATA_INTEGRITY_ERROR,
+        data={"details": "IntangibleAssetAmortization 是摊销流水真相源，一经生成严禁修改"}
+    )

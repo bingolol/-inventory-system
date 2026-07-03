@@ -14,7 +14,7 @@ import models
 from .base import Command, CommandHandler, register
 from crud.base import log_op
 from errors import BusinessError, ErrorCode
-from lineage import writes, TIER_L1, TIER_L2
+from lineage import writes, TIER_L1, TIER_L2, TIER_L4
 from utils import to_decimal
 
 
@@ -42,6 +42,21 @@ class CreateOpeningBalance(Command):
 
 @register(CreateOpeningBalance)
 class CreateOpeningBalanceHandler(CommandHandler):
+    @writes("BankAccount.balance_l4", tier=TIER_L4, source="derived")
+    @writes("OpeningBalance.date_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.cash_balance_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.bank_balance_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accounts_receivable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.inventory_value_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.fixed_assets_original_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accumulated_depreciation_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.intangible_assets_original_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accumulated_amortization_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accounts_payable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.tax_payable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.long_term_borrowings_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.paid_in_capital_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.retained_earnings_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateOpeningBalance, db: Any) -> Any:
         # 1. 校验：日期不能重复
         ob_date = datetime.strptime(cmd.date, "%Y-%m-%d").date()
@@ -160,6 +175,22 @@ class UpdateOpeningBalance(Command):
 
 @register(UpdateOpeningBalance)
 class UpdateOpeningBalanceHandler(CommandHandler):
+    @writes("BankAccount.balance_l4", tier=TIER_L4, source="derived")
+    @writes("OpeningBalance.date_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.cash_balance_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.bank_balance_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accounts_receivable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.inventory_value_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.fixed_assets_original_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accumulated_depreciation_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.intangible_assets_original_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accumulated_amortization_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.accounts_payable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.tax_payable_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.long_term_borrowings_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.paid_in_capital_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.retained_earnings_l1", tier=TIER_L1, source="external")
+    @writes("OpeningBalance.is_reversed", tier=TIER_L1, source="external")
     def handle(self, cmd: UpdateOpeningBalance, db: Any) -> Any:
         # 1. 查旧记录
         old_ob = db.query(models.OpeningBalance).filter(
@@ -277,6 +308,8 @@ class DeleteOpeningBalance(Command):
 
 @register(DeleteOpeningBalance)
 class DeleteOpeningBalanceHandler(CommandHandler):
+    @writes("BankAccount.balance_l4", tier=TIER_L4, source="derived")
+    @writes("OpeningBalance.is_reversed", tier=TIER_L1, source="external")
     def handle(self, cmd: DeleteOpeningBalance, db: Any) -> bool:
         ob = db.query(models.OpeningBalance).filter(
             models.OpeningBalance.id == cmd.opening_balance_id,

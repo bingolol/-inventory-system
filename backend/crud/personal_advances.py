@@ -13,7 +13,8 @@ from sqlalchemy import func as sqlfunc, and_
 import models
 import schemas
 
-from utils import _d, Q2
+from accounting_engine import _d
+from utils import Q2
 
 
 def generate_advance_no(db: Session, account_id: int) -> str:

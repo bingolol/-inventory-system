@@ -150,14 +150,9 @@ def _create_bank_account(client, balance=100000):
         }, headers={"X-Account-ID": "1", "X-Operator": "user"})
     return bid, data
 
-<<<<<<< Updated upstream
-    assert response.status_code == 200
-    data = response.json().get("data", response.json())
-=======
 def test_create_bank_account(client):
     """创建银行账户"""
     bid, data = _create_bank_account(client)
->>>>>>> Stashed changes
     assert data["bank_name"] == "工商银行"
     assert data["account_number"] == "6222021234567890123"
     assert data["balance"] == "0.00"
@@ -179,16 +174,7 @@ def test_list_bank_accounts(client):
 def test_update_bank_account(client):
     """更新银行账户"""
     # 先创建
-<<<<<<< Updated upstream
-    create_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    account_id = create_resp.json().get("data", create_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client)
->>>>>>> Stashed changes
 
     # 更新（余额不能直接编辑，只能通过银行流水调整）
     response = client.put(f"/api/bank-accounts/{bid}", json={
@@ -227,16 +213,7 @@ def test_delete_bank_account_with_transactions_should_fail(client):
 def test_delete_bank_account(client):
     """删除银行账户"""
     # 先创建
-<<<<<<< Updated upstream
-    create_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    account_id = create_resp.json().get("data", create_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 0)
->>>>>>> Stashed changes
 
     # 删除
     response = client.delete(f"/api/bank-accounts/{bid}", headers={"X-Account-ID": "1", "X-Operator": "user"})
@@ -254,16 +231,7 @@ def test_delete_bank_account(client):
 def test_create_bank_transaction(client):
     """录入银行流水"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 100000)
->>>>>>> Stashed changes
 
     # 录入银行流水（收入）
     response = client.post("/api/bank-transactions", json={
@@ -285,16 +253,7 @@ def test_create_bank_transaction(client):
 def test_create_bank_transaction_outflow(client):
     """录入银行流水（支出）"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 100000)
->>>>>>> Stashed changes
 
     # 录入银行流水（支出）
     response = client.post("/api/bank-transactions", json={
@@ -346,16 +305,7 @@ def test_create_expense_accrual(client):
 def test_pay_expense(client):
     """费用付款时，创建付款记录、银行流水，更新费用状态"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 100000)
->>>>>>> Stashed changes
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -366,12 +316,8 @@ def test_pay_expense(client):
         "payment_method": "company",
         "description": "6月房租"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-<<<<<<< Updated upstream
-    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
-=======
     assert expense_resp.status_code == 200
     expense_id = get_entity_id(expense_resp.json())
->>>>>>> Stashed changes
 
     # 费用付款
     payment_resp = client.post("/api/payments", json={
@@ -440,16 +386,7 @@ def test_create_purchase_accrual(client):
 def test_pay_purchase(client):
     """采购付款时，创建付款记录、银行流水，更新采购单状态"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 100000)
->>>>>>> Stashed changes
 
     # 创建供应商
     supplier_resp = client.post("/api/suppliers", json={
@@ -457,11 +394,7 @@ def test_pay_purchase(client):
         "contact": "王五",
         "phone": "13700137000"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-<<<<<<< Updated upstream
-    supplier_id = supplier_resp.json().get("data", supplier_resp.json()).get("id")
-=======
     supplier_id = get_entity_id(supplier_resp.json())
->>>>>>> Stashed changes
 
     # 创建商品
     product_resp = client.post("/api/products", json={
@@ -556,16 +489,7 @@ def test_create_sale_accrual(client):
 def test_receive_sale(client):
     """销售收款时，创建收款记录、银行流水，更新销售单状态"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    account_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 50000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = account_resp.json().get("data", account_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 50000)
->>>>>>> Stashed changes
 
     # 创建供应商
     client.post("/api/suppliers", json={
@@ -778,11 +702,7 @@ def test_payment_exceeds_expense_amount(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-<<<<<<< Updated upstream
-    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
-=======
     expense_id = get_entity_id(expense_resp.json())
->>>>>>> Stashed changes
 
     # 尝试付款金额超过费用金额
     payment_resp = client.post("/api/payments", json={
@@ -848,11 +768,7 @@ def test_duplicate_payment(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-<<<<<<< Updated upstream
-    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
-=======
     expense_id = get_entity_id(expense_resp.json())
->>>>>>> Stashed changes
 
     # 第一次付款
     payment1_resp = client.post("/api/payments", json={
@@ -890,16 +806,7 @@ def test_duplicate_payment(client):
 def test_payment_with_bank_account(client):
     """付款时指定银行账户 → 银行余额更新"""
     # 先创建银行账户
-<<<<<<< Updated upstream
-    bank_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 100000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    bank_account_id = bank_resp.json().get("data", bank_resp.json()).get("id")
-=======
     bid, _ = _create_bank_account(client, 100000)
->>>>>>> Stashed changes
 
     # 创建费用
     expense_resp = client.post("/api/expenses", json={
@@ -910,11 +817,7 @@ def test_payment_with_bank_account(client):
         "payment_method": "company",
         "description": "测试费用"
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-<<<<<<< Updated upstream
-    expense_id = expense_resp.json().get("data", expense_resp.json()).get("id")
-=======
     expense_id = get_entity_id(expense_resp.json())
->>>>>>> Stashed changes
 
     # 付款时指定银行账户
     payment_resp = client.post("/api/payments", json={
@@ -1000,17 +903,7 @@ def test_full_business_flow(client):
     }, headers={"X-Account-ID": "1", "X-Operator": "user"})
 
     # ── 2. 创建银行账户 ──
-<<<<<<< Updated upstream
-    bank_resp = client.post("/api/bank-accounts", json={
-        "bank_name": "工商银行",
-        "account_number": "6222021234567890123",
-        "balance": 200000
-    }, headers={"X-Account-ID": "1", "X-Operator": "user"})
-    assert bank_resp.status_code == 200
-    bank_account_id = bank_resp.json().get("data", bank_resp.json()).get("id")
-=======
     bank_account_id, _ = _create_bank_account(client, 200000)
->>>>>>> Stashed changes
 
     # ── 3. 创建供应商和客户 ──
     supplier_resp = client.post("/api/suppliers", json={

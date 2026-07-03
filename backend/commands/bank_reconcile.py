@@ -81,10 +81,10 @@ class ReconcileBankHandler(CommandHandler):
         return {
             "id": rec.id,
             "period": rec.period,
-            "book_balance": float(rec.book_balance),
-            "statement_balance": float(rec.statement_balance),
-            "adjusted_book": float(rec.adjusted_book),
-            "adjusted_statement": float(rec.adjusted_statement),
+            "book_balance": float(rec.book_balance_l4),
+            "statement_balance": float(rec.statement_balance_l1),
+            "adjusted_book": float(rec.adjusted_book_l4),
+            "adjusted_statement": float(rec.adjusted_statement_l4),
             "balanced": rec.balanced,
             "status": rec.status,
         }

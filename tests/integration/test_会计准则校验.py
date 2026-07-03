@@ -18,10 +18,22 @@
 
 import pytest
 import time
+import uuid
 from decimal import Decimal
 from database import SessionLocal, set_maintenance_mode
-from models import Account, OpeningBalance, BankAccount, Product, Inventory
+from models import Account, OpeningBalance, BankAccount, Product, Inventory, StockMove
 from test_helpers import ensure_test_product
+
+
+def _extract_data(resp_json):
+    """从 AI Gateway 响应中提取 data 字段"""
+    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
+        ent = resp_json["entity"]
+        if "data" in ent:
+            return ent["data"]
+    if isinstance(resp_json, dict) and "data" in resp_json:
+        return resp_json["data"]
+    return resp_json
 
 # 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
 ACCOUNT_ID = 1
@@ -40,9 +52,9 @@ def seed_opening_balance():
     raw = get_engine().raw_connection()
     raw.execute("PRAGMA foreign_keys=OFF")
     for tname in ["account_move_lines", "account_moves", "stock_moves",
-                   "receipts", "payments", "invoices", "fixed_assets",
-                   "sale_items", "sale_orders", "purchase_items",
-                   "purchase_orders", "expenses"]:
+                   "receipts", "payments", "invoice_items", "invoices",
+                   "fixed_assets", "sale_items", "sale_orders",
+                   "purchase_items", "purchase_orders", "expenses"]:
         raw.execute(f"DELETE FROM {tname}")
     raw.execute(f"DELETE FROM inventory WHERE account_id={ACCOUNT_ID}")
     raw.execute(f"DELETE FROM bank_accounts WHERE account_id={ACCOUNT_ID}")
@@ -94,6 +106,15 @@ def seed_opening_balance():
             total_value_l4=Decimal('20000.00'),
         )
         db.add(inv)
+        db.flush()
+        # AS-03: 库存真相源为 StockMove，需保留期初流水与 Inventory 一致
+        db.add(StockMove(
+            account_id=ACCOUNT_ID, product_id=product.id,
+            quantity_l1=Decimal('200'), unit_cost_l2=Decimal('100.00'),
+            total_cost_l2=Decimal('20000.00'),
+            source_type='inventory_adjustment', source_id=0,
+            move_date_l1=datetime(2026, 1, 1),
+        ))
         bank = BankAccount(
             account_id=ACCOUNT_ID,
             bank_name="测试银行",
@@ -379,7 +400,7 @@ class TestInvoiceAmountCalculation:
     def test_invoice_amount_calculation_13_percent(self, client):
         """13%税率发票金额计算"""
         TestInvoiceAmountCalculation._inv_counter += 1
-        unique_no = f"TEST-INV-13PCT-{int(time.time())}-{TestInvoiceAmountCalculation._inv_counter}"
+        unique_no = f"TEST-INV-13PCT-{uuid.uuid4().hex}-{TestInvoiceAmountCalculation._inv_counter}"
         pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
@@ -395,8 +416,8 @@ class TestInvoiceAmountCalculation:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
-        data = resp.json().get("data", resp.json())
-        
+        data = _extract_data(resp.json())
+
         # 验证计算: 不含税金额 = 11300 ÷ 1.13 = 10000
         amount_without_tax = Decimal(str(data.get("amount_without_tax", 0)))
         tax_amount = Decimal(str(data.get("tax_amount", 0)))
@@ -412,7 +433,7 @@ class TestInvoiceAmountCalculation:
     def test_invoice_amount_calculation_1_percent(self, client):
         """1%征收率发票金额计算"""
         TestInvoiceAmountCalculation._inv_counter += 1
-        unique_no = f"TEST-INV-1PCT-{int(time.time())}-{TestInvoiceAmountCalculation._inv_counter}"
+        unique_no = f"TEST-INV-1PCT-{uuid.uuid4().hex}-{TestInvoiceAmountCalculation._inv_counter}"
         pid = ensure_test_product(ACCOUNT_ID)
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": unique_no,
@@ -428,9 +449,9 @@ class TestInvoiceAmountCalculation:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
-        data = resp.json().get("data", resp.json())
+        data = _extract_data(resp.json())
         assert data.get("related_order_type") == "sale_order", "销项发票应生成销售单"
-        
+
         # 验证计算: 不含税金额 = 10100 ÷ 1.01 = 10000
         amount_without_tax = Decimal(str(data.get("amount_without_tax", 0)))
         tax_amount = Decimal(str(data.get("tax_amount", 0)))

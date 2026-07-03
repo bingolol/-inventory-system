@@ -531,21 +531,18 @@ class TestE2EAISaleLifecycle:
         }, headers=HEADERS_BASE)
         sale_id = _get_entity_id(r.json())
 
-<<<<<<< Updated upstream
-        # AI 取消（替代已被 readonly 中间件拦截的 DELETE）
+        # AI 取消（危险操作，先 pending 再确认）
         headers_ai = {**HEADERS_BASE, "X-Operator": "ai"}
         r = client.post(f"/api/sales/{sale_id}/cancel", headers=headers_ai)
-        assert r.status_code == 200, f"AI 取消销售单失败: {r.text}"
+        assert r.status_code == 202, f"AI 取消销售单应进入待确认: {r.text}"
+        token = r.json()["entity"]["confirm_token"]
 
-        print(f"\n[OK] AI POST /api/sales/{sale_id}/cancel：")
-=======
-        # 取消（使用 user 操作避免 confirm 中间件拦截）
-        r = client.post(f"/api/sales/{sale_id}/cancel", headers=HEADERS_BASE)
-        assert r.status_code == 200, f"取消销售单失败: {r.text}"
+        # 用户确认执行
+        r = client.post(f"/api/confirm/{token}", headers=HEADERS_BASE)
+        assert r.status_code == 200, f"确认 AI 取消销售单失败: {r.text}"
 
-        print(f"\n[OK] POST /api/sales/{sale_id}/cancel：")
->>>>>>> Stashed changes
-        print(f"  - 正确返回 200")
+        print(f"\n[OK] AI POST /api/sales/{sale_id}/cancel → confirm/{token}：")
+        print(f"  - 先返回 202 待确认，确认后返回 200")
 
     def test_user_cancel_sale_order_local_time(self, client):
         """User 取消销售单 → 验证 operator=user + created_at 是本地时间"""

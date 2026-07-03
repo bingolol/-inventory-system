@@ -47,7 +47,7 @@ def get_financial_summary(
     return {
         "balance_sheet": balance_sheet,
         "opening_balance_exists": opening_balance is not None,
-        "opening_balance_date": opening_balance.date.isoformat() if opening_balance else None
+        "opening_balance_date": opening_balance.date_l1.isoformat() if opening_balance else None
     }
 
 

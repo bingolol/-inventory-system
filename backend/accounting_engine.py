@@ -35,6 +35,7 @@ class AccountingErrorCode(str, Enum):
     VAT_TAXPAYER_TYPE_INVALID = "VAT_TAXPAYER_TYPE_INVALID"
     VAT_INPUT_TAX_NEGATIVE = "VAT_INPUT_TAX_NEGATIVE"
     VAT_CALCULATION_INVALID = "VAT_CALCULATION_INVALID"
+    VAT_OUTPUT_TAX_MISSING = "VAT_OUTPUT_TAX_MISSING"
 
     # 所得税相关
     INCOME_TAX_PROFIT_NEGATIVE = "INCOME_TAX_PROFIT_NEGATIVE"
@@ -554,8 +555,11 @@ class AccountingEngine:
                 # 注：total_revenue=0 时除零保护；total_revenue<0（红冲>销售）时也按正常除法计算
                 tax_rate = (tax_payable_gross / total_revenue).quantize(Decimal('0.01')) if total_revenue != 0 else Decimal('0')
             else:
-                tax_rate = Decimal('0.13')
-                tax_payable_gross = (total_revenue * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
+                raise AccountingError(
+                    code=AccountingErrorCode.VAT_OUTPUT_TAX_MISSING,
+                    message="一般纳税人增值税计算必须提供 output_tax（发票明细汇总的销项税额），禁止按固定税率估算",
+                    ai_instruction="STOP_RETRYING. 调用 calculate_vat 时必须传入 output_tax 参数"
+                )
             tax_payable = tax_payable_gross - input_tax
 
             # 输出交叉校验：应纳税额 = 销项税额 - 进项税额

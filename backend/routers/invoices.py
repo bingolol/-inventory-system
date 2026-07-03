@@ -232,8 +232,11 @@ async def quick_create_invoice(
                 db_asset = None
     except ValueError as e:
         raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建发票失败，请检查输入数据"})
-    except IntegrityError:
-        raise BusinessError(code=ErrorCode.INVOICE_DUPLICATE_NUMBER, data={"invoice_number": invoice.invoice_no})
+    except IntegrityError as ie:
+        err_msg = str(ie.orig) if ie.orig else str(ie)
+        if "uix_account_invoice_no" in err_msg or "invoices.account_id" in err_msg:
+            raise BusinessError(code=ErrorCode.INVOICE_DUPLICATE_NUMBER, data={"invoice_number": invoice.invoice_no})
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"发票保存失败: {err_msg}")
     db.refresh(db_invoice)
     if db_asset is not None:
         db.refresh(db_asset)

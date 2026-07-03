@@ -1,9 +1,14 @@
+"""固定资产路由
+
+写操作（折旧、处置）下沉到 commands.fixed_asset_commands，
+router 只负责 HTTP 解析 + dispatch。
+"""
+
 from fastapi import APIRouter, Depends, Query
 from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from typing import Optional
 from decimal import Decimal
-from datetime import date
 
 from database import get_db
 from schemas import FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, FixedAssetWithInvoiceUpdate, PaginatedResponse
@@ -11,7 +16,11 @@ from account_dep import get_account_id, get_operator
 import crud
 from uow import unit_of_work
 from commands.base import dispatch
-from engine_fixed_asset import FixedAssetEngine
+from commands.fixed_asset_commands import (
+    DepreciateFixedAsset,
+    BatchDepreciateFixedAssets,
+    DisposeFixedAsset,
+)
 
 router = APIRouter()
 
@@ -106,11 +115,12 @@ def depreciate_fixed_asset(
 ):
     """计提单个固定资产月折旧"""
     with unit_of_work(db):
-        eng = FixedAssetEngine(db, account_id)
-        dep = eng.record_depreciation(asset_id, period)
-    if dep is None:
-        return {"message": "无需计提（已提足或不在计提期）", "depreciation_id": None}
-    return {"message": f"折旧计提成功: {dep.amount}", "depreciation_id": dep.id, "amount": str(dep.amount)}
+        return dispatch(DepreciateFixedAsset(
+            account_id=account_id,
+            operator=operator,
+            asset_id=asset_id,
+            period=period,
+        ), db)
 
 
 @router.post("/batch-depreciate")
@@ -122,13 +132,11 @@ def batch_depreciate_fixed_assets(
 ):
     """批量计提所有在用固定资产折旧"""
     with unit_of_work(db):
-        eng = FixedAssetEngine(db, account_id)
-        results = eng.batch_depreciate(period)
-    return {
-        "message": f"批量折旧完成: {len(results)}项资产已计提",
-        "count": len(results),
-        "details": [{"asset_id": d.asset_id, "period": d.period, "amount": str(d.amount)} for d in results],
-    }
+        return dispatch(BatchDepreciateFixedAssets(
+            account_id=account_id,
+            operator=operator,
+            period=period,
+        ), db)
 
 
 @router.post("/{asset_id}/dispose")
@@ -141,26 +149,16 @@ def dispose_fixed_asset(
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),
 ):
-    """处置（报废/出售）固定资产
-
-    当 disposal_price > 0 且提供 bank_account_id 时，会同步创建银行流水（inflow）
-    并更新银行账户余额，与总账 1002 科目保持一致。
-    未提供 bank_account_id 时仅更新总账（向后兼容旧行为）。
-    """
-    from datetime import datetime as _dt
-    parsed_date = None
-    if disposal_date:
-        try:
-            # date 类没有 strptime，必须用 datetime.strptime 再 .date()
-            parsed_date = _dt.strptime(disposal_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
-                                message=f"disposal_date 格式错误: {disposal_date}，应为 YYYY-MM-DD")
+    """处置（报废/出售）固定资产"""
     with unit_of_work(db):
-        eng = FixedAssetEngine(db, account_id)
-        eng.record_disposal(asset_id, disposal_price, disposal_date=parsed_date,
-                             bank_account_id=bank_account_id)
-    return {"message": "固定资产已处置"}
+        return dispatch(DisposeFixedAsset(
+            account_id=account_id,
+            operator=operator,
+            asset_id=asset_id,
+            disposal_price=disposal_price,
+            disposal_date=disposal_date,
+            bank_account_id=bank_account_id,
+        ), db)
 
 
 @router.put("/{asset_id}/with-invoice")

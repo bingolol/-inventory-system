@@ -5,6 +5,17 @@ from sqlalchemy.orm import sessionmaker
 from database import Base, SecureSession, _guard_execute
 
 
+@pytest.fixture(autouse=True)
+def reset_security_state():
+    """每个安全测试前强制重置全局维护模式与写令牌，避免被其他模块污染"""
+    from database import set_maintenance_mode, _request_write_perm
+    set_maintenance_mode(False)
+    _request_write_perm.set(False)
+    yield
+    set_maintenance_mode(False)
+    _request_write_perm.set(False)
+
+
 @pytest.fixture
 def db():
     """为安全测试创建专用 in-memory 引擎 + SecureSession"""

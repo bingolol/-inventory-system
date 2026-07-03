@@ -2,18 +2,14 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import datetime
 
 from database import get_db
 from models import BankTransaction
 from schemas.bank import BankTransactionCreate, BankTransactionOut
 from account_dep import get_account_id, get_operator
-from errors import BusinessError, ErrorCode
 from uow import unit_of_work
-from crud.base import log_op
-from crud.reversal import reverse_bank_transaction
-from engine_bank import BankEngine
+from commands.base import dispatch
+from commands.bank_commands import CreateBankTransaction
 
 router = APIRouter()
 
@@ -49,18 +45,8 @@ def create_bank_transaction(
 ):
     """录入银行流水"""
     with unit_of_work(db):
-        # 经 BankEngine.record_transaction 统一入口写入（含行锁、透支校验、余额同步）
-        transaction = BankEngine(db, account_id).record_transaction(
-            bank_account_id=data.bank_account_id,
-            transaction_type=data.transaction_type,
-            amount=data.amount,
-            transaction_date=data.transaction_date,
-            description=data.description,
-            reference_no=data.reference_no,
-        )
-        log_op(db, account_id, "create", "bank_transaction", transaction.id,
-             f"录入银行流水: {data.transaction_type} {transaction.amount_l2}", operator=operator)
-
-    db.refresh(transaction)
-    return BankTransactionOut.model_validate(transaction)
-
+        return dispatch(CreateBankTransaction(
+            account_id=account_id,
+            operator=operator,
+            data=data,
+        ), db)

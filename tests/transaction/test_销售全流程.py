@@ -338,31 +338,40 @@ class Test创建销售单:
         # BS AR >= 0 作为基本合理性检查
         assert ar_reported >= Decimal("0"), f"AR为负数: {ar_reported}"
 
+    @pytest.mark.golden
     def test_t1_net_profit_equals_retained_earnings_delta(self, client, db, ids):
-        """净利润 = 未分配利润变动额"""
-        from models import OpeningBalance
-        ob = db.query(OpeningBalance).filter(OpeningBalance.account_id == 1).first()
-        opening_re = round2(Decimal(str(ob.retained_earnings_l1))) if ob else Decimal("0.00")
+        """净利润 = 未分配利润变动额
+
+        取期初资产负债表（start_date 前一天）的未分配利润作为 opening，
+        避免模块内其他测试用 2025 年的销售单污染期初余额。
+        """
+        start_date = "2026-01-01"
+        end_date = "2026-12-31"
 
         resp_is = client.get("/api/financial-reports/income-statement",
-                             params={"start_date": "2026-01-01", "end_date": "2026-12-31"},
+                             params={"start_date": start_date, "end_date": end_date},
                              headers=HEADERS)
+        resp_bs_open = client.get("/api/financial-reports/balance-sheet",
+                                  params={"date": "2025-12-31"}, headers=HEADERS)
         resp_bs = client.get("/api/financial-reports/balance-sheet",
-                             params={"date": "2026-12-31"}, headers=HEADERS)
+                             params={"date": end_date}, headers=HEADERS)
         if resp_is.status_code != 200 or resp_bs.status_code != 200:
             pytest.skip("财报接口暂不可用")
 
         net_profit = round2(Decimal(str(resp_is.json().get("net_profit", 0))))
+        opening_re = round2(Decimal(str(resp_bs_open.json().get("retained_earnings", 0)))) \
+            if resp_bs_open.status_code == 200 else Decimal("0.00")
         ending_re = round2(Decimal(str(resp_bs.json().get("retained_earnings", 0))))
         delta_re = round2(ending_re - opening_re)
         assert abs(net_profit - delta_re) <= Decimal("0.01"), \
-            f"净利润({net_profit}) ≠ 未分配利润变动({delta_re})"
+            f"净利润({net_profit}) ≠ 未分配利润变动({delta_re}) (opening={opening_re}, ending={ending_re})"
 
         total_assets = round2(Decimal(str(resp_bs.json().get("total_assets", 0))))
         total_l_e = round2(Decimal(str(resp_bs.json().get("total_liabilities_and_equity", 0))))
         assert abs(total_assets - total_l_e) <= Decimal("0.01"), \
             f"资产负债表不平衡: 资产{total_assets} ≠ 负债+权益{total_l_e}"
 
+    @pytest.mark.golden
     def test_t6_surcharge_equals_vat_times_12_percent(self, client, db, ids):
         """附加税 = 增值税 × 12%"""
         out_tax = db.query(sqlfunc.sum(Invoice.tax_amount_l1)).filter(
@@ -379,6 +388,7 @@ class Test创建销售单:
                 total_revenue=Decimal("0"),
                 taxpayer_type="general",
                 input_tax=in_tax,
+                output_tax=out_tax,
             )
             expected_surcharge = (vat_payable * Decimal("0.12")).quantize(Decimal("0.01"))
             actual_surcharge = (
@@ -391,6 +401,7 @@ class Test创建销售单:
                 total_revenue=Decimal("100000"),
                 taxpayer_type="general",
                 input_tax=Decimal("8000"),
+                output_tax=Decimal("13000"),
             )
             actual_surcharge = (
                 result.surcharge_urban_construction + result.surcharge_education + result.surcharge_local_education

@@ -9,7 +9,7 @@ from models_finance import (
 )
 from accounting_engine import AccountingError, AccountingErrorCode
 from engine_ledger import LedgerEngine
-from lineage import writes, derives, TIER_L1, TIER_L2
+from lineage import writes, reads, derives, TIER_L1, TIER_L2
 from rules import enforce_rules
 
 
@@ -36,11 +36,6 @@ class JournalEngine:
         self.db = db
         self.ledger_engine = LedgerEngine(db)
 
-    @writes("AccountMove.date_l1", tier=TIER_L1, source="external")
-    @writes("AccountMove.amount_total_l2", tier=TIER_L2, source="engine")
-    @writes("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
-    @writes("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
-    @writes("AccountMoveLine.amount_residual_l2", tier=TIER_L2, source="engine")
     def post(self, ledger_id: int, move_type: str, source: dict) -> AccountMove:
         lines, journal_code, validation = self._build(move_type, source)
 
@@ -52,7 +47,8 @@ class JournalEngine:
         else:
             date_str = str(date_val or "")
 
-        name = generate_voucher_number(self.db, ledger_id, journal_code, date_str)
+        move_name = source.get("move_name")
+        name = move_name if move_name else generate_voucher_number(self.db, ledger_id, journal_code, date_str)
         move_date = date_val if isinstance(date_val, date) else datetime.strptime(date_str, "%Y-%m-%d").date()
 
         move = AccountMove(
@@ -64,6 +60,8 @@ class JournalEngine:
             source_model=source.get("source_model"),
             source_id=source.get("source_id"),
             amount_total_l2=sum(Decimal(str(l["debit"])) for l in lines),
+            is_reversal=source.get("is_reversal", False),
+            reversed_entry_id=source.get("reversed_entry_id"),
         )
         self.db.add(move)
         self.db.flush()
@@ -115,6 +113,7 @@ class JournalEngine:
             "bank_fee_entry":          self._build_bank_fee_entry,
             "personal_advance":        self._build_personal_advance,
             "personal_advance_repay":  self._build_personal_advance_repay,
+            "reverse_entry":           self._build_reverse_entry,
         }
         builder = builders.get(move_type)
         if not builder:
@@ -606,6 +605,42 @@ class JournalEngine:
 
         return lines, "PRET", {"balance_check": True}
 
+    @reads("AccountMove.amount_total_l2", tier=TIER_L2, source="engine")
+    @reads("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
+    @reads("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
+    @reads("AccountMoveLine.amount_residual_l2", tier=TIER_L2, source="engine")
+    def _build_reverse_entry(self, source):
+        """通用冲红凭证：读取原凭证，按行借贷互换生成红字分录
+
+        source 必填字段:
+        - original_move_id: 被冲红的原凭证 ID
+        """
+        self._check_required(source, ["original_move_id"])
+        original_id = source["original_move_id"]
+        original = self.db.query(AccountMove).filter(
+            AccountMove.id == original_id,
+            AccountMove.is_reversal == False,
+        ).first()
+        if not original:
+            raise AccountingError(
+                AccountingErrorCode.LINE_NOT_FOUND,
+                f"找不到可冲红的原凭证: move_id={original_id}",
+            )
+
+        lines = []
+        for ol in original.line_ids:
+            lines.append({
+                "account_code": self._get_account_code(ol.ledger_account_id),
+                "debit": ol.credit_l2 or Decimal("0"),
+                "credit": ol.debit_l2 or Decimal("0"),
+                "partner_id": ol.partner_id,
+                "partner_type": ol.partner_type,
+            })
+
+        # 沿用原凭证 journal prefix，使凭证号序列与原业务类型一致
+        journal_code = original.name.split("-")[0] if "-" in original.name else "REV"
+        return lines, journal_code, {"balance_check": True}
+
     def _validate(self, lines: list, validation: dict):
         if validation.get("balance_check"):
             total_debit = sum(l["debit"] for l in lines)
@@ -640,3 +675,13 @@ class JournalEngine:
             raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
                 f"科目编码不存在: {account_code}")
         return account.id
+
+    def _get_account_code(self, ledger_account_id: int) -> str:
+        """由 ledger_account_id 反查科目编码（冲红时复用原分录科目）"""
+        account = self.db.query(LedgerAccount).filter(
+            LedgerAccount.id == ledger_account_id,
+        ).first()
+        if not account:
+            raise AccountingError(AccountingErrorCode.ACCOUNT_NOT_FOUND,
+                f"科目不存在: id={ledger_account_id}")
+        return account.code

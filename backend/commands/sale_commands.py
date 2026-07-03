@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any, List, Optional
 
 import models
@@ -18,15 +18,16 @@ from events import emit
 from domain.sale_order import SaleOrderDomain
 
 from .base import Command, CommandHandler, register
-from crud.base import _generate_order_no
+from crud.base import gen_order_no as _generate_order_no
 from crud.products import get_product
-from crud.orders import get_sale_order, _d, _distribute_total_price
-from crud.reversal import reverse_receipts
+from crud.orders import get_sale_order, _distribute_total_price
+from utils import _d
 from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
 from lineage import reads, writes, TIER_L1, TIER_L2, TIER_L3
+from .order_lifecycle import OrderLifecycle
 
 
 # ═══════════════════════════════════════════════════════════
@@ -36,7 +37,7 @@ from lineage import reads, writes, TIER_L1, TIER_L2, TIER_L3
 @dataclass
 class CreateSaleOrder(Command):
     customer_id: Optional[int] = None
-    deduct_inventory: bool = True
+    deduct_inventory: bool = True  # 保留参数，OrderLifecycle 中恒按 True 处理
     payment_status: str = PaymentStatus.UNPAID
     has_invoice: bool = True  # 散客现金销售不开发票时传 False(未开票收入仍需申报销项税)
     notes: str = ""
@@ -50,123 +51,21 @@ class CreateSaleOrder(Command):
 class CreateSaleOrderHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
-    @writes("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
-    @writes("SaleOrder.tax_amount_l1", tier=TIER_L1, source="external")
-    @writes("SaleOrder.has_invoice_l1", tier=TIER_L1, source="external")
-    @writes("SaleOrder.sale_date_l1", tier=TIER_L1, source="external")
-    @writes("SaleItem.quantity_l1", tier=TIER_L1, source="external")
-    @writes("SaleItem.unit_price_l1", tier=TIER_L1, source="external")
-    @writes("SaleItem.tax_rate_l1", tier=TIER_L1, source="external")
-    @writes("SaleItem.total_price_l1", tier=TIER_L1, source="external")
-    @writes("SaleItem.unit_cost_l2", tier=TIER_L2, source="engine")
     def handle(self, cmd: CreateSaleOrder, db: Any) -> Any:
-        # 1. 校验
-        if not cmd.items:
-            raise BusinessError(code=ErrorCode.ORDER_EMPTY_ITEMS, data={"order_type": "销售单"})
-        product_ids = [it['product_id'] for it in cmd.items]
-        dup_pids = [pid for pid, cnt in Counter(product_ids).items() if cnt > 1]
-        if dup_pids:
-            raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
-
-        # 1a. 业务日期必填（级联到凭证日期和库存移动日期，不能用当前时间兜底）
-        if not cmd.sale_date:
-            raise BusinessError(
-                code=ErrorCode.VALIDATION_ERROR,
-                message="销售日期不能为空，请提供业务发生日期",
-                ai_instruction="STOP_RETRYING. sale_date 字段必填，请补充销售业务日期（如 2025-06-28）。"
-            )
-
-        # 2. 生成订单号
-        order_no = _generate_order_no(db, "SO", cmd.sale_date)
-
-        # 3. 创建订单头
-        sale_dt = datetime.fromisoformat(cmd.sale_date) if isinstance(cmd.sale_date, str) else cmd.sale_date
-        order = models.SaleOrder(
+        return OrderLifecycle.create_sale_order(
+            db=db,
             account_id=cmd.account_id,
-            order_no=order_no,
+            operator=cmd.operator,
+            items=cmd.items,
+            sale_date=cmd.sale_date,
             customer_id=cmd.customer_id,
-            order_type=OrderType.RETAIL,
-            payment_status=cmd.payment_status,
-            has_invoice_l1=cmd.has_invoice,
-            status=OrderStatus.PENDING,
+            total_price=cmd.total_price,
+            has_invoice=cmd.has_invoice,
             notes=cmd.notes,
             image_url=cmd.image_url,
-            total_price_l1=0,
-            sale_date_l1=sale_dt,
+            payment_status=cmd.payment_status,
+            deduct_inventory=cmd.deduct_inventory,
         )
-        db.add(order)
-        db.flush()
-
-        # 4. 计算明细 + 创建行
-        items_data = []
-        total = Decimal('0')
-        for it in cmd.items:
-            product = get_product(db, cmd.account_id, it['product_id'])
-            if not product:
-                raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
-            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
-            items_data.append({
-                'product_id': it['product_id'],
-                'quantity': it['quantity'],
-                'unit_price': it['unit_price'],
-                'tax_rate': it.get('tax_rate', Decimal('0.01')),
-                'total_price': line_total,
-            })
-            total += line_total
-
-        # 5. 自定义金额分配
-        if cmd.total_price is not None:
-            _distribute_total_price(items_data, cmd.total_price)
-
-        # 6. 创建 SaleItem 行
-        for it in items_data:
-            item = models.SaleItem(
-                order_id=order.id,
-                product_id=it['product_id'],
-                quantity_l1=it['quantity'],
-                unit_price_l1=it['unit_price'],
-                tax_rate_l1=it['tax_rate'],
-                total_price_l1=it['total_price'],
-            )
-            db.add(item)
-
-        final_total = sum(_d(it['total_price']) for it in items_data)
-        order.total_price_l1 = _d(cmd.total_price) if cmd.total_price is not None else final_total.quantize(Q2)
-        db.flush()
-
-        # 7. Domain 状态机转换：pending → completed
-        domain = SaleOrderDomain.from_orm(order)
-        violations = domain.validate()
-        if violations:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"销售单校验失败: {'; '.join(violations)}"})
-        domain.transition_to(OrderStatus.COMPLETED)
-        order.status = domain.status
-        db.flush()
-
-        # 8. 显式联动：InventoryEngine 出库 + 生成会计凭证
-        if cmd.deduct_inventory:
-            for item in order.items:
-                product = get_product(db, cmd.account_id, item.product_id)
-                if product.track_inventory_l3:
-                    unit_cost = InventoryEngine(db).outbound(
-                        account_id=cmd.account_id,
-                        product_id=item.product_id,
-                        quantity=item.quantity_l1,
-                        source_type="sale_order",
-                        source_id=order.id,
-                        operator=cmd.operator,
-                    )
-                    item.set_calculated_cost(unit_cost)
-                else:
-                    item.set_calculated_cost(Decimal("0"))
-            FinanceEngine(db, cmd.account_id).record_sale(order)
-
-        # 9. 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
-        emit("sale_order.created", db=db, account_id=cmd.account_id, order=order, operator=cmd.operator,
-             log_action="create",
-             log_detail=f"创建销售单 {order_no}: {len(cmd.items)}项商品, 总价={total}")
-        db.flush()
-        return order
 
 
 # ═══════════════════════════════════════════════════════════
@@ -181,46 +80,13 @@ class CancelSaleOrder(Command):
 @register(CancelSaleOrder)
 class CancelSaleOrderHandler(CommandHandler):
     def handle(self, cmd: CancelSaleOrder, db: Any) -> Any:
-        order = get_sale_order(db, cmd.account_id, cmd.order_id)
-        if not order:
-            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
-
-        old_status = order.status
-
-        # Domain 状态机校验 + 转换
-        domain = SaleOrderDomain.from_orm(order)
-        violations = domain.validate()
-        if violations:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": f"销售单校验失败: {'; '.join(violations)}"})
-        domain.transition_to(OrderStatus.CANCELLED)
-        order.status = domain.status
-
-        # 显式联动：InventoryEngine 回补库存（BR-7: StockMove 真相源）
-        eng = InventoryEngine(db)
-        for item in order.items:
-            eng.reverse(
-                account_id=cmd.account_id,
-                product_id=item.product_id,
-                quantity=item.quantity_l1,
-                unit_cost=Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0'),
-                source_type="sale_order",
-                source_id=order.id,
-                operator=cmd.operator,
-            )
-
-        # 显式联动：冲销收款记录 + 银行流水
-        reverse_receipts(db, cmd.account_id, cmd.order_id)
-
-        # 显式联动：冲红会计凭证
-        FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
-
-        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
-        emit("sale_order.cancelled", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, old_status=old_status,
-             log_action="update",
-             log_detail=f"取消销售单 {order.order_no}: 状态={old_status}->cancelled")
-        db.flush()
-        return order
+        return OrderLifecycle.cancel_or_delete_sale_order(
+            db=db,
+            account_id=cmd.account_id,
+            operator=cmd.operator,
+            order_id=cmd.order_id,
+            delete=False,
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -474,46 +340,23 @@ class DeleteSaleOrder(Command):
 @register(DeleteSaleOrder)
 class DeleteSaleOrderHandler(CommandHandler):
     def handle(self, cmd: DeleteSaleOrder, db: Any) -> Any:
+        # Domain 校验是否可删除
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:
-            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": cmd.order_id})
-
-        # Domain 校验是否可删除
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND,
+                                data={"order_type": "销售单", "order_id": cmd.order_id})
         domain = SaleOrderDomain.from_orm(order)
         if not domain.can_delete():
-            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE, data={"status": order.status, "action": "删除"})
+            raise BusinessError(code=ErrorCode.ORDER_INVALID_STATE,
+                                data={"status": order.status, "action": "删除"})
 
-        # 显式联动：InventoryEngine 回补库存（BR-7: StockMove 真相源）
-        if order.status == OrderStatus.COMPLETED:
-            eng = InventoryEngine(db)
-            for item in order.items:
-                eng.reverse(
-                    account_id=cmd.account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity_l1,
-                    unit_cost=Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0'),
-                    source_type="sale_order",
-                    source_id=order.id,
-                    operator=cmd.operator,
-                )
-
-        # 显式联动：冲销收款记录 + 银行流水
-        reverse_receipts(db, cmd.account_id, cmd.order_id)
-
-        # 显式联动：冲红会计凭证
-        if order.status == OrderStatus.COMPLETED:
-            FinanceEngine(db, cmd.account_id).reverse_sale(order.id)
-
-        # 事件（Emit-as-Log：emit 携带 log 元数据，由 handlers.py 单写一条 OperationLog）
-        emit("sale_order.deleted", db=db, account_id=cmd.account_id, order=order,
-             operator=cmd.operator, old_status=order.status,
-             log_action="delete",
-             log_detail=f"删除销售单 {order.order_no}: 状态={order.status}")
-
-        # 删除
-        db.delete(order)
-        db.flush()
-        return True
+        return OrderLifecycle.cancel_or_delete_sale_order(
+            db=db,
+            account_id=cmd.account_id,
+            operator=cmd.operator,
+            order_id=cmd.order_id,
+            delete=True,
+        )
 
 
 # ═══════════════════════════════════════════════════════════

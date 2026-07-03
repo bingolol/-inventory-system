@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from crud.base import get_account
 from accounting_engine import AccountingError
 from models_finance import (
-    Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine,
+    Ledger, LedgerAccount, LedgerAccountBalance, AccountMove,
 )
 from engine_journal import JournalEngine
 from errors import BusinessError, ErrorCode
@@ -157,6 +157,11 @@ def _calc_tax_from_items(total_with_tax: Decimal, items: list) -> dict:
     return {"tax_amount": tax_amount, "total_without_tax": total_without_tax}
 
 
+@writes("AccountMove.date_l1", tier=TIER_L1, source="external")
+@writes("AccountMove.amount_total_l2", tier=TIER_L2, source="engine")
+@writes("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
+@writes("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
+@writes("AccountMoveLine.amount_residual_l2", tier=TIER_L2, source="engine")
 def post_journal(
     db: Session,
     account_id: int,
@@ -237,36 +242,17 @@ def reverse_journal(
     # 反向流水 move_date（也是从原单据取业务日期）保持一致。否则 BS 报表按 cutoff
     # 过滤时，StockMove 反向流水会进表但 AccountMove 反向凭证不会进表，
     # 造成"库存值包含冲回、利润不含冲回"的资产与权益错配（典型 diff=40000 不平）。
-    reversal = AccountMove(
-        ledger_id=original.ledger_id,
-        name=f"冲红-{original.name}",
-        move_type=original.move_type,
-        date_l1=reversal_date or original.date_l1,
-        state="posted",
-        source_model=source_model,
-        source_id=source_id,
-        amount_total_l2=original.amount_total_l2,
-        reversed_entry_id=original.id,
-        is_reversal=True,
-    )
-    db.add(reversal)
-    db.flush()
-
-    for ol in original.line_ids:
-        rl = AccountMoveLine(
-            move_id=reversal.id,
-            ledger_account_id=ol.ledger_account_id,
-            debit_l2=ol.credit_l2,
-            credit_l2=ol.debit_l2,
-            partner_id=ol.partner_id,
-            partner_type=ol.partner_type,
-            amount_residual_l2=ol.credit_l2 or ol.debit_l2,
-        )
-        db.add(rl)
-        db.flush()
-        engine.ledger_engine.update_balance(rl)
-
-    # AS-01 借贷平衡校验：冲红凭证生成后必须保持借方=贷方
-    enforce_rules(db, ["AS-01"], {"move_id": reversal.id})
-
-    return reversal
+    source = {
+        "original_move_id": original.id,
+        "date": reversal_date or original.date_l1,
+        "source_model": source_model,
+        "source_id": source_id,
+        "is_reversal": True,
+        "reversed_entry_id": original.id,
+        "move_name": f"冲红-{original.name}",
+    }
+    # 通过 JournalEngine.post 统一 seam 生成冲红凭证，
+    # 使 @writes 声明覆盖全部凭证路径，并复用 post 内部的 AS-01 校验与余额更新。
+    move = engine.post(original.ledger_id, "reverse_entry", source)
+    enforce_rules(db, ["AS-15"], {"move_id": move.id})
+    return move

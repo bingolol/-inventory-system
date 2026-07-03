@@ -454,6 +454,56 @@ def check_as07(db: Session, context: dict) -> List[RuleViolation]:
 
 
 # ═══════════════════════════════════════════════════════════════
+# AS-15: 冲红凭证日期一致性
+# ═══════════════════════════════════════════════════════════════
+
+def check_as15(db: Session, context: dict) -> List[RuleViolation]:
+    """AS-15 校验:反向凭证日期与原凭证一致
+
+    context:
+    - move_id: 反向凭证ID(新生成的冲红凭证)
+    """
+    violations = []
+    move_id = context.get("move_id")
+    if not move_id:
+        return violations
+
+    from models_finance import AccountMove
+
+    reversal = db.query(AccountMove).filter(AccountMove.id == move_id).first()
+    if not reversal or not reversal.is_reversal or not reversal.reversed_entry_id:
+        return violations
+
+    original = db.query(AccountMove).filter(AccountMove.id == reversal.reversed_entry_id).first()
+    if not original:
+        return violations
+
+    rev_date = reversal.date_l1
+    orig_date = original.date_l1
+
+    if hasattr(rev_date, "date"):
+        rev_date = rev_date.date() if hasattr(rev_date, "date") else rev_date
+    if hasattr(orig_date, "date"):
+        orig_date = orig_date.date() if hasattr(orig_date, "date") else orig_date
+
+    if rev_date != orig_date:
+        violations.append(_make_violation(
+            "AS-15",
+            f"冲红凭证 {move_id} 日期 {rev_date} 与原凭证 {original.id} 日期 {orig_date} 不一致",
+            fix_hint="检查 reverse_journal 的 reversal_date 参数,应使用原凭证日期",
+            field="AccountMove.date_l1",
+            detail={
+                "reversal_move_id": move_id,
+                "original_move_id": original.id,
+                "reversal_date": str(rev_date),
+                "original_date": str(orig_date),
+            },
+        ))
+
+    return violations
+
+
+# ═══════════════════════════════════════════════════════════════
 # 统一入口
 # ═══════════════════════════════════════════════════════════════
 
@@ -466,6 +516,7 @@ RUNTIME_CHECKS = {
     "AS-05": check_as05,
     "AS-06": check_as06,
     "AS-07": check_as07,
+    "AS-15": check_as15,
 }
 
 

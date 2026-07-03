@@ -9,6 +9,13 @@ from errors import BusinessError, ErrorCode
 Q2 = Decimal('0.01')
 
 
+def _d(value) -> Decimal:
+    """安全转换为 Decimal，None → 0"""
+    if value is None:
+        return Decimal('0')
+    return Decimal(str(value))
+
+
 def to_decimal(val):
     """安全转换为 Decimal"""
     if val is None:

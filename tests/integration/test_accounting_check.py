@@ -68,9 +68,10 @@ class TestCheckAmortization:
         assert "原值必须大于0" in data["violations"][0]
 
 
+@pytest.mark.golden
 class TestCheckVat:
     def test_vat_general(self, client):
-        resp = client.get("/api/accounting/vat?total_revenue=100000&taxpayer_type=general&input_tax=3000", headers=HEADERS)
+        resp = client.get("/api/accounting/vat?total_revenue=100000&taxpayer_type=general&input_tax=3000&output_tax=13000", headers=HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True

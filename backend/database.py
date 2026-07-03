@@ -193,6 +193,10 @@ def _create_immutable_triggers():
          "AccountMove 是会计凭证真相源，禁止 UPDATE，错误更正请通过红字冲销实现"),
         ("trg_immutable_depreciations", "fixed_asset_depreciations",
          "FixedAssetDepreciation 是折旧真相源，禁止 UPDATE"),
+        ("trg_immutable_bank_transactions", "bank_transactions",
+         "BankTransaction 是银行流水真相源，禁止 UPDATE"),
+        ("trg_immutable_amortizations", "intangible_asset_amortizations",
+         "IntangibleAssetAmortization 是摊销流水真相源，禁止 UPDATE"),
     ]
 
     # 进入维护模式绕过 DDL 拦截

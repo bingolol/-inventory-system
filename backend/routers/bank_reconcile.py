@@ -1,6 +1,5 @@
 """银行对账 API"""
 from datetime import datetime
-from decimal import Decimal
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -15,9 +14,8 @@ from commands.bank_reconcile import (
     ImportBankStatement, ReconcileBank, ForceMatchBankReconciliation,
     ConfirmBankReconciliation, GenerateReconciliationEntry,
 )
-from crud.base import log_op
 from errors import BusinessError, ErrorCode
-from operation_result import OperationResult, EntityType, OperationType
+from commands.bank_commands import CreateBankEntry
 
 router = APIRouter()
 
@@ -150,8 +148,8 @@ def get_reconciliation(
     ).all()
     return {
         "id": rec.id, "period": rec.period, "status": rec.status,
-        "book_balance": float(rec.book_balance), "statement_balance": float(rec.statement_balance),
-        "adjusted_book": float(rec.adjusted_book), "adjusted_statement": float(rec.adjusted_statement),
+        "book_balance": float(rec.book_balance_l4), "statement_balance": float(rec.statement_balance_l1),
+        "adjusted_book": float(rec.adjusted_book_l4), "adjusted_statement": float(rec.adjusted_statement_l4),
         "balanced": rec.balanced,
         "items": [{"id": i.id, "item_type": i.item_type, "amount": float(i.amount_l2),
                     "direction": i.direction, "resolved": i.resolved,
@@ -225,64 +223,13 @@ def create_bank_entry(
     operator: str = Depends(get_operator),
     db: Session = Depends(get_db),
 ):
-    """直接录入银行利息收入/手续费（无需走完整对账流程）
-
-    凭证锚点设计：BankTransaction.id 作为 AccountMove 的 source_id，
-    红冲时 reverse_journal(source_model="bank_entry", source_id=tx.id) 即可
-    借贷互换红冲原始凭证，无需 post_journal 生成补偿凭证。
-    """
-    import models
-    from finance_integration import post_journal
-
-    if body.entry_type not in ("interest_income", "bank_fee"):
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
-                            message=f"无效 entry_type: {body.entry_type}，仅支持 interest_income / bank_fee")
-
-    amt = Decimal(str(body.amount))
-    dt = datetime.strptime(body.transaction_date, "%Y-%m-%d")
-    direction = "in" if body.entry_type == "interest_income" else "out"
-
+    """直接录入银行利息收入/手续费（无需走完整对账流程）"""
     with unit_of_work(db):
-        from engine_bank import BankEngine
-        ba = db.query(models.BankAccount).filter(
-            models.BankAccount.account_id == account_id,
-        ).first()
-        if not ba:
-            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND)
-
-        # 1. 经 BankEngine.record_transaction 统一入口写入银行流水（含余额同步与透支校验）
-        tx = BankEngine(db, account_id).record_transaction(
-            bank_account_id=ba.id,
-            transaction_type="inflow" if direction == "in" else "outflow",
-            amount=amt,
-            transaction_date=dt,
-            description=body.description or body.entry_type,
-            flow_category="operating",
-        )
-        tx_id = tx.id
-
-        # 2. 用 tx.id 作为 source_id 过账，建立 BankTransaction ↔ AccountMove 一一对应
-        post_journal(db, account_id, "bank_fee_entry", {
-            "amount": amt,
-            "direction": direction,
-            "date": body.transaction_date,
-            "source_model": "bank_entry",
-            "source_id": tx_id,
-        })
-
-        log_op(db, account_id, "create", "bank_entry", tx_id,
-             f"{'利息收入' if body.entry_type == 'interest_income' else '手续费'}: {body.amount}",
-             operator=operator)
-
-    entry_label = "利息收入" if body.entry_type == "interest_income" else "手续费"
-    changes = {"cash": {"amount": f"+{body.amount}" if direction == "in" else f"-{body.amount}"}}
-
-    result = OperationResult(
-        operation=OperationType.CREATE,
-        entity_type=EntityType.BANK_ENTRY,
-        entity_id=tx_id,
-        summary=f"{entry_label}录入成功，金额 {body.amount}",
-        ai_hint=f"{entry_label}已录入，银行存款余额已更新。",
-        changes=changes,
-    )
-    return result.to_dict()
+        return dispatch(CreateBankEntry(
+            account_id=account_id,
+            operator=operator,
+            entry_type=body.entry_type,
+            amount=body.amount,
+            transaction_date=body.transaction_date,
+            description=body.description,
+        ), db)

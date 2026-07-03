@@ -178,13 +178,20 @@ class Test业务入口拦截:
         assert "enforce_rules" in src
         assert "AS-01" in src
 
-    def test_reverse_journal引用enforce_rules(self):
-        """finance_integration.reverse_journal 应调用 enforce_rules(AS-01)"""
-        import finance_integration
-        import inspect
-        src = inspect.getsource(finance_integration.reverse_journal)
-        assert "enforce_rules" in src
-        assert "AS-01" in src
+    def test_reverse_journal走post_seam(self):
+        """finance_integration.reverse_journal 应委托 JournalEngine.post 生成冲红凭证
+
+        AS-01 借贷平衡校验由 post 内部统一执行，reverse_journal 不再直接调用 enforce_rules。
+        直接读取源文件，避免 crud.personal 等无关模块的循环导入错误影响此测试。
+        """
+        from pathlib import Path
+        src_path = Path(__file__).resolve().parents[2] / "backend" / "finance_integration.py"
+        src = src_path.read_text(encoding="utf-8")
+        func_start = src.find("def reverse_journal(")
+        func_src = src[func_start:src.find("\ndef ", func_start + 1)]
+        assert "engine.post" in func_src
+        assert "reverse_entry" in func_src
+        assert "AccountMove(" not in func_src
 
     def test_invoice_commands引用enforce_rules(self):
         """CreateInvoiceHandler / ReverseInvoiceHandler 应调用 enforce_rules"""

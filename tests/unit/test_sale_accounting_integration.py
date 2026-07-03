@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime
 from decimal import Decimal
 
-from models import Account, Product, SaleOrder, SaleItem, Inventory
+from models import Account, Product, SaleOrder, SaleItem, Inventory, StockMove
 from models_finance import (
     Ledger, LedgerAccount, AccountMove, AccountMoveLine,
 )
@@ -53,6 +53,14 @@ def product(db):
     inv = Inventory(account_id=1, product_id=1, quantity_l4=100,
                     average_cost_l4=Decimal("8.00"), total_value_l4=Decimal("800.00"))
     db.add(inv)
+    db.flush()
+    # AS-03: 库存真相源为 StockMove，需保留期初流水
+    db.add(StockMove(
+        account_id=1, product_id=1,
+        quantity_l1=Decimal("100"), unit_cost_l2=Decimal("8.00"),
+        total_cost_l2=Decimal("800.00"), source_type="inventory_adjustment",
+        source_id=0, move_date_l1=datetime(2026, 1, 1),
+    ))
     db.commit()
     return p
 

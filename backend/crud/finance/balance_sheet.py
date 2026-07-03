@@ -144,8 +144,11 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
             ending_cash = opening_cash - total_payments + total_receipts
             ending_bank = Decimal('0')
 
-    # 应收账款 = 总账 1122
+    # 应收账款 = 总账 1122；总账为空时使用期初应收账款（L1 外部输入）
     accounts_receivable = _balance("1122").quantize(Q2)
+    opening_accounts_receivable = _d(opening_balance.accounts_receivable_l1) if opening_balance else Decimal('0')
+    if accounts_receivable == 0 and opening_accounts_receivable > 0:
+        accounts_receivable = opening_accounts_receivable
 
     # BR-7: 库存真相源是 StockMove 流水，Inventory 表仅为缓存。
     # 按 query_end 截止日期过滤 StockMove（关联业务单据日期），聚合期末存货数量与价值。
@@ -156,16 +159,23 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         if pid not in inv_agg:
             inv_agg[pid] = {"qty": Decimal("0"), "value": Decimal("0")}
         qty = Decimal(str(m.quantity_l1))
+        # total_cost_l2 符号与数量方向可能不完全一致（如销售退货为正值但成本为负），
+        # 统一用数量方向决定库存价值增减：数量>0 增加库存，数量<0 减少库存。
+        cost = _d(m.total_cost_l2)
+        value_delta = abs(cost) * (Decimal("1") if qty > 0 else Decimal("-1"))
         inv_agg[pid]["qty"] += qty
-        # StockMove.total_cost_l2 存的是绝对值，方向由 quantity_l1 正负表示
-        if qty > 0:
-            inv_agg[pid]["value"] += _d(m.total_cost_l2)
-        else:
-            inv_agg[pid]["value"] -= _d(m.total_cost_l2)
+        inv_agg[pid]["value"] += value_delta
     inventory_value = Decimal('0')
     for pid, agg in inv_agg.items():
         if agg["qty"] > 0:
             inventory_value += agg["value"]
+    # StockMove 无流水时，回退到期初存货价值（L1 外部输入）
+    opening_inventory_value = _d(opening_balance.inventory_value_l1) if opening_balance else Decimal('0')
+    if inventory_value == 0 and opening_inventory_value > 0:
+        inventory_value = opening_inventory_value
+
+    # 预付账款（1123）
+    prepayments = _balance("1123").quantize(Q2)
 
     # ── 非流动资产 ── 从总账取
     fixed_assets_original = _balance("1601").quantize(Q2)
@@ -179,16 +189,33 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     
     total_non_current_assets = fixed_assets_net + intangible_assets_net
 
-    # ── 流动负债 ── 从总账
+    # ── 流动负债 ── 从总账；总账为空时回退到期初负债（L1 外部输入）
     accounts_payable = _credit_balance("2202").quantize(Q2)
+    opening_accounts_payable = _d(opening_balance.accounts_payable_l1) if opening_balance else Decimal('0')
+    if accounts_payable == 0 and opening_accounts_payable > 0:
+        accounts_payable = opening_accounts_payable
+
     salaries_payable = _credit_balance("2211").quantize(Q2)  # 应付职工薪酬
     # 其他应付款 2241 — 个人垫付余额（含老板/员工替公司垫付形成的负债）
     other_payable = _credit_balance("2241").quantize(Q2)
 
-    # ── 应交税费 — 纯总账取数（月结后自动体现）──
+    # ── 应交税费 — 纯总账取数（月结后税金自动体现）──
     # 一般纳税人：222101→222106→222107 月结后余额在 222107
     # 小规模纳税人：直接用 222103，不走转出未交增值税机制，余额即应交税金
-    vat_payable = (_credit_balance("222107") + _credit_balance("222103")).quantize(Q2)
+    vat_credit = (_credit_balance("222101")  # 一般纳税人销项/应交的贷方余额
+                  + _credit_balance("222107")  # 一般纳税人月结后未交增值税
+                  + _credit_balance("222103")).quantize(Q2)  # 小规模纳税人应交增值税
+    # 留抵/待抵扣 = 进项相关科目的借方余额（一般纳税人：222102+222106）
+    vat_debit_balance = (_balance("222102") + _balance("222106")).quantize(Q2)
+    # 应交税费按净额列示：贷方净额负债，借方净额资产（留抵）
+    vat_net = vat_credit - vat_debit_balance
+    if vat_net > 0:
+        vat_payable = vat_net
+        prepaid_tax = Decimal("0")
+    else:
+        vat_payable = Decimal("0")
+        prepaid_tax = (-vat_net).quantize(Q2)
+
     # 应交附加税：兼容旧 222104 和新明细科目
     surcharge_liability = (_credit_balance("222104")
                            + _credit_balance("222110")
@@ -205,12 +232,9 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     income_tax_liability = _credit_balance("222105").quantize(Q2)
     personal_income_tax_liability = _credit_balance("222108").quantize(Q2)  # 代扣员工个税(业务因果链 E)
     tax_payable = (vat_payable + surcharge_liability + income_tax_liability + personal_income_tax_liability).quantize(Q2)
-    # 留抵 = 应交增值税借方余额（一般纳税人：222101+222102+222106，转出后剩余为留抵）
-    vat_debit = (_balance("222101") + _balance("222102") + _balance("222106"))
-    prepaid_tax = max(vat_debit, Decimal("0")).quantize(Q2)
 
     # ── 非流动负债 ──
-    long_term_borrowings = opening_long_term_borrowings
+    long_term_borrowings = _credit_balance("2501").quantize(Q2)
 
     # ── 利润构成（全从总账取，月结后税金自动体现）──
     period_revenue = (_credit_balance("6001") + _credit_balance("6051")).quantize(Q2)
@@ -247,7 +271,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable
-                            + inventory_value + prepaid_tax
+                            + prepayments + inventory_value + prepaid_tax
                             + _balance("1901").quantize(Q2))  # 待处理财产损溢
     total_assets = total_current_assets + total_non_current_assets
     total_non_current_liabilities = long_term_borrowings
@@ -264,7 +288,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         # 资产
         "monetary_funds": (ending_cash + ending_bank).quantize(Q2),
         "accounts_receivable": accounts_receivable.quantize(Q2),
-        "prepayments": prepaid_tax.quantize(Q2),
+        "prepayments": prepayments.quantize(Q2),
         "inventory": inventory_value.quantize(Q2),
         "total_current_assets": total_current_assets.quantize(Q2),
         "fixed_assets_original": fixed_assets_original.quantize(Q2),

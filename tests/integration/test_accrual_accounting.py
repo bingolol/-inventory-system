@@ -398,12 +398,7 @@ def test_pay_purchase(client):
         "contact": "王五",
         "phone": "13700137000"
     }, headers={"X-Account-ID": "1"})
-<<<<<<< Updated upstream
-    _sd = supplier_resp.json()
-    supplier_id = _sd.get("data", _sd)["id"]
-=======
     supplier_id = get_entity_id(supplier_resp.json())
->>>>>>> Stashed changes
 
     # 创建商品
     product_resp = client.post("/api/products", json={
@@ -804,7 +799,7 @@ def test_duplicate_payment(client):
         "bank_account_id": ba_id,
         "description": "第一次付款"
     }, headers={"X-Account-ID": "1"})
-    assert payment1_resp.status_code == 200
+    assert payment_resp.status_code == 200
 
     # 第二次付款
     payment2_resp = client.post("/api/payments", json={

@@ -86,8 +86,8 @@ def generate_cwbb_xqykjzz(
 
     # 期末资产负债表
     bs_end = generate_balance_sheet(db, account_id, end_date)
-    # 年初资产负债表（作为年初余额；若1月1日有交易，实务中通常以期末前一天的余额近似）
-    bs_start = generate_balance_sheet(db, account_id, year_start)
+    # 年初资产负债表取上年末余额，避免1月1日交易被计入年初数
+    bs_start = generate_balance_sheet(db, account_id, prior_end)
 
     # 利润表
     is_period = generate_income_statement(db, account_id, start_date, end_date)

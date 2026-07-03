@@ -62,13 +62,18 @@ class CreateProductHandler(CommandHandler):
         db.add(product)
         db.flush()
 
-        # 2. 创建初始库存记录
-        inv = models.Inventory(
-            account_id=cmd.account_id,
-            product_id=product.id,
-            quantity_l4=cmd.initial_stock,
-        )
-        db.add(inv)
+        # 2. 创建初始库存流水
+        if cmd.initial_stock > 0 and cmd.track_inventory:
+            unit_price = Decimal(str(cmd.purchase_price or "0"))
+            InventoryEngine(db).inbound(
+                account_id=cmd.account_id,
+                product_id=product.id,
+                quantity=cmd.initial_stock,
+                unit_price=unit_price,
+                source_type="product_opening",
+                source_id=product.id,
+                operator=cmd.operator,
+            )
 
         # 3. 日志
         log_op(db, cmd.account_id, "create", "product", product.id,

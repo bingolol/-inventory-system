@@ -28,8 +28,6 @@ from database import get_db, Base
 import database
 import models
 from helpers import get_entity_id
-<<<<<<< Updated upstream
-=======
 
 
 def _extract_data(resp_json):
@@ -41,7 +39,7 @@ def _extract_data(resp_json):
     if isinstance(resp_json, dict) and "data" in resp_json:
         return resp_json["data"]
     return resp_json
->>>>>>> Stashed changes
+
 from accounting_engine import AccountingEngine
 
 
@@ -93,6 +91,7 @@ def setup_db(monkeypatch):
 
 # ── 隔离验证测试 ──
 
+@pytest.mark.golden
 def test_database_isolation():
     """验证测试数据库与生产数据库完全隔离"""
     # 测试 engine 应该指向临时数据库
@@ -109,9 +108,12 @@ def test_database_isolation():
 @pytest.fixture(autouse=True)
 def disable_readonly_middleware(monkeypatch):
     from middleware.readonly_middleware import ReadonlyMiddleware
-    async def fake_dispatch(self, request, call_next):
-        return await call_next(request)
-    monkeypatch.setattr(ReadonlyMiddleware, 'dispatch', fake_dispatch)
+    original_call = ReadonlyMiddleware.__call__
+    async def fake_call(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await original_call(self, scope, receive, send)
+        return await self.app(scope, receive, send)
+    monkeypatch.setattr(ReadonlyMiddleware, '__call__', fake_call)
 
 
 @pytest.fixture
@@ -135,6 +137,7 @@ def _create_product(client):
 
 # ── Behavior 1: 发票含税金额 = 资产原值（Critical）──
 
+@pytest.mark.golden
 def test_invoice_amount_equals_asset_original_value(client):
     """发票含税金额必须等于固定资产原值，由代码强保证"""
     pid = _create_product(client)
@@ -170,6 +173,7 @@ def test_invoice_amount_equals_asset_original_value(client):
 
 # ── Behavior 2: 发票金额三件套自动计算且平衡（Critical）──
 
+@pytest.mark.golden
 def test_invoice_amounts_auto_calculated_and_balanced(client):
     """只传含税金额和税率，系统自动计算不含税金额和税额，且三者平衡"""
     pid = _create_product(client)
@@ -209,6 +213,7 @@ def test_invoice_amounts_auto_calculated_and_balanced(client):
 
 # ── Behavior 3: 事务回滚 — 资产创建失败 → 发票也撤销（High）──
 
+@pytest.mark.golden
 def test_rollback_on_duplicate_invoice(client):
     """发票号码重复时，整个事务回滚，发票和资产都不创建"""
     pid = _create_product(client)
@@ -269,6 +274,7 @@ def test_rollback_on_duplicate_invoice(client):
 
 # ── Behavior 4: 发票号码重复 → 整体拒绝（Medium）──
 
+@pytest.mark.golden
 def test_duplicate_invoice_number_returns_structured_error(client):
     """发票号码重复时返回结构化错误，包含错误码和AI指令"""
     pid = _create_product(client)
@@ -321,6 +327,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
 
 # ── Behavior 5: 返回值包含发票和资产完整信息（Medium）──
 
+@pytest.mark.golden
 def test_response_contains_complete_invoice_and_asset_info(client):
     """返回值包含发票和资产的完整信息，包括关联ID"""
     pid = _create_product(client)
@@ -380,6 +387,7 @@ def test_response_contains_complete_invoice_and_asset_info(client):
 
 # ── Behavior 6: 更新发票金额 → 资产原值自动同步（High）──
 
+@pytest.mark.golden
 def test_update_invoice_amount_syncs_asset(client):
     pid = _create_product(client)
     body = {
@@ -446,15 +454,12 @@ def test_delete_invoice_cascades_to_asset(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
-<<<<<<< Updated upstream
-    cr_data = create_resp.json()["data"]
-=======
     cr_data = _extract_data(create_resp.json())
->>>>>>> Stashed changes
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
     delete_resp = client.delete(f"/api/invoices/{invoice_id}", headers={"X-Account-ID": "1"})
+    print("DELETE invoice resp:", delete_resp.status_code, delete_resp.text[:300])
     assert delete_resp.status_code == 200
 
     invoice_list = client.get("/api/invoices", headers={"X-Account-ID": "1"})
@@ -470,6 +475,7 @@ def test_delete_invoice_cascades_to_asset(client):
 
 # ── Behavior 8: 更新资产原值 → 发票金额自动同步（Medium）──
 
+@pytest.mark.golden
 def test_update_asset_syncs_invoice_amount(client):
     """更新资产原值时，关联发票的含税金额自动同步"""
     pid = _create_product(client)
@@ -537,11 +543,7 @@ def test_delete_asset_clears_invoice_link(client):
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
     assert create_resp.status_code == 200
-<<<<<<< Updated upstream
-    cr_data = create_resp.json()["data"]
-=======
     cr_data = _extract_data(create_resp.json())
->>>>>>> Stashed changes
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
@@ -561,6 +563,7 @@ def test_delete_asset_clears_invoice_link(client):
 # Behavior 10: 发票金额计算使用 AccountingEngine
 # ═══════════════════════════════════════════════════════════
 
+@pytest.mark.golden
 def test_invoice_calculation_uses_accounting_engine(client):
     """验证发票金额计算使用 AccountingEngine，结果与直接调用一致"""
     pid = _create_product(client)

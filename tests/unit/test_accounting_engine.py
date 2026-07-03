@@ -207,6 +207,7 @@ def test_depreciation_sum_of_years_zero_life(engine):
 # Behavior 6: 增值税计算（High）
 # ═══════════════════════════════════════════════════════════
 
+@pytest.mark.golden
 def test_calculate_vat_small_scale_basic(engine):
     """小规模纳税人：不含税销售额100000，征收率3%，减按1%"""
     result = engine.calculate_vat(
@@ -247,39 +248,45 @@ def test_calculate_vat_invalid_type(engine):
 # Behavior 1: 一般纳税人增值税计算（销项-进项）
 # ═══════════════════════════════════════════════════════════
 
+@pytest.mark.golden
 def test_calculate_vat_general_taxpayer_basic(engine):
     """一般纳税人：销项税额 - 进项税额 = 应纳税额"""
     result = engine.calculate_vat(
         total_revenue=Decimal('100000'),  # 不含税销售额
         taxpayer_type='general',
-        input_tax=Decimal('8000')  # 进项税额
+        input_tax=Decimal('8000'),  # 进项税额
+        output_tax=Decimal('13000'),  # 销项税额（发票明细汇总）
     )
-    # 销项税额 = 100000 * 13% = 13000
+    # 销项税额 = 13000
     # 应纳税额 = 13000 - 8000 = 5000
     assert result.tax_payable_gross == Decimal('13000.00')
     assert result.tax_payable == Decimal('5000.00')
     assert result.tax_rate == Decimal('0.13')
 
 
+@pytest.mark.golden
 def test_calculate_vat_general_taxpayer_zero_input(engine):
     """一般纳税人：无进项税额"""
     result = engine.calculate_vat(
         total_revenue=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('0')
+        input_tax=Decimal('0'),
+        output_tax=Decimal('13000'),
     )
-    # 销项税额 = 100000 * 13% = 13000
+    # 销项税额 = 13000
     # 应纳税额 = 13000 - 0 = 13000
     assert result.tax_payable_gross == Decimal('13000.00')
     assert result.tax_payable == Decimal('13000.00')
 
 
+@pytest.mark.golden
 def test_calculate_vat_general_taxpayer_surcharge(engine):
     """一般纳税人：附加税计算"""
     result = engine.calculate_vat(
         total_revenue=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('8000')
+        input_tax=Decimal('8000'),
+        output_tax=Decimal('13000'),
     )
     # 应纳税额 = 5000
     # 城市维护建设税 = 5000 * 7% = 350
@@ -290,6 +297,7 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
     assert result.surcharge_local_education == Decimal('100.00')
 
 
+@pytest.mark.golden
 def test_calculate_vat_surcharge_uses_l3_policy_constants(engine, monkeypatch):
     """附加税必须从 L3 政策常量读取，禁止硬编码"""
     import accounting_engine as ae
@@ -300,7 +308,8 @@ def test_calculate_vat_surcharge_uses_l3_policy_constants(engine, monkeypatch):
     result = engine.calculate_vat(
         total_revenue=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('8000')
+        input_tax=Decimal('8000'),
+        output_tax=Decimal('13000'),
     )
     # 应纳税额 = 5000，按修改后的常量翻倍
     assert result.surcharge_urban_construction == Decimal('700.00')

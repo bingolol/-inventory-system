@@ -99,11 +99,29 @@ async def confirm_execute(token: str, request: Request):
             else:
                 headers[key_str] = val_str
 
-        # 发送请求
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # 发送请求：优先使用 ASGI app 直连（测试环境），否则走真实网络
+        try:
+            _app = request.app
+        except AttributeError:
+            _app = None
+
+        # 无论走 ASGI 直连还是真实网络，都要把 query_string 拼回 URL
+        request_url = path
+        if query_string:
+            request_url += f"?{query_string.decode('latin-1')}"
+
+        if _app:
+            from httpx import ASGITransport
+            transport = ASGITransport(app=_app)
+            client_kwargs = {"transport": transport, "base_url": "http://testserver", "timeout": 30.0}
+        else:
+            client_kwargs = {"timeout": 30.0}
+            request_url = url
+
+        async with httpx.AsyncClient(**client_kwargs) as client:
             response = await client.request(
                 method=method,
-                url=url,
+                url=request_url,
                 content=body,
                 headers=headers,
             )

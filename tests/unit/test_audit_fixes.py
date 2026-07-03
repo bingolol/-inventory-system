@@ -100,10 +100,19 @@ def product(db, small_scale_account):
                 purchase_price_l3=Decimal("100"), sale_price_l3=Decimal("200"),
                 track_inventory_l3=True)
     db.add(p)
+    db.flush()
     # 初始库存
     inv = Inventory(account_id=1, product_id=1, quantity_l4=100,
                     average_cost_l4=Decimal("100"), total_value_l4=Decimal("10000"))
     db.add(inv)
+    db.flush()
+    # AS-03: 库存真相源为 StockMove，必须保留一条期初流水与 Inventory 缓存一致
+    db.add(StockMove(
+        account_id=1, product_id=1,
+        quantity_l1=Decimal("100"), unit_cost_l2=Decimal("100"),
+        total_cost_l2=Decimal("10000"), source_type="inventory_adjustment",
+        source_id=0, move_date_l1=datetime(2026, 1, 1),
+    ))
     db.commit()
     return p
 

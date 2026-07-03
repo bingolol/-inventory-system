@@ -6,6 +6,7 @@ from decimal import Decimal
 from models import Account, SaleOrder, SaleItem, Product
 from enums import OrderStatus, PaymentStatus
 from crud.finance import generate_income_statement
+from finance_integration import post_journal
 
 
 @pytest.fixture
@@ -54,36 +55,61 @@ def _make_sale(db, account_id, total_price, items_data):
 class TestIncomeStatementRevenueCaliber:
     """利润表收入口径：一般纳税人不含税，小规模含税"""
 
-    @pytest.mark.xfail(reason="generate_income_statement now reads from general ledger, needs full accounting pipeline")
     def test_general_taxpayer_revenue_is_without_tax(self, db, general_account):
         """一般纳税人：收入=不含税金额"""
         prod = Product(id=100, account_id=10, name="商品G", sku="G-100",
-                       purchase_price_l3=Decimal("10"), track_inventory=False)
+                       purchase_price_l3=Decimal("10"), track_inventory_l3=False)
         db.add(prod)
         db.commit()
 
-        _make_sale(db, 10, Decimal("226.00"), [
+        so = _make_sale(db, 10, Decimal("226.00"), [
             {"product_id": 100, "quantity": 10, "unit_price": Decimal("20.00"),
              "tax_rate": Decimal("0.13"), "total_price": Decimal("226.00")},
         ])
+
+        post_journal(db, 10, "sale_order", {
+            "partner_id": 1,
+            "partner_type": "customer",
+            "total_with_tax": Decimal("226.00"),
+            "total_without_tax": Decimal("200.00"),
+            "tax_amount": Decimal("26.00"),
+            "items": [{"product_id": 100, "quantity": 10, "unit_cost": Decimal("0")}],
+            "date": datetime(2026, 6, 1),
+            "source_model": "sale_order",
+            "source_id": so.id,
+        })
+        db.commit()
 
         result = generate_income_statement(db, 10, "2026-01-01", "2026-12-31")
         revenue = result["revenue"]
         # 226 / 1.13 = 200.00
         assert revenue == Decimal("200.00"), f"一般纳税人收入应不含税: 预期200, 实际{revenue}"
 
-    @pytest.mark.xfail(reason="generate_income_statement now reads from general ledger, needs full accounting pipeline")
     def test_small_scale_revenue_is_with_tax(self, db, small_account):
         """小规模：收入=含税金额"""
         prod = Product(id=101, account_id=11, name="商品S", sku="S-101",
-                       purchase_price_l3=Decimal("10"), track_inventory=False)
+                       purchase_price_l3=Decimal("10"), track_inventory_l3=False)
         db.add(prod)
         db.commit()
 
-        _make_sale(db, 11, Decimal("200.00"), [
+        so = _make_sale(db, 11, Decimal("200.00"), [
             {"product_id": 101, "quantity": 10, "unit_price": Decimal("20.00"),
              "tax_rate": Decimal("0.01"), "total_price": Decimal("200.00")},
         ])
+
+        post_journal(db, 11, "sale_order", {
+            "partner_id": 1,
+            "partner_type": "customer",
+            "total_with_tax": Decimal("200.00"),
+            "total_without_tax": Decimal("200.00"),
+            "tax_amount": Decimal("0.00"),
+            "items": [{"product_id": 101, "quantity": 10, "unit_cost": Decimal("0")}],
+            "date": datetime(2026, 6, 1),
+            "source_model": "sale_order",
+            "source_id": so.id,
+            "account_config": {"taxpayer_type": "small_scale"},
+        })
+        db.commit()
 
         result = generate_income_statement(db, 11, "2026-01-01", "2026-12-31")
         revenue = result["revenue"]
