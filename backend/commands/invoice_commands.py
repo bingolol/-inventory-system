@@ -11,15 +11,14 @@ from typing import Any, Optional, List
 
 import models
 from enums import InvoiceDirection, InvoiceType, CertificationStatus
-from utils import _d, Q2
+from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
-from lineage import reads, TIER_L3
-from lineage import writes, TIER_L3
+from lineage import reads, writes, TIER_L1, TIER_L3
 from crud.invoice_linkage import validate_link_target
 from rules import enforce_rules
 
@@ -70,6 +69,11 @@ class CreateInvoice(Command):
 class CreateInvoiceHandler(CommandHandler):
     @writes("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
     @writes("Invoice.certification_date_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_with_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.issue_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateInvoice, db: Any) -> Any:
         # 1. 校验发票号码唯一性
         existing = db.query(models.Invoice).filter(
@@ -130,7 +134,7 @@ class CreateInvoiceHandler(CommandHandler):
 
         # 5.1 保存发票商品明细
         for it in cmd.items:
-            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+            line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
             inv_item = models.InvoiceItem(
                 invoice_id=db_invoice.id,
                 product_id=it['product_id'],
@@ -181,7 +185,7 @@ class CreateInvoiceHandler(CommandHandler):
         enforce_rules(db, ["AS-02"], {"invoice_id": db_invoice.id})
 
         # 6. 日志
-        _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
+        log_op(db, cmd.account_id, "create", "invoice", db_invoice.id,
              f"创建发票: {db_invoice.invoice_no} ({db_invoice.direction}/{db_invoice.invoice_type})",
              operator=cmd.operator)
         db.flush()
@@ -266,7 +270,7 @@ class UpdateInvoiceHandler(CommandHandler):
                 setattr(invoice, k, v)
 
         # 4. 日志
-        _log(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
+        log_op(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
              f"更新发票: {invoice.invoice_no}", operator=cmd.operator)
         db.flush()
         return invoice
@@ -300,7 +304,7 @@ class DeleteInvoiceHandler(CommandHandler):
             delete_old_image(invoice.image_url)
 
         # 3. 日志 + 删除
-        _log(db, cmd.account_id, "delete", "invoice", cmd.invoice_id,
+        log_op(db, cmd.account_id, "delete", "invoice", cmd.invoice_id,
              f"删除发票: {invoice.invoice_no}", operator=cmd.operator)
 
         db.delete(invoice)
@@ -353,7 +357,7 @@ class CertifyInvoiceHandler(CommandHandler):
         invoice.certification_date_l3 = datetime.now()
 
         # 4. 日志
-        _log(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
+        log_op(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
              f"认证发票: {invoice.invoice_no}", operator=cmd.operator)
         db.flush()
         return invoice
@@ -398,11 +402,16 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
     @writes("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
     @writes("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
     @writes("FixedAsset.depreciation_method_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_with_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.issue_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateInvoiceWithFixedAsset, db: Any) -> Any:
         # 使用 AccountingEngine 计算发票金额
         amounts = _engine.calculate_invoice_amounts(
-            amount_with_tax=_d(cmd.amount_with_tax),
-            tax_rate=_d(cmd.tax_rate)
+            amount_with_tax=to_decimal(cmd.amount_with_tax),
+            tax_rate=to_decimal(cmd.tax_rate)
         )
         amount_without_tax = amounts.amount_without_tax
         tax_amount = amounts.tax_amount
@@ -417,7 +426,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             invoice_no=cmd.invoice_no,
             direction=cmd.direction,
             invoice_type=cmd.invoice_type,
-            tax_rate_l1=_d(cmd.tax_rate),
+            tax_rate_l1=to_decimal(cmd.tax_rate),
             amount_without_tax_l1=amount_without_tax,
             tax_amount_l1=tax_amount,
             amount_with_tax_l1=amount_with_tax,
@@ -434,7 +443,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
 
         # 5.1 保存发票商品明细行（与 CreateInvoiceHandler 一致）
         for it in cmd.items:
-            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+            line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
             inv_item = models.InvoiceItem(
                 invoice_id=db_invoice.id,
                 product_id=it['product_id'],
@@ -476,11 +485,11 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             name=cmd.asset_name,
             category=cmd.category,
             original_value_l1=asset_original_value,
-            salvage_rate_l3=_d(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
+            salvage_rate_l3=to_decimal(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
             useful_life_l3=cmd.useful_life,
             depreciation_method_l3=cmd.depreciation_method,
             start_date_l1=start_date,
-            accumulated_depreciation_l4=_d(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
+            accumulated_depreciation_l4=to_decimal(cmd.accumulated_depreciation) if cmd.accumulated_depreciation else Decimal('0'),
             status=cmd.asset_status,
         )
         db.add(db_asset)
@@ -517,9 +526,9 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             "account_config": acct_conf,
         })
 
-        _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
+        log_op(db, cmd.account_id, "create", "invoice", db_invoice.id,
              f"创建固定资产发票: {db_invoice.invoice_no}", operator=cmd.operator)
-        _log(db, cmd.account_id, "create", "fixed_asset", db_asset.id,
+        log_op(db, cmd.account_id, "create", "fixed_asset", db_asset.id,
              f"创建固定资产: {db_asset.name}", operator=cmd.operator)
 
         return {"invoice": db_invoice, "asset": db_asset}
@@ -544,6 +553,11 @@ class ReverseInvoice(Command):
 class ReverseInvoiceHandler(CommandHandler):
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @writes("Invoice.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.amount_with_tax_l1", tier=TIER_L1, source="external")
+    @writes("Invoice.issue_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: ReverseInvoice, db: Any) -> Any:
         """红字发票冲红：标记原发票 + 创建红字发票 + 级联冲红凭证和库存
 
@@ -594,9 +608,9 @@ class ReverseInvoiceHandler(CommandHandler):
             direction=invoice.direction,
             invoice_type=invoice.invoice_type,
             tax_rate_l1=invoice.tax_rate_l1,
-            amount_without_tax_l1=-_d(invoice.amount_without_tax_l1),
-            tax_amount_l1=-_d(invoice.tax_amount_l1),
-            amount_with_tax_l1=-_d(invoice.amount_with_tax_l1),
+            amount_without_tax_l1=-to_decimal(invoice.amount_without_tax_l1),
+            tax_amount_l1=-to_decimal(invoice.tax_amount_l1),
+            amount_with_tax_l1=-to_decimal(invoice.amount_with_tax_l1),
             counterparty_name=invoice.counterparty_name,
             seller_name=invoice.seller_name,
             buyer_name=invoice.buyer_name,
@@ -738,7 +752,7 @@ class ReverseInvoiceHandler(CommandHandler):
 
                         eng_inv = InventoryEngine(db)
                         for item in sale_order.items:
-                            unit_cost = _d(item.unit_cost_l2) if item.unit_cost_l2 else Decimal('0')
+                            unit_cost = to_decimal(item.unit_cost_l2) if item.unit_cost_l2 else Decimal('0')
                             engine_inv_res = eng_inv.reverse(
                                 account_id=cmd.account_id,
                                 product_id=item.product_id,
@@ -767,7 +781,7 @@ class ReverseInvoiceHandler(CommandHandler):
             ).first()
             if purchase_order:
                 for item in purchase_order.items:
-                    unit_cost = _d(item.unit_price_l1) if item.unit_price_l1 else Decimal('0')
+                    unit_cost = to_decimal(item.unit_price_l1) if item.unit_price_l1 else Decimal('0')
                     engine_inv.reverse(
                         account_id=cmd.account_id,
                         product_id=item.product_id,
@@ -808,7 +822,7 @@ class ReverseInvoiceHandler(CommandHandler):
             cascade_lines.append("独立发票（无级联冲红）")
 
         # 6. 日志
-        _log(db, cmd.account_id, "reverse", "invoice", invoice.id,
+        log_op(db, cmd.account_id, "reverse", "invoice", invoice.id,
              f"红字发票冲红: {invoice.invoice_no} → {red_invoice_no}, 级联: {', '.join(cascade_lines)}",
              operator=cmd.operator)
         db.flush()
@@ -827,14 +841,14 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     使用 InventoryEngine.outbound() 创建 StockMove + set_calculated_cost 锁定成本（BR-7 合规），
     弃用直接改 inv.quantity 的 sale_deduct。
     """
-    from crud.base import _generate_order_no, _log
+    from crud.base import gen_order_no, log_op
     from enums import OrderStatus, OrderType, PaymentStatus
     from engine_inventory import InventoryEngine
     from crud.products import get_product
     from datetime import datetime as dt_mod
 
     issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
-    order_no = _generate_order_no(db, "SO", issue_dt)
+    order_no = gen_order_no(db, "SO", issue_dt)
 
     # 从发票 counterparty_name 查找或创建客户
     customer = db.query(models.Customer).filter(
@@ -858,15 +872,15 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
         payment_status=PaymentStatus.UNPAID,
         status=OrderStatus.COMPLETED,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
-        total_price_l1=_d(invoice.amount_with_tax_l1),
-        tax_amount_l1=_d(invoice.tax_amount_l1),
+        total_price_l1=to_decimal(invoice.amount_with_tax_l1),
+        tax_amount_l1=to_decimal(invoice.tax_amount_l1),
         sale_date_l1=invoice.issue_date_l1,
     )
     db.add(order)
     db.flush()
 
     for it in items:
-        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
         item = models.SaleItem(
             order_id=order.id,
             product_id=it['product_id'],
@@ -900,7 +914,7 @@ def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items
     from engine_finance import FinanceEngine
     FinanceEngine(db, account_id).record_sale(order)
 
-    _log(db, account_id, "create", "sale_order", order.id,
+    log_op(db, account_id, "create", "sale_order", order.id,
          f"发票 {invoice.invoice_no} 自动生成销售单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
          operator=operator)
     db.flush()
@@ -913,7 +927,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
     使用 InventoryEngine.inbound() 创建 StockMove（BR-7 合规）。
     按 counterparty_name 匹配已有供应商。
     """
-    from crud.base import _generate_order_no, _log
+    from crud.base import gen_order_no, log_op
     from crud.products import get_product
     from enums import OrderStatus, OrderType, PaymentMethod
     from engine_inventory import InventoryEngine
@@ -930,7 +944,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
 
     from datetime import datetime as dt_mod
     issue_dt = invoice.issue_date_l1 if isinstance(invoice.issue_date_l1, dt_mod) else dt_mod.combine(invoice.issue_date_l1, dt_mod.min.time())
-    order_no = _generate_order_no(db, "PO", issue_dt)
+    order_no = gen_order_no(db, "PO", issue_dt)
     order = models.PurchaseOrder(
         account_id=account_id,
         order_no=order_no,
@@ -940,7 +954,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         status=OrderStatus.COMPLETED,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
         total_price_l1=Decimal("0"),  # 下面逐行累加
-        tax_amount_l1=_d(invoice.tax_amount_l1),
+        tax_amount_l1=to_decimal(invoice.tax_amount_l1),
         purchase_date_l1=invoice.issue_date_l1,
     )
     db.add(order)
@@ -952,7 +966,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
         product = get_product(db, account_id, it['product_id'])
         if not product:
             raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
-        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        line_total = (Decimal(str(it['quantity'])) * to_decimal(it['unit_price'])).quantize(Q2)
         item = models.PurchaseItem(
             order_id=order.id,
             product_id=it['product_id'],
@@ -983,7 +997,7 @@ def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, i
     if calculated_data:
         FinanceEngine(db, account_id).record_purchase(order, calculated_data)
 
-    _log(db, account_id, "create", "purchase_order", order.id,
+    log_op(db, account_id, "create", "purchase_order", order.id,
          f"发票 {invoice.invoice_no} 自动生成采购单 {order_no}: 价税合计={invoice.amount_with_tax_l1}, 税额={invoice.tax_amount_l1}",
          operator=operator)
     db.flush()
@@ -1031,8 +1045,8 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
 
         # 3. 更新资产原值（如果传了）
         if cmd.original_value is not None:
-            original_value = _d(cmd.original_value)
-            old_value = _d(asset.original_value_l1)
+            original_value = to_decimal(cmd.original_value)
+            old_value = to_decimal(asset.original_value_l1)
             asset.original_value_l1 = original_value
 
             # 联动：发票金额同步（使用 AccountingEngine）
@@ -1137,7 +1151,7 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
         if cmd.category is not None:
             asset.category = cmd.category
         if cmd.salvage_rate is not None:
-            asset.salvage_rate_l3 = _d(cmd.salvage_rate)
+            asset.salvage_rate_l3 = to_decimal(cmd.salvage_rate)
         if cmd.useful_life is not None:
             asset.useful_life_l3 = cmd.useful_life
         if cmd.depreciation_method is not None:
@@ -1149,10 +1163,10 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
 
         db.flush()
 
-        _log(db, cmd.account_id, "update", "fixed_asset", asset.id,
+        log_op(db, cmd.account_id, "update", "fixed_asset", asset.id,
              f"更新资产: {asset.name}", operator=cmd.operator)
         if invoice:
-            _log(db, cmd.account_id, "update", "invoice", invoice.id,
+            log_op(db, cmd.account_id, "update", "invoice", invoice.id,
                  f"联动更新发票: {invoice.invoice_no}", operator=cmd.operator)
 
         return {"asset": asset, "invoice": invoice}

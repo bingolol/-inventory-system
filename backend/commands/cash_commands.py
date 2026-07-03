@@ -10,19 +10,21 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from commands.base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from crud.invoice_linkage import has_invoice as linkage_has_invoice
 from crud.reversal import reverse_single_payment, reverse_single_receipt
+from engine_bank import BankEngine
 from enums import EXPENSE_CATEGORIES
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal, reverse_journal, EXPENSE_ACCOUNT_CODE_MAP
 from image_utils import delete_old_image
-from models import BankAccount, BankTransaction, Expense, Payment, PurchaseOrder, Receipt, SaleOrder
+from lineage import writes, TIER_L1, TIER_L2
+from models import BankAccount, Expense, Payment, PurchaseOrder, Receipt, SaleOrder
 from operation_result import EntityType, OperationResult, OperationType
 from schemas import ExpenseCreate, ExpenseUpdate
 from schemas.payment import PaymentCreate, PaymentOut
 from schemas.receipt import ReceiptCreate, ReceiptOut
-from utils import _d
+from utils import to_decimal
 
 Q2 = Decimal("0.01")
 
@@ -38,6 +40,8 @@ class CreateExpense(Command):
 
 @register(CreateExpense)
 class CreateExpenseHandler(CommandHandler):
+    @writes("Expense.amount_l1", tier=TIER_L1, source="external")
+    @writes("Expense.expense_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateExpense, db: Any) -> Any:
         account_id = cmd.account_id
         expense = cmd.expense
@@ -76,7 +80,7 @@ class CreateExpenseHandler(CommandHandler):
             "source_id": db_expense.id,
         })
 
-        _log(db, account_id, "create", "expense", db_expense.id,
+        log_op(db, account_id, "create", "expense", db_expense.id,
              f"创建费用:{db_expense.category} {db_expense.amount_l1}", operator=cmd.operator)
 
         db.refresh(db_expense)
@@ -141,7 +145,7 @@ class UpdateExpenseHandler(CommandHandler):
         for field_name, value in update_data.items():
             setattr(expense, field_name, value)
 
-        _log(db, account_id, "update", "expense", expense.id,
+        log_op(db, account_id, "update", "expense", expense.id,
              f"更新费用:{expense.category} {expense.amount_l1}", operator=cmd.operator)
         db.refresh(expense)
 
@@ -184,7 +188,7 @@ class ReverseExpenseHandler(CommandHandler):
         expense.is_reversed = True
         expense.reversed_at = datetime.now()
 
-        _log(db, account_id, "reverse", "expense", expense_id,
+        log_op(db, account_id, "reverse", "expense", expense_id,
              f"红冲费用: {expense.category} {expense.amount_l1}", operator=cmd.operator)
 
         return OperationResult(
@@ -219,7 +223,7 @@ class DeleteExpenseHandler(CommandHandler):
             delete_old_image(expense.image_url)
 
         db.delete(expense)
-        _log(db, account_id, "delete", "expense", expense.id,
+        log_op(db, account_id, "delete", "expense", expense.id,
              f"删除费用:{expense.category} {expense.amount_l1}", operator=cmd.operator)
 
         return OperationResult(
@@ -243,6 +247,9 @@ class CreatePayment(Command):
 
 @register(CreatePayment)
 class CreatePaymentHandler(CommandHandler):
+    @writes("Payment.amount_l1", tier=TIER_L1, source="external")
+    @writes("Payment.withholding_tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("Payment.payment_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreatePayment, db: Any) -> Any:
         account_id = cmd.account_id
         data = cmd.data
@@ -259,8 +266,8 @@ class CreatePaymentHandler(CommandHandler):
             payment_type=data.payment_type,
             related_entity_type=data.related_entity_type,
             related_entity_id=data.related_entity_id,
-            amount_l1=_d(data.amount),
-            withholding_tax_amount_l1=_d(data.withholding_tax_amount),
+            amount_l1=to_decimal(data.amount),
+            withholding_tax_amount_l1=to_decimal(data.withholding_tax_amount),
             payment_method=data.payment_method,
             payment_date_l1=data.payment_date,
             bank_account_id=data.bank_account_id,
@@ -277,36 +284,17 @@ class CreatePaymentHandler(CommandHandler):
                 data.bank_account_id = default_bank.id
 
         if data.bank_account_id:
-            bank_account = db.query(BankAccount).filter(
-                BankAccount.id == data.bank_account_id,
-                BankAccount.account_id == account_id,
-            ).with_for_update().first()
-            if not bank_account:
-                raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": data.bank_account_id})
-
-            new_balance = _d(bank_account.balance_l4) - _d(data.amount)
-            if new_balance < 0:
-                raise BusinessError(
-                    code=ErrorCode.VALIDATION_ERROR,
-                    message=f"银行账户余额不足: 当前余额 {bank_account.balance_l4}，付款金额 {data.amount}，超额 {abs(new_balance)}",
-                    ai_instruction=f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 {bank_account.balance_l4}，不足以支付 {data.amount}。请减少付款金额或先充值。",
-                )
-
-            bank_transaction = BankTransaction(
-                account_id=account_id,
+            # 经 BankEngine.record_transaction 统一入口写入（含行锁、透支校验、余额同步）
+            bank_transaction = BankEngine(db, account_id).record_transaction(
                 bank_account_id=data.bank_account_id,
                 transaction_type="outflow",
-                amount_l2=_d(data.amount),
-                balance_after_l4=new_balance,
-                transaction_date_l1=data.payment_date,
+                amount=data.amount,
+                transaction_date=data.payment_date,
                 description=f"付款: {data.description}",
-                flow_category_l2="operating",
+                flow_category="operating",
                 related_entity_type="payment",
                 related_entity_id=payment.id,
             )
-            db.add(bank_transaction)
-            db.flush()
-            bank_account.balance_l4 = new_balance
             payment.bank_transaction_id = bank_transaction.id
 
         if data.related_entity_type == "expense":
@@ -337,8 +325,8 @@ class CreatePaymentHandler(CommandHandler):
             debit_code = "2202"
 
         post_journal(db, account_id, "payment", {
-            "amount": _d(data.amount),
-            "withholding_tax_amount": _d(data.withholding_tax_amount),
+            "amount": to_decimal(data.amount),
+            "withholding_tax_amount": to_decimal(data.withholding_tax_amount),
             "date": data.payment_date.strftime("%Y-%m-%d"),
             "debit_account_code": debit_code,
             "partner_id": data.related_entity_id,
@@ -347,7 +335,7 @@ class CreatePaymentHandler(CommandHandler):
         })
 
         db.flush()
-        _log(db, account_id, "create", "payment", payment.id,
+        log_op(db, account_id, "create", "payment", payment.id,
              f"创建付款: {data.payment_type} {data.amount}", operator=cmd.operator)
         db.refresh(payment)
 
@@ -385,7 +373,7 @@ class ReversePaymentHandler(CommandHandler):
         reversal = reverse_single_payment(db, account_id, payment_id)
         if not reversal:
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"payment_id": payment_id})
-        _log(db, account_id, "reverse", "payment", payment_id,
+        log_op(db, account_id, "reverse", "payment", payment_id,
              f"红冲付款: {reversal.amount_l1}", operator=cmd.operator)
         return {"status": "reversed", "reversal_id": reversal.id}
 
@@ -401,6 +389,8 @@ class CreateReceipt(Command):
 
 @register(CreateReceipt)
 class CreateReceiptHandler(CommandHandler):
+    @writes("Receipt.amount_l1", tier=TIER_L1, source="external")
+    @writes("Receipt.receipt_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateReceipt, db: Any) -> Any:
         account_id = cmd.account_id
         data = cmd.data
@@ -410,7 +400,7 @@ class CreateReceiptHandler(CommandHandler):
             receipt_type=data.receipt_type,
             related_entity_type=data.related_entity_type,
             related_entity_id=data.related_entity_id,
-            amount_l1=_d(data.amount),
+            amount_l1=to_decimal(data.amount),
             receipt_method=data.receipt_method,
             receipt_date_l1=data.receipt_date,
             bank_account_id=data.bank_account_id,
@@ -427,29 +417,17 @@ class CreateReceiptHandler(CommandHandler):
                 data.bank_account_id = default_bank.id
 
         if data.bank_account_id:
-            bank_account = db.query(BankAccount).filter(
-                BankAccount.id == data.bank_account_id,
-                BankAccount.account_id == account_id,
-            ).with_for_update().first()
-            if not bank_account:
-                raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND, data={"bank_account_id": data.bank_account_id})
-
-            new_balance = _d(bank_account.balance_l4) + _d(data.amount)
-            bank_transaction = BankTransaction(
-                account_id=account_id,
+            # 经 BankEngine.record_transaction 统一入口写入（含行锁、余额同步）
+            bank_transaction = BankEngine(db, account_id).record_transaction(
                 bank_account_id=data.bank_account_id,
                 transaction_type="inflow",
-                amount_l2=_d(data.amount),
-                balance_after_l4=new_balance,
-                transaction_date_l1=data.receipt_date,
+                amount=data.amount,
+                transaction_date=data.receipt_date,
                 description=f"收款: {data.description}",
-                flow_category_l2="operating",
+                flow_category="operating",
                 related_entity_type="receipt",
                 related_entity_id=receipt.id,
             )
-            db.add(bank_transaction)
-            db.flush()
-            bank_account.balance_l4 = new_balance
             receipt.bank_transaction_id = bank_transaction.id
 
         if data.related_entity_type == "sale_order":
@@ -461,14 +439,14 @@ class CreateReceiptHandler(CommandHandler):
                 sale_order.payment_status = "paid"
 
         post_journal(db, account_id, "receipt", {
-            "amount": _d(data.amount),
+            "amount": to_decimal(data.amount),
             "date": data.receipt_date.strftime("%Y-%m-%d"),
             "partner_id": data.related_entity_id,
             "bank_account_id": data.bank_account_id,
         })
 
         db.flush()
-        _log(db, account_id, "create", "receipt", receipt.id,
+        log_op(db, account_id, "create", "receipt", receipt.id,
              f"创建收款: {data.receipt_type} {data.amount}", operator=cmd.operator)
         db.refresh(receipt)
 
@@ -497,6 +475,6 @@ class ReverseReceiptHandler(CommandHandler):
         reversal = reverse_single_receipt(db, account_id, receipt_id)
         if not reversal:
             raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"receipt_id": receipt_id})
-        _log(db, account_id, "reverse", "receipt", receipt_id,
+        log_op(db, account_id, "reverse", "receipt", receipt_id,
              f"红冲收款: {reversal.amount_l1}", operator=cmd.operator)
         return {"status": "reversed", "reversal_id": reversal.id}

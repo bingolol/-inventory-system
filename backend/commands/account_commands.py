@@ -4,7 +4,7 @@ from typing import Any, Optional
 import models
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from errors import BusinessError, ErrorCode
 from crud.base import get_account
 from finance_integration import get_or_create_ledger_id
@@ -58,7 +58,7 @@ class UpdateAccountHandler(CommandHandler):
             )
         account.name = cmd.name
         db.flush()
-        _log(db, cmd.account_id, "update", "account", account.id,
+        log_op(db, cmd.account_id, "update", "account", account.id,
              f"更新账本: {account.name}", operator=cmd.operator)
         return account
 
@@ -103,7 +103,7 @@ class DeleteAccountHandler(CommandHandler):
                         data={"count": count, "label": label}
                     )
 
-        _log(db, cmd.account_id, "delete", "account", account.id,
+        log_op(db, cmd.account_id, "delete", "account", account.id,
              f"删除账本: {account.name}", operator=cmd.operator)
         db.delete(account)
         db.flush()

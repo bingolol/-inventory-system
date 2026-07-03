@@ -179,26 +179,11 @@ onMounted(async () => {
     auth.logout()
   }
 
+  // 自动登录：跳过登录页
   try {
-    const res = await api.get('/auth/has-users')
-    isFirstTime.value = !res.hasUsers
-    if (!res.hasUsers) {
-      form.username = 'admin'
-      form.password = 'admin'
-      form.confirmPassword = 'admin'
-    } else {
-      const saved = localStorage.getItem('saved_username')
-      if (saved) {
-        form.username = saved
-        form.password = localStorage.getItem('saved_password') || ''
-      }
-    }
-  } catch {
-    isFirstTime.value = true
-    form.username = 'admin'
-    form.password = 'admin'
-    form.confirmPassword = 'admin'
-  } finally {
+    await auth.autoLogin()
+    router.replace('/')
+  } catch (e) {
     isReady.value = true
   }
 })

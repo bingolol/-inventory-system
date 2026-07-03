@@ -35,7 +35,7 @@ function _addPendingRequest(cb) {
 
 api.interceptors.request.use(config => {
   const method = config.method?.toUpperCase() || 'GET'
-  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts']
+  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts', 'POST /auth/auto-login']
   const isPublic = PUBLIC_ENDPOINTS.includes(`${method} ${config.url}`)
 
   const accountStore = useAccountStore()
@@ -95,6 +95,7 @@ api.interceptors.response.use(
       && !originalRequest.url?.includes('/auth/refresh')
       && !originalRequest.url?.includes('/auth/logout')
       && !originalRequest.url?.includes('/auth/change-password')
+      && !originalRequest.url?.includes('/auth/auto-login')
     ) {
       if (_isRefreshing) {
         return new Promise(resolve => {

@@ -26,7 +26,7 @@ from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
-from lineage import reads, TIER_L3
+from lineage import reads, writes, TIER_L1, TIER_L2, TIER_L3
 
 
 # ═══════════════════════════════════════════════════════════
@@ -50,6 +50,15 @@ class CreateSaleOrder(Command):
 class CreateSaleOrderHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
+    @writes("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleOrder.tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("SaleOrder.has_invoice_l1", tier=TIER_L1, source="external")
+    @writes("SaleOrder.sale_date_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.quantity_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.unit_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.total_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.unit_cost_l2", tier=TIER_L2, source="engine")
     def handle(self, cmd: CreateSaleOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
@@ -521,6 +530,14 @@ class UpdateSaleOrderItems(Command):
 @register(UpdateSaleOrderItems)
 class UpdateSaleOrderItemsHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    # SaleItem.unit_cost_l2 / SaleItem L1 字段复用 CreateSaleOrderHandler 的 @writes 声明
+    # （更新逻辑与创建逻辑一致，都通过 InventoryEngine 出库计算 unit_cost）
+    @writes("SaleItem.quantity_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.unit_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("SaleItem.total_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
+    @writes("SaleOrder.tax_amount_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: UpdateSaleOrderItems, db: Any) -> Any:
         order = get_sale_order(db, cmd.account_id, cmd.order_id)
         if not order:

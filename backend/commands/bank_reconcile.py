@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from engine_bank_reconcile import BankReconcileEngine
 from errors import BusinessError, ErrorCode
 
@@ -46,7 +46,7 @@ class ImportBankStatementHandler(CommandHandler):
                 amount_l1=line.get("amount", 0), description=line.get("description", ""),
             ))
 
-        _log(db, cmd.account_id, "import", "bank_statement", stmt.id,
+        log_op(db, cmd.account_id, "import", "bank_statement", stmt.id,
              f"导入对账单 {cmd.period_start}~{cmd.period_end}", operator=cmd.operator)
         db.flush()
         return {"id": stmt.id, "status": "imported"}
@@ -74,7 +74,7 @@ class ReconcileBankHandler(CommandHandler):
         rec = engine.create_reconciliation(cmd.seed or [])
         engine.run_matching()
 
-        _log(db, cmd.account_id, "reconcile", "bank_reconciliation", rec.id,
+        log_op(db, cmd.account_id, "reconcile", "bank_reconciliation", rec.id,
              f"银行对账 {cmd.period}", operator=cmd.operator)
         db.flush()
 
@@ -113,7 +113,7 @@ class ForceMatchBankReconciliationHandler(CommandHandler):
         engine = BankReconcileEngine(db, cmd.account_id, rec.bank_account_id, rec.period)
         engine.force_match(cmd.reconciliation_id, cmd.stmt_line_ids or [],
                            cmd.bank_tx_ids or [], cmd.reason)
-        _log(db, cmd.account_id, "force_match", "bank_reconciliation", cmd.reconciliation_id,
+        log_op(db, cmd.account_id, "force_match", "bank_reconciliation", cmd.reconciliation_id,
              f"强制匹配: {cmd.reason}", operator=cmd.operator)
         db.flush()
         return {"status": "matched"}
@@ -139,7 +139,7 @@ class ConfirmBankReconciliationHandler(CommandHandler):
         engine = BankReconcileEngine(db, cmd.account_id, rec.bank_account_id, rec.period)
         engine.confirm(cmd.reconciliation_id, cmd.operator)
 
-        _log(db, cmd.account_id, "confirm", "bank_reconciliation", cmd.reconciliation_id,
+        log_op(db, cmd.account_id, "confirm", "bank_reconciliation", cmd.reconciliation_id,
              f"确认调节表 {rec.period}", operator=cmd.operator)
         db.flush()
         return {"status": rec.status}
@@ -165,7 +165,7 @@ class GenerateReconciliationEntryHandler(CommandHandler):
         engine = BankReconcileEngine(db, cmd.account_id, rec.bank_account_id, rec.period)
         result = engine.generate_entries(cmd.reconciliation_id)
 
-        _log(db, cmd.account_id, "generate_entry", "bank_reconciliation", cmd.reconciliation_id,
+        log_op(db, cmd.account_id, "generate_entry", "bank_reconciliation", cmd.reconciliation_id,
              f"生成手续费凭证 {len(result)}笔", operator=cmd.operator)
         db.flush()
         return {"generated": len(result)}

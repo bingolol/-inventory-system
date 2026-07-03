@@ -10,8 +10,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
 import models
 
-from .base import _generate_order_no, _log, get_or_create_inventory
-from utils import _d, Q2
+from .base import gen_order_no, log_op, get_or_create_inventory
+from utils import to_decimal, Q2
 from enums import OrderType
 
 logger = logging.getLogger("inventory")
@@ -28,13 +28,13 @@ def _distribute_total_price(items_data: list, target_total):
     - 所有行都有单价时按金额比例分配（整体打折/加价）
     - 尾差给最后一行，确保合计精确
     """
-    raw_total = sum(_d(it['total_price']) for it in items_data)
-    target_total = _d(target_total)
+    raw_total = sum(to_decimal(it['total_price']) for it in items_data)
+    target_total = to_decimal(target_total)
     if raw_total == target_total:
         return  # 无需分配
     diff = target_total - raw_total
 
-    zero_price_indices = [i for i, it in enumerate(items_data) if _d(it['unit_price']) == 0]
+    zero_price_indices = [i for i, it in enumerate(items_data) if to_decimal(it['unit_price']) == 0]
     if zero_price_indices:
         # 按数量加权分配给单价为0的行
         zero_qty_sum = sum(Decimal(str(items_data[i]['quantity'])) for i in zero_price_indices)
@@ -46,19 +46,19 @@ def _distribute_total_price(items_data: list, target_total):
                 items_data[idx]['total_price'] = share
             # 尾差给最后一行
             last_idx = zero_price_indices[-1]
-            last_share = (target_total - sum(_d(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
+            last_share = (target_total - sum(to_decimal(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
             items_data[last_idx]['unit_price'] = (last_share / Decimal(str(items_data[last_idx]['quantity']))).quantize(Q6)
             items_data[last_idx]['total_price'] = last_share
     else:
         # 按金额比例分配（整体打折/加价）
         if raw_total > 0:
             for idx in range(len(items_data) - 1):
-                ratio = _d(items_data[idx]['total_price']) / raw_total
+                ratio = to_decimal(items_data[idx]['total_price']) / raw_total
                 new_line = (target_total * ratio).quantize(Q2)
                 items_data[idx]['unit_price'] = (new_line / Decimal(str(items_data[idx]['quantity']))).quantize(Q6)
                 items_data[idx]['total_price'] = new_line
             last_idx = len(items_data) - 1
-            last_line = (target_total - sum(_d(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
+            last_line = (target_total - sum(to_decimal(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
             items_data[last_idx]['unit_price'] = (last_line / Decimal(str(items_data[last_idx]['quantity']))).quantize(Q6)
             items_data[last_idx]['total_price'] = last_line
 

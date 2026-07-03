@@ -9,7 +9,7 @@ from errors import BusinessError, ErrorCode
 Q2 = Decimal('0.01')
 
 
-def _d(val):
+def to_decimal(val):
     """安全转换为 Decimal"""
     if val is None:
         return Decimal('0')

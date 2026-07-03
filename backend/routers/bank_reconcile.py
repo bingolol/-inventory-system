@@ -15,7 +15,7 @@ from commands.bank_reconcile import (
     ImportBankStatement, ReconcileBank, ForceMatchBankReconciliation,
     ConfirmBankReconciliation, GenerateReconciliationEntry,
 )
-from crud.base import _log
+from crud.base import log_op
 from errors import BusinessError, ErrorCode
 from operation_result import OperationResult, EntityType, OperationType
 
@@ -243,31 +243,25 @@ def create_bank_entry(
     direction = "in" if body.entry_type == "interest_income" else "out"
 
     with unit_of_work(db):
+        from engine_bank import BankEngine
         ba = db.query(models.BankAccount).filter(
             models.BankAccount.account_id == account_id,
-        ).with_for_update().first()
+        ).first()
         if not ba:
             raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND)
 
-        # 1. 先更新余额
-        if direction == "in":
-            ba.balance_l4 += amt
-        else:
-            ba.balance_l4 -= amt
-
-        # 2. 创建 BankTransaction → flush 获取 tx.id（作为凭证锚点）
-        tx = models.BankTransaction(
-            account_id=account_id, bank_account_id=ba.id,
+        # 1. 经 BankEngine.record_transaction 统一入口写入银行流水（含余额同步与透支校验）
+        tx = BankEngine(db, account_id).record_transaction(
+            bank_account_id=ba.id,
             transaction_type="inflow" if direction == "in" else "outflow",
-            amount_l2=amt, balance_after_l4=ba.balance_l4,
-            transaction_date_l1=dt, description=body.description or body.entry_type,
-            flow_category_l2="operating",
+            amount=amt,
+            transaction_date=dt,
+            description=body.description or body.entry_type,
+            flow_category="operating",
         )
-        db.add(tx)
-        db.flush()
         tx_id = tx.id
 
-        # 3. 用 tx.id 作为 source_id 过账，建立 BankTransaction ↔ AccountMove 一一对应
+        # 2. 用 tx.id 作为 source_id 过账，建立 BankTransaction ↔ AccountMove 一一对应
         post_journal(db, account_id, "bank_fee_entry", {
             "amount": amt,
             "direction": direction,
@@ -276,7 +270,7 @@ def create_bank_entry(
             "source_id": tx_id,
         })
 
-        _log(db, account_id, "create", "bank_entry", tx_id,
+        log_op(db, account_id, "create", "bank_entry", tx_id,
              f"{'利息收入' if body.entry_type == 'interest_income' else '手续费'}: {body.amount}",
              operator=operator)
 

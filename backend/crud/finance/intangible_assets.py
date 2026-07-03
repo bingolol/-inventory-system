@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 import models, schemas
-from ..base import _log
+from ..base import log_op
 from lineage import writes, TIER_L3
 
 @writes("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
@@ -32,7 +32,7 @@ def create_intangible_asset(db: Session, account_id: int, data: schemas.Intangib
         "source_model": "intangible_asset",
         "source_id": asset.id,
     })
-    _log(db, account_id, "create", "intangible_asset", asset.id, f"创建无形资产: {data.name}", operator=operator)
+    log_op(db, account_id, "create", "intangible_asset", asset.id, f"创建无形资产: {data.name}", operator=operator)
     return asset
 
 
@@ -60,7 +60,7 @@ def update_intangible_asset(db: Session, account_id: int, asset_id: int, data: s
             value = datetime.strptime(value, "%Y-%m-%d").date()
         setattr(asset, key, value)
     db.flush()
-    _log(db, account_id, "update", "intangible_asset", asset_id, f"更新无形资产: {asset.name}", operator=operator)
+    log_op(db, account_id, "update", "intangible_asset", asset_id, f"更新无形资产: {asset.name}", operator=operator)
     return asset
 
 
@@ -68,7 +68,7 @@ def delete_intangible_asset(db: Session, account_id: int, asset_id: int, operato
     asset = get_intangible_asset(db, account_id, asset_id)
     if not asset:
         return False
-    _log(db, account_id, "delete", "intangible_asset", asset_id, f"删除无形资产: {asset.name}", operator=operator)
+    log_op(db, account_id, "delete", "intangible_asset", asset_id, f"删除无形资产: {asset.name}", operator=operator)
     db.delete(asset)
     db.flush()
     return True

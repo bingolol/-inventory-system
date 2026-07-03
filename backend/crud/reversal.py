@@ -70,30 +70,19 @@ def reverse_receipts(db: Session, account_id: int, sale_order_id: int) -> None:
 
         # 如果有银行账户，生成反向银行流水并回滚余额
         if receipt.bank_account_id:
-            bank_account = db.query(models.BankAccount).filter(
-                models.BankAccount.id == receipt.bank_account_id,
-                models.BankAccount.account_id == account_id,
-            ).with_for_update().first()
-
-            if bank_account:
-                new_balance = _d(bank_account.balance_l4) - original_amount
-
-                reversal_tx = models.BankTransaction(
-                    account_id=account_id,
-                    bank_account_id=receipt.bank_account_id,
-                    transaction_type="outflow",
-                    amount_l2=original_amount,
-                    balance_after_l4=new_balance,
-                    transaction_date_l1=datetime.now(),
-                    description=f"冲销收款: {reversal_receipt.description}",
-                    related_entity_type="receipt",
-                    related_entity_id=reversal_receipt.id,
-                )
-                db.add(reversal_tx)
-                db.flush()
-
-                bank_account.balance_l4 = new_balance
-                reversal_receipt.bank_transaction_id = reversal_tx.id
+            from engine_bank import BankEngine
+            # 经 BankEngine.record_transaction 统一入口写入（红冲场景允许透支）
+            reversal_tx = BankEngine(db, account_id).record_transaction(
+                bank_account_id=receipt.bank_account_id,
+                transaction_type="outflow",
+                amount=original_amount,
+                transaction_date=datetime.now(),
+                description=f"冲销收款: {reversal_receipt.description}",
+                related_entity_type="receipt",
+                related_entity_id=reversal_receipt.id,
+                allow_overdraft=True,
+            )
+            reversal_receipt.bank_transaction_id = reversal_tx.id
 
     # 重置销售单付款状态
     sale_order = db.query(models.SaleOrder).filter(
@@ -159,30 +148,19 @@ def reverse_payments(db: Session, account_id: int, purchase_order_id: int) -> No
 
         # 如果有银行账户，生成反向银行流水并回滚余额
         if payment.bank_account_id:
-            bank_account = db.query(models.BankAccount).filter(
-                models.BankAccount.id == payment.bank_account_id,
-                models.BankAccount.account_id == account_id,
-            ).with_for_update().first()
-
-            if bank_account:
-                new_balance = _d(bank_account.balance_l4) + original_amount
-
-                reversal_tx = models.BankTransaction(
-                    account_id=account_id,
-                    bank_account_id=payment.bank_account_id,
-                    transaction_type="inflow",
-                    amount_l2=original_amount,
-                    balance_after_l4=new_balance,
-                    transaction_date_l1=datetime.now(),
-                    description=f"冲销付款: {reversal_payment.description}",
-                    related_entity_type="payment",
-                    related_entity_id=reversal_payment.id,
-                )
-                db.add(reversal_tx)
-                db.flush()
-
-                bank_account.balance_l4 = new_balance
-                reversal_payment.bank_transaction_id = reversal_tx.id
+            from engine_bank import BankEngine
+            # 经 BankEngine.record_transaction 统一入口写入（红冲场景允许透支）
+            reversal_tx = BankEngine(db, account_id).record_transaction(
+                bank_account_id=payment.bank_account_id,
+                transaction_type="inflow",
+                amount=original_amount,
+                transaction_date=datetime.now(),
+                description=f"冲销付款: {reversal_payment.description}",
+                related_entity_type="payment",
+                related_entity_id=reversal_payment.id,
+                allow_overdraft=True,
+            )
+            reversal_payment.bank_transaction_id = reversal_tx.id
 
     # 重置采购单付款状态
     purchase_order = db.query(models.PurchaseOrder).filter(
@@ -239,27 +217,19 @@ def reverse_single_receipt(db: Session, account_id: int, receipt_id: int) -> mod
     db.flush()
 
     if receipt.bank_account_id:
-        bank = db.query(models.BankAccount).filter(
-            models.BankAccount.id == receipt.bank_account_id,
-            models.BankAccount.account_id == account_id,
-        ).with_for_update().first()
-        if bank:
-            new_balance = _d(bank.balance_l4) - original_amount
-            reversal_tx = models.BankTransaction(
-                account_id=account_id,
-                bank_account_id=receipt.bank_account_id,
-                transaction_type="outflow",
-                amount_l2=original_amount,
-                balance_after_l4=new_balance,
-                transaction_date_l1=datetime.now(),
-                description=f"冲销收款: {reversal.description}",
-                related_entity_type="receipt",
-                related_entity_id=reversal.id,
-            )
-            db.add(reversal_tx)
-            db.flush()
-            bank.balance_l4 = new_balance
-            reversal.bank_transaction_id = reversal_tx.id
+        from engine_bank import BankEngine
+        # 经 BankEngine.record_transaction 统一入口写入（红冲场景允许透支）
+        reversal_tx = BankEngine(db, account_id).record_transaction(
+            bank_account_id=receipt.bank_account_id,
+            transaction_type="outflow",
+            amount=original_amount,
+            transaction_date=datetime.now(),
+            description=f"冲销收款: {reversal.description}",
+            related_entity_type="receipt",
+            related_entity_id=reversal.id,
+            allow_overdraft=True,
+        )
+        reversal.bank_transaction_id = reversal_tx.id
 
         # 生成冲销凭证
         from finance_integration import reverse_journal
@@ -310,7 +280,7 @@ def reverse_bank_transaction(db: Session, account_id: int, tx_id: int) -> Option
     bank = db.query(models.BankAccount).filter(
         models.BankAccount.id == tx.bank_account_id,
         models.BankAccount.account_id == account_id,
-    ).with_for_update().first()
+    ).first()
     if not bank:
         return None
 
@@ -318,22 +288,19 @@ def reverse_bank_transaction(db: Session, account_id: int, tx_id: int) -> Option
     from finance_integration import reverse_journal
     reverse_journal(db, account_id, "bank_entry", tx_id)
 
-    # 反向流水
-    reversal = models.BankTransaction(
-        account_id=account_id,
+    # 反向流水（经 BankEngine.record_transaction 统一入口写入；红冲场景允许透支）
+    from engine_bank import BankEngine
+    reversal = BankEngine(db, account_id).record_transaction(
         bank_account_id=tx.bank_account_id,
         transaction_type="outflow" if tx.transaction_type == "inflow" else "inflow",
-        amount_l2=original_amount,
-        balance_after_l4=_d(bank.balance_l4) + (original_amount if tx.transaction_type == "outflow" else -original_amount),
-        transaction_date_l1=datetime.now(),
+        amount=original_amount,
+        transaction_date=datetime.now(),
         description=f"冲销银行交易 #{tx.id}",
-        flow_category_l2=tx.flow_category_l2,
+        flow_category=tx.flow_category_l2 or "operating",
         related_entity_type="reversal",
         related_entity_id=tx_id,
+        allow_overdraft=True,
     )
-    db.add(reversal)
-    bank.balance_l4 = reversal.balance_after_l4
-    db.flush()
     return reversal
 
 
@@ -380,27 +347,19 @@ def reverse_single_payment(db: Session, account_id: int, payment_id: int) -> mod
     db.flush()
 
     if payment.bank_account_id:
-        bank = db.query(models.BankAccount).filter(
-            models.BankAccount.id == payment.bank_account_id,
-            models.BankAccount.account_id == account_id,
-        ).with_for_update().first()
-        if bank:
-            new_balance = _d(bank.balance_l4) + original_amount
-            reversal_tx = models.BankTransaction(
-                account_id=account_id,
-                bank_account_id=payment.bank_account_id,
-                transaction_type="inflow",
-                amount_l2=original_amount,
-                balance_after_l4=new_balance,
-                transaction_date_l1=datetime.now(),
-                description=f"冲销付款: {reversal.description}",
-                related_entity_type="payment",
-                related_entity_id=reversal.id,
-            )
-            db.add(reversal_tx)
-            db.flush()
-            bank.balance_l4 = new_balance
-            reversal.bank_transaction_id = reversal_tx.id
+        from engine_bank import BankEngine
+        # 经 BankEngine.record_transaction 统一入口写入（红冲场景允许透支）
+        reversal_tx = BankEngine(db, account_id).record_transaction(
+            bank_account_id=payment.bank_account_id,
+            transaction_type="inflow",
+            amount=original_amount,
+            transaction_date=datetime.now(),
+            description=f"冲销付款: {reversal.description}",
+            related_entity_type="payment",
+            related_entity_id=reversal.id,
+            allow_overdraft=True,
+        )
+        reversal.bank_transaction_id = reversal_tx.id
 
         from finance_integration import reverse_journal
         reverse_journal(db, account_id, "payment", payment.id)

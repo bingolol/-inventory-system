@@ -9,7 +9,7 @@ from typing import Any, Optional
 import models
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from errors import BusinessError, ErrorCode
 
 
@@ -65,7 +65,7 @@ class CreatePartnerHandler(CommandHandler):
         )
         db.add(entity)
         db.flush()
-        _log(db, cmd.account_id, "create", cmd.partner_type, entity.id,
+        log_op(db, cmd.account_id, "create", cmd.partner_type, entity.id,
              f"创建{cfg['label']}: {entity.name}", operator=cmd.operator)
         return entity
 
@@ -107,7 +107,7 @@ class UpdatePartnerHandler(CommandHandler):
             if v is not None:
                 setattr(entity, k, v)
 
-        _log(db, cmd.account_id, "update", cmd.partner_type, entity.id,
+        log_op(db, cmd.account_id, "update", cmd.partner_type, entity.id,
              f"更新{cfg['label']}: {entity.name}", operator=cmd.operator)
         db.flush()
         return entity
@@ -142,7 +142,7 @@ class DeletePartnerHandler(CommandHandler):
         if count > 0:
             raise BusinessError(code=cfg["error_code"], data={"order_count": count})
 
-        _log(db, cmd.account_id, "delete", cmd.partner_type, entity.id,
+        log_op(db, cmd.account_id, "delete", cmd.partner_type, entity.id,
              f"删除{cfg['label']}: {entity.name}", operator=cmd.operator)
         db.delete(entity)
         db.flush()

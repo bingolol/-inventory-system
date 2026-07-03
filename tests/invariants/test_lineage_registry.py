@@ -47,6 +47,12 @@ def loaded_registry():
         "finance_integration",
         "commands.product_commands",
         "commands.account_commands",
+        "commands.cash_commands",
+        "commands.finance_commands",
+        "commands.sale_commands",
+        "commands.purchase_commands",
+        "commands.invoice_commands",
+        "routers.personal_advances",
     ]
     for mod_name in modules:
         try:
@@ -74,6 +80,71 @@ class TestRegistryCompleteness:
         assert "AccountMoveLine.debit_l2" in written_fields
         assert "AccountMoveLine.credit_l2" in written_fields
         assert "AccountMoveLine.amount_residual_l2" in written_fields
+
+    def test_BankEngine集中写入声明(self, loaded_registry):
+        """BankTransaction 所有 L2 真相源字段由 BankEngine.record_transaction 声明"""
+        written = loaded_registry.all_written_fields()
+        # BankTransaction L2 真相源
+        assert "BankTransaction.amount_l2" in written, "BankTransaction.amount_l2 缺少 @writes"
+        assert "BankTransaction.flow_category_l2" in written, "BankTransaction.flow_category_l2 缺少 @writes"
+        # BankTransaction L1 外部输入
+        assert "BankTransaction.transaction_date_l1" in written, "BankTransaction.transaction_date_l1 缺少 @writes"
+        # BankAccount.balance_l4 应有 @derives
+        derives_balance = [
+            w for w in loaded_registry.writes
+            if w.is_derived and w.field.path == "BankAccount.balance_l4"
+        ]
+        assert len(derives_balance) > 0, "BankAccount.balance_l4 缺少 @derives 声明"
+
+    def test_销售链路writes声明(self, loaded_registry):
+        """SaleOrder/SaleItem 真相源字段已声明 @writes"""
+        written = loaded_registry.all_written_fields()
+        # SaleItem.unit_cost_l2 是 COGS 真相源（项目记忆硬约束）
+        assert "SaleItem.unit_cost_l2" in written, "SaleItem.unit_cost_l2 (COGS 真相源) 缺少 @writes"
+        # SaleItem L1 外部输入
+        assert "SaleItem.quantity_l1" in written
+        assert "SaleItem.unit_price_l1" in written
+        assert "SaleItem.tax_rate_l1" in written
+        # SaleOrder L1
+        assert "SaleOrder.total_price_l1" in written
+        assert "SaleOrder.sale_date_l1" in written
+
+    def test_采购链路writes声明(self, loaded_registry):
+        """PurchaseOrder/PurchaseItem 真相源字段已声明 @writes"""
+        written = loaded_registry.all_written_fields()
+        assert "PurchaseItem.quantity_l1" in written
+        assert "PurchaseItem.unit_price_l1" in written
+        assert "PurchaseOrder.total_price_l1" in written
+        assert "PurchaseOrder.purchase_date_l1" in written
+
+    def test_发票writes声明(self, loaded_registry):
+        """Invoice 销项税真相源字段已声明 @writes（项目记忆：销项税真相源=发票）"""
+        written = loaded_registry.all_written_fields()
+        assert "Invoice.tax_amount_l1" in written, "Invoice.tax_amount_l1 (销项税真相源) 缺少 @writes"
+        assert "Invoice.amount_without_tax_l1" in written
+        assert "Invoice.amount_with_tax_l1" in written
+        assert "Invoice.issue_date_l1" in written
+
+    def test_现金流量表writes声明(self, loaded_registry):
+        """CashFlowTransaction L2 真相源字段已声明 @writes"""
+        written = loaded_registry.all_written_fields()
+        assert "CashFlowTransaction.amount_l2" in written
+        assert "CashFlowTransaction.flow_category_l2" in written
+
+    def test_费用收付款writes声明(self, loaded_registry):
+        """Expense/Payment/Receipt L1 字段已声明 @writes"""
+        written = loaded_registry.all_written_fields()
+        assert "Expense.amount_l1" in written
+        assert "Payment.amount_l1" in written
+        assert "Receipt.amount_l1" in written
+
+    def test_reverse_journal_writes声明(self, loaded_registry):
+        """finance_integration.reverse_journal 已声明 @writes（与 JournalEngine.post 同字段）"""
+        written = loaded_registry.all_written_fields()
+        # reverse_journal 应复用 JournalEngine.post 的字段集
+        assert "AccountMove.date_l1" in written
+        # 同字段多 writer 应在同类（ finance_integration 模块函数 vs JournalEngine.post method）
+        # TS01 仅校验 L2 跨类双 writer，L1 不受 TS01 约束
 
     def test_报表函数已声明reads(self, loaded_registry):
         """关键报表函数都注册了 @reads"""

@@ -12,9 +12,10 @@ from typing import Any, Optional
 import models
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from errors import BusinessError, ErrorCode
-from utils import _d
+from lineage import writes, TIER_L1, TIER_L2
+from utils import to_decimal
 
 
 # ═══════════════════════════════════════════════════════════
@@ -52,12 +53,12 @@ class CreateOpeningBalanceHandler(CommandHandler):
             raise BusinessError(code=ErrorCode.BALANCE_ALREADY_EXISTS, data={"date": cmd.date})
 
         # 2. 校验：资产 = 负债 + 权益（含非流动资产/负债）
-        total_assets = (_d(cmd.cash_balance) + _d(cmd.bank_balance)
-                        + _d(cmd.accounts_receivable) + _d(cmd.inventory_value)
-                        + _d(cmd.fixed_assets_original) - _d(cmd.accumulated_depreciation)
-                        + _d(cmd.intangible_assets_original) - _d(cmd.accumulated_amortization))
-        total_liabilities = _d(cmd.accounts_payable) + _d(cmd.tax_payable) + _d(cmd.long_term_borrowings)
-        total_equity = _d(cmd.paid_in_capital) + _d(cmd.retained_earnings)
+        total_assets = (to_decimal(cmd.cash_balance) + to_decimal(cmd.bank_balance)
+                        + to_decimal(cmd.accounts_receivable) + to_decimal(cmd.inventory_value)
+                        + to_decimal(cmd.fixed_assets_original) - to_decimal(cmd.accumulated_depreciation)
+                        + to_decimal(cmd.intangible_assets_original) - to_decimal(cmd.accumulated_amortization))
+        total_liabilities = to_decimal(cmd.accounts_payable) + to_decimal(cmd.tax_payable) + to_decimal(cmd.long_term_borrowings)
+        total_equity = to_decimal(cmd.paid_in_capital) + to_decimal(cmd.retained_earnings)
         if total_assets != total_liabilities + total_equity:
             raise BusinessError(
                 code=ErrorCode.BALANCE_SHEET_UNBALANCED,
@@ -90,14 +91,14 @@ class CreateOpeningBalanceHandler(CommandHandler):
         for code, field in [("1001", "cash_balance"), ("1002", "bank_balance"),
                             ("1122", "accounts_receivable"), ("1405", "inventory_value"),
                             ("1601", "fixed_assets_original"), ("1701", "intangible_assets_original")]:
-            val = _d(getattr(cmd, field, 0))
+            val = to_decimal(getattr(cmd, field, 0))
             if val > 0:
                 lines.append({"account_code": code, "debit": val, "credit": Decimal("0")})
         for code, field in [("1602", "accumulated_depreciation"), ("1702", "accumulated_amortization"),
                             ("2202", "accounts_payable"), ("2221", "tax_payable"),
                             ("2501", "long_term_borrowings"), ("3001", "paid_in_capital"),
                             ("4104", "retained_earnings")]:
-            val = _d(getattr(cmd, field, 0))
+            val = to_decimal(getattr(cmd, field, 0))
             if val > 0:
                 lines.append({"account_code": code, "debit": Decimal("0"), "credit": val})
         from finance_integration import post_journal
@@ -111,7 +112,7 @@ class CreateOpeningBalanceHandler(CommandHandler):
         # 5. 同步 BankAccount.balance 与 1002 科目余额
         #    防止期初余额进总账但 BankAccount.balance 未更新导致后续付款/收款校验出错
         #    若账本下有多个 BankAccount，按"第一个"作为主账户累计（与日常付款/收款用 BankAccount 一致）
-        bank_balance_val = _d(cmd.bank_balance)
+        bank_balance_val = to_decimal(cmd.bank_balance)
         if bank_balance_val > 0:
             bank_account = db.query(models.BankAccount).filter(
                 models.BankAccount.account_id == cmd.account_id,
@@ -128,7 +129,7 @@ class CreateOpeningBalanceHandler(CommandHandler):
                 )
 
         # 5. 日志
-        _log(db, cmd.account_id, "create", "opening_balance", opening_balance.id,
+        log_op(db, cmd.account_id, "create", "opening_balance", opening_balance.id,
              f"创建期初余额: {cmd.date}", operator=cmd.operator)
         db.flush()
         return opening_balance
@@ -189,10 +190,10 @@ class UpdateOpeningBalanceHandler(CommandHandler):
         new_re = _new(old_ob.retained_earnings_l1, cmd.retained_earnings)
 
         # 3. 校验：资产 = 负债 + 权益
-        total_assets = (_d(new_cash) + _d(new_bank) + _d(new_ar) + _d(new_inv)
-                        + _d(new_fa) - _d(new_dep) + _d(new_ia) - _d(new_amort))
-        total_liabilities = _d(new_ap) + _d(new_tax) + _d(new_ltb)
-        total_equity = _d(new_pic) + _d(new_re)
+        total_assets = (to_decimal(new_cash) + to_decimal(new_bank) + to_decimal(new_ar) + to_decimal(new_inv)
+                        + to_decimal(new_fa) - to_decimal(new_dep) + to_decimal(new_ia) - to_decimal(new_amort))
+        total_liabilities = to_decimal(new_ap) + to_decimal(new_tax) + to_decimal(new_ltb)
+        total_equity = to_decimal(new_pic) + to_decimal(new_re)
         if total_assets != total_liabilities + total_equity:
             raise BusinessError(
                 code=ErrorCode.BALANCE_SHEET_UNBALANCED,
@@ -232,13 +233,13 @@ class UpdateOpeningBalanceHandler(CommandHandler):
         lines = []
         for code, field in [("1001", new_cash), ("1002", new_bank), ("1122", new_ar),
                             ("1405", new_inv), ("1601", new_fa), ("1701", new_ia)]:
-            val = _d(field)
+            val = to_decimal(field)
             if val > 0:
                 lines.append({"account_code": code, "debit": val, "credit": Decimal("0")})
         for code, field in [("1602", new_dep), ("1702", new_amort), ("2202", new_ap),
                             ("2221", new_tax), ("2501", new_ltb), ("3001", new_pic),
                             ("4104", new_re)]:
-            val = _d(field)
+            val = to_decimal(field)
             if val > 0:
                 lines.append({"account_code": code, "debit": Decimal("0"), "credit": val})
         from finance_integration import post_journal
@@ -254,12 +255,12 @@ class UpdateOpeningBalanceHandler(CommandHandler):
             models.BankAccount.account_id == cmd.account_id,
         ).order_by(models.BankAccount.id.asc()).first()
         if bank_account:
-            old_bank_val = _d(old_ob.bank_balance_l1)
-            new_bank_val = _d(new_bank)
+            old_bank_val = to_decimal(old_ob.bank_balance_l1)
+            new_bank_val = to_decimal(new_bank)
             bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) - old_bank_val + new_bank_val).quantize(Decimal("0.01"))
 
         # 9. 日志
-        _log(db, cmd.account_id, "update", "opening_balance", new_ob.id,
+        log_op(db, cmd.account_id, "update", "opening_balance", new_ob.id,
              f"更新期初余额: {new_date}（原记录 {old_ob.id} 已冲红）", operator=cmd.operator)
         db.flush()
         return new_ob
@@ -294,14 +295,14 @@ class DeleteOpeningBalanceHandler(CommandHandler):
             models.BankAccount.account_id == cmd.account_id,
         ).order_by(models.BankAccount.id.asc()).first()
         if bank_account:
-            old_bank_val = _d(ob.bank_balance_l1)
+            old_bank_val = to_decimal(ob.bank_balance_l1)
             bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) - old_bank_val).quantize(Decimal("0.01"))
 
         # 3. 标记作废
         ob.is_reversed = True
         db.flush()
 
-        _log(db, cmd.account_id, "delete", "opening_balance", ob.id,
+        log_op(db, cmd.account_id, "delete", "opening_balance", ob.id,
              f"删除期初余额: {ob.date_l1}（已冲红凭证）", operator=cmd.operator)
         db.flush()
         return True
@@ -325,6 +326,9 @@ class CreateCashFlowTransaction(Command):
 
 @register(CreateCashFlowTransaction)
 class CreateCashFlowTransactionHandler(CommandHandler):
+    @writes("CashFlowTransaction.amount_l2", tier=TIER_L2, source="external")
+    @writes("CashFlowTransaction.flow_category_l2", tier=TIER_L2, source="external")
+    @writes("CashFlowTransaction.transaction_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateCashFlowTransaction, db: Any) -> Any:
         # 1. 创建 ORM 对象
         transaction = models.CashFlowTransaction(
@@ -365,7 +369,7 @@ class CreateCashFlowTransactionHandler(CommandHandler):
         })
 
         # 3. 日志
-        _log(db, cmd.account_id, "create", "cash_flow", transaction.id,
+        log_op(db, cmd.account_id, "create", "cash_flow", transaction.id,
              f"创建现金流水: {cmd.type} {cmd.amount}", operator=cmd.operator)
         db.flush()
         return transaction
@@ -451,7 +455,7 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
         })
 
         # 5. 日志
-        _log(db, cmd.account_id, "update", "cash_flow", cmd.transaction_id,
+        log_op(db, cmd.account_id, "update", "cash_flow", cmd.transaction_id,
              f"更新现金流水: {transaction.type} {transaction.amount_l2}", operator=cmd.operator)
         db.flush()
         return transaction
@@ -491,7 +495,7 @@ class DeleteCashFlowTransactionHandler(CommandHandler):
         transaction.is_reversed = True
         transaction.reversed_at = datetime.now()
 
-        _log(db, cmd.account_id, "delete", "cash_flow", cmd.transaction_id,
+        log_op(db, cmd.account_id, "delete", "cash_flow", cmd.transaction_id,
              f"删除(冲红)现金流水: {transaction.type} {transaction.amount_l2}", operator=cmd.operator)
         db.flush()
         return True

@@ -24,7 +24,7 @@ from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
-from lineage import reads, TIER_L3
+from lineage import reads, writes, TIER_L1, TIER_L3
 
 
 # ═══════════════════════════════════════════════════════════
@@ -44,6 +44,13 @@ class CreatePurchaseOrder(Command):
 @register(CreatePurchaseOrder)
 class CreatePurchaseOrderHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @writes("PurchaseOrder.total_price_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseOrder.tax_amount_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseOrder.purchase_date_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.quantity_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.unit_price_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.total_price_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreatePurchaseOrder, db: Any) -> Any:
         # 1. 校验
         if not cmd.items:
@@ -424,6 +431,12 @@ class UpdatePurchaseOrderItems(Command):
 @register(UpdatePurchaseOrderItems)
 class UpdatePurchaseOrderItemsHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
+    @writes("PurchaseItem.quantity_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.unit_price_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.tax_rate_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseItem.total_price_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseOrder.total_price_l1", tier=TIER_L1, source="external")
+    @writes("PurchaseOrder.tax_amount_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: UpdatePurchaseOrderItems, db: Any) -> Any:
         order = get_purchase_order(db, cmd.account_id, cmd.order_id)
         if not order:

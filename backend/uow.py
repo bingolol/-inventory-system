@@ -17,7 +17,7 @@ def unit_of_work(db: Session):
 
     规则：
     1. CRUD 函数只做 db.flush()，不调 commit()/rollback()
-    2. _log() 也只做 flush()，日志与业务数据在同一事务中
+    2. log_op() 也只做 flush()，日志与业务数据在同一事务中
     3. HTTPException 在 uow 内抛出也会触发 rollback
     4. db.refresh() 需要在 uow 块外执行（commit 后才能 refresh）
     """

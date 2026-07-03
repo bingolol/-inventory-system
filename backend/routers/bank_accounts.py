@@ -12,7 +12,7 @@ from schemas.bank import BankAccountCreate, BankAccountUpdate, BankAccountOut, B
 from account_dep import get_account_id, get_operator
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
-from crud.base import _log
+from crud.base import log_op
 
 router = APIRouter()
 
@@ -73,7 +73,7 @@ def create_bank_account(
         if latest_ob and latest_ob.bank_balance_l1 and latest_ob.bank_balance_l1 > 0:
             bank_account.balance_l4 = Decimal(str(latest_ob.bank_balance_l1)).quantize(Decimal("0.01"))
 
-        _log(db, account_id, "create", "bank_account", bank_account.id,
+        log_op(db, account_id, "create", "bank_account", bank_account.id,
              f"创建银行账户: {data.bank_name} {data.account_number}", operator=operator)
     db.refresh(bank_account)
     return BankAccountOut.model_validate(bank_account)
@@ -104,7 +104,7 @@ def update_bank_account(
             bank_account.description = data.description
 
         db.flush()
-        _log(db, account_id, "update", "bank_account", bank_account.id,
+        log_op(db, account_id, "update", "bank_account", bank_account.id,
              f"更新银行账户: {bank_account.bank_name}", operator=operator)
     db.refresh(bank_account)
     return BankAccountOut.model_validate(bank_account)
@@ -144,7 +144,7 @@ def delete_bank_account(
                 ai_instruction="STOP_RETRYING. 该银行账户有关联数据，无法删除。如需删除，请先清理关联的银行流水、付款、收款记录。"
             )
 
-        _log(db, account_id, "delete", "bank_account", bank_account.id,
+        log_op(db, account_id, "delete", "bank_account", bank_account.id,
              f"删除银行账户: {bank_account.bank_name}", operator=operator)
         db.delete(bank_account)
         db.flush()

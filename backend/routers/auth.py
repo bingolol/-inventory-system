@@ -149,6 +149,52 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/api/auth/auto-login", response_model=LoginResponse)
+def auto_login(db: Session = Depends(get_db)):
+    """无密码自动登录：返回第一个 active 用户的 token。
+    若数据库无用户，自动创建默认 admin 账号。"""
+    user = db.query(models.User).filter(models.User.is_active == True).first()
+    if user is None:
+        # 无用户则创建默认 admin（account_id=1，需确保 accounts 表有 id=1）
+        from models import Account
+        acct = db.query(Account).first()
+        if acct is None:
+            acct = Account(name="默认账本")
+            db.add(acct)
+            db.flush()
+        salt = _generate_salt()
+        pwd = "admin"
+        user = models.User(
+            username="admin",
+            password_hash=_hash_password(pwd, salt),
+            password_salt=salt,
+            account_id=acct.id,
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+
+    access_raw, access_hash, refresh_raw, refresh_hash = _make_token_pair()
+    now = datetime.now()
+    token = models.UserToken(
+        user_id=user.id,
+        access_token_hash=access_hash,
+        refresh_token_hash=refresh_hash,
+        access_expires_at=now + ACCESS_TOKEN_TTL,
+        refresh_expires_at=now + REFRESH_TOKEN_TTL,
+    )
+    db.add(token)
+    db.commit()
+
+    return LoginResponse(
+        access_token=access_raw,
+        refresh_token=refresh_raw,
+        username=user.username,
+        account_id=user.account_id,
+        expires_in=int(ACCESS_TOKEN_TTL.total_seconds()),
+    )
+
+
 @router.post("/api/auth/refresh", response_model=RefreshResponse)
 def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
     refresh_hash = hashlib.sha256(body.refresh_token.encode()).hexdigest()

@@ -59,31 +59,21 @@ def create_expense(category, amount, expense_date, functional_category,
 
 
 def pay_expense(expense_id, amount, payment_date, bank_account_id,
-<<<<<<< Updated upstream
-                payment_type="expense", description=None):
-=======
                 payment_type="expense", description=None,
                 withholding_tax_amount=0):
->>>>>>> Stashed changes
     """为费用付款（封装 /api/payments，方便 AI 直接调用）。
 
     参数：
         expense_id: 费用 ID（来自 create_expense 返回）
         amount: 付款金额
-<<<<<<< Updated upstream
-=======
             ⚠️ 工资场景(payment_type="salary"): amount = 实发金额(打到员工银行卡的钱)
->>>>>>> Stashed changes
         payment_date: "YYYY-MM-DD"
         bank_account_id: 付款银行账户 ID
         payment_type: "expense"（付费用，默认）/ "salary"（发工资）
         description: 备注（后端字段名是 description，不是 notes）
-<<<<<<< Updated upstream
-=======
         withholding_tax_amount: 代扣个人所得税(仅 payment_type="salary" 时使用,默认 0)
             ⚠️ 工资场景: 应发 = amount + withholding_tax_amount
             凭证: 借2211(应发) / 贷1002(实发=amount) / 贷222108(代扣=withholding_tax_amount)
->>>>>>> Stashed changes
     """
     body = {
         "payment_type": payment_type,
@@ -93,11 +83,8 @@ def pay_expense(expense_id, amount, payment_date, bank_account_id,
         "payment_date": payment_date,
         "bank_account_id": bank_account_id,
     }
-<<<<<<< Updated upstream
-=======
     if withholding_tax_amount:
         body["withholding_tax_amount"] = withholding_tax_amount
->>>>>>> Stashed changes
     if description: body["description"] = description
     return post("/api/payments", body)
 
@@ -135,18 +122,11 @@ if __name__ == "__main__":
                                   description="2026年6月水电费，待付市供电公司")
     print(f"   费用: {exp_utility}")
 
-<<<<<<< Updated upstream
-    print("\nC. 工资 30000，已付（payment_type=salary）")
-    exp_salary = create_expense("工资", 30000, "2026-06-30", "管理费用")
-    salary_id = extract_id(exp_salary)
-    pay = pay_expense(salary_id, 30000, "2026-06-30", BANK_ID, payment_type="salary")
-=======
     print("\nC. 工资 30000，已付（payment_type=salary,代扣个税5000,实发25000）")
     exp_salary = create_expense("工资", 30000, "2026-06-30", "管理费用")
     salary_id = extract_id(exp_salary)
     pay = pay_expense(salary_id, 25000, "2026-06-30", BANK_ID, payment_type="salary",
                       withholding_tax_amount=5000)
->>>>>>> Stashed changes
     print(f"   付款: {pay}")
 
     print("\nD. 按类别筛选查询")

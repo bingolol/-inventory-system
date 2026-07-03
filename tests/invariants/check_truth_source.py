@@ -65,6 +65,10 @@ def _load_lineage_registry():
         "commands.invoice_commands",
         "commands.purchase_commands",
         "commands.sale_commands",
+        "commands.cash_commands",
+        "commands.finance_commands",
+        # 路由层（PersonalAdvance 创建/偿还直接在路由处理，未下沉 Command）
+        "routers.personal_advances",
         # CRUD/报表层
         "crud.reports",
         "crud.products",

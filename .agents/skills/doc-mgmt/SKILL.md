@@ -115,6 +115,6 @@ Search `docs/` for mentions of the changed **entity** (filename / class / functi
 
 - `docs/INDEX.md` — master document index (`catalog`)
 - `docs/文件索引.md` — full file inventory (`catalog`)
-- `docs/开发速查表.md#文档分类` — doc-type classification table
-- `docs/开发速查表.md#文档同步规则` — sync rules after code change
+- `docs/开发规范.md#文档分类` — doc-type classification table
+- `docs/开发规范.md#文档同步规则` — sync rules after code change
 - `CONTEXT.md` — project context & business rules

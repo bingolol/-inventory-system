@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from .base import Command, CommandHandler, register
-from crud.base import _log
+from crud.base import log_op
 from engine_tax import TaxAccrualEngine
 from engine_tax_check import TaxCheckEngine
 from errors import BusinessError, ErrorCode
@@ -50,7 +50,7 @@ class MonthEndCloseHandler(CommandHandler):
         result["depreciation_count"] = len(depreciations)
         result["amortization_count"] = len(amortizations)
 
-        _log(db, cmd.account_id, "close", "month_end", cmd.account_id,
+        log_op(db, cmd.account_id, "close", "month_end", cmd.account_id,
              f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",
              operator=cmd.operator)
         db.flush()

@@ -205,29 +205,19 @@ class FixedAssetEngine:
         # 处置价格 > 0 → 银行收到处置款，同步创建银行流水（与 1002 总账科目保持一致）
         # 未提供 bank_account_id 时按原逻辑仅更新总账（向后兼容）
         if disposal_price > 0 and bank_account_id is not None:
-            from utils import _d
-            bank_account = self.db.query(models.BankAccount).filter(
-                models.BankAccount.id == bank_account_id,
-                models.BankAccount.account_id == self.account_id,
-            ).with_for_update().first()
-            if bank_account:
-                new_balance = _d(bank_account.balance_l4) + _d(disposal_price)
-                # 处置固定资产属于投资活动现金流（CAS 31）
-                bank_tx = models.BankTransaction(
-                    account_id=self.account_id,
-                    bank_account_id=bank_account_id,
-                    transaction_type="inflow",
-                    amount_l2=_d(disposal_price),
-                    balance_after_l4=new_balance,
-                    transaction_date_l1=disposal_date,
-                    description=f"固定资产处置款: {asset.name}",
-                    flow_category_l2="investing",
-                    related_entity_type="fixed_asset_disposal",
-                    related_entity_id=asset_id,
-                )
-                self.db.add(bank_tx)
-                self.db.flush()
-                bank_account.balance_l4 = new_balance
+            from engine_bank import BankEngine
+            # 经 BankEngine.record_transaction 统一入口写入
+            # 处置固定资产属于投资活动现金流（CAS 31）
+            BankEngine(self.db, self.account_id).record_transaction(
+                bank_account_id=bank_account_id,
+                transaction_type="inflow",
+                amount=disposal_price,
+                transaction_date=disposal_date,
+                description=f"固定资产处置款: {asset.name}",
+                flow_category="investing",
+                related_entity_type="fixed_asset_disposal",
+                related_entity_id=asset_id,
+            )
 
 
 def _period_to_date(period: str) -> date:

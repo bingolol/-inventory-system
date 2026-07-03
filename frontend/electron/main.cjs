@@ -10,6 +10,46 @@ let backendProcess = null
 
 const isDev = !app.isPackaged
 
+// ── 全局单实例锁：同一时刻只允许运行一个应用实例 ──
+// 第二次启动时聚焦已有窗口，而不是创建新窗口
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  // 已有实例在运行，当前进程立即退出
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // 有人试图启动第二个实例：聚焦已有窗口
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      if (!mainWindow.isVisible()) mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.on('ready', async () => {
+    Menu.setApplicationMenu(null)
+    try {
+      await startBackend()
+      createWindow()
+    } catch (err) {
+      console.error('[electron] 启动失败:', err.message)
+      app.quit()
+    }
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('before-quit', () => {
+    if (backendProcess) { backendProcess.kill(); backendProcess = null }
+  })
+
+  app.on('activate', () => {
+    if (mainWindow === null) createWindow()
+  })
+}
+
 const STARTUP_TIMEOUT = 60000
 
 function getBackendPath() {
@@ -86,26 +126,3 @@ function createWindow() {
   })
   mainWindow.webContents.on('context-menu', (e) => e.preventDefault())
 }
-
-app.on('ready', async () => {
-  Menu.setApplicationMenu(null)
-  try {
-    await startBackend()
-    createWindow()
-  } catch (err) {
-    console.error('[electron] 启动失败:', err.message)
-    app.quit()
-  }
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-
-app.on('before-quit', () => {
-  if (backendProcess) { backendProcess.kill(); backendProcess = null }
-})
-
-app.on('activate', () => {
-  if (mainWindow === null) createWindow()
-})

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 import models, schemas
-from ..base import _log
+from ..base import log_op
 from lineage import writes, TIER_L3
 
 @writes("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
@@ -35,7 +35,7 @@ def create_fixed_asset(db: Session, account_id: int, data: schemas.FixedAssetCre
         "source_model": "fixed_asset",
         "source_id": asset.id,
     })
-    _log(db, account_id, "create", "fixed_asset", asset.id, f"创建固定资产: {data.name}", operator=operator)
+    log_op(db, account_id, "create", "fixed_asset", asset.id, f"创建固定资产: {data.name}", operator=operator)
     return asset
 
 
@@ -63,7 +63,7 @@ def update_fixed_asset(db: Session, account_id: int, asset_id: int, data: schema
             value = datetime.strptime(value, "%Y-%m-%d").date()
         setattr(asset, key, value)
     db.flush()
-    _log(db, account_id, "update", "fixed_asset", asset_id, f"更新固定资产: {asset.name}", operator=operator)
+    log_op(db, account_id, "update", "fixed_asset", asset_id, f"更新固定资产: {asset.name}", operator=operator)
     return asset
 
 
@@ -82,7 +82,7 @@ def delete_fixed_asset(db: Session, account_id: int, asset_id: int, operator: st
         inv.related_order_id = None
         inv.related_order_type = None
 
-    _log(db, account_id, "delete", "fixed_asset", asset_id, f"删除固定资产: {asset.name}", operator=operator)
+    log_op(db, account_id, "delete", "fixed_asset", asset_id, f"删除固定资产: {asset.name}", operator=operator)
     db.delete(asset)
     db.flush()
     return True

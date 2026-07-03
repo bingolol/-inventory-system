@@ -55,6 +55,17 @@ export const useAuthStore = defineStore('auth', {
       return data
     },
 
+    async autoLogin() {
+      const data = await api.post('/auth/auto-login')
+      this.accessToken = data.access_token
+      this.refreshToken = data.refresh_token
+      this.username = data.username
+      this.accountId = data.account_id
+      this.expiresAt = _now() + (data.expires_in || 7200) * 1000
+      this._persist()
+      return data
+    },
+
     async register(username, password) {
       const data = await api.post('/auth/register', { username, password })
       this.accessToken = data.access_token

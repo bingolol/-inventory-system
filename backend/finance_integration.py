@@ -16,7 +16,7 @@ from models_finance import (
 from engine_journal import JournalEngine
 from errors import BusinessError, ErrorCode
 from utils import Q2
-from lineage import writes, reads, TIER_L3
+from lineage import writes, reads, TIER_L1, TIER_L2, TIER_L3
 from rules import enforce_rules
 
 

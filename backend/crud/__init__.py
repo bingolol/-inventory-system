@@ -4,7 +4,7 @@
 """
 
 from .base import (
-    _generate_order_no, _log, get_or_create_inventory,
+    gen_order_no, log_op, get_or_create_inventory,
     list_accounts, get_account, update_account, create_account, delete_account,
 )
 from .products import (

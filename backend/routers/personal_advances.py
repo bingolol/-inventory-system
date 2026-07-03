@@ -38,6 +38,7 @@ from utils import _d, Q2
 from operation_result import OperationResult, EntityType, OperationType
 from finance_integration import post_journal, reverse_journal
 from enums import PersonalAdvanceStatus
+from lineage import writes, TIER_L1, TIER_L4
 
 router = APIRouter()
 
@@ -133,6 +134,9 @@ def list_repayments(
 
 # ── 创建垫付 ──
 
+@writes("PersonalAdvance.amount_l1", tier=TIER_L1, source="external")
+@writes("PersonalAdvance.advance_date_l1", tier=TIER_L1, source="external")
+@writes("PersonalAdvance.paid_amount_l4", tier=TIER_L4, source="engine")
 @router.post("")
 def create_personal_advance(
     data: PersonalAdvanceCreate,
@@ -171,7 +175,7 @@ def create_personal_advance(
             "source_id": advance.id,
         })
 
-        _log(db, account_id, "create", "personal_advance", advance.id,
+        log_op(db, account_id, "create", "personal_advance", advance.id,
              f"创建个人垫付:{advance.advance_no} {advance.advancer_name} {advance.amount_l1}",
              operator=operator)
 
@@ -196,6 +200,9 @@ def create_personal_advance(
 
 # ── 偿还垫付 ──
 
+@writes("PersonalAdvanceRepayment.amount_l1", tier=TIER_L1, source="external")
+@writes("PersonalAdvanceRepayment.repayment_date_l1", tier=TIER_L1, source="external")
+@writes("PersonalAdvance.paid_amount_l4", tier=TIER_L4, source="engine")
 @router.post("/{advance_id}/repay")
 def repay_personal_advance(
     advance_id: int,
@@ -255,44 +262,18 @@ def repay_personal_advance(
         bank_account_id = data.bank_account_id
         bank_transaction_id = None
         if bank_account_id is not None:
-            bank_account = db.query(BankAccount).filter(
-                BankAccount.id == bank_account_id,
-                BankAccount.account_id == account_id,
-            ).with_for_update().first()
-            if not bank_account:
-                raise BusinessError(
-                    code=ErrorCode.BANK_ACCOUNT_NOT_FOUND,
-                    data={"bank_account_id": bank_account_id},
-                )
-            new_balance = _d(bank_account.balance_l4) - repay_amount
-            if new_balance < 0:
-                raise BusinessError(
-                    code=ErrorCode.VALIDATION_ERROR,
-                    message=(
-                        f"银行账户余额不足: 当前余额 {bank_account.balance_l4}，"
-                        f"偿还金额 {repay_amount}，超额 {abs(new_balance)}"
-                    ),
-                    ai_instruction=(
-                        f"STOP_RETRYING. 银行账户 {bank_account.bank_name} 余额仅 "
-                        f"{bank_account.balance_l4}，不足以偿还 {repay_amount}。"
-                    ),
-                )
-            # 创建银行流水（outflow）
-            bank_tx = BankTransaction(
-                account_id=account_id,
+            from engine_bank import BankEngine
+            # 经 BankEngine.record_transaction 统一入口写入（含行锁、透支校验、余额同步）
+            bank_tx = BankEngine(db, account_id).record_transaction(
                 bank_account_id=bank_account_id,
                 transaction_type="outflow",
-                amount_l2=repay_amount,
-                balance_after_l4=new_balance,
-                transaction_date_l1=datetime.combine(data.repayment_date, datetime.min.time()),
+                amount=repay_amount,
+                transaction_date=datetime.combine(data.repayment_date, datetime.min.time()),
                 description=f"偿还个人垫付: {advance.advancer_name} {advance.advance_no} {data.description}".strip(),
-                flow_category_l2="operating",
+                flow_category="operating",
                 related_entity_type="personal_advance_repayment",
                 related_entity_id=None,  # 回写下方
             )
-            db.add(bank_tx)
-            db.flush()
-            bank_account.balance_l4 = new_balance
             bank_transaction_id = bank_tx.id
 
         # 3. 写偿还记录
@@ -328,7 +309,7 @@ def repay_personal_advance(
         advance.paid_amount_l4 = (_d(advance.paid_amount_l4) + repay_amount).quantize(Q2)
         advance.repayment_status = _compute_status(advance.amount_l1, advance.paid_amount_l4)
 
-        _log(db, account_id, "create", "personal_advance_repayment", repayment.id,
+        log_op(db, account_id, "create", "personal_advance_repayment", repayment.id,
              f"偿还个人垫付 {advance.advance_no}: {repay_amount}", operator=operator)
 
     db.refresh(repayment)
@@ -418,7 +399,7 @@ def reverse_personal_advance(
         advance.reversed_at = datetime.now()
         # 冲红后状态语义上仍保留原值，剩余额由 remaining_amount 属性处理（返回 0）
 
-        _log(db, account_id, "reverse", "personal_advance", advance_id,
+        log_op(db, account_id, "reverse", "personal_advance", advance_id,
              f"红冲个人垫付 {advance.advance_no}", operator=operator)
 
     db.refresh(advance)
@@ -507,7 +488,7 @@ def reverse_repayment(
         advance.paid_amount_l4 = new_paid.quantize(Q2)
         advance.repayment_status = _compute_status(advance.amount_l1, advance.paid_amount_l4)
 
-        _log(db, account_id, "reverse", "personal_advance_repayment", repayment_id,
+        log_op(db, account_id, "reverse", "personal_advance_repayment", repayment_id,
              f"红冲偿还记录 #{repayment_id}: {repay_amount}", operator=operator)
 
     db.refresh(advance)

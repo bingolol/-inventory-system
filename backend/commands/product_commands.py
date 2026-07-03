@@ -14,7 +14,7 @@ import models
 from sqlalchemy import or_
 
 from .base import Command, CommandHandler, register
-from crud.base import _log, get_or_create_inventory
+from crud.base import log_op, get_or_create_inventory
 from errors import BusinessError, ErrorCode
 from utils import Q2
 from engine_inventory import InventoryEngine
@@ -71,7 +71,7 @@ class CreateProductHandler(CommandHandler):
         db.add(inv)
 
         # 3. 日志
-        _log(db, cmd.account_id, "create", "product", product.id,
+        log_op(db, cmd.account_id, "create", "product", product.id,
              f"创建商品: {product.name} (SKU:{product.sku})", operator=cmd.operator)
         db.flush()
         return product
@@ -127,7 +127,7 @@ class UpdateProductHandler(CommandHandler):
                 setattr(product, k, v)
 
         # 3. 日志
-        _log(db, cmd.account_id, "update", "product", product.id,
+        log_op(db, cmd.account_id, "update", "product", product.id,
              f"更新商品: {product.name}", operator=cmd.operator)
         db.flush()
         return product
@@ -172,7 +172,7 @@ class DeleteProductHandler(CommandHandler):
         ).delete()
 
         # 4. 删除商品
-        _log(db, cmd.account_id, "delete", "product", product.id,
+        log_op(db, cmd.account_id, "delete", "product", product.id,
              f"删除商品: {product.name}", operator=cmd.operator)
         db.delete(product)
         db.flush()
@@ -327,7 +327,7 @@ class AdjustInventoryHandler(CommandHandler):
 
         # 4. 日志（记录调整原因）
         log_detail = f"库存盘点: {old_qty}->{cmd.quantity}（原因: {cmd.reason}）"
-        _log(db, cmd.account_id, "adjust", "inventory", cmd.product_id,
+        log_op(db, cmd.account_id, "adjust", "inventory", cmd.product_id,
              log_detail, operator=cmd.operator)
         db.flush()
         return inv

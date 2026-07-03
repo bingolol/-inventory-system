@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from utils import _d, Q2
+from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
 
 logger = logging.getLogger("inventory")
@@ -381,8 +381,8 @@ class BankReconcileEngine:
             sl.match_group_id = gid
 
         # 审计日志
-        from crud.base import _log
-        _log(self.db, self.account_id, "force_match", "bank_reconciliation", rec_id,
+        from crud.base import log_op
+        log_op(self.db, self.account_id, "force_match", "bank_reconciliation", rec_id,
              f"强制匹配: stmt={stmt_line_ids} tx={bank_tx_ids} reason={reason}",
              operator="user")
         self.db.flush()
@@ -473,12 +473,12 @@ class BankReconcileEngine:
         ledger = account and self.db.query(Ledger).filter(Ledger.code == account.code).first()
         if not ledger:
             return Decimal("0")
-        d = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
+        d = to_decimal(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002",
             AccountMove.date_l1 <= cutoff).scalar())
-        c = _d(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
+        c = to_decimal(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
             LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == "1002",

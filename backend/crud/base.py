@@ -9,7 +9,7 @@ from errors import BusinessError, ErrorCode
 logger = logging.getLogger("inventory")
 
 
-def _generate_order_no(db, prefix, business_date=None):
+def gen_order_no(db, prefix, business_date=None):
     """生成订单号：{中文前缀}{年}—{月}-{日}-{时}:{分}-{序号}，如 CG2026—2-17-20:01-01"""
     prefix_map = {"PO": "CG", "PL": "RG", "SO": "XS", "PS": "XS"}
     cn_prefix = prefix_map.get(prefix, prefix)
@@ -23,7 +23,7 @@ def _generate_order_no(db, prefix, business_date=None):
     return f"{cn_prefix}{date_part}-{time_part}-{count + 1:02d}"
 
 
-def _log(db, account_id, operation, entity_type, entity_id, detail="", operator="user"):
+def log_op(db, account_id, operation, entity_type, entity_id, detail="", operator="user"):
     """写入操作日志（只 add+flush，由调用方统一 commit）"""
     log = models.OperationLog(
         account_id=account_id,
