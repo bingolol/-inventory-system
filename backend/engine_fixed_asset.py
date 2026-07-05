@@ -72,7 +72,9 @@ class FixedAssetEngine:
         # 当月增加下月提（第三十一条）
         if asset.start_date_l1:
             dep_year, dep_month = map(int, period.split("-"))
-            if dep_year == asset.start_date_l1.year and dep_month == asset.start_date_l1.month:
+            if dep_year < asset.start_date_l1.year or (
+                dep_year == asset.start_date_l1.year and dep_month <= asset.start_date_l1.month
+            ):
                 return None
 
         # 幂等检查

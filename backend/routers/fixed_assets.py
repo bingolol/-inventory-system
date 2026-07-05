@@ -170,7 +170,7 @@ def update_asset_with_invoice(
     db: Session = Depends(get_db),
 ):
     """更新固定资产（联动发票）"""
-    from commands.invoice_commands import UpdateAssetWithInvoice
+    from commands.orders import UpdateAssetWithInvoice
 
     try:
         with unit_of_work(db):

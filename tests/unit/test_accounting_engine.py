@@ -299,19 +299,28 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
 
 @pytest.mark.golden
 def test_calculate_vat_surcharge_uses_l3_policy_constants(engine, monkeypatch):
-    """附加税必须从 L3 政策常量读取，禁止硬编码"""
-    import accounting_engine as ae
-    monkeypatch.setattr(ae, "SURCHARGE_RATE_EDUCATION", Decimal('0.06'))
-    monkeypatch.setattr(ae, "SURCHARGE_RATE_LOCAL_EDUCATION", Decimal('0.04'))
-    monkeypatch.setattr(ae, "SURCHARGE_RATE_URBAN_CONSTRUCTION", Decimal('0.14'))
+    """附加税必须从 policy/surcharge_facts.py 事实源读取，禁止硬编码"""
+    from policy import policy_engine as pe
+    from policy.entity_profile import EntityProfile
+    from policy.policy_engine import calculate_vat
+    from policy.surcharge_facts import SurchargeFacts
 
-    result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
-        taxpayer_type='general',
-        input_tax=Decimal('8000'),
-        output_tax=Decimal('13000'),
+    mock_facts = SurchargeFacts(
+        rate_urban_construction=Decimal('0.14'),
+        rate_education=Decimal('0.06'),
+        rate_local_education=Decimal('0.04'),
+        reduction_rate=Decimal('0.5'),
+        no_reduction=Decimal('1'),
+        ref_date=date.today(),
     )
-    # 应纳税额 = 5000，按修改后的常量翻倍
+    monkeypatch.setattr(pe, "load_surcharge_facts", lambda ref_date=None: mock_facts)
+
+    profile = EntityProfile(
+        vat_type="general", income_type="general",
+        surcharge_halved=False, effective_date=date.today(),
+    )
+    result = calculate_vat(profile=profile, total_revenue=Decimal('100000'),
+                           input_tax=Decimal('8000'), output_tax=Decimal('13000'))
     assert result.surcharge_urban_construction == Decimal('700.00')
     assert result.surcharge_education == Decimal('300.00')
     assert result.surcharge_local_education == Decimal('200.00')

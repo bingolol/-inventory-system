@@ -11,6 +11,8 @@ from enums import (OrderStatus, InvoiceDirection, InvoiceType,
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
+from policy.entity_profile import build_profile
+from policy.policy_engine import calculate_vat as policy_vat, calculate_income_tax as policy_income_tax
 from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
 from lineage import reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 
@@ -29,6 +31,56 @@ def _quarter_range(year: int, quarter: int):
     else:
         end_date = datetime(year, quarter * 3 + 1, 1)
     return start_date, end_date
+
+
+def compute_carry_forward(db, account, start_date):
+    """计算一般纳税人上期期末留抵税额。小规模纳税人返回 0。"""
+    if not account or account.taxpayer_type_l3 != "general":
+        return Decimal("0")
+    prev_end = start_date - timedelta(seconds=1)
+    ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
+    if not ledger:
+        return Decimal("0")
+    def _deb(code, cutoff):
+        r = db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
+            LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
+        ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
+            AccountMove.date_l1 <= cutoff).scalar()
+        return _d(r)
+    def _crd(code, cutoff):
+        r = db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
+            LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
+        ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
+            LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
+            AccountMove.date_l1 <= cutoff).scalar()
+        return _d(r)
+    prev_input = _deb("222102", prev_end) - _crd("222102", prev_end)
+    prev_output = _crd("222101", prev_end) - _deb("222101", prev_end)
+    return max(prev_input - prev_output, Decimal("0")).quantize(Q2)
+
+
+def compute_vat_prepaid(db, account_id, year, quarter):
+    """汇总同年此前季度已预缴增值税（vat_transfer_out 累计）。"""
+    _, prev_q_end_exclusive = _quarter_range(year, quarter)
+    prev_q_end = prev_q_end_exclusive - timedelta(days=1)
+    year_start = datetime(year, 1, 1)
+    import models
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    if not account:
+        return Decimal("0")
+    ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
+    if not ledger:
+        return Decimal("0")
+    total = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
+        AccountMove, AccountMoveLine.move_id == AccountMove.id
+    ).filter(
+        AccountMove.ledger_id == ledger.id,
+        AccountMove.source_model == "vat_transfer_out",
+        AccountMove.date_l1 >= year_start,
+        AccountMove.date_l1 <= prev_q_end,
+    ).scalar())
+    return total.quantize(Q2)
 
 
 @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
@@ -149,20 +201,21 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
 
     agg = aggregate_vat_invoices(db, account_id, start_date, end_date_exclusive)
     account = agg["account"]
-    taxpayer_type = account.taxpayer_type_l3 if account else "small_scale"
 
-    # 使用 AccountingEngine 计算增值税（单一真相源：传入销项+进项，避免硬编码估算）
-    vat_result = _engine.calculate_vat(
+    profile = build_profile(account)
+    carry_forward = compute_carry_forward(db, account, start_date)
+    vat_result = policy_vat(
+        profile=profile,
         total_revenue=agg["output_total"],
-        taxpayer_type=taxpayer_type,
         input_tax=agg["input_tax"],
         output_tax=agg["output_tax"],
         ordinary_revenue=agg["ordinary_revenue"],
         special_revenue=agg["special_revenue"],
+        carry_forward=carry_forward,
     )
 
     # 已预缴税额（从之前的季度申报）
-    tax_paid = Decimal('0')
+    tax_paid = compute_vat_prepaid(db, account_id, year, quarter)
 
     # 应补退税额
     tax_supplement = vat_result.tax_payable - tax_paid
@@ -173,6 +226,8 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "period_start": start_date.strftime("%Y-%m-%d"),
         "period_end": (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d"),
         "total_revenue": vat_result.total_revenue.quantize(Q2),
+        "input_tax": agg["input_tax"].quantize(Q2),
+        "carry_forward": carry_forward.quantize(Q2),
         "tax_rate": vat_result.tax_rate,
         "tax_payable_gross": vat_result.tax_payable_gross,
         "tax_reduction": vat_result.tax_reduction,
@@ -223,19 +278,40 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     # 实际利润额（简化，不考虑纳税调整）
     actual_profit = gross_profit
 
-    # 使用 AccountingEngine 计算企业所得税
+    # 使用 policy_engine 计算企业所得税
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    raw_type = account.taxpayer_type_l3 if account and account.taxpayer_type_l3 else "small_scale"
-    income_tax_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
-    entity_type = account.type if account and account.type else "company"
-    tax_result = _engine.calculate_income_tax(
+    profile = build_profile(account) if account else None
+    if profile is None:
+        from policy.entity_profile import EntityProfile
+        profile = EntityProfile(vat_type="small_scale", income_type="small_micro", surcharge_halved=True, effective_date=start_date.date())
+    ledger = db.query(Ledger).filter(Ledger.code == account.code).first() if account else None
+    tax_result = policy_income_tax(
+        profile=profile,
         profit=actual_profit,
-        taxpayer_type=income_tax_type,
-        entity_type=entity_type,
     )
 
-    # 已预缴所得税额
+    # 已预缴所得税额：汇总同年之前季度的 tax_income 计提
+    year_start = datetime(year, 1, 1)
     prepaid_tax = Decimal('0')
+    if ledger:
+        prev_q_end = start_date - timedelta(days=1)
+        prepaid = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
+            AccountMove, AccountMoveLine.move_id == AccountMove.id
+        ).filter(
+            AccountMove.ledger_id == ledger.id,
+            AccountMove.source_model == "tax_income",
+            AccountMove.date_l1 >= year_start,
+            AccountMove.date_l1 <= prev_q_end,
+        ).scalar())
+        prepaid_rev = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
+            AccountMove, AccountMoveLine.move_id == AccountMove.id
+        ).filter(
+            AccountMove.ledger_id == ledger.id,
+            AccountMove.source_model == "tax_income_reversal",
+            AccountMove.date_l1 >= year_start,
+            AccountMove.date_l1 <= prev_q_end,
+        ).scalar())
+        prepaid_tax = (prepaid - prepaid_rev).quantize(Q2)
 
     # 本期应补退所得税额
     tax_supplement = tax_result.actual_tax - prepaid_tax

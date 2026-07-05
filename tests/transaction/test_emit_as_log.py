@@ -11,8 +11,7 @@ import pytest
 from datetime import datetime
 from decimal import Decimal
 from commands.base import dispatch
-from commands.sale_commands import CreateSaleOrder, CancelSaleOrder
-from commands.purchase_commands import CreatePurchaseOrder, DeletePurchaseOrder
+from commands.orders import CreateOrder, CancelOrder, DeleteOrder
 from models import OperationLog
 from tests.factories import make_product, make_customer, make_supplier
 
@@ -43,7 +42,7 @@ class TestEmitAsLogSingleWrite:
         db.flush()
         before = _max_log_id(db)
 
-        order = dispatch(CreateSaleOrder(
+        order = dispatch(CreateOrder(order_type="sale", 
             account_id=1, operator="ai",
             customer_id=c.id, deduct_inventory=False,
             payment_status="unpaid", sale_date=datetime(2026,6,29,10,0,0),
@@ -65,7 +64,7 @@ class TestEmitAsLogSingleWrite:
         db.flush()
         before = _max_log_id(db)
 
-        order = dispatch(CreatePurchaseOrder(
+        order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
             supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
             items=[{"product_id": p.id, "quantity": 3, "unit_price": 10}],
@@ -82,7 +81,7 @@ class TestEmitAsLogSingleWrite:
         p = make_product(db, 1, track_inventory=False)
         c = make_customer(db, 1)
         db.flush()
-        order = dispatch(CreateSaleOrder(
+        order = dispatch(CreateOrder(order_type="sale", 
             account_id=1, operator="ai",
             customer_id=c.id, deduct_inventory=False,
             payment_status="unpaid", sale_date=datetime(2026,6,29,10,0,0),
@@ -90,7 +89,7 @@ class TestEmitAsLogSingleWrite:
         ), db)
         before = _max_log_id(db)
 
-        dispatch(CancelSaleOrder(account_id=1, operator="ai", order_id=order.id), db)
+        dispatch(CancelOrder(order_type="sale", account_id=1, operator="ai", order_id=order.id), db)
 
         logs = _logs_since(db, before, "sale_order", order.id)
         assert len(logs) == 1, f"取消销售单应恰好 1 条日志，实际 {len(logs)} 条: {[l.detail for l in logs]}"
@@ -102,14 +101,14 @@ class TestEmitAsLogSingleWrite:
         p = make_product(db, 1, track_inventory=False)
         s = make_supplier(db, 1)
         db.flush()
-        order = dispatch(CreatePurchaseOrder(
+        order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
             supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
             items=[{"product_id": p.id, "quantity": 1, "unit_price": 10}],
         ), db)
         before = _max_log_id(db)
 
-        dispatch(DeletePurchaseOrder(account_id=1, operator="user", order_id=order.id), db)
+        dispatch(DeleteOrder(order_type="purchase", account_id=1, operator="user", order_id=order.id), db)
 
         logs = _logs_since(db, before, "purchase_order", order.id)
         assert len(logs) == 1, f"删除采购单应恰好 1 条日志，实际 {len(logs)} 条: {[l.detail for l in logs]}"

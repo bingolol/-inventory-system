@@ -59,7 +59,7 @@ class BatchDepreciateFixedAssetsHandler(CommandHandler):
             "message": f"批量折旧完成: {len(results)}项资产已计提",
             "count": len(results),
             "details": [
-                {"asset_id": d.asset_id, "period": d.period, "amount": str(d.amount)}
+                {"asset_id": d.asset_id, "period": d.period, "amount": str(d.amount_l2)}
                 for d in results
             ],
         }

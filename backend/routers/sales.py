@@ -8,10 +8,10 @@ from image_utils import delete_old_image
 import schemas, crud
 from uow import unit_of_work
 from commands.base import dispatch
-from commands.sale_commands import (
-    CreateSaleOrder, CancelSaleOrder, RestoreSaleOrder,
-    DeleteSaleOrder, UpdateSaleOrderItems,
-    UpdateSaleOrderFields, ReturnSaleOrder,
+from commands.orders import (
+    CreateOrder, CancelOrder, RestoreOrder,
+    DeleteOrder, UpdateOrderItems,
+    UpdateOrderFields, ReturnOrder,
 )
 from crud.invoice_linkage import has_invoice as linkage_has_invoice, bulk_has_invoice
 from enums import OrderStatus, OrderType
@@ -67,7 +67,8 @@ def list_sales(page: int = 1, page_size: int = 20, start_date: str = None, end_d
 def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
-            cmd = CreateSaleOrder(
+            cmd = CreateOrder(
+                order_type="sale",
                 account_id=account_id,
                 operator=operator,
                 customer_id=data.customer_id,
@@ -129,7 +130,8 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
             # 1) items 全量替换 → UpdateSaleOrderItems
             if has_items:
                 items_dicts = [item.model_dump() for item in data.items]
-                cmd = UpdateSaleOrderItems(
+                cmd = UpdateOrderItems(
+                    order_type="sale",
                     account_id=account_id,
                     operator=operator,
                     order_id=sale_id,
@@ -147,9 +149,9 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
                 if not current:
                     raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单"})
                 if data.status == OrderStatus.CANCELLED and current.status != OrderStatus.CANCELLED:
-                    dispatch(CancelSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
+                    dispatch(CancelOrder(order_type="sale", account_id=account_id, operator=operator, order_id=sale_id), db)
                 elif data.status == OrderStatus.COMPLETED and current.status == OrderStatus.CANCELLED:
-                    dispatch(RestoreSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
+                    dispatch(RestoreOrder(order_type="sale", account_id=account_id, operator=operator, order_id=sale_id), db)
 
                         # 4) 普通字段 → UpdateSaleOrderFields
             #    有 items 时 status 也作为普通字段设置（只 setattr，不做库存联动）
@@ -161,7 +163,8 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
             if has_items and data.status is not None:
                 field_kwargs['status'] = data.status
             if field_kwargs:
-                dispatch(UpdateSaleOrderFields(
+                dispatch(UpdateOrderFields(
+                    order_type="sale",
                     account_id=account_id,
                     operator=operator,
                     order_id=sale_id,
@@ -203,7 +206,8 @@ def cancel_sale(
     """
     with unit_of_work(db):
         try:
-            order = dispatch(CancelSaleOrder(
+            order = dispatch(CancelOrder(
+                order_type="sale",
                 account_id=account_id,
                 operator=operator,
                 order_id=sale_id,
@@ -245,7 +249,8 @@ def return_sale(
     """
     items = [{"product_id": it.product_id, "quantity": it.quantity} for it in data.items]
     with unit_of_work(db):
-        order = dispatch(ReturnSaleOrder(
+        order = dispatch(ReturnOrder(
+            order_type="sale",
             account_id=account_id,
             operator=operator,
             order_id=sale_id,
@@ -280,7 +285,7 @@ def delete_sale(sale_id: int, account_id: int = Depends(get_account_id), operato
     if order.image_url:
         delete_old_image(order.image_url)
     with unit_of_work(db):
-        dispatch(DeleteSaleOrder(account_id=account_id, operator=operator, order_id=sale_id), db)
+        dispatch(DeleteOrder(order_type="sale", account_id=account_id, operator=operator, order_id=sale_id), db)
     
     result = OperationResult(
         operation=OperationType.DELETE,

@@ -10,6 +10,7 @@ from models_finance import (
 from accounting_engine import AccountingError, AccountingErrorCode
 from engine_ledger import LedgerEngine
 from lineage import writes, reads, derives, TIER_L1, TIER_L2
+from operation_result import EntityType
 from rules import enforce_rules
 
 
@@ -92,28 +93,30 @@ class JournalEngine:
 
     def _build(self, move_type: str, source: dict):
         builders = {
-            "sale_order":              self._build_sale_order,
-            "purchase_order":          self._build_purchase_order,
-            "receipt":                 self._build_receipt,
-            "payment":                 self._build_payment,
-            "expense":                 self._build_expense,
-            "depreciation":            self._build_depreciation,
-            "asset_disposal":          self._build_asset_disposal,
-            "fixed_asset_purchase":    self._build_fixed_asset_purchase,
-            "intangible_asset_purchase": self._build_intangible_asset_purchase,
-            "opening_balance":         self._build_opening_balance,
-            "cash_flow":               self._build_cash_flow,
-            "sale_return":             self._build_sale_return,
-            "purchase_return":         self._build_purchase_return,
-            "tax_surcharge":           self._build_tax_surcharge,
-            "tax_income":              self._build_tax_income,
-            "tax_income_reversal":     self._build_tax_income_reversal,
-            "vat_transfer_out":        self._build_vat_transfer_out,
-            "vat_exemption":           self._build_vat_exemption,
-            "bank_fee_entry":          self._build_bank_fee_entry,
-            "personal_advance":        self._build_personal_advance,
-            "personal_advance_repay":  self._build_personal_advance_repay,
-            "reverse_entry":           self._build_reverse_entry,
+            EntityType.SALE_ORDER:              self._build_sale_order,
+            EntityType.PURCHASE_ORDER:          self._build_purchase_order,
+            EntityType.RECEIPT:                 self._build_receipt,
+            EntityType.PAYMENT:                 self._build_payment,
+            EntityType.EXPENSE:                 self._build_expense,
+            EntityType.DEPRECIATION:            self._build_depreciation,
+            EntityType.ASSET_DISPOSAL:          self._build_asset_disposal,
+            EntityType.FIXED_ASSET_PURCHASE:    self._build_fixed_asset_purchase,
+            EntityType.INTANGIBLE_ASSET_PURCHASE: self._build_intangible_asset_purchase,
+            EntityType.OPENING_BALANCE:         self._build_opening_balance,
+            EntityType.CASH_FLOW:               self._build_cash_flow,
+            EntityType.SALE_RETURN:             self._build_sale_return,
+            EntityType.PURCHASE_RETURN:         self._build_purchase_return,
+            EntityType.TAX_SURCHARGE:           self._build_tax_surcharge,
+            EntityType.TAX_INCOME:              self._build_tax_income,
+            EntityType.TAX_INCOME_REVERSAL:     self._build_tax_income_reversal,
+            EntityType.VAT_TRANSFER_OUT:        self._build_vat_transfer_out,
+            EntityType.VAT_EXEMPTION:           self._build_vat_exemption,
+            EntityType.BANK_FEE_ENTRY:          self._build_bank_fee_entry,
+            EntityType.PERSONAL_ADVANCE:        self._build_personal_advance,
+            EntityType.PERSONAL_ADVANCE_REPAYMENT: self._build_personal_advance_repay,
+            EntityType.PERIOD_CLOSE:            self._build_period_close,
+            EntityType.YEAR_CLOSE:              self._build_year_close,
+            EntityType.REVERSE_ENTRY:           self._build_reverse_entry,
         }
         builder = builders.get(move_type)
         if not builder:
@@ -375,8 +378,15 @@ class JournalEngine:
 
         return lines, "GEN", {"balance_check": True}
 
-    def _build_opening_balance(self, source):
-        """期初余额过账：动态科目，按传入的 lines 生成"""
+    def _build_period_close(self, source):
+        """损益结转：按传入的 lines 生成"""
+        return self._build_from_lines(source), "GEN", {"balance_check": True}
+
+    def _build_year_close(self, source):
+        """年结：按传入的 lines 生成"""
+        return self._build_from_lines(source), "GEN", {"balance_check": True}
+
+    def _build_from_lines(self, source):
         self._check_required(source, ["lines"])
         result = []
         for line in source["lines"]:
@@ -385,7 +395,11 @@ class JournalEngine:
                 "debit": Decimal(str(line.get("debit", 0))),
                 "credit": Decimal(str(line.get("credit", 0))),
             })
-        return result, "GEN", {"balance_check": True}
+        return result
+
+    def _build_opening_balance(self, source):
+        """期初余额过账：按传入的 lines 生成"""
+        return self._build_from_lines(source), "GEN", {"balance_check": True}
 
     def _build_cash_flow(self, source):
         """现金流水：inflow → 借:1002 贷:对应科目，outflow → 借:对应科目 贷:1002"""
@@ -451,11 +465,20 @@ class JournalEngine:
         ], "TAX", {"balance_check": True}
 
     def _build_vat_transfer_out(self, source):
-        """转出未交增值税：dr:222106(转出未交增值税) cr:222107(未交增值税)"""
+        """转出未交增值税（一般纳税人月结）
+
+        标准三步式结转：
+          1. Dr 222101(销项税额) / Cr 222106(转出未交增值税) — 结转销项
+          2. Dr 222106(转出未交增值税) / Cr 222107(未交增值税) — 转出未交
+
+        合并后：Dr 222101 / Cr 222107（222106 借贷相抵为 0，可省略）
+        不能只 Dr 222106 / Cr 222107 而漏掉 222101，否则 222101 余额永远不会被清零，
+        导致 BS 应交税费项目重复计算（销项税 + 未交增值税双计）。
+        """
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
         return [
-            {"account_code": "222106", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "222101", "debit": amount, "credit": Decimal("0")},
             {"account_code": "222107", "debit": Decimal("0"), "credit": amount},
         ], "VAT", {"balance_check": True}
 

@@ -39,6 +39,8 @@
       </div>
     </div>
 
+    <div style="margin-bottom:16px;"><DashboardTodo /></div>
+
     <!-- Row 2 -->
     <div class="d-row" style="flex:1;">
       <div class="d-main">
@@ -126,6 +128,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { useDashboardData } from '../composables/useDashboardData'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { formatMoney } from '../utils/format'
+import DashboardTodo from '../components/DashboardTodo.vue'
 
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 const router = useRouter()

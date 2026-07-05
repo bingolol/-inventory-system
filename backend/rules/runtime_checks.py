@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from .dsl import RuleViolation
 from .validator import get_rule_by_id
 from errors import BusinessError, ErrorCode
+from policy.vat_facts import get_legal_rate_values
 
 Q2 = Decimal("0.01")
 TOLERANCE = Decimal("0.01")  # 误差容忍
@@ -138,7 +139,7 @@ def check_as02(db: Session, context: dict) -> List[RuleViolation]:
 
     # 校验税率非硬编码(查税率是否合法)
     tax_rate = inv.tax_rate_l1 or Decimal("0")
-    valid_rates = {Decimal("0.01"), Decimal("0.03"), Decimal("0.06"), Decimal("0.09"), Decimal("0.13"), Decimal("0")}
+    valid_rates = get_legal_rate_values()
     if tax_rate not in valid_rates:
         violations.append(_make_violation(
             "AS-02",

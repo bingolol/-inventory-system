@@ -33,6 +33,7 @@ export const companyMenuItems = [
       { index: '/financial-reports', icon: 'TrendCharts', label: '资产负债表/利润表' },
       { index: '/cash-flows', icon: 'TrendCharts', label: '现金流量表' },
       { index: '/finance/books', icon: 'Document', label: '会计账簿' },
+      { index: '/accounting-guide', icon: 'Document', label: '会计规则指引' },
     ]
   },
   {

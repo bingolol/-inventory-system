@@ -12,60 +12,20 @@ from typing import Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 
-from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+from models_finance import Ledger, AccountMove
 from finance_integration import post_journal
 from utils import _d, Q2
+from crud.finance._ledger_helpers import _l, _lp, _bal, _crd
 from lineage import reads, TIER_L3
-from accounting_engine import (
-    SURCHARGE_RATE_EDUCATION,
-    SURCHARGE_RATE_LOCAL_EDUCATION,
-    SURCHARGE_RATE_URBAN_CONSTRUCTION,
-    SURCHARGE_SMALL_MICRO_REDUCTION,
+from policy.entity_profile import build_profile, EntityProfile, resolve_taxpayer_type_by_date
+from policy.policy_engine import (
+    calculate_income_tax as policy_income_tax,
+    calculate_surcharges,
 )
+from policy.vat_facts import load_vat_facts
+from policy.income_tax_facts import load_income_tax_facts
 
 logger = logging.getLogger("inventory")
-
-
-def _l(db: Session, ledger: Ledger, code: str, cutoff: datetime):
-    if not ledger:
-        return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
-        LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
-    ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
-        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date_l1 <= cutoff).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
-        LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
-    ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
-        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date_l1 <= cutoff).scalar())
-    return d, c
-
-
-def _lp(db: Session, ledger: Ledger, code: str, start: datetime, end: datetime):
-    if not ledger:
-        return Decimal("0"), Decimal("0")
-    d = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
-        LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
-    ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
-        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
-    c = _d(db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0)).join(
-        LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
-    ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(
-        LedgerAccount.ledger_id == ledger.id, LedgerAccount.code == code,
-        AccountMove.date_l1 >= start, AccountMove.date_l1 <= end).scalar())
-    return d, c
-
-
-def _bal(db, ledger, code, cutoff):
-    d, c = _l(db, ledger, code, cutoff)
-    return d - c
-
-
-def _crd(db, ledger, code, cutoff):
-    d, c = _l(db, ledger, code, cutoff)
-    return c - d
 
 
 class TaxAccrualEngine:
@@ -81,13 +41,17 @@ class TaxAccrualEngine:
         account = self.db.query(models.Account).filter(
             models.Account.id == account_id
         ).first()
+        # 构建主体画像（替代所有 taxpayer_type 字符串分支判断）
+        # 按历史纳税人类型回溯（支持年内从 small_scale 切换为 general）
+        vat_type_ov = resolve_taxpayer_type_by_date(account, self.db, period_start.date()) if account else None
+        profile = build_profile(account, period_start.date(), vat_type_override=vat_type_ov) if account else EntityProfile(
+            vat_type="small_scale", income_type="small_micro", surcharge_halved=True, effective_date=period_start.date()
+        )
         ledger = account and self.db.query(Ledger).filter(
             Ledger.code == account.code
         ).first()
         if not ledger:
             return {"status": "error", "msg": "总账未初始化"}
-        if not taxpayer_type:
-            taxpayer_type = account.taxpayer_type_l3 if account else "small_scale"
 
         closed = self._has_closed(ledger, period)
         # 修复 #1：移除顶层"已结账则跳过"守卫，改为允许补提差额
@@ -97,8 +61,8 @@ class TaxAccrualEngine:
 
         result_lines = []
 
-        # ── VAT 计算（按纳税人类型分流）──
-        if taxpayer_type == "small_scale":
+        # ── VAT 计算（按主体画像分流）──
+        if profile.vat_type == "small_scale":
             # 小规模纳税人：销项税在 222103，不能抵扣进项，不走转出未交增值税
             _, output_vat = _lp(self.db, ledger, "222103", period_start, close_dt)
             curr_vat = output_vat  # 应交增值税 = 销项税（全额）
@@ -121,15 +85,14 @@ class TaxAccrualEngine:
             curr_vat = max(output_vat - carry_forward - input_vat, Decimal("0"))
 
         if curr_vat > Decimal("0"):
-            # 修复 #1：附加税用 delta 模式，避免已计提后补提失效
-            # 按最新政策拆分：城建税、教育费附加、地方教育附加；小规模纳税人减半（2023-2027）
-            surcharge_reduction = SURCHARGE_SMALL_MICRO_REDUCTION if taxpayer_type == "small_scale" else Decimal("1")
+            # 附加税由 policy_engine.calculate_surcharges 统一演算，减半判定由 profile.surcharge_halved 驱动
+            surcharge_result = calculate_surcharges(profile, curr_vat, period_start.date())
             surcharge_taxes = {
-                "640302": (curr_vat * SURCHARGE_RATE_URBAN_CONSTRUCTION * surcharge_reduction).quantize(Q2),  # 城建税
-                "640303": (curr_vat * SURCHARGE_RATE_EDUCATION * surcharge_reduction).quantize(Q2),  # 教育费附加
-                "640304": (curr_vat * SURCHARGE_RATE_LOCAL_EDUCATION * surcharge_reduction).quantize(Q2),  # 地方教育附加
+                "640302": surcharge_result.urban_construction,
+                "640303": surcharge_result.education,
+                "640304": surcharge_result.local_education,
             }
-            target_surcharge = sum(surcharge_taxes.values())
+            target_surcharge = surcharge_result.total
 
             # delta 按明细科目分别计算，支持补提差额
             taxes_delta = {}
@@ -139,7 +102,8 @@ class TaxAccrualEngine:
                     "640303": "222111",
                     "640304": "222112",
                 }[expense_code]
-                posted = _crd(self.db, ledger, payable_code, close_dt)
+                posted_d, posted_c = _lp(self.db, ledger, payable_code, period_start, close_dt)
+                posted = posted_c - posted_d
                 delta = target - posted
                 if delta > Decimal("0.01"):
                     taxes_delta[expense_code] = delta
@@ -156,8 +120,7 @@ class TaxAccrualEngine:
 
             # VAT 结转：仅一般纳税人执行（222101→222106→222107）
             # 小规模纳税人 222103 本身就是应交增值税，无需结转
-            # 修复 #1：移除对 closed["surcharge"] 的依赖，VAT 结转用自身幂等
-            if taxpayer_type != "small_scale":
+            if profile.vat_type != "small_scale":
                 # 检查是否已结转过（避免重复）
                 vat_xfer_exists = self.db.query(AccountMove).filter(
                     AccountMove.ledger_id == ledger.id,
@@ -176,8 +139,7 @@ class TaxAccrualEngine:
 
         # 小规模纳税人减免税结转（季度末月：3/6/9/12）
         # 依据：财税〔2008〕151号 — 减免的增值税需计入营业外收入缴企业所得税
-        # 实务：小规模按季申报，季度末确认减免额，借222103 贷6301
-        if taxpayer_type == "small_scale" and period_start.month in (3, 6, 9, 12):
+        if profile.vat_type == "small_scale" and period_start.month in (3, 6, 9, 12):
             exemption_closed = self.db.query(AccountMove).filter(
                 AccountMove.ledger_id == ledger.id,
                 AccountMove.source_model == "vat_exemption",
@@ -197,36 +159,28 @@ class TaxAccrualEngine:
                 models.Invoice.issue_date_l1 <= close_dt,
                 ).scalar())
 
-                # 季度销项税总额（222103贷方发生额）
-                _, quarter_output_vat = _lp(self.db, ledger, "222103", q_start, close_dt)
+                # BR-14 小规模免税逻辑归并至 calculate_vat（单一计算真相源）
+                from enums import InvoiceType
+                ordinary_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
+                    models.Invoice.account_id == account_id,
+                    models.Invoice.direction == InvoiceDirection.OUT,
+                    models.Invoice.invoice_type == InvoiceType.ORDINARY,
+                    models.Invoice.issue_date_l1 >= q_start,
+                    models.Invoice.issue_date_l1 <= close_dt,
+                ).scalar())
+                special_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
+                    models.Invoice.account_id == account_id,
+                    models.Invoice.direction == InvoiceDirection.OUT,
+                    models.Invoice.invoice_type == InvoiceType.SPECIAL,
+                    models.Invoice.issue_date_l1 >= q_start,
+                    models.Invoice.issue_date_l1 <= close_dt,
+                ).scalar())
 
-                QUARTERLY_EXEMPTION = Decimal("300000")
-                if quarterly_revenue <= QUARTERLY_EXEMPTION:
-                    # 修复 #4：区分普票和专票
-                    # 原代码 exemption_amt = quarter_output_vat（全额免），
-                    # 导致专票部分也被全额免税（应减按1%缴纳）。
-                    # 正确：普票全额免，专票减按1%（减免2%）
-                    from enums import InvoiceType
-                    ordinary_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
-                        models.Invoice.account_id == account_id,
-                        models.Invoice.direction == InvoiceDirection.OUT,
-                        models.Invoice.invoice_type == InvoiceType.ORDINARY,
-                        models.Invoice.issue_date_l1 >= q_start,
-                        models.Invoice.issue_date_l1 <= close_dt,
-                    ).scalar())
-                    special_rev = _d(self.db.query(sqlfunc.sum(models.Invoice.amount_without_tax_l1)).filter(
-                        models.Invoice.account_id == account_id,
-                        models.Invoice.direction == InvoiceDirection.OUT,
-                        models.Invoice.invoice_type == InvoiceType.SPECIAL,
-                        models.Invoice.issue_date_l1 >= q_start,
-                        models.Invoice.issue_date_l1 <= close_dt,
-                    ).scalar())
-
-                    # 普票全额免：已记的1%销项税转出至营业外收入
-                    exemption_amt = (ordinary_rev * Decimal("0.01")).quantize(Q2)
+                # BR-14 小规模免税逻辑
+                vat_facts_data = load_vat_facts(period_start.date())
+                if quarterly_revenue <= vat_facts_data.small_scale_quarterly_exemption:
+                    exemption_amt = (ordinary_rev * vat_facts_data.small_scale_syndicated_rate).quantize(Q2)
                 else:
-                    # 超过30万：全部减按1%征收
-                    # 销售时已按1%记销项税，实际就是应缴税额，无需减免结转
                     exemption_amt = Decimal("0")
 
                 if exemption_amt > 0:
@@ -239,21 +193,28 @@ class TaxAccrualEngine:
                     result_lines.append(f"增值税减免结转: {exemption_amt} → 营业外收入")
                     logger.info(f"月结 {period} 增值税减免结转: {exemption_amt}")
 
-        revenue = _crd(self.db, ledger, "6001", close_dt) + _crd(self.db, ledger, "6051", close_dt)
-        cogs = _bal(self.db, ledger, "6401", close_dt)
-        opex = (_bal(self.db, ledger, "6601", close_dt)
-                + _bal(self.db, ledger, "6602", close_dt)
-                + _bal(self.db, ledger, "6603", close_dt)
-                + _bal(self.db, ledger, "6403", close_dt))
-        # 小企业准则：固定资产处置损益计入营业外收支(6301/6701)，不使用"资产处置损益"(6111/6711)
-        non_op_income = _crd(self.db, ledger, "6301", close_dt)
-        non_op_expense = _bal(self.db, ledger, "6701", close_dt)
+        _TAX_EXCLUDE = ["period_close", "year_close"]
+        year_start = datetime(period_start.year, 1, 1, 0, 0, 0)
+        rev_d, rev_c = _lp(self.db, ledger, "6001", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        other_rev_d, other_rev_c = _lp(self.db, ledger, "6051", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        revenue = rev_c - rev_d + other_rev_c - other_rev_d
+        cogs_d, cogs_c = _lp(self.db, ledger, "6401", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        cogs = cogs_d - cogs_c
+        ope1_d, _ = _lp(self.db, ledger, "6601", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        ope2_d, _ = _lp(self.db, ledger, "6602", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        ope3_d, _ = _lp(self.db, ledger, "6603", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        ope4_d, _ = _lp(self.db, ledger, "6403", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        opex = ope1_d + ope2_d + ope3_d + ope4_d
+        non_op_d, non_op_c = _lp(self.db, ledger, "6301", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        non_op_income = non_op_c - non_op_d
+        non_op_exp_d, non_op_exp_c = _lp(self.db, ledger, "6701", year_start, close_dt, exclude_source_models=_TAX_EXCLUDE)
+        non_op_expense = non_op_exp_d - non_op_exp_c
         cumulative_profit = revenue - cogs - opex + non_op_income - non_op_expense
 
-        # 个体工商户不缴企业所得税（缴个人所得税，系统不处理个税）
-        # 依据：《个体工商户个人所得税计税办法》
-        entity_type = account.type if account and account.type else "company"
-        if entity_type == "personal":
+        # 使用 policy_engine.calculate_income_tax 计算所得税（与所得税报表同一真相源）
+        # 通过 build_profile 统一映射 VAT→所得税类型，替代散落的 small_scale→small_micro 映射
+        income_profile = build_profile(account, period_start.date(), vat_type_override=vat_type_ov)
+        if income_profile.income_type == "personal":
             result_lines.append("个体工商户：不计提企业所得税（缴个人所得税）")
             return {
                 "status": "ok",
@@ -265,23 +226,19 @@ class TaxAccrualEngine:
                 "lines": result_lines,
             }
 
-        # 调用 AccountingEngine.calculate_income_tax 计算所得税（与所得税报表同一真相源）
-        # 修复：原代码直接将 VAT 口径 taxpayer_type 映射为所得税率，绕过了小型微利企业的
-        # 利润门槛判断（≤300万 → 5%，>300万 → 25%），导致小规模+利润>300万少计提80%。
-        # 类型映射规则（与 routers/income_tax.py:142-143 一致）：
-        #   VAT small_scale → 所得税 small_micro
-        #   VAT general → 所得税 general
-        # 注：calculate_income_tax 内部已处理 entity_type=personal → 不计提、profit<0 → 0 的兜底
-        from accounting_engine import AccountingEngine
-        income_tax_type = "small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"
-        income_tax_result = AccountingEngine().calculate_income_tax(
+        # 一般纳税人需进一步判定小微（三条件，当前仅利润门槛）
+        if income_profile.income_type == "general":
+            income_facts_data = load_income_tax_facts(period_start.date())
+            from policy.entity_profile import refine_small_micro
+            income_profile = refine_small_micro(income_profile, cumulative_profit, income_facts_data.small_micro_threshold)
+
+        income_tax_result = policy_income_tax(
+            profile=income_profile,
             profit=cumulative_profit,
-            taxpayer_type=income_tax_type,
-            entity_type=entity_type,
         )
         target_tax = income_tax_result.tax_payable
         if income_tax_result.reduction_item:
-            result_lines.append(f"所得税减免说明: {income_tax_result.reduction_item}")
+            result_lines.append(f"所得税减免: {income_tax_result.reduction_item}（减{income_tax_result.reduction_amount}）")
         posted_tax = _crd(self.db, ledger, "222105", close_dt)
         delta = target_tax - posted_tax
 

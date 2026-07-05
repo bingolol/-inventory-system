@@ -45,6 +45,16 @@ class Account(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class TaxpayerTypeHistory(Base):
+    __tablename__ = "taxpayer_type_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    taxpayer_type_l3 = Column(String(20), nullable=False, comment="纳税人类型: small_scale / general")
+    effective_period = Column(String(7), nullable=False, default="", comment="生效期间 YYYY-MM")
+    changed_at = Column(DateTime, default=datetime.now, comment="变更时间")
+
+
 # 期初余额表
 class OpeningBalance(Base):
     __tablename__ = "opening_balances"

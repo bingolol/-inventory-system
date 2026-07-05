@@ -1,0 +1,157 @@
+from datetime import datetime, timedelta
+from decimal import Decimal
+
+from sqlalchemy.orm import Session
+
+from crud.finance import aggregate_vat_invoices
+from crud.finance.income_statement import generate_income_statement
+from crud.finance.tax_declarations import compute_carry_forward
+from policy.entity_profile import build_profile
+from policy.policy_engine import (
+    calculate_vat as policy_vat,
+    calculate_income_tax as policy_income_tax,
+    calculate_surcharges as policy_surcharges,
+)
+from policy.surcharge_facts import (
+    SURCHARGE_RATE_URBAN_CONSTRUCTION,
+    SURCHARGE_RATE_EDUCATION,
+    SURCHARGE_RATE_LOCAL_EDUCATION,
+)
+from utils import _d, Q2
+
+
+def build_module_vat(db: Session, account_id: int, start_date: datetime, end_date: datetime, account):
+    agg = aggregate_vat_invoices(db, account_id, start_date, end_date)
+    profile = build_profile(account, ref_date=start_date.date())
+    carry_forward = compute_carry_forward(db, account, start_date)
+
+    vat_result = policy_vat(
+        profile=profile, total_revenue=agg["output_total"],
+        input_tax=agg["input_tax"], output_tax=agg["output_tax"],
+        ordinary_revenue=agg["ordinary_revenue"], special_revenue=agg["special_revenue"],
+        carry_forward=carry_forward,
+    )
+
+    total_revenue = agg["output_total"].quantize(Q2)
+    ordinary_rev = agg["ordinary_revenue"].quantize(Q2)
+    special_rev = agg["special_revenue"].quantize(Q2)
+    exemption_threshold = 300000
+    is_under = float(total_revenue) <= exemption_threshold
+
+    return {
+        "taxpayer_type": profile.vat_type,
+        "taxpayer_type_label": "小规模纳税人" if profile.vat_type == "small_scale" else "一般纳税人",
+        "quarterly_total": float(total_revenue),
+        "exemption_threshold": exemption_threshold, "is_under_threshold": is_under,
+        "ordinary_revenue": float(ordinary_rev),
+        "ordinary_tax": float(vat_result.tax_payable_gross.quantize(Q2)),
+        "special_revenue": float(special_rev),
+        "special_tax_rate": 0.01 if profile.vat_type == "small_scale" else None,
+        "vat_payable": float(vat_result.tax_payable.quantize(Q2)),
+        "reduction_item": vat_result.reduction_item,
+        "input_tax": float(agg["input_tax"].quantize(Q2)),
+        "output_tax": float(agg["output_tax"].quantize(Q2)) if profile.vat_type == "general" else None,
+        "carry_forward": float(carry_forward.quantize(Q2)) if profile.vat_type == "general" else None,
+    }
+
+
+def build_module_income_tax(db: Session, account_id: int, start_date: datetime, end_date: datetime, account):
+    is_data = generate_income_statement(
+        db, account_id,
+        start_date.strftime("%Y-%m-%d"),
+        (end_date - timedelta(days=1)).strftime("%Y-%m-%d")
+    )
+    revenue = _d(is_data.get("revenue", 0)).quantize(Q2)
+    cost = _d(is_data.get("cost_of_goods_sold", 0)).quantize(Q2)
+    tax_surcharge = _d(is_data.get("tax_surcharges", 0)).quantize(Q2)
+    admin_exp = _d(is_data.get("administrative_expenses", 0)).quantize(Q2)
+    selling_exp = _d(is_data.get("selling_expenses", 0)).quantize(Q2)
+    fin_exp = _d(is_data.get("financial_expenses", 0)).quantize(Q2)
+    total_opex = (admin_exp + selling_exp + fin_exp).quantize(Q2)
+    non_op_income = _d(is_data.get("non_operating_income", 0)).quantize(Q2)
+    non_op_expense = _d(is_data.get("non_operating_expense", 0)).quantize(Q2)
+    taxable_income = _d(is_data.get("gross_profit_total", 0)).quantize(Q2)
+    if taxable_income < 0:
+        taxable_income = Decimal("0")
+
+    profile = build_profile(account, ref_date=start_date.date())
+    tax_result = policy_income_tax(profile=profile, profit=taxable_income)
+
+    steps = []
+    steps.append({"label": "营业收入", "value": float(revenue),
+                  "explain": "这个季度卖货收到的全部钱（不含增值税）。对应科目 6001 主营业务收入 + 6051 其他业务收入", "cls": "positive"})
+    if cost > 0:
+        steps.append({"label": "减：营业成本", "value": float(-cost),
+                      "explain": "卖掉这批货，当初你进货花了多少钱。对应科目 6401 主营业务成本", "cls": "negative"})
+    if admin_exp > 0:
+        steps.append({"label": "减：管理费用", "value": float(-admin_exp),
+                      "explain": "房租、水电、办公用品、工资等日常运营开销，科目代码 6601", "cls": "negative"})
+    if selling_exp > 0:
+        steps.append({"label": "减：销售费用", "value": float(-selling_exp),
+                      "explain": "广告宣传、运输包装等销售相关支出，科目代码 6602", "cls": "negative"})
+    if fin_exp > 0:
+        steps.append({"label": "减：财务费用", "value": float(-fin_exp),
+                      "explain": "银行手续费、贷款利息等，科目代码 6603", "cls": "negative"})
+    if tax_surcharge > 0:
+        steps.append({"label": "减：税金及附加", "value": float(-tax_surcharge),
+                      "explain": "附加税（城建税、教育费附加等），科目代码 6403", "cls": "negative"})
+    if non_op_income > 0:
+        steps.append({"label": "加：营业外收入", "value": float(non_op_income),
+                      "explain": "非日常经营带来的收入，如小规模增值税免税转入。科目 6301 + 6111", "cls": "positive"})
+    if non_op_expense > 0:
+        steps.append({"label": "减：营业外支出", "value": float(-non_op_expense),
+                      "explain": "非日常经营的支出，如资产报废损失。科目 6701 + 6711", "cls": "negative"})
+
+    steps.append({"label": "应纳税所得额", "value": float(taxable_income),
+                  "explain": f"利润 = 收入 {float(revenue)} - 成本 {float(cost)} - 费用 {float(total_opex)} - 税金 {float(tax_surcharge)} + 营业外 {float(non_op_income - non_op_expense)} = {float(taxable_income)}",
+                  "cls": "subtotal"})
+
+    entity_label = ""
+    if profile.income_type == "personal":
+        entity_label = "个体工商户，不缴纳企业所得税（缴个人所得税，本系统不处理）"
+    elif profile.income_type == "small_micro":
+        entity_label = "小型微利企业（年利润 ≤ 300 万适用），实际税率 5%（= 法定税率 25% × 优惠减按 20%）"
+    else:
+        entity_label = "一般企业，法定税率 25%"
+
+    steps.append({"label": "适用税率", "value": f"{float(tax_result.tax_rate) * 100:.1f}%",
+                  "explain": entity_label, "cls": "rate"})
+    if float(tax_result.reduction_amount) > 0:
+        steps.append({"label": "减免税额", "value": float(-tax_result.reduction_amount),
+                      "explain": tax_result.reduction_item, "cls": "reduction"})
+    steps.append({"label": "应纳企业所得税", "value": float(tax_result.tax_payable),
+                  "explain": f"应纳税所得额 {float(taxable_income)} × 实际税率 {float(tax_result.tax_rate) if tax_result.tax_rate > 0 else 0} = {float(tax_result.tax_payable)} 元",
+                  "cls": "result"})
+
+    return {
+        "revenue": float(revenue), "cost": float(cost), "total_opex": float(total_opex),
+        "tax_surcharge": float(tax_surcharge), "non_op_income": float(non_op_income),
+        "non_op_expense": float(non_op_expense), "taxable_income": float(taxable_income),
+        "tax_rate": float(tax_result.tax_rate), "tax_payable": float(tax_result.tax_payable),
+        "reduction_amount": float(tax_result.reduction_amount), "reduction_item": tax_result.reduction_item,
+        "entity_type": profile.income_type,
+        "is_loss": float(taxable_income) <= 0 and profile.income_type != "personal",
+        "is_personal": profile.income_type == "personal", "steps": steps,
+    }
+
+
+def build_module_surcharge(account, vat_payable: Decimal):
+    profile = build_profile(account)
+    result = policy_surcharges(profile=profile, vat_payable=vat_payable)
+    full_rate = float(SURCHARGE_RATE_URBAN_CONSTRUCTION + SURCHARGE_RATE_EDUCATION + SURCHARGE_RATE_LOCAL_EDUCATION)
+    effective_rate = float(result.reduction_ratio) * full_rate
+    return {
+        "vat_payable": float(vat_payable),
+        "breakdown": [
+            {"name": "城建税（修路）", "rate": "7%", "amount": float(result.urban_construction),
+             "law": "城市维护建设税法第四条"},
+            {"name": "教育费附加（办学）", "rate": "3%", "amount": float(result.education),
+             "law": "国务院关于教育费附加征收问题的紧急通知"},
+            {"name": "地方教育附加", "rate": "2%", "amount": float(result.local_education),
+             "law": "财综〔2010〕98 号"},
+        ],
+        "full_rate": f"{full_rate * 100:.0f}%", "effective_rate": f"{effective_rate * 100:.1f}%",
+        "total": float(result.total), "is_halved": profile.surcharge_halved,
+        "reduction_note": "六税两费减半征收（财税〔2022〕10 号）：小规模纳税人、小型微利企业、个体工商户享受附加税减半"
+            if profile.surcharge_halved else "不享受六税两费减半政策",
+    }

@@ -11,7 +11,7 @@ from models_finance import (
     Ledger, LedgerAccount, AccountMove, AccountMoveLine,
 )
 from commands.base import dispatch
-from commands.purchase_commands import CreatePurchaseOrder, CancelPurchaseOrder
+from commands.orders import CreateOrder, CancelOrder
 from enums import OrderStatus, PaymentMethod
 from models import StockMove
 
@@ -65,7 +65,7 @@ class TestPurchaseCreateTriggersAccounting:
     """Tracer Bullet: 创建采购单后，自动生成会计凭证和库存流水"""
 
     def test_creates_account_move_and_stock_move(self, db, account, accts, product):
-        cmd = CreatePurchaseOrder(
+        cmd = CreateOrder(order_type="purchase", 
             account_id=account.id,
             operator="test",
             supplier_id=1,
@@ -119,7 +119,7 @@ class TestPurchaseCreateTriggersAccounting:
     def test_idempotent_post_journal(self, db, account, accts, product):
         """重复调用 FinanceEngine.record_purchase 不应重复生成凭证 (post_journal 幂等)"""
         from engine_finance import FinanceEngine
-        cmd = CreatePurchaseOrder(
+        cmd = CreateOrder(order_type="purchase", 
             account_id=account.id,
             operator="test",
             supplier_id=1,
@@ -165,7 +165,7 @@ class TestSmallScaleTaxpayerPurchase:
         db.add(prod)
         db.commit()
 
-        cmd = CreatePurchaseOrder(
+        cmd = CreateOrder(order_type="purchase", 
             account_id=acc.id,
             operator="test",
             supplier_id=1,
@@ -206,7 +206,7 @@ class TestCancelPurchaseTriggersReversal:
     """取消采购单 → 冲红凭证 + 反向 StockMove"""
 
     def test_cancel_creates_reversal(self, db, account, accts, product):
-        cmd = CreatePurchaseOrder(
+        cmd = CreateOrder(order_type="purchase", 
             account_id=account.id,
             operator="test",
             supplier_id=1,
@@ -221,7 +221,7 @@ class TestCancelPurchaseTriggersReversal:
         order = dispatch(cmd, db)
         db.flush()
 
-        cancel_cmd = CancelPurchaseOrder(account_id=account.id, operator="test", order_id=order.id)
+        cancel_cmd = CancelOrder(order_type="purchase", account_id=account.id, operator="test", order_id=order.id)
         dispatch(cancel_cmd, db)
         db.flush()
 

@@ -16,11 +16,11 @@ from schemas import IncomeTaxReport
 from account_dep import get_account_id
 from utils import _d, Q2
 from errors import BusinessError, ErrorCode
-from accounting_engine import AccountingEngine
 from crud.finance.income_statement import generate_income_statement
+from policy.entity_profile import build_profile
+from policy.policy_engine import calculate_income_tax as policy_income_tax
 
 router = APIRouter()
-_engine = AccountingEngine()
 
 
 def _get_date_range(year: int, quarter: Optional[int]):
@@ -92,14 +92,11 @@ async def get_income_tax_report(
     if taxable_income < 0:
         taxable_income = Decimal('0')
 
-    # 使用 AccountingEngine 计算所得税
-    raw_type = account.taxpayer_type_l3 if account.taxpayer_type_l3 else "small_scale"
-    taxpayer_type = "small_micro" if raw_type in ("small_scale", "small_micro") else "general"
-    entity_type = account.type if account.type else "company"
-    tax_result = _engine.calculate_income_tax(
+    # 使用 policy_engine 计算所得税（通过 build_profile 统一映射）
+    profile = build_profile(account)
+    tax_result = policy_income_tax(
+        profile=profile,
         profit=taxable_income,
-        taxpayer_type=taxpayer_type,
-        entity_type=entity_type,
     )
 
     # 构建报表
@@ -114,6 +111,8 @@ async def get_income_tax_report(
         taxable_income=taxable_income.quantize(Q2),
         tax_rate=tax_result.tax_rate,
         tax_amount=tax_result.tax_payable,
+        reduction_amount=tax_result.reduction_amount,
+        reduction_item=tax_result.reduction_item,
     )
 
     return report

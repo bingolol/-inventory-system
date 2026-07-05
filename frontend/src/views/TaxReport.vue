@@ -8,6 +8,8 @@
         </div>
       </template>
 
+      <AccountingTip page="tax" />
+
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="增值税报表" name="vat">
           <VATReportSection />
@@ -55,6 +57,7 @@ import { ElMessage } from 'element-plus'
 import invoicesApi from '../api/invoices'
 import VATReportSection from '../components/VATReportSection.vue'
 import IncomeTaxReportSection from '../components/IncomeTaxReportSection.vue'
+import AccountingTip from '../components/AccountingTip.vue'
 import { handleError } from '../utils/errorHandler'
 
 const activeTab = ref('vat')

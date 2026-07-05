@@ -23,17 +23,23 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     ledger_is = account and db.query(Ledger).filter(Ledger.code == account.code).first()
 
+    # 排除损益结转凭证：月结 period_close 会把损益科目余额清零到 4103，
+    # 年末 year_close 进一步把 4103 清零到 4104。
+    # 若不排除，收入/费用的借方（结转出去）会与贷方（实现收入）相互抵消，
+    # 导致利润表所有项目显示为 0。
+    _exclude = ["period_close", "year_close"]
+
     # 营业收入 = 主营业务收入(6001) + 其他业务收入(6051)
-    rev_d, rev_c = _lp(db, ledger_is, "6001", start_dt, end_dt)
-    other_rev_d, other_rev_c = _lp(db, ledger_is, "6051", start_dt, end_dt)
+    rev_d, rev_c = _lp(db, ledger_is, "6001", start_dt, end_dt, exclude_source_models=_exclude)
+    other_rev_d, other_rev_c = _lp(db, ledger_is, "6051", start_dt, end_dt, exclude_source_models=_exclude)
     revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
-    cogs_d, cogs_c = _lp(db, ledger_is, "6401", start_dt, end_dt)
-    cost_of_goods_sold = (cogs_d - cogs_c).quantize(Q2)
-    administrative_expenses = _pdr(db, ledger_is, "6601", start_dt, end_dt).quantize(Q2)
-    selling_expenses = _pdr(db, ledger_is, "6602", start_dt, end_dt).quantize(Q2)
-    fin_d, fin_c = _lp(db, ledger_is, "6603", start_dt, end_dt)
+    cogs_d, cgs_c = _lp(db, ledger_is, "6401", start_dt, end_dt, exclude_source_models=_exclude)
+    cost_of_goods_sold = (cogs_d - cgs_c).quantize(Q2)
+    administrative_expenses = _pdr(db, ledger_is, "6601", start_dt, end_dt, exclude_source_models=_exclude).quantize(Q2)
+    selling_expenses = _pdr(db, ledger_is, "6602", start_dt, end_dt, exclude_source_models=_exclude).quantize(Q2)
+    fin_d, fin_c = _lp(db, ledger_is, "6603", start_dt, end_dt, exclude_source_models=_exclude)
     financial_expenses = (fin_d - fin_c).quantize(Q2)
-    depr_d, depr_c = _lp(db, ledger_is, "1602", start_dt, end_dt)
+    depr_d, depr_c = _lp(db, ledger_is, "1602", start_dt, end_dt, exclude_source_models=_exclude)
     depreciation_expense = depr_c.quantize(Q2)
     total_operating_expenses = (selling_expenses + administrative_expenses + financial_expenses).quantize(Q2)
 
@@ -45,7 +51,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
 
     # ── 税金及附加 + 所得税 — 纯总账取数（月结后自动体现）──
     # 总账取数兼容旧 6403 和新的明细科目
-    sur_d, sur_c = _lp(db, ledger_is, "6403", start_dt, end_dt)
+    sur_d, sur_c = _lp(db, ledger_is, "6403", start_dt, end_dt, exclude_source_models=_exclude)
     tax_surcharges = (sur_d - sur_c).quantize(Q2)
     # 明细科目
     surcharge_detail_codes = {
@@ -63,7 +69,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     }
     surcharge_details = {}
     for key, code in surcharge_detail_codes.items():
-        d, c = _lp(db, ledger_is, code, start_dt, end_dt)
+        d, c = _lp(db, ledger_is, code, start_dt, end_dt, exclude_source_models=_exclude)
         surcharge_details[key] = (d - c).quantize(Q2)
     # 若 6403 有旧数据而明细为 0，总额用 6403；否则用明细合计
     detail_total = sum(surcharge_details.values())
@@ -74,19 +80,19 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
 
     # ── 营业外收支 ──
     # 营业外收入 = 税收减免(6301) + 资产处置收益(6111)
-    noi_d, noi_c = _lp(db, ledger_is, "6301", start_dt, end_dt)
-    ado_d, ado_c = _lp(db, ledger_is, "6111", start_dt, end_dt)
+    noi_d, noi_c = _lp(db, ledger_is, "6301", start_dt, end_dt, exclude_source_models=_exclude)
+    ado_d, ado_c = _lp(db, ledger_is, "6111", start_dt, end_dt, exclude_source_models=_exclude)
     non_operating_income = (noi_c + ado_c).quantize(Q2)
     # 营业外支出 = 营业外支出(6701) + 资产处置损失(6711)
-    noe_d, noe_c = _lp(db, ledger_is, "6701", start_dt, end_dt)
-    adl_d, adl_c = _lp(db, ledger_is, "6711", start_dt, end_dt)
+    noe_d, noe_c = _lp(db, ledger_is, "6701", start_dt, end_dt, exclude_source_models=_exclude)
+    adl_d, adl_c = _lp(db, ledger_is, "6711", start_dt, end_dt, exclude_source_models=_exclude)
     non_operating_expense = (noe_d + adl_d).quantize(Q2)
 
     # ── 利润总额 ──
     gross_profit_total = operating_profit + non_operating_income - non_operating_expense
 
     # ── 所得税 = 期内 6801 净发生额 ──
-    it_d, it_c = _lp(db, ledger_is, "6801", start_dt, end_dt)
+    it_d, it_c = _lp(db, ledger_is, "6801", start_dt, end_dt, exclude_source_models=_exclude)
     income_tax_expense = (it_d - it_c).quantize(Q2)
 
     # ── 净利润 ──

@@ -17,16 +17,15 @@ from sqlalchemy import exists as sa_exists
 
 import models
 from errors import BusinessError, ErrorCode
+from operation_result import EntityType
 
-# 合法的关联目标类型(与 models.py CheckConstraint + schemas/invoice.py pattern 保持一致)
-VALID_ORDER_TYPES = ("sale_order", "purchase_order", "expense", "fixed_asset")
+VALID_ORDER_TYPES = (EntityType.SALE_ORDER, EntityType.PURCHASE_ORDER, EntityType.EXPENSE, EntityType.FIXED_ASSET)
 
-# order_type → 目标模型 的映射(用于 validate_link_target 查目标是否存在)
 _TARGET_MODEL = {
-    "sale_order": models.SaleOrder,
-    "purchase_order": models.PurchaseOrder,
-    "expense": models.Expense,
-    "fixed_asset": models.FixedAsset,
+    EntityType.SALE_ORDER: models.SaleOrder,
+    EntityType.PURCHASE_ORDER: models.PurchaseOrder,
+    EntityType.EXPENSE: models.Expense,
+    EntityType.FIXED_ASSET: models.FixedAsset,
 }
 
 

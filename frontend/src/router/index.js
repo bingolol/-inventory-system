@@ -31,6 +31,7 @@ const routes = [
   { path: '/financial-overview', name: 'FinancialOverview', component: () => import('../views/FinancialOverview.vue'), meta: { title: '财务总览', desc: '关键财务指标概览' } },
   { path: '/cash-flows', name: 'CashFlows', component: () => import('../views/CashFlow.vue'), meta: { title: '现金流量表', desc: '经营活动 · 投资活动 · 筹资活动现金流' } },
   { path: '/finance/books', name: 'AccountingBooks', component: () => import('../views/AccountingBooks.vue'), meta: { title: '会计账簿', desc: '凭证查询 · 试算平衡表' } },
+  { path: '/accounting-guide', name: 'AccountingGuide', component: () => import('../views/AccountingGuide.vue'), meta: { title: '会计规则指引', desc: '零基础 · 用实际数据讲会计' } },
   { path: '/finance/journal/moves', redirect: '/finance/books' },
   { path: '/finance/reports/trial-balance', redirect: '/finance/books?tab=trial' },
   { path: '/finance/receivable/aging', name: 'AgingReport', component: () => import('../views/AgingReport.vue'), meta: { title: '往来管理', desc: '对账汇总 · 账龄分析' } },

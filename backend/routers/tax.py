@@ -9,15 +9,16 @@ from datetime import datetime, timedelta
 from database import get_db
 from schemas import TaxReport, TaxReportMonth, InvoiceOut
 from account_dep import get_account_id
+from datetime import datetime, timedelta
+from decimal import Decimal
 from utils import Q2
 from errors import BusinessError, ErrorCode
-from accounting_engine import AccountingEngine
 from crud.finance import aggregate_vat_invoices
+from crud.finance.tax_declarations import compute_carry_forward
+from policy.entity_profile import build_profile
+from policy.policy_engine import calculate_vat as policy_vat
 
 router = APIRouter()
-
-# 全局 AccountingEngine 实例
-_engine = AccountingEngine()
 
 
 def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_date: datetime):
@@ -30,14 +31,17 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
     agg = aggregate_vat_invoices(db, account_id, start_date, end_date)
     account = agg["account"]
 
-    # 使用 AccountingEngine 计算增值税
-    vat_result = _engine.calculate_vat(
+    # 使用 policy_engine 计算增值税（单一计算真相源）
+    profile = build_profile(account)
+    carry_forward = compute_carry_forward(db, account, start_date)
+    vat_result = policy_vat(
+        profile=profile,
         total_revenue=agg["output_total"],
-        taxpayer_type=account.taxpayer_type_l3,
         input_tax=agg["input_tax"],
         output_tax=agg["output_tax"],
         ordinary_revenue=agg["ordinary_revenue"],
         special_revenue=agg["special_revenue"],
+        carry_forward=carry_forward,
     )
 
     invoice_outs = []
@@ -65,11 +69,20 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
 
     return {
         "account": account,
+        "profile": profile,
         "output_total": agg["output_total"].quantize(Q2),
         "output_tax": agg["output_tax"].quantize(Q2),
         "input_total": agg["input_total"].quantize(Q2),
         "input_tax": agg["input_tax"].quantize(Q2),
         "tax_payable": vat_result.tax_payable.quantize(Q2),
+        "tax_payable_gross": vat_result.tax_payable_gross.quantize(Q2),
+        "surcharge_total": vat_result.surcharge_total,
+        "surcharge_education": vat_result.surcharge_education,
+        "surcharge_local_education": vat_result.surcharge_local_education,
+        "surcharge_urban_construction": vat_result.surcharge_urban_construction,
+        "tax_reduction": vat_result.tax_reduction,
+        "reduction_item": vat_result.reduction_item,
+        "carry_forward": carry_forward.quantize(Q2),
         "invoice_list": invoice_outs,
         "period_start": start_date.strftime("%Y-%m-%d"),
         "period_end": (end_date - timedelta(days=1)).strftime("%Y-%m-%d"),
@@ -101,7 +114,7 @@ async def get_tax_report(
         quarter=quarter,
         period_start=data["period_start"],
         period_end=data["period_end"],
-        taxpayer_type=data["account"].taxpayer_type_l3,
+        taxpayer_type=data["profile"].vat_type,
         output_total=data["output_total"],
         output_tax=data["output_tax"],
         input_total=data["input_total"],
@@ -135,7 +148,7 @@ async def get_tax_report_monthly(
         month=month,
         period_start=data["period_start"],
         period_end=data["period_end"],
-        taxpayer_type=data["account"].taxpayer_type_l3,
+        taxpayer_type=data["profile"].vat_type,
         output_total=data["output_total"],
         output_tax=data["output_tax"],
         input_total=data["input_total"],

@@ -32,6 +32,7 @@ PERSONAL_TRANSACTION_TYPES = ["income", "expense"]
 class TaxpayerType:
     SMALL_SCALE = "small_scale"
     GENERAL = "general"
+    SMALL_MICRO = "small_micro"
 
 
 class OrderStatus:
@@ -78,6 +79,11 @@ class FlowCategory:
     OPERATING = "operating"
     INVESTING = "investing"
     FINANCING = "financing"
+
+
+class TransactionType:
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
 
 
 class OrderType:
@@ -144,6 +150,7 @@ ENUM_LABELS = {
     "taxpayer_type": {
         TaxpayerType.SMALL_SCALE: "小规模纳税人",
         TaxpayerType.GENERAL: "一般纳税人",
+        TaxpayerType.SMALL_MICRO: "小型微利企业",
     },
     "order_type": {
         OrderType.RETAIL: "零售",
@@ -173,7 +180,7 @@ ALL_ENUMS = {
     "invoice_status": [InvoiceStatus.INVOICED, InvoiceStatus.NOT_INVOICED, InvoiceStatus.NOT_NEEDED],
     "flow_category": [FlowCategory.OPERATING, FlowCategory.INVESTING, FlowCategory.FINANCING],
     "personal_transaction_type": PERSONAL_TRANSACTION_TYPES,
-    "taxpayer_type": [TaxpayerType.SMALL_SCALE, TaxpayerType.GENERAL],
+    "taxpayer_type": [TaxpayerType.SMALL_SCALE, TaxpayerType.GENERAL, TaxpayerType.SMALL_MICRO],
     "order_type": [OrderType.RETAIL],
     "personal_advance_status": [PersonalAdvanceStatus.UNPAID, PersonalAdvanceStatus.PARTIAL, PersonalAdvanceStatus.PAID],
     "personal_advance_debit_accounts": PERSONAL_ADVANCE_DEBIT_ACCOUNTS,

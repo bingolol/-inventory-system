@@ -8,8 +8,10 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 import models
 from finance_integration import post_journal, reverse_journal
+from operation_result import EntityType
 from utils import Q2
 from lineage import reads, TIER_L3
+from policy.vat_facts import VAT_GENERAL_DEFAULT_RATE, VAT_SMALL_SCALE_SYNDICATED_RATE
 
 
 class FinanceEngine:
@@ -41,8 +43,8 @@ class FinanceEngine:
         - 小规模纳税人：法定征收率 3%（减按 1% 征收的优惠在 AccountingEngine.calculate_vat 中处理）
         """
         if account is None:
-            return Decimal("0.03")
-        return Decimal("0.13") if account.taxpayer_type_l3 == "general" else Decimal("0.03")
+            return VAT_SMALL_SCALE_SYNDICATED_RATE.value
+        return VAT_GENERAL_DEFAULT_RATE.value if account.taxpayer_type_l3 == "general" else VAT_SMALL_SCALE_SYNDICATED_RATE.value
 
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     def _account_config(self) -> dict:
@@ -74,12 +76,12 @@ class FinanceEngine:
             "total_with_tax": total_with_tax,
             "total_without_tax": total_without_tax,
             "tax_amount": tax_amount,
-            "source_model": "purchase_order",
+            "source_model": EntityType.PURCHASE_ORDER,
             "source_id": order.id,
             "date": order.purchase_date_l1,
             "account_config": self._account_config(),
         }
-        post_journal(self.db, self.account_id, "purchase_order", source, force=force)
+        post_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, source, force=force)
 
     def record_sale(self, order, force: bool = False) -> None:
         # 修复 #10：移除小规模 3% 覆盖逻辑，直接用行项 item.tax_rate_l1
@@ -110,17 +112,17 @@ class FinanceEngine:
                 }
                 for item in order.items
             ],
-            "source_model": "sale_order",
+            "source_model": EntityType.SALE_ORDER,
             "source_id": order.id,
             "date": order.sale_date_l1,
             "account_config": self._account_config(),
         }
-        post_journal(self.db, self.account_id, "sale_order", source, force=force)
+        post_journal(self.db, self.account_id, EntityType.SALE_ORDER, source, force=force)
 
     def reverse_purchase(self, order_id: int, force: bool = False) -> None:
         """冲红采购凭证"""
-        reverse_journal(self.db, self.account_id, "purchase_order", order_id, force=force)
+        reverse_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, order_id, force=force)
 
     def reverse_sale(self, order_id: int, force: bool = False) -> None:
         """冲红销售凭证"""
-        reverse_journal(self.db, self.account_id, "sale_order", order_id, force=force)
+        reverse_journal(self.db, self.account_id, EntityType.SALE_ORDER, order_id, force=force)

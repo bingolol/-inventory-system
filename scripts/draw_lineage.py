@@ -47,9 +47,7 @@ def load_registry():
         # 命令层（含 L3 政策字段 @writes/@reads）
         "commands.product_commands",
         "commands.account_commands",
-        "commands.invoice_commands",
-        "commands.purchase_commands",
-        "commands.sale_commands",
+        "commands.orders",
         # CRUD/报表层
         "crud.reports",
         "crud.products",

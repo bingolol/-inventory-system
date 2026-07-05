@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy.orm import Session
 from models import BankAccount, BankTransaction
+from enums import TransactionType
 from errors import BusinessError, ErrorCode
 from utils import _d
 from lineage import writes, derives, TIER_L1, TIER_L2, TIER_L4
@@ -70,7 +71,7 @@ class BankEngine:
             )
 
         amount = _d(amount)
-        if transaction_type == "inflow":
+        if transaction_type == TransactionType.INFLOW:
             new_balance = _d(bank_account.balance_l4) + amount
         else:
             new_balance = _d(bank_account.balance_l4) - amount

@@ -49,9 +49,7 @@ def loaded_registry():
         "commands.account_commands",
         "commands.cash_commands",
         "commands.finance_commands",
-        "commands.sale_commands",
-        "commands.purchase_commands",
-        "commands.invoice_commands",
+        "commands.orders",
         "routers.personal_advances",
     ]
     for mod_name in modules:

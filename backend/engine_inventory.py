@@ -9,9 +9,11 @@ from typing import Optional
 from sqlalchemy.orm import Session
 import models
 from errors import BusinessError, ErrorCode
+from operation_result import EntityType
 from utils import Q2
 from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
+from policy.entity_profile import build_profile
 
 
 class InventoryEngine:
@@ -20,10 +22,10 @@ class InventoryEngine:
 
     def _get_move_date(self, source_type: str, source_id: int) -> datetime:
         """从源单据获取业务日期"""
-        if source_type == "purchase_order":
+        if source_type == EntityType.PURCHASE_ORDER:
             po = self.db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == source_id).first()
             return po.purchase_date_l1 if po and po.purchase_date_l1 else datetime.now()
-        if source_type == "sale_order":
+        if source_type == EntityType.SALE_ORDER:
             so = self.db.query(models.SaleOrder).filter(models.SaleOrder.id == source_id).first()
             return so.sale_date_l1 if so and so.sale_date_l1 else datetime.now()
         if source_type.endswith("_reversal"):
@@ -82,7 +84,7 @@ class InventoryEngine:
                                 data={"details": f"账本不存在: account_id={account_id}"})
 
         new_qty = Decimal(str(quantity))
-        is_general = account.taxpayer_type_l3 == "general"
+        is_general = build_profile(account).vat_type == "general"
         if is_general and tax_rate is not None:
             rate = Decimal(str(tax_rate))
             total_cost = (new_qty * Decimal(str(unit_price))).quantize(Q2)  # 不含税

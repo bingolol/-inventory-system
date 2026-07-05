@@ -1,0 +1,1255 @@
+diff --git a/backend/commands/invoice_commands.py b/backend/commands/invoice_commands.py
+index b62b2581..e2ce2e8b 100644
+--- a/backend/commands/invoice_commands.py
++++ b/backend/commands/invoice_commands.py
+@@ -4,10 +4,10 @@
+ 姣忎釜 Handler 鍖呭惈锛氭暟鎹牎楠?鈫?ORM 鎿嶄綔 鈫?鏃ュ織璁板綍銆? """
+ 
+-from dataclasses import dataclass
++from dataclasses import dataclass, field
+ from datetime import datetime
+ from decimal import Decimal
+-from typing import Any, Optional
++from typing import Any, Optional, List
+ 
+ import models
+ from enums import InvoiceDirection, InvoiceType
+@@ -37,6 +37,8 @@ class CreateInvoice(Command):
+     tax_amount: Any = None              # Decimal
+     amount_with_tax: Any = None         # Decimal
+     counterparty_name: str = ""
++    seller_name: str = ""
++    buyer_name: str = ""
+     issue_date: Any = None              # datetime or str
+     pdf_path: Optional[str] = None
+     image_url: Optional[str] = None
+@@ -45,6 +47,9 @@ class CreateInvoice(Command):
+     related_order_id: Optional[int] = None
+     related_order_type: Optional[str] = None
+     notes: str = ""
++    items: List[dict] = field(default_factory=list)
++    sale_order_action: Optional[str] = None  # link_existing / auto_create (閿€椤?
++    purchase_order_action: Optional[str] = None  # link_existing / auto_create (杩涢」)
+ 
+ 
+ @register(CreateInvoice)
+@@ -93,6 +98,8 @@ class CreateInvoiceHandler(CommandHandler):
+             tax_amount=cmd.tax_amount,
+             amount_with_tax=cmd.amount_with_tax,
+             counterparty_name=cmd.counterparty_name,
++            seller_name=cmd.seller_name,
++            buyer_name=cmd.buyer_name,
+             issue_date=issue_date,
+             pdf_path=cmd.pdf_path,
+             image_url=cmd.image_url,
+@@ -105,6 +112,57 @@ class CreateInvoiceHandler(CommandHandler):
+         db.add(db_invoice)
+         db.flush()
+ 
++        # 5.1 淇濆瓨鍙戠エ鍟嗗搧鏄庣粏
++        for it in cmd.items:
++            line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
++            inv_item = models.InvoiceItem(
++                invoice_id=db_invoice.id,
++                product_id=it['product_id'],
++                quantity=it['quantity'],
++                unit_price=it['unit_price'],
++                tax_rate=it.get('tax_rate', cmd.tax_rate),
++                total_price=line_total,
++            )
++            db.add(inv_item)
++
++        # 5.2 閿€椤瑰彂绁細鏍规嵁 sale_order_action 鍏宠仈鎴栬嚜鍔ㄧ敓鎴愰攢鍞崟
++        if cmd.direction == InvoiceDirection.OUT:
++            if cmd.sale_order_action == "link_existing":
++                # 鍏宠仈宸叉湁閿€鍞崟锛屼笉鐢熸垚鏂伴攢鍞崟锛屼笉鎵ｅ簱瀛?+                if not cmd.related_order_id:
++                    raise BusinessError(
++                        code=ErrorCode.VALIDATION_ERROR,
++                        message="sale_order_action=link_existing 鏃跺繀濉?related_order_id"
++                    )
++                db_invoice.related_order_type = "sale_order"
++                db_invoice.related_order_id = cmd.related_order_id
++            elif cmd.sale_order_action == "auto_create":
++                # 鑷姩鐢熸垚鏂伴攢鍞崟骞舵墸搴撳瓨
++                sale_order = _auto_generate_sale_order(
++                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items
++                )
++                db_invoice.related_order_type = "sale_order"
++                db_invoice.related_order_id = sale_order.id
++
++        # 5.3 杩涢」鍙戠エ锛氭牴鎹?purchase_order_action 鍏宠仈鎴栬嚜鍔ㄧ敓鎴愰噰璐崟
++        if cmd.direction == InvoiceDirection.IN:
++            if cmd.purchase_order_action == "link_existing":
++                if not cmd.related_order_id:
++                    raise BusinessError(
++                        code=ErrorCode.VALIDATION_ERROR,
++                        message="purchase_order_action=link_existing 鏃跺繀濉?related_order_id"
++                    )
++                db_invoice.related_order_type = "purchase_order"
++                db_invoice.related_order_id = cmd.related_order_id
++            elif cmd.purchase_order_action == "auto_create":
++                purchase_order = _auto_generate_purchase_order(
++                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items
++                )
++                db_invoice.related_order_type = "purchase_order"
++                db_invoice.related_order_id = purchase_order.id
++
++        db.flush()
++
+         # 6. 鏃ュ織
+         _log(db, cmd.account_id, "create", "invoice", db_invoice.id,
+              f"鍒涘缓鍙戠エ: {db_invoice.invoice_no} ({db_invoice.direction}/{db_invoice.invoice_type})",
+@@ -293,6 +351,8 @@ class CreateInvoiceWithFixedAsset(Command):
+     tax_rate: Any = None
+     amount_with_tax: Any = None
+     counterparty_name: str = ""
++    seller_name: str = ""
++    buyer_name: str = ""
+     issue_date: Any = None
+     notes: str = ""
+ 
+@@ -334,6 +394,8 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
+             tax_amount=tax_amount,
+             amount_with_tax=amount_with_tax,
+             counterparty_name=cmd.counterparty_name,
++            seller_name=cmd.seller_name,
++            buyer_name=cmd.buyer_name,
+             issue_date=issue_date,
+             notes=cmd.notes,
+             related_order_type="fixed_asset",
+@@ -466,6 +528,115 @@ class UpdateInvoiceWithFixedAssetHandler(CommandHandler):
+         return {"invoice": invoice, "asset": asset}
+ 
+ 
++# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?+# 杈呭姪鍑芥暟锛氶攢椤瑰彂绁ㄨ嚜鍔ㄧ敓鎴愰攢鍞崟
++# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?+
++def _auto_generate_sale_order(db, account_id: int, operator: str, invoice, items: list):
++    """閿€椤瑰彂绁ㄥ垱寤哄悗鑷姩鐢熸垚閿€鍞崟锛岄噾棰濆彇鍙戠エ閲戦銆?+
++    - total_price = invoice.amount_with_tax锛堜环绋庡悎璁★級
++    - tax_amount = invoice.tax_amount锛堝鍊肩◣棰濓級
++    - items 浠庡彂绁ㄥ晢鍝佹槑缁嗗悓姝ュ埌 SaleItem
++    """
++    from .crud_compat import _generate_order_no, _log
++    from enums import OrderStatus, OrderType, PaymentStatus
++    from crud.inventory_ops import sale_deduct
++
++    order_no = _generate_order_no(db, "SO")
++    order = models.SaleOrder(
++        account_id=account_id,
++        order_no=order_no,
++        order_type=OrderType.RETAIL,
++        payment_status=PaymentStatus.UNPAID,
++        status=OrderStatus.COMPLETED,
++        notes=f"鐢卞彂绁?{invoice.invoice_no} 鑷姩鐢熸垚",
++        total_price=_d(invoice.amount_with_tax),
++        tax_amount=_d(invoice.tax_amount),
++        sale_date=invoice.issue_date,
++    )
++    db.add(order)
++    db.flush()
++
++    for it in items:
++        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
++        item = models.SaleItem(
++            order_id=order.id,
++            product_id=it['product_id'],
++            quantity=it['quantity'],
++            unit_price=it['unit_price'],
++            tax_rate=it.get('tax_rate', invoice.tax_rate),
++            total_price=line_total,
++        )
++        db.add(item)
++
++    db.flush()
++
++    # 鎵ｅ簱瀛橈紙閿€鍞崟鏄鐞嗗簱瀛樺敮涓€鍙ｅ緞锛?+    sale_deduct(db, account_id, order, operator=operator)
++
++    _log(db, account_id, "create", "sale_order", order.id,
++         f"鍙戠エ {invoice.invoice_no} 鑷姩鐢熸垚閿€鍞崟 {order_no}: 浠风◣鍚堣={invoice.amount_with_tax}, 绋庨={invoice.tax_amount}",
++         operator=operator)
++    db.flush()
++    return order
++
++
++def _auto_generate_purchase_order(db, account_id: int, operator: str, invoice, items: list):
++    """杩涢」鍙戠エ鍒涘缓鍚庤嚜鍔ㄧ敓鎴愰噰璐崟锛岄噾棰濆彇鍙戠エ閲戦銆?+
++    - total_price = invoice.amount_with_tax锛堜环绋庡悎璁★級
++    - tax_amount = invoice.tax_amount锛堝鍊肩◣棰濓級
++    - items 浠庡彂绁ㄥ晢鍝佹槑缁嗗悓姝ュ埌 PurchaseItem锛屽悓鏃跺叆搴?+    """
++    from .crud_compat import _generate_order_no, _log, get_or_create_inventory, get_product
++    from enums import OrderStatus, OrderType, PaymentMethod
++    from crud.inventory_ops import sale_deduct
++
++    order_no = _generate_order_no(db, "PO")
++    order = models.PurchaseOrder(
++        account_id=account_id,
++        order_no=order_no,
++        supplier_id=None,
++        order_type=OrderType.RETAIL,
++        payment_method=PaymentMethod.COMPANY,
++        status=OrderStatus.COMPLETED,
++        notes=f"鐢卞彂绁?{invoice.invoice_no} 鑷姩鐢熸垚",
++        total_price=_d(invoice.amount_with_tax),
++        tax_amount=_d(invoice.tax_amount),
++        purchase_date=invoice.issue_date,
++    )
++    db.add(order)
++    db.flush()
++
++    for it in items:
++        product = get_product(db, account_id, it['product_id'])
++        if not product:
++            raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
++        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
++        item = models.PurchaseItem(
++            order_id=order.id,
++            product_id=it['product_id'],
++            quantity=it['quantity'],
++            unit_price=it['unit_price'],
++            tax_rate=it.get('tax_rate', invoice.tax_rate),
++            total_price=line_total,
++        )
++        db.add(item)
++        # 鍏ュ簱锛堥噰璐崟鏄鐞嗗簱瀛樺敮涓€鍙ｅ緞锛?+        if product.track_inventory:
++            inv = get_or_create_inventory(db, account_id, it['product_id'])
++            inv.quantity += it['quantity']
++
++    db.flush()
++
++    _log(db, account_id, "create", "purchase_order", order.id,
++         f"鍙戠エ {invoice.invoice_no} 鑷姩鐢熸垚閲囪喘鍗?{order_no}: 浠风◣鍚堣={invoice.amount_with_tax}, 绋庨={invoice.tax_amount}",
++         operator=operator)
++    db.flush()
++    return order
++
++
+ # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺? # 8. UpdateAssetWithInvoice 鈥?璧勪骇鏇存柊鑱斿姩鍙戠エ
+ # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?diff --git a/backend/crud/finance.py b/backend/crud/finance.py
+index 1a22438f..eca10f19 100644
+--- a/backend/crud/finance.py
++++ b/backend/crud/finance.py
+@@ -6,7 +6,7 @@
+ 
+ import logging
+ from datetime import datetime
+-from decimal import Decimal
++from decimal import Decimal, ROUND_HALF_UP
+ from sqlalchemy.orm import Session
+ from sqlalchemy import func as sqlfunc
+ import models, schemas
+@@ -446,11 +446,29 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
+ 
+     total_operating_expenses = selling_expenses + administrative_expenses + financial_expenses
+ 
++    # 鈹€鈹€ 绋庨噾鍙婇檮鍔狅紙澧炲€肩◣闄勫姞绋庯紝浠庡彂绁ㄥ姩鎬佹淳鐢燂級鈹€鈹€
++    # 閿€椤圭◣ = 危 閿€椤瑰彂绁ㄧ◣棰濓紱杩涢」绋?= 危 杩涢」鍙戠エ绋庨
++    # 搴旂撼澧炲€肩◣ = max(閿€椤?- 杩涢」, 0)锛涢檮鍔犵◣ = 搴旂撼澧炲€肩◣ 脳 12%锛堝煄寤?%+鏁欒偛3%+鍦版柟2%锛?+    output_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
++        models.Invoice.account_id == account_id,
++        models.Invoice.direction == InvoiceDirection.OUT,
++        models.Invoice.issue_date >= start_dt,
++        models.Invoice.issue_date <= end_dt
++    ).scalar())
++    input_tax = _d(db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
++        models.Invoice.account_id == account_id,
++        models.Invoice.direction == InvoiceDirection.IN,
++        models.Invoice.issue_date >= start_dt,
++        models.Invoice.issue_date <= end_dt
++    ).scalar())
++    vat_payable = max(output_tax - input_tax, Decimal('0'))
++    tax_and_surcharge = (vat_payable * Decimal('0.12')).quantize(Q2, rounding=ROUND_HALF_UP)
++
+     # 鈹€鈹€ 钀ヤ笟姣涘埄 鈹€鈹€
+     gross_profit = revenue - cost_of_goods_sold
+ 
+     # 鈹€鈹€ 钀ヤ笟鍒╂鼎 鈹€鈹€
+-    operating_profit = gross_profit - total_operating_expenses
++    operating_profit = gross_profit - tax_and_surcharge - total_operating_expenses
+ 
+     # 鈹€鈹€ 钀ヤ笟澶栨敹鏀?鈹€鈹€
+     non_operating_income = Decimal('0')
+@@ -481,13 +499,13 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
+             data={"gross_profit": float(gross_profit), "revenue": float(revenue), "cost_of_goods_sold": float(cost_of_goods_sold)}
+         )
+ 
+-    # 鏍￠獙2锛氳惀涓氬埄娑?= 钀ヤ笟姣涘埄 - 钀ヤ笟璐圭敤
+-    expected_operating_profit = gross_profit - total_operating_expenses
++    # 鏍￠獙2锛氳惀涓氬埄娑?= 钀ヤ笟姣涘埄 - 绋庨噾鍙婇檮鍔?- 钀ヤ笟璐圭敤
++    expected_operating_profit = gross_profit - tax_and_surcharge - total_operating_expenses
+     if abs(operating_profit - expected_operating_profit) > Decimal('0.01'):
+         raise BusinessError(
+             code=ErrorCode.INCOME_STATEMENT_INVALID,
+-            message=f"鍒╂鼎琛ㄥ叕寮忛敊璇細钀ヤ笟鍒╂鼎 {operating_profit} 鈮?钀ヤ笟姣涘埄 {gross_profit} - 钀ヤ笟璐圭敤 {total_operating_expenses}",
+-            data={"operating_profit": float(operating_profit), "gross_profit": float(gross_profit), "total_operating_expenses": float(total_operating_expenses)}
++            message=f"鍒╂鼎琛ㄥ叕寮忛敊璇細钀ヤ笟鍒╂鼎 {operating_profit} 鈮?钀ヤ笟姣涘埄 {gross_profit} - 绋庨噾鍙婇檮鍔?{tax_and_surcharge} - 钀ヤ笟璐圭敤 {total_operating_expenses}",
++            data={"operating_profit": float(operating_profit), "gross_profit": float(gross_profit), "tax_and_surcharge": float(tax_and_surcharge), "total_operating_expenses": float(total_operating_expenses)}
+         )
+ 
+     # 鏍￠獙3锛氬埄娑︽€婚 = 钀ヤ笟鍒╂鼎 + 钀ヤ笟澶栨敹鍏?- 钀ヤ笟澶栨敮鍑?@@ -513,6 +531,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
+         "revenue": revenue.quantize(Q2),
+         "cost_of_goods_sold": cost_of_goods_sold.quantize(Q2),
+         "gross_profit": gross_profit.quantize(Q2),
++        "tax_and_surcharge": tax_and_surcharge.quantize(Q2),
+         "selling_expenses": selling_expenses.quantize(Q2),
+         "administrative_expenses": administrative_expenses.quantize(Q2),
+         "financial_expenses": financial_expenses.quantize(Q2),
+diff --git a/backend/database.py b/backend/database.py
+index 6b8557c5..8e0cdd5b 100644
+--- a/backend/database.py
++++ b/backend/database.py
+@@ -453,6 +453,48 @@ def _migrate_bank_transaction_flow_category(engine):
+             logger.info("杩佺Щ: bank_transactions 琛ㄦ坊鍔?flow_category 鍒?)
+ 
+ 
++def _migrate_invoice_party_names(engine):
++    """涓?invoices 琛ㄦ坊鍔?seller_name 鍜?buyer_name 鍒?""
++    insp = inspect(engine)
++    if "invoices" not in insp.get_table_names():
++        return
++    columns = [col["name"] for col in insp.get_columns("invoices")]
++    with engine.connect() as conn:
++        if "seller_name" not in columns:
++            conn.execute(text("ALTER TABLE invoices ADD COLUMN seller_name VARCHAR(200) NOT NULL DEFAULT ''"))
++            logger.info("杩佺Щ: invoices 琛ㄦ坊鍔?seller_name 鍒?)
++        if "buyer_name" not in columns:
++            conn.execute(text("ALTER TABLE invoices ADD COLUMN buyer_name VARCHAR(200) NOT NULL DEFAULT ''"))
++            logger.info("杩佺Щ: invoices 琛ㄦ坊鍔?buyer_name 鍒?)
++        conn.commit()
++
++
++def _migrate_sale_order_tax_amount(engine):
++    """涓?sale_orders 琛ㄦ坊鍔?tax_amount 鍒?""
++    insp = inspect(engine)
++    if "sale_orders" not in insp.get_table_names():
++        return
++    columns = [col["name"] for col in insp.get_columns("sale_orders")]
++    if "tax_amount" not in columns:
++        with engine.connect() as conn:
++            conn.execute(text("ALTER TABLE sale_orders ADD COLUMN tax_amount NUMERIC(12,2) DEFAULT 0"))
++            conn.commit()
++            logger.info("杩佺Щ: sale_orders 琛ㄦ坊鍔?tax_amount 鍒?)
++
++
++def _migrate_purchase_order_tax_amount(engine):
++    """涓?purchase_orders 琛ㄦ坊鍔?tax_amount 鍒?""
++    insp = inspect(engine)
++    if "purchase_orders" not in insp.get_table_names():
++        return
++    columns = [col["name"] for col in insp.get_columns("purchase_orders")]
++    if "tax_amount" not in columns:
++        with engine.connect() as conn:
++            conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN tax_amount NUMERIC(12,2) DEFAULT 0"))
++            conn.commit()
++            logger.info("杩佺Щ: purchase_orders 琛ㄦ坊鍔?tax_amount 鍒?)
++
++
+ def init_db():
+     import models
+     Base.metadata.create_all(bind=engine)
+@@ -465,6 +507,9 @@ def init_db():
+     _migrate_expense_functional_category(engine)
+     _migrate_drop_has_invoice(engine)
+     _migrate_bank_transaction_flow_category(engine)
++    _migrate_invoice_party_names(engine)
++    _migrate_sale_order_tax_amount(engine)
++    _migrate_purchase_order_tax_amount(engine)
+     # _migrate_v4_order_type 宸插垹闄わ細鎵€鏈夊瓧娈靛凡鍦?models.py 涓畾涔夛紝create_all 鑷姩鍒涘缓
+     _ensure_default_accounts()
+     # 鏃ц縼绉荤殑绗?姝?娓呯┖鏁版嵁"鏃犲箓绛変繚鎶わ紝瀵艰嚧姣忔閲嶅惎閮戒細涓㈠け鎵€鏈夋暟鎹?\ No newline at end of file
+diff --git a/backend/models.py b/backend/models.py
+index af895274..59ea72d0 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -158,7 +158,8 @@ class PurchaseOrder(Base):
+     order_no = Column(String(30), index=True, comment="閲囪喘鍗曞彿")
+     supplier_id = Column(Integer, ForeignKey("suppliers.id"), comment="渚涘簲鍟咺D")
+     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="鍗曟嵁绫诲瀷: retail/purchase_labor")
+-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="璁㈠崟鎬婚")
++    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="璁㈠崟鎬婚锛堜环绋庡悎璁★級")
++    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="澧炲€肩◣棰?)
+     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="鏀粯鏂瑰紡: company / private_advance")
+     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="浠樻鐘舵€? paid / unpaid")
+     status = Column(String(20), default=OrderStatus.COMPLETED, comment="鐘舵€? pending/completed/cancelled")
+@@ -200,7 +201,8 @@ class SaleOrder(Base):
+     order_no = Column(String(30), index=True, comment="閿€鍞崟鍙?)
+     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, comment="瀹㈡埛ID(鍙负绌?鏁ｅ)")
+     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="鍗曟嵁绫诲瀷: retail")
+-    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="璁㈠崟鎬婚")
++    total_price = Column(Numeric(12, 2), default=Decimal('0'), comment="璁㈠崟鎬婚锛堜环绋庡悎璁★級")
++    tax_amount = Column(Numeric(12, 2), default=Decimal('0'), comment="澧炲€肩◣棰?)
+     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="鏀粯鐘舵€? paid / unpaid")
+     status = Column(String(20), default=OrderStatus.COMPLETED, comment="鐘舵€? pending/completed/cancelled")
+     notes = Column(Text, default="", comment="澶囨敞")
+@@ -293,6 +295,8 @@ class Invoice(Base):
+     tax_amount = Column(Numeric(12, 2), nullable=False, comment="绋庨")
+     amount_with_tax = Column(Numeric(12, 2), nullable=False, comment="浠风◣鍚堣")
+     counterparty_name = Column(String(200), nullable=False, comment="瀵规柟鍚嶇О")
++    seller_name = Column(String(200), nullable=False, default="", comment="閿€鏂瑰悕绉?)
++    buyer_name = Column(String(200), nullable=False, default="", comment="涔版柟鍚嶇О")
+     issue_date = Column(DateTime, nullable=False, comment="寮€绁ㄦ棩鏈?)
+     pdf_path = Column(String(500), nullable=True, comment="PDF鏂囦欢璺緞")
+     image_url = Column(String(500), default="", comment="闄勪欢鍥剧墖URL")
+@@ -303,6 +307,8 @@ class Invoice(Base):
+     notes = Column(Text, default="", comment="澶囨敞")
+     created_at = Column(DateTime, default=datetime.now)
+ 
++    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
++
+     __table_args__ = (
+         UniqueConstraint('account_id', 'invoice_no', name='uix_account_invoice_no'),
+         # DB 灞傚厹搴?闃叉 agent 瓒婅繃 handler 鐩存帴鍐欓潪娉?related_order_type
+@@ -313,6 +319,25 @@ class Invoice(Base):
+     )
+ 
+ 
++class InvoiceItem(Base):
++    __tablename__ = "invoice_items"
++
++    id = Column(Integer, primary_key=True, index=True)
++    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, comment="鍙戠エID")
++    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="鍟嗗搧ID")
++    quantity = Column(Integer, nullable=False, comment="鏁伴噺")
++    unit_price = Column(Numeric(12, 6), nullable=False, comment="鍗曚环")
++    tax_rate = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="绋庣巼")
++    total_price = Column(Numeric(12, 2), nullable=False, comment="灏忚")
++
++    invoice = relationship("Invoice", back_populates="items")
++    product = relationship("Product")
++
++    __table_args__ = (
++        UniqueConstraint('invoice_id', 'product_id', name='uix_invoice_item_product'),
++    )
++
++
+ 
+ # 璐圭敤琛紙浼佷笟鎵€寰楃◣鐢細鏃犵エ鏀嚭璁板綍锛? class Expense(Base):
+diff --git a/backend/routers/invoices.py b/backend/routers/invoices.py
+index 6f453e4d..ea769f15 100644
+--- a/backend/routers/invoices.py
++++ b/backend/routers/invoices.py
+@@ -186,6 +186,8 @@ async def quick_create_invoice(
+                     tax_rate=invoice.tax_rate,
+                     amount_with_tax=invoice.amount_with_tax,
+                     counterparty_name=invoice.counterparty_name,
++                    seller_name=invoice.seller_name,
++                    buyer_name=invoice.buyer_name,
+                     issue_date=invoice.issue_date,
+                     notes=invoice.notes,
+                     asset_code=fa.asset_code,
+@@ -213,9 +215,16 @@ async def quick_create_invoice(
+                     tax_amount=amounts.tax_amount,
+                     amount_with_tax=amounts.amount_with_tax,
+                     counterparty_name=invoice.counterparty_name,
++                    seller_name=invoice.seller_name,
++                    buyer_name=invoice.buyer_name,
+                     issue_date=invoice.issue_date,
+-                    image_url=invoice.image_url,  # 淇锛氬師 handler 涓㈠純浜?schema 閲岀殑 image_url
++                    image_url=invoice.image_url,
+                     notes=invoice.notes,
++                    items=[it.model_dump() for it in invoice.items],
++                    sale_order_action=invoice.sale_order_action,
++                    purchase_order_action=invoice.purchase_order_action,
++                    related_order_id=invoice.related_order_id,
++                    related_order_type=invoice.related_order_type,
+                 )
+                 db_invoice = dispatch(cmd, db)
+                 db_asset = None
+diff --git a/backend/schemas/finance.py b/backend/schemas/finance.py
+index acf5913c..0a7fe407 100644
+--- a/backend/schemas/finance.py
++++ b/backend/schemas/finance.py
+@@ -346,21 +346,23 @@ class IncomeStatement(BaseModel):
+     cost_of_goods_sold: Decimal = Decimal('0')
+     # 涓夈€佽惀涓氭瘺鍒?     gross_profit: Decimal = Decimal('0')
+-    # 鍥涖€佽惀涓氳垂鐢?+    # 鍥涖€佺◣閲戝強闄勫姞锛堝鍊肩◣闄勫姞绋庯細鍩庡缓7%+鏁欒偛3%+鍦版柟2%锛?+    tax_and_surcharge: Decimal = Decimal('0')
++    # 浜斻€佽惀涓氳垂鐢?     selling_expenses: Decimal = Decimal('0')  # 閿€鍞垂鐢?     administrative_expenses: Decimal = Decimal('0')  # 绠＄悊璐圭敤
+     financial_expenses: Decimal = Decimal('0')  # 璐㈠姟璐圭敤
+     total_operating_expenses: Decimal = Decimal('0')  # 钀ヤ笟璐圭敤鍚堣
+-    # 浜斻€佽惀涓氬埄娑?+    # 鍏€佽惀涓氬埄娑?     operating_profit: Decimal = Decimal('0')
+-    # 鍏€佽惀涓氬鏀舵敮
++    # 涓冦€佽惀涓氬鏀舵敮
+     non_operating_income: Decimal = Decimal('0')  # 钀ヤ笟澶栨敹鍏?     non_operating_expense: Decimal = Decimal('0')  # 钀ヤ笟澶栨敮鍑?-    # 涓冦€佸埄娑︽€婚
++    # 鍏€佸埄娑︽€婚
+     gross_profit_total: Decimal = Decimal('0')
+-    # 鍏€佹墍寰楃◣璐圭敤
++    # 涔濄€佹墍寰楃◣璐圭敤
+     income_tax_expense: Decimal = Decimal('0')
+-    # 涔濄€佸噣鍒╂鼎
++    # 鍗併€佸噣鍒╂鼎
+     net_profit: Decimal = Decimal('0')
+ 
+ 
+diff --git a/backend/schemas/invoice.py b/backend/schemas/invoice.py
+index ee5c1a89..8f25a1d7 100644
+--- a/backend/schemas/invoice.py
++++ b/backend/schemas/invoice.py
+@@ -1,4 +1,4 @@
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, Field, model_validator
+ from typing import Optional, List
+ from datetime import datetime
+ from decimal import Decimal
+@@ -69,6 +69,14 @@ class FixedAssetBlock(BaseModel):
+     asset_status: str = Field(default="鍦ㄧ敤")
+ 
+ 
++class InvoiceItemCreate(BaseModel):
++    """鍙戠エ鍟嗗搧鏄庣粏琛?""
++    product_id: int
++    quantity: int = Field(..., gt=0)
++    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
++    tax_rate: Decimal = Field(default=Decimal('0.01'), ge=0, le=1, max_digits=12, decimal_places=2)
++
++
+ class InvoiceQuickCreate(BaseModel):
+     invoice_no: str = Field(..., max_length=50)
+     direction: str = Field(..., pattern="^(in|out)$")
+@@ -76,12 +84,36 @@ class InvoiceQuickCreate(BaseModel):
+     amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
+     counterparty_name: str = Field(..., max_length=200)
++    seller_name: str = Field(..., max_length=200, description="閿€鏂瑰悕绉?)
++    buyer_name: str = Field(..., max_length=200, description="涔版柟鍚嶇О")
+     issue_date: str  # YYYY-MM-DD
++    items: List[InvoiceItemCreate] = Field(..., min_length=1, description="鍟嗗搧鏄庣粏锛堣嚦灏?琛岋級")
++    sale_order_action: Optional[str] = Field(None, pattern="^(link_existing|auto_create)$",
++        description="閿€椤瑰彂绁ㄥ繀濉細link_existing=鍏宠仈宸叉湁閿€鍞崟, auto_create=鑷姩鐢熸垚閿€鍞崟")
++    purchase_order_action: Optional[str] = Field(None, pattern="^(link_existing|auto_create)$",
++        description="杩涢」鍙戠エ蹇呭～锛歭ink_existing=鍏宠仈宸叉湁閲囪喘鍗? auto_create=鑷姩鐢熸垚閲囪喘鍗?)
++    related_order_id: Optional[int] = Field(None, description="鍏宠仈璁㈠崟ID锛坙ink_existing鏃跺繀濉級")
++    related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
+     image_url: Optional[str] = None
+     notes: str = ""
+     # 鍙€夛細鍙戠エ鍚屾椂鍏ヨ处鍥哄畾璧勪骇锛堝悎骞惰嚜鍘?POST /with-fixed-asset锛?     fixed_asset: Optional[FixedAssetBlock] = None
+ 
++    @model_validator(mode="after")
++    def validate_order_action(self):
++        """閿€椤瑰彂绁ㄥ繀濉?sale_order_action锛涜繘椤瑰彂绁ㄥ繀濉?purchase_order_action锛沴ink_existing 鏃跺繀濉?related_order_id"""
++        if self.direction == "out":
++            if not self.sale_order_action:
++                raise ValueError("閿€椤瑰彂绁ㄥ繀濉?sale_order_action锛坙ink_existing 鎴?auto_create锛?)
++            if self.sale_order_action == "link_existing" and not self.related_order_id:
++                raise ValueError("sale_order_action=link_existing 鏃跺繀濉?related_order_id")
++        elif self.direction == "in":
++            if not self.purchase_order_action:
++                raise ValueError("杩涢」鍙戠エ蹇呭～ purchase_order_action锛坙ink_existing 鎴?auto_create锛?)
++            if self.purchase_order_action == "link_existing" and not self.related_order_id:
++                raise ValueError("purchase_order_action=link_existing 鏃跺繀濉?related_order_id")
++        return self
++
+ 
+ class InvoiceList(BaseModel):
+     total: int
+diff --git "a/docs/\345\260\217\344\274\201\344\270\232\344\274\232\350\256\241\345\207\206\345\210\231.md" "b/docs/\345\260\217\344\274\201\344\270\232\344\274\232\350\256\241\345\207\206\345\210\231.md"
+index db60a9b2..cd6c9e7c 100644
+--- "a/docs/\345\260\217\344\274\201\344\270\232\344\274\232\350\256\241\345\207\206\345\210\231.md"
++++ "b/docs/\345\260\217\344\274\201\344\270\232\344\274\232\350\256\241\345\207\206\345\210\231.md"
+@@ -27,9 +27,10 @@
+ 
+ ### 2.1 鍙戠エ閲戦璁＄畻
+ 
+-**渚濇嵁**: 銆婂皬浼佷笟浼氳鍑嗗垯銆嬬鍗佷簲鏉?+**渚濇嵁**: 銆婁腑鍗庝汉姘戝叡鍜屽浗澧炲€肩◣鏆傝鏉′緥銆嬬鍏潯锛堥攢鍞涓轰笉鍚◣閿€鍞锛? 銆婂皬浼佷笟浼氳鍑嗗垯銆嬬鍗佷簲鏉★紙鏀跺叆纭鍘熷垯锛? 
+-> 鏀跺叆搴斿綋鎸夌収浠庤喘涔版柟宸叉敹鎴栧簲鏀剁殑鍚堝悓鎴栧崗璁环娆剧‘瀹氥€?+> 銆婂鍊肩◣鏆傝鏉′緥銆嬬鍏潯锛氶攢鍞涓虹撼绋庝汉鍙戠敓搴旂◣閿€鍞涓烘敹鍙栫殑鍏ㄩ儴浠锋鍜屼环澶栬垂鐢紝浣嗘槸涓嶅寘鎷敹鍙栫殑閿€椤圭◣棰濄€?+> 銆婂皬浼佷笟浼氳鍑嗗垯銆嬬鍗佷簲鏉★細鏀跺叆搴斿綋鎸夌収浠庤喘涔版柟宸叉敹鎴栧簲鏀剁殑鍚堝悓鎴栧崗璁环娆剧‘瀹氥€? 
+ ```
+ 涓嶅惈绋庨噾棰?= 鍚◣閲戦 梅 (1 + 绋庣巼)
+@@ -230,17 +231,22 @@
+ 钀ヤ笟鎴愭湰 = 閿€鍞暟閲?脳 閲囪喘鍗曚环
+ 姣涘埄娑?= 钀ヤ笟鏀跺叆 - 钀ヤ笟鎴愭湰
+ 
++绋庨噾鍙婇檮鍔?= 搴旂撼澧炲€肩◣ 脳 12%锛堝煄寤?%+鏁欒偛璐归檮鍔?%+鍦版柟鏁欒偛2%锛?+  鍏朵腑锛氬簲绾冲鍊肩◣ = max(閿€椤圭◣ - 杩涢」绋? 0)
++        閿€椤圭◣ = 危 閿€椤瑰彂绁?tax_amount锛堟湡闂村唴锛?+        杩涢」绋?= 危 杩涢」鍙戠エ.tax_amount锛堟湡闂村唴锛?+
+ 閿€鍞垂鐢?= Expense WHERE functional_category='閿€鍞垂鐢?
+ 绠＄悊璐圭敤 = Expense WHERE functional_category='绠＄悊璐圭敤'
+ 璐㈠姟璐圭敤 = Expense WHERE functional_category='璐㈠姟璐圭敤'
+ 
+-钀ヤ笟鍒╂鼎 = 姣涘埄娑?- 閿€鍞垂鐢?- 绠＄悊璐圭敤 - 璐㈠姟璐圭敤
++钀ヤ笟鍒╂鼎 = 姣涘埄娑?- 绋庨噾鍙婇檮鍔?- 閿€鍞垂鐢?- 绠＄悊璐圭敤 - 璐㈠姟璐圭敤
+ 鍒╂鼎鎬婚 = 钀ヤ笟鍒╂鼎锛堣惀涓氬鏀舵敮鏆備负 0锛? 鎵€寰楃◣璐圭敤 = 鍒╂鼎鎬婚 脳 5%锛堝皬寰紒涓氾級鎴?25%锛堜竴鑸紒涓氾級
+ 鍑€鍒╂鼎 = 鍒╂鼎鎬婚 - 鎵€寰楃◣璐圭敤
+ ```
+ 
+-**娉ㄦ剰**: 鏈郴缁熷埄娑﹁〃鏈墸闄ょ◣閲戝強闄勫姞锛堝煄寤虹◣銆佹暀鑲茶垂闄勫姞绛夛級锛岃繖浜涘湪鎵€寰楃◣棰勭即鎶ュ憡涓崟鐙鐞?+**娉ㄦ剰**: 鏈郴缁熷埄娑﹁〃浣跨敤**缁忚惀鍙ｅ緞**锛堝惈绋庤鍗曢噾棰濓級锛屼笌绋庡姟鍙ｅ緞锛堜笉鍚◣鍙戠エ閲戦锛夊ぉ鐒朵笉鍚岋紙BR-2锛夈€傜◣閲戝強闄勫姞浠庡彂绁ㄥ姩鎬佹淳鐢燂紙鍙戠エ涓哄敮涓€鐪熺浉婧愶級锛屾寜鍒╂鼎琛ㄦ棩鏈熻寖鍥存煡鍙戠エ绋庨璁＄畻銆? 
+ **绯荤粺瀹炵幇**: `crud/finance.py: generate_income_statement()`
+ 
+@@ -266,6 +272,7 @@
+ | 3001 | 瀹炴敹璧勬湰 | `PAID_IN_CAPITAL` | OpeningBalance |
+ | 5001 | 涓昏惀涓氬姟鏀跺叆 | `OPERATING_REVENUE` | SaleOrder |
+ | 5401 | 涓昏惀涓氬姟鎴愭湰 | `OPERATING_COST` | SaleItem 脳 purchase_price |
++| 5403 | 绋庨噾鍙婇檮鍔?| `TAX_AND_SURCHARGE` | Invoice锛堝姩鎬佹淳鐢燂細搴旂撼澧炲€肩◣脳12%锛?|
+ | 5601 | 閿€鍞垂鐢?| `SELLING_EXPENSE` | Expense |
+ | 5602 | 绠＄悊璐圭敤 | `ADMIN_EXPENSE` | Expense |
+ | 5603 | 璐㈠姟璐圭敤 | `FINANCIAL_EXPENSE` | Expense |
+@@ -286,7 +293,7 @@
+ 
+ ```
+ 鏍￠獙1锛氳惀涓氭瘺鍒?= 钀ヤ笟鏀跺叆 - 钀ヤ笟鎴愭湰
+-鏍￠獙2锛氳惀涓氬埄娑?= 钀ヤ笟姣涘埄 - 钀ヤ笟璐圭敤锛堥攢鍞?绠＄悊+璐㈠姟锛?+鏍￠獙2锛氳惀涓氬埄娑?= 钀ヤ笟姣涘埄 - 绋庨噾鍙婇檮鍔?- 钀ヤ笟璐圭敤锛堥攢鍞?绠＄悊+璐㈠姟锛? 鏍￠獙3锛氬埄娑︽€婚 = 钀ヤ笟鍒╂鼎 + 钀ヤ笟澶栨敹鍏?- 钀ヤ笟澶栨敮鍑? 鏍￠獙4锛氬噣鍒╂鼎 = 鍒╂鼎鎬婚 - 鎵€寰楃◣璐圭敤
+ ```
+@@ -437,7 +444,7 @@
+ 
+ ### 6.6 缂寸撼绋庨噾
+ 
+-**渚濇嵁**: 銆婂皬浼佷笟浼氳鍑嗗垯銆嬬鍥涘崄鏉?+**渚濇嵁**: 銆婂皬浼佷笟浼氳鍑嗗垯銆嬬鍥涘崄涓冩潯锛堝簲浜ょ◣璐癸級
+ 
+ ```
+ 鍊燂細搴斾氦绋庤垂-澧炲€肩◣        2,600
+@@ -450,7 +457,7 @@
+ 
+ ---
+ 
+-*灏忎紒涓氫細璁″噯鍒欓€熸煡 v1.4 | 2026-06-21*
++*灏忎紒涓氫細璁″噯鍒欓€熸煡 v1.5 | 2026-06-21*
+ *鍩轰簬璐細銆?011銆?7 鍙峰強鎴嚦 2026 骞?6 鏈堢殑鏈€鏂颁紭鎯犳斂绛?
+ *宸叉牳瀹炰笌 backend/accounting_engine.py 涓€鑷?
+-*鏂板锛毬?.3 鏃犲舰璧勪骇鎽婇攢杞叆 AccountingEngine + 搂5.6.1 鎽婇攢杈撳叆鏍￠獙*
++*宸插鐓ц储鏀块儴瀹樻柟 PDF 杩涜娉曞緥鍚堣鎬у璁★細搂2.1 娉曟潯淇銆伮? 琛ュ厖 5403 绋庨噾鍙婇檮鍔犮€伮?.6 鏉℃枃鏇存*
+diff --git a/frontend/dist/index.html b/frontend/dist/index.html
+index 8594780a..5e83c73f 100644
+--- a/frontend/dist/index.html
++++ b/frontend/dist/index.html
+@@ -4,8 +4,8 @@
+   <meta charset="UTF-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <title>杩涢攢瀛樼鐞嗙郴缁?/title>
+-  <script type="module" crossorigin src="/assets/index-BLwFlTHp.js"></script>
+-  <link rel="stylesheet" crossorigin href="/assets/index-D21g8h8N.css">
++  <script type="module" crossorigin src="/assets/index-Cfo9pH9R.js"></script>
++  <link rel="stylesheet" crossorigin href="/assets/index-DhuodGvR.css">
+ </head>
+ <body>
+   <div id="app"></div>
+diff --git a/frontend/node_modules/.package-lock.json b/frontend/node_modules/.package-lock.json
+index c040dfcb..12c870bb 100644
+--- a/frontend/node_modules/.package-lock.json
++++ b/frontend/node_modules/.package-lock.json
+@@ -116,6 +116,22 @@
+       "integrity": "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==",
+       "license": "MIT"
+     },
++    "node_modules/@playwright/test": {
++      "version": "1.61.0",
++      "resolved": "https://registry.npmmirror.com/@playwright/test/-/test-1.61.0.tgz",
++      "integrity": "sha512-cKA5B6lpFEMyMGjxF54QihfYpB4FkEGH+qZhtArDEG+wezQAJY8Pq6C7T1SjWz+FFzt3TbyoXBQYk/0292TdJA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright": "1.61.0"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/@popperjs/core": {
+       "name": "@sxzz/popperjs-es",
+       "version": "2.11.8",
+@@ -899,6 +915,38 @@
+         "@vue/devtools-kit": "^7.7.9"
+       }
+     },
++    "node_modules/playwright": {
++      "version": "1.61.0",
++      "resolved": "https://registry.npmmirror.com/playwright/-/playwright-1.61.0.tgz",
++      "integrity": "sha512-Z+7BeeqQPRRzklHsVFP4KTGIyMxKUmfeRA4WisM6G3/XW6nwGeX6fX9qYaDa+CiUqpOkb2f6X3nar05R3kSuJQ==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright-core": "1.61.0"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "optionalDependencies": {
++        "fsevents": "2.3.2"
++      }
++    },
++    "node_modules/playwright-core": {
++      "version": "1.61.0",
++      "resolved": "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.61.0.tgz",
++      "integrity": "sha512-caX7TrY3Ml6egyDX0WUcTHDxodl/b51y5wJOdCEA36QviK/s2g081hvmGs8eaE3DWb6NYZQ6BjO/QkNRPenoPA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "playwright-core": "cli.js"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/postcss": {
+       "version": "8.5.10",
+       "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.10.tgz",
+diff --git a/frontend/src/components/IncomeStatement.vue b/frontend/src/components/IncomeStatement.vue
+index c6c6a1ad..a74db061 100644
+--- a/frontend/src/components/IncomeStatement.vue
++++ b/frontend/src/components/IncomeStatement.vue
+@@ -127,6 +127,7 @@ const incomeData = computed(() => {
+   data.push({ item: '涓€銆佽惀涓氭敹鍏?, amount: d.revenue, isTotal: true })
+   data.push({ item: '鍑忥細钀ヤ笟鎴愭湰', amount: d.cost_of_goods_sold, isTotal: true })
+   data.push({ item: '浜屻€佽惀涓氭瘺鍒?, amount: d.gross_profit, isTotal: true })
++  data.push({ item: '鍑忥細绋庨噾鍙婇檮鍔?, amount: d.tax_and_surcharge, isTotal: true })
+   data.push({ item: '鍑忥細钀ヤ笟璐圭敤', amount: 0, isSubHeader: true })
+   data.push({ item: '  閿€鍞垂鐢?, amount: d.selling_expenses })
+   data.push({ item: '  绠＄悊璐圭敤', amount: d.administrative_expenses })
+diff --git a/tests/integration/no_invoice_return_changes.json b/tests/integration/no_invoice_return_changes.json
+index 201bd10f..2aaf3851 100644
+--- a/tests/integration/no_invoice_return_changes.json
++++ b/tests/integration/no_invoice_return_changes.json
+@@ -2,41 +2,41 @@
+   {
+     "module": "閿€鍞?,
+     "operation": "鏃犵エ閿€鍞?,
+-    "before": "搴撳瓨=100",
+-    "after": "搴撳瓨=97, 閿€鍞噾棰?300",
+-    "calculation": "閿€鍞?涓?00鍏?300鍏? 搴撳瓨鍑忓皯3涓?,
+-    "timestamp": "2026-06-21T12:03:46.941183"
++    "before": "搴撳瓨=0",
++    "after": "搴撳瓨=0, 閿€鍞噾棰?300",
++    "calculation": "閿€鍞?涓?00鍏?300鍏? 搴撳瓨鍑忓皯0涓?,
++    "timestamp": "2026-06-22T08:50:05.777549"
+   },
+   {
+     "module": "閿€鍞?,
+     "operation": "閫€璐э紙鍙栨秷閿€鍞崟锛?,
+-    "before": "搴撳瓨=97, 閿€鍞崟閲戦=300.00",
+-    "after": "搴撳瓨=100",
+-    "calculation": "閫€璐у悗搴撳瓨鍥炶ˉ3涓?,
+-    "timestamp": "2026-06-21T12:03:47.365338"
++    "before": "搴撳瓨=0, 閿€鍞崟閲戦=300.00",
++    "after": "搴撳瓨=0",
++    "calculation": "閫€璐у悗搴撳瓨鍥炶ˉ0涓?,
++    "timestamp": "2026-06-22T08:50:06.191904"
+   },
+   {
+     "module": "绋庡姟",
+     "operation": "澧炲€肩◣鎶ヨ〃楠岃瘉",
+     "before": "鏃犵エ閿€鍞?,
+-    "after": "閿€椤圭◣棰?17487.98, 搴旂撼绋庨=17487.97",
++    "after": "閿€椤圭◣棰?18407.98, 搴旂撼绋庨=18407.97",
+     "calculation": "鏃犵エ閿€鍞笉杩涘叆澧炲€肩◣閿€椤癸紙BR-4瑙勫垯锛?,
+-    "timestamp": "2026-06-21T12:03:47.373845"
++    "timestamp": "2026-06-22T08:50:06.202902"
+   },
+   {
+     "module": "绋庡姟",
+     "operation": "BR-4瑙勫垯楠岃瘉",
+     "before": "鏃犵エ閿€鍞?,
+-    "after": "鍙戠エ鏁伴噺=97, 鏈夊鎴峰彂绁?False",
++    "after": "鍙戠エ鏁伴噺=123, 鏈夊鎴峰彂绁?False",
+     "calculation": "鏃犵エ閿€鍞笉杩涘叆澧炲€肩◣閿€椤?,
+-    "timestamp": "2026-06-21T12:03:47.387900"
++    "timestamp": "2026-06-22T08:50:06.215429"
+   },
+   {
+     "module": "璐㈠姟",
+     "operation": "BR-2瑙勫垯楠岃瘉",
+-    "before": "缁忚惀鍙ｅ緞=2968265.00, 绋庡姟鍙ｅ緞=1748797.02",
+-    "after": "宸紓=1219467.98",
++    "before": "缁忚惀鍙ｅ緞=3149925.00, 绋庡姟鍙ｅ緞=1840797.02",
++    "after": "宸紓=1309127.98",
+     "calculation": "缁忚惀鍙ｅ緞锛堝惈绋庯級涓庣◣鍔″彛寰勶紙涓嶅惈绋庯級澶╃劧涓嶅悓",
+-    "timestamp": "2026-06-21T12:03:47.526738"
++    "timestamp": "2026-06-22T08:50:06.399259"
+   }
+ ]
+\ No newline at end of file
+diff --git a/tests/integration/test_finance_tax_scenario.py b/tests/integration/test_finance_tax_scenario.py
+index 591235c7..d25875e9 100644
+--- a/tests/integration/test_finance_tax_scenario.py
++++ b/tests/integration/test_finance_tax_scenario.py
+@@ -14,7 +14,7 @@ from decimal import Decimal
+ from fastapi.testclient import TestClient
+ from main import app
+ from database import SessionLocal, init_db
+-from models import Account, Invoice
++from models import Account, Invoice, Product, Inventory
+ 
+ 
+ @pytest.fixture(scope="module")
+@@ -37,6 +37,28 @@ def _account_id():
+         db.close()
+ 
+ 
++def _get_product_id_with_stock():
++    db = SessionLocal()
++    try:
++        aid = _account_id()
++        product = db.query(Product).filter(Product.account_id == aid).first()
++        if not product:
++            raise RuntimeError("娴嬭瘯闇€瑕佽嚦灏戜竴涓晢鍝佸瓨鍦?)
++        inv = db.query(Inventory).filter(
++            Inventory.account_id == aid,
++            Inventory.product_id == product.id
++        ).first()
++        if inv is None:
++            inv = Inventory(account_id=aid, product_id=product.id, quantity=100)
++            db.add(inv)
++        elif inv.quantity < 100:
++            inv.quantity = 100
++        db.commit()
++        return product.id
++    finally:
++        db.close()
++
++
+ def _account_taxpayer_type(aid):
+     db = SessionLocal()
+     try:
+@@ -53,10 +75,14 @@ class TestFullTaxScenario:
+     def test_01_create_input_special_invoice(self, client):
+         """閲囪喘鐜妭:褰曞叆杩涢」涓撶エ(13%)鈫?寰呰璇?""
+         aid = _account_id()
++        pid = _get_product_id_with_stock()
+         r = client.post("/api/invoices/quick", json={
+             "invoice_no": _uniq("IN-SPEC"), "direction": "in", "invoice_type": "special",
+             "amount_with_tax": "11300.00", "tax_rate": "0.13",
+-            "counterparty_name": "渚涘簲鍟嗙敳", "issue_date": "2026-04-15",
++            "counterparty_name": "渚涘簲鍟嗙敳", "seller_name": "渚涘簲鍟嗙敳", "buyer_name": "鏈叕鍙?,
++            "issue_date": "2026-04-15",
++            "purchase_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
+         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
+         assert r.status_code == 200, r.text
+         data = r.json()["data"]
+@@ -84,10 +110,14 @@ class TestFullTaxScenario:
+     def test_03_create_output_invoice(self, client):
+         """閿€鍞幆鑺?寮€閿€椤瑰彂绁?1%寰佹敹鐜?鈫?閿€椤圭◣棰?""
+         aid = _account_id()
++        pid = _get_product_id_with_stock()
+         r = client.post("/api/invoices/quick", json={
+             "invoice_no": _uniq("OUT-ORD"), "direction": "out", "invoice_type": "ordinary",
+             "amount_with_tax": "10100.00", "tax_rate": "0.01",
+-            "counterparty_name": "瀹㈡埛涔?, "issue_date": "2026-05-20",
++            "counterparty_name": "瀹㈡埛涔?, "seller_name": "鏈叕鍙?, "buyer_name": "瀹㈡埛涔?,
++            "issue_date": "2026-05-20",
++            "sale_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
+         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
+         assert r.status_code == 200, r.text
+         data = r.json()["data"]
+diff --git a/tests/integration/test_invoices_quick_merge.py b/tests/integration/test_invoices_quick_merge.py
+index d0c7c491..f6be33c4 100644
+--- a/tests/integration/test_invoices_quick_merge.py
++++ b/tests/integration/test_invoices_quick_merge.py
+@@ -10,7 +10,7 @@ from datetime import datetime
+ from fastapi.testclient import TestClient
+ from main import app
+ from database import SessionLocal, init_db
+-from models import Invoice, FixedAsset
++from models import Invoice, FixedAsset, Account, Product
+ 
+ 
+ @pytest.fixture(scope="module")
+@@ -23,7 +23,7 @@ def client():
+ def _account_id():
+     db = SessionLocal()
+     try:
+-        acc = db.query(__import__("models").Account).first()
++        acc = db.query(Account).first()
+         return acc.id if acc else 1
+     finally:
+         db.close()
+@@ -33,7 +33,20 @@ def _uniq(prefix):
+     return f"{prefix}-{datetime.now().strftime('%H%M%S%f')}"
+ 
+ 
++def _get_product_id():
++    db = SessionLocal()
++    try:
++        acc = db.query(Account).first()
++        product = db.query(Product).filter(Product.account_id == acc.id).first()
++        if not product:
++            raise RuntimeError("娴嬭瘯闇€瑕佽嚦灏戜竴涓晢鍝佸瓨鍦?)
++        return product.id
++    finally:
++        db.close()
++
++
+ def _base_invoice_payload():
++    pid = _get_product_id()
+     return {
+         "invoice_no": _uniq("INV-QUICK"),
+         "direction": "in",
+@@ -41,8 +54,19 @@ def _base_invoice_payload():
+         "amount_with_tax": "11300.00",
+         "tax_rate": "0.13",
+         "counterparty_name": "娴嬭瘯渚涘簲鍟?,
++        "seller_name": "娴嬭瘯渚涘簲鍟?,
++        "buyer_name": "鏈叕鍙?,
+         "issue_date": "2026-06-01",
+         "notes": "quick 鍚堝苟娴嬭瘯",
++        "purchase_order_action": "auto_create",
++        "items": [
++            {
++                "product_id": pid,
++                "quantity": 1,
++                "unit_price": "10000.00",
++                "tax_rate": "0.13"
++            }
++        ]
+     }
+ 
+ 
+@@ -118,7 +142,8 @@ class TestQuickMergeFixedAsset:
+                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
+         assert r.status_code == 200, r.text
+         data = r.json()["data"]
+-        assert data["related_order_type"] is None
++        # 杩涢」鍙戠エ鑷姩鐢熸垚閲囪喘鍗曪紙涓嶅啀鏄?None锛?+        assert data["related_order_type"] == "purchase_order"
+         assert "fixed_asset" not in data
+ 
+     def test_quick_image_url_passthrough(self, client):
+diff --git a/tests/integration/test_stress_ai_gateway.py b/tests/integration/test_stress_ai_gateway.py
+index df43b776..31032953 100644
+--- a/tests/integration/test_stress_ai_gateway.py
++++ b/tests/integration/test_stress_ai_gateway.py
+@@ -14,11 +14,14 @@ import uuid
+ import pytest
+ from fastapi.testclient import TestClient
+ from main import app
++from database import SessionLocal, init_db
++from models import Account, Product, Inventory
+ from ai_gateway import _match, AI_CAPABILITIES
+ 
+ 
+ @pytest.fixture(scope="module")
+ def client():
++    init_db()
+     with TestClient(app) as c:
+         yield c
+ 
+@@ -27,6 +30,28 @@ def _uniq(prefix, i):
+     return f"{prefix}-{uuid.uuid4().hex[:6]}-{i}"
+ 
+ 
++def _get_product_id_with_stock():
++    db = SessionLocal()
++    try:
++        acc = db.query(Account).first()
++        product = db.query(Product).filter(Product.account_id == acc.id).first()
++        if not product:
++            raise RuntimeError("娴嬭瘯闇€瑕佽嚦灏戜竴涓晢鍝佸瓨鍦?)
++        inv = db.query(Inventory).filter(
++            Inventory.account_id == acc.id,
++            Inventory.product_id == product.id
++        ).first()
++        if inv is None:
++            inv = Inventory(account_id=acc.id, product_id=product.id, quantity=5000)
++            db.add(inv)
++        elif inv.quantity < 5000:
++            inv.quantity = 5000
++        db.commit()
++        return product.id
++    finally:
++        db.close()
++
++
+ @pytest.mark.integration
+ class TestGatewayThroughput:
+     """缃戝叧鎷︽埅鍚炲悙涓庢纭€?""
+@@ -59,13 +84,17 @@ class TestQuickBatchCreate:
+     def test_batch_50_invoices_all_succeed(self, client):
+         """杩炵画鍒涘缓 50 寮犲彂绁?鈫?鍏ㄩ儴鎴愬姛,閲戦涓変欢濂椾竴鑷?""
+         h = {"X-Account-ID": "1", "X-Operator": "user"}
++        pid = _get_product_id_with_stock()
+         ids = []
+         for i in range(50):
+             r = client.post("/api/invoices/quick", json={
+                 "invoice_no": _uniq("STRESS-INV", i),
+                 "direction": "out", "invoice_type": "ordinary",
+                 "amount_with_tax": "113.00", "tax_rate": "0.13",
+-                "counterparty_name": "鍘嬫祴瀹㈡埛", "issue_date": "2026-06-20",
++                "counterparty_name": "鍘嬫祴瀹㈡埛", "seller_name": "鏈叕鍙?, "buyer_name": "鍘嬫祴瀹㈡埛",
++                "issue_date": "2026-06-20",
++                "sale_order_action": "auto_create",
++                "items": [{"product_id": pid, "quantity": 1, "unit_price": "100.00", "tax_rate": "0.13"}],
+             }, headers=h)
+             assert r.status_code == 200, f"绗瑊i}寮犲垱寤哄け璐? {r.text}"
+             data = r.json()["data"]
+diff --git "a/tests/integration/test_\344\274\232\350\256\241\345\207\206\345\210\231\346\240\241\351\252\214.py" "b/tests/integration/test_\344\274\232\350\256\241\345\207\206\345\210\231\346\240\241\351\252\214.py"
+index 5dc8e6b3..c2b897b2 100644
+--- "a/tests/integration/test_\344\274\232\350\256\241\345\207\206\345\210\231\346\240\241\351\252\214.py"
++++ "b/tests/integration/test_\344\274\232\350\256\241\345\207\206\345\210\231\346\240\241\351\252\214.py"
+@@ -36,7 +36,7 @@ from database import init_db, SessionLocal
+ init_db()
+ 
+ from main import app
+-from models import Account
++from models import Account, Product, Inventory
+ 
+ # 鈹€鈹€ 鑾峰彇娴嬭瘯鐢?account_id 鈹€鈹€
+ _db = SessionLocal()
+@@ -49,6 +49,28 @@ _db.close()
+ HEADERS = {"X-Account-ID": str(ACCOUNT_ID), "X-Operator": "accounting_test"}
+ 
+ 
++def _get_product_id_with_stock():
++    """鑾峰彇鍟嗗搧ID骞剁‘淇濆簱瀛樺厖瓒?""
++    db = SessionLocal()
++    try:
++        product = db.query(Product).filter(Product.account_id == ACCOUNT_ID).first()
++        if not product:
++            raise RuntimeError("娴嬭瘯闇€瑕佽嚦灏戜竴涓晢鍝佸瓨鍦?)
++        inv = db.query(Inventory).filter(
++            Inventory.account_id == ACCOUNT_ID,
++            Inventory.product_id == product.id
++        ).first()
++        if inv is None:
++            inv = Inventory(account_id=ACCOUNT_ID, product_id=product.id, quantity=100)
++            db.add(inv)
++        elif inv.quantity < 100:
++            inv.quantity = 100
++        db.commit()
++        return product.id
++    finally:
++        db.close()
++
++
+ @pytest.fixture(scope="module")
+ def client():
+     """鍏?module 鍏变韩鐨?TestClient"""
+@@ -146,6 +168,75 @@ class TestIncomeStatementCalculation:
+             for field in expected_fields:
+                 assert field in data, f"鍒╂鼎琛ㄧ己灏憑field}瀛楁"
+ 
++    def test_income_statement_has_tax_and_surcharge(self, client):
++        """鍒╂鼎琛ㄥ惈绋庨噾鍙婇檮鍔犲瓧娈碉紙5403绉戠洰锛屼粠鍙戠エ鍔ㄦ€佹淳鐢燂級"""
++        resp = client.get("/api/financial-reports/income-statement",
++                         params={"start_date": "2026-01-01", "end_date": "2026-12-31"},
++                         headers=HEADERS)
++        assert resp.status_code == 200, f"鍒╂鼎琛ㄦ帴鍙ｅけ璐? {resp.status_code}"
++        data = resp.json()
++        # 楠岃瘉绋庨噾鍙婇檮鍔犲瓧娈靛瓨鍦?+        assert "tax_and_surcharge" in data, "鍒╂鼎琛ㄧ己灏憈ax_and_surcharge瀛楁"
++        # 绋庨噾鍙婇檮鍔犲繀椤?鈮?0
++        tax_and_surcharge = Decimal(str(data["tax_and_surcharge"]))
++        assert tax_and_surcharge >= 0, f"绋庨噾鍙婇檮鍔犱笉鑳戒负璐? {tax_and_surcharge}"
++
++    def test_income_statement_tax_and_surcharge_formula(self, client):
++        """绋庨噾鍙婇檮鍔?= 搴旂撼澧炲€肩◣ 脳 12%锛堝煄寤?%+鏁欒偛3%+鍦版柟2%锛?""
++        from database import SessionLocal
++        import models
++        from enums import InvoiceDirection
++
++        db = SessionLocal()
++        try:
++            # 鏌?2026 鍏ㄥ勾鍙戠エ绋庨
++            from sqlalchemy import func as sqlfunc
++            from datetime import datetime
++            start_dt = datetime(2026, 1, 1)
++            end_dt = datetime(2026, 12, 31)
++            output_tax = db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
++                models.Invoice.account_id == ACCOUNT_ID,
++                models.Invoice.direction == InvoiceDirection.OUT,
++                models.Invoice.issue_date >= start_dt,
++                models.Invoice.issue_date <= end_dt
++            ).scalar() or Decimal('0')
++            input_tax = db.query(sqlfunc.sum(models.Invoice.tax_amount)).filter(
++                models.Invoice.account_id == ACCOUNT_ID,
++                models.Invoice.direction == InvoiceDirection.IN,
++                models.Invoice.issue_date >= start_dt,
++                models.Invoice.issue_date <= end_dt
++            ).scalar() or Decimal('0')
++            db.close()
++        finally:
++            pass
++
++        vat_payable = max(Decimal(str(output_tax)) - Decimal(str(input_tax)), Decimal('0'))
++        expected_surcharge = (vat_payable * Decimal('0.12')).quantize(Decimal('0.01'))
++
++        resp = client.get("/api/financial-reports/income-statement",
++                         params={"start_date": "2026-01-01", "end_date": "2026-12-31"},
++                         headers=HEADERS)
++        assert resp.status_code == 200, f"鍒╂鼎琛ㄦ帴鍙ｅけ璐? {resp.status_code}"
++        data = resp.json()
++        actual_surcharge = Decimal(str(data["tax_and_surcharge"]))
++        assert abs(actual_surcharge - expected_surcharge) <= Decimal('0.01'), \
++            f"绋庨噾鍙婇檮鍔犺绠楅敊璇? {actual_surcharge} 鈮?搴旂撼澧炲€肩◣{vat_payable} 脳 12% = {expected_surcharge}"
++
++    def test_income_statement_operating_profit_formula(self, client):
++        """钀ヤ笟鍒╂鼎 = 钀ヤ笟姣涘埄 - 绋庨噾鍙婇檮鍔?- 钀ヤ笟璐圭敤鍚堣"""
++        resp = client.get("/api/financial-reports/income-statement",
++                         params={"start_date": "2026-01-01", "end_date": "2026-12-31"},
++                         headers=HEADERS)
++        assert resp.status_code == 200, f"鍒╂鼎琛ㄦ帴鍙ｅけ璐? {resp.status_code}"
++        data = resp.json()
++        gross_profit = Decimal(str(data["gross_profit"]))
++        tax_and_surcharge = Decimal(str(data["tax_and_surcharge"]))
++        total_operating_expenses = Decimal(str(data["total_operating_expenses"]))
++        operating_profit = Decimal(str(data["operating_profit"]))
++        expected = gross_profit - tax_and_surcharge - total_operating_expenses
++        assert abs(operating_profit - expected) <= Decimal('0.01'), \
++            f"钀ヤ笟鍒╂鼎閿欒: {operating_profit} 鈮?姣涘埄{gross_profit} - 绋庨噾鍙婇檮鍔爗tax_and_surcharge} - 璐圭敤{total_operating_expenses} = {expected}"
++
+ 
+ # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺? # 3. 澧炲€肩◣璁＄畻鏍￠獙
+@@ -258,6 +349,7 @@ class TestInvoiceAmountCalculation:
+         """13%绋庣巼鍙戠エ閲戦璁＄畻"""
+         import time
+         unique_no = f"TEST-INV-13PCT-{int(time.time())}"
++        pid = _get_product_id_with_stock()
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": unique_no,
+             "direction": "in",
+@@ -265,7 +357,11 @@ class TestInvoiceAmountCalculation:
+             "amount_with_tax": "11300.00",
+             "tax_rate": "0.13",
+             "counterparty_name": "娴嬭瘯渚涘簲鍟?,
++            "seller_name": "娴嬭瘯渚涘簲鍟?,
++            "buyer_name": "鏈叕鍙?,
+             "issue_date": "2026-06-20",
++            "purchase_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"鍒涘缓鍙戠エ澶辫触: {resp.text}"
+         data = resp.json().get("data", resp.json())
+@@ -286,6 +382,7 @@ class TestInvoiceAmountCalculation:
+         """1%寰佹敹鐜囧彂绁ㄩ噾棰濊绠?""
+         import time
+         unique_no = f"TEST-INV-1PCT-{int(time.time())}"
++        pid = _get_product_id_with_stock()
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": unique_no,
+             "direction": "out",
+@@ -293,7 +390,11 @@ class TestInvoiceAmountCalculation:
+             "amount_with_tax": "10100.00",
+             "tax_rate": "0.01",
+             "counterparty_name": "娴嬭瘯瀹㈡埛",
++            "seller_name": "鏈叕鍙?,
++            "buyer_name": "娴嬭瘯瀹㈡埛",
+             "issue_date": "2026-06-20",
++            "sale_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"鍒涘缓鍙戠エ澶辫触: {resp.text}"
+         data = resp.json().get("data", resp.json())
+diff --git "a/tests/integration/test_\345\205\250\351\235\242\347\241\254\347\274\226\347\240\201\351\252\214\350\257\201.py" "b/tests/integration/test_\345\205\250\351\235\242\347\241\254\347\274\226\347\240\201\351\252\214\350\257\201.py"
+index 6a38c4d5..c894f0a1 100644
+--- "a/tests/integration/test_\345\205\250\351\235\242\347\241\254\347\274\226\347\240\201\351\252\214\350\257\201.py"
++++ "b/tests/integration/test_\345\205\250\351\235\242\347\241\254\347\274\226\347\240\201\351\252\214\350\257\201.py"
+@@ -251,12 +251,35 @@ def test_invoice(client):
+     # 纭紪鐮佽緭鍏?     AMOUNT_WITH_TAX = 10100.00
+     TAX_RATE = 0.01
+-    
++
++    # 鑾峰彇鍟嗗搧ID骞剁‘淇濆簱瀛?+    from database import SessionLocal
++    from models import Account, Product, Inventory
++    db = SessionLocal()
++    try:
++        acc = db.query(Account).first()
++        product = db.query(Product).filter(Product.account_id == acc.id).first()
++        if not product:
++            raise RuntimeError("娴嬭瘯闇€瑕佽嚦灏戜竴涓晢鍝佸瓨鍦?)
++        inv = db.query(Inventory).filter(
++            Inventory.account_id == acc.id,
++            Inventory.product_id == product.id
++        ).first()
++        if inv is None:
++            inv = Inventory(account_id=acc.id, product_id=product.id, quantity=100)
++            db.add(inv)
++        elif inv.quantity < 100:
++            inv.quantity = 100
++        db.commit()
++        pid = product.id
++    finally:
++        db.close()
++
+     # 纭紪鐮佽绠楀叕寮?     WITHOUT_TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) / (1 + Decimal(str(TAX_RATE))))
+     TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) - WITHOUT_TAX)
+     BALANCE = WITHOUT_TAX + TAX
+-    
++
+     # 鎵ц
+     resp = client.post("/api/invoices/quick", json={
+         "invoice_no": f"INV-{int(time.time())}",
+@@ -265,7 +288,11 @@ def test_invoice(client):
+         "amount_with_tax": str(AMOUNT_WITH_TAX),
+         "tax_rate": str(TAX_RATE),
+         "counterparty_name": "娴嬭瘯",
++        "seller_name": "鏈叕鍙?,
++        "buyer_name": "娴嬭瘯",
+         "issue_date": "2026-03-15",
++        "sale_order_action": "auto_create",
++        "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": str(TAX_RATE)}],
+     }, headers=HEADERS)
+     assert resp.status_code in (200, 201)
+     
+diff --git "a/tests/integration/test_\345\215\212\345\271\264\344\270\232\345\212\241\346\250\241\346\213\237.py" "b/tests/integration/test_\345\215\212\345\271\264\344\270\232\345\212\241\346\250\241\346\213\237.py"
+index 6a4a2076..06aacdf3 100644
+--- "a/tests/integration/test_\345\215\212\345\271\264\344\270\232\345\212\241\346\250\241\346\213\237.py"
++++ "b/tests/integration/test_\345\215\212\345\271\264\344\270\232\345\212\241\346\250\241\346\213\237.py"
+@@ -257,7 +257,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"IN-JAN-{UNIQUE}", "direction": "in", "invoice_type": "special",
+             "amount_with_tax": "5650.00", "tax_rate": "0.13",
+-            "counterparty_name": "妯℃嫙渚涘簲鍟?, "issue_date": "2026-01-20",
++            "counterparty_name": "妯℃嫙渚涘簲鍟?, "seller_name": "妯℃嫙渚涘簲鍟?, "buyer_name": "鏈叕鍙?,
++            "issue_date": "2026-01-20",
++            "purchase_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"1鏈堣繘椤瑰彂绁ㄥけ璐? {resp.text}"
+ 
+@@ -265,7 +268,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"OUT-JAN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
+             "amount_with_tax": "2020.00", "tax_rate": "0.01",
+-            "counterparty_name": "妯℃嫙瀹㈡埛", "issue_date": "2026-01-25",
++            "counterparty_name": "妯℃嫙瀹㈡埛", "seller_name": "鏈叕鍙?, "buyer_name": "妯℃嫙瀹㈡埛",
++            "issue_date": "2026-01-25",
++            "sale_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"1鏈堥攢椤瑰彂绁ㄥけ璐? {resp.text}"
+ 
+@@ -359,7 +365,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"IN-MAR-{UNIQUE}", "direction": "in", "invoice_type": "special",
+             "amount_with_tax": "4520.00", "tax_rate": "0.13",
+-            "counterparty_name": "妯℃嫙渚涘簲鍟?, "issue_date": "2026-03-20",
++            "counterparty_name": "妯℃嫙渚涘簲鍟?, "seller_name": "妯℃嫙渚涘簲鍟?, "buyer_name": "鏈叕鍙?,
++            "issue_date": "2026-03-20",
++            "purchase_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.13"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"3鏈堣繘椤瑰彂绁ㄥけ璐? {resp.text}"
+ 
+@@ -367,7 +376,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"OUT-MAR-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
+             "amount_with_tax": "4040.00", "tax_rate": "0.01",
+-            "counterparty_name": "妯℃嫙瀹㈡埛", "issue_date": "2026-03-25",
++            "counterparty_name": "妯℃嫙瀹㈡埛", "seller_name": "鏈叕鍙?, "buyer_name": "妯℃嫙瀹㈡埛",
++            "issue_date": "2026-03-25",
++            "sale_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"3鏈堥攢椤瑰彂绁ㄥけ璐? {resp.text}"
+ 
+@@ -504,7 +516,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"IN-JUN-{UNIQUE}", "direction": "in", "invoice_type": "special",
+             "amount_with_tax": "5650.00", "tax_rate": "0.13",
+-            "counterparty_name": "妯℃嫙渚涘簲鍟?, "issue_date": "2026-06-20",
++            "counterparty_name": "妯℃嫙渚涘簲鍟?, "seller_name": "妯℃嫙渚涘簲鍟?, "buyer_name": "鏈叕鍙?,
++            "issue_date": "2026-06-20",
++            "purchase_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"6鏈堣繘椤瑰彂绁ㄥけ璐? {resp.text}"
+ 
+@@ -512,7 +527,10 @@ class TestMonthlyBusinessCycle:
+         resp = client.post("/api/invoices/quick", json={
+             "invoice_no": f"OUT-JUN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
+             "amount_with_tax": "4440.00", "tax_rate": "0.01",
+-            "counterparty_name": "妯℃嫙瀹㈡埛", "issue_date": "2026-06-25",
++            "counterparty_name": "妯℃嫙瀹㈡埛", "seller_name": "鏈叕鍙?, "buyer_name": "妯℃嫙瀹㈡埛",
++            "issue_date": "2026-06-25",
++            "sale_order_action": "auto_create",
++            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
+         }, headers=HEADERS)
+         assert resp.status_code in (200, 201), f"6鏈堥攢椤瑰彂绁ㄥけ璐? {resp.text}"
+ 

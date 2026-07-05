@@ -33,7 +33,7 @@ from engine_fixed_asset import FixedAssetEngine
 from finance_integration import post_journal, CHART_OF_ACCOUNTS
 from commands.base import dispatch
 from commands.product_commands import AdjustInventory
-from commands.invoice_commands import ReverseInvoice
+from commands.orders import ReverseInvoice
 from enums import OrderStatus, OrderType, PaymentStatus, InvoiceDirection, InvoiceType
 from errors import BusinessError
 
@@ -774,17 +774,14 @@ class TestFix12RedInvoiceNoDoubleReverse:
         db.flush()
 
         # 2. 部分退货 3 件
-        from commands.sale_commands import ReturnSaleOrder, ReturnSaleOrderHandler
-        ret_cmd = ReturnSaleOrder(
-            account_id=1, order_id=1,
+        from commands.orders._sale import return_sale_order
+        return_sale_order(
+            db=db, account_id=1, order_id=1,
             return_date="2026-06-20",
             reason="部分退货测试",
             items=[{"product_id": 1, "quantity": 3}],
+            operator="test",
         )
-        ret_cmd.account_id = 1
-        ret_cmd.operator = "test"
-        ret_handler = ReturnSaleOrderHandler()
-        ret_handler.handle(ret_cmd, db)
         db.flush()
 
         # 验证部分退货凭证存在
@@ -816,7 +813,7 @@ class TestFix12RedInvoiceNoDoubleReverse:
         )
         rev_cmd.account_id = 1
         rev_cmd.operator = "test"
-        from commands.invoice_commands import ReverseInvoiceHandler
+        from commands.orders._invoice import ReverseInvoiceHandler
         rev_handler = ReverseInvoiceHandler()
         result = rev_handler.handle(rev_cmd, db)
         db.flush()
@@ -885,7 +882,7 @@ class TestFix12RedInvoiceNoDoubleReverse:
         )
         rev_cmd.account_id = 1
         rev_cmd.operator = "test"
-        from commands.invoice_commands import ReverseInvoiceHandler
+        from commands.orders._invoice import ReverseInvoiceHandler
         rev_handler = ReverseInvoiceHandler()
         result = rev_handler.handle(rev_cmd, db)
         db.flush()

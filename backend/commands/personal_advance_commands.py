@@ -366,7 +366,7 @@ class ReversePersonalAdvanceRepaymentHandler(CommandHandler):
         repay_amount = _d(repayment.amount_l1)
 
         if repayment.bank_transaction_id is not None:
-            from crud.reversal import reverse_bank_transaction
+            from commands.reversal_ops import reverse_bank_transaction
             reverse_bank_transaction(db, account_id, repayment.bank_transaction_id)
 
         reverse_journal(db, account_id, "personal_advance_repay", repayment_id)

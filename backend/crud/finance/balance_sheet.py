@@ -12,7 +12,7 @@ from models_finance import Ledger
 from lineage import reads, TIER_L1, TIER_L2
 
 from .opening_balances import get_latest_opening_balance
-from ._ledger_helpers import _l, _lp, _bal, _crd, _stock_moves_as_of
+from ._ledger_helpers import _l, _lp, _bal, _crd, _pdr, _stock_moves_as_of
 
 @reads("OpeningBalance.cash_balance_l1", tier=TIER_L1, source="external")
 @reads("OpeningBalance.bank_balance_l1", tier=TIER_L1, source="external")
@@ -236,38 +236,61 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     # ── 非流动负债 ──
     long_term_borrowings = _credit_balance("2501").quantize(Q2)
 
-    # ── 利润构成（全从总账取，月结后税金自动体现）──
-    period_revenue = (_credit_balance("6001") + _credit_balance("6051")).quantize(Q2)
-    period_cogs = _balance("6401").quantize(Q2)
-    period_expenses = (_balance("6601") + _balance("6602") + _balance("6603")).quantize(Q2)
-    dep_d, dep_c = _lp(db, ledger, "1602", opening_date, query_end)
+    # ── 利润构成（用于报表附注展示，非真实余额）──
+    # 月结已通过 period_close 将损益科目余额结转到 4103 本年利润，
+    # 年末 year_close 进一步将 4103 结转到 4104 利润分配-未分配利润。
+    # 因此损益科目余额通常为 0，不能直接用来计算 retained_earnings。
+    # 这里仅保留作为报表附注的"当期发生额"展示，通过 _lp 取期间发生额。
+    # 必须排除 period_close/year_close，否则收入借方（结转出去）会与贷方（实现收入）抵消。
+    _bs_exclude = ["period_close", "year_close"]
+    op_open = opening_date
+    op_end = query_end
+    rev_d, rev_c = _lp(db, ledger, "6001", op_open, op_end, exclude_source_models=_bs_exclude)
+    other_rev_d, other_rev_c = _lp(db, ledger, "6051", op_open, op_end, exclude_source_models=_bs_exclude)
+    period_revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
+    cogs_d, cogs_c = _lp(db, ledger, "6401", op_open, op_end, exclude_source_models=_bs_exclude)
+    period_cogs = (cogs_d - cogs_c).quantize(Q2)
+    # 期间费用（含折旧/摊销，已在月结时计入 6601）
+    period_expenses = (
+        _pdr(db, ledger, "6601", op_open, op_end, exclude_source_models=_bs_exclude)
+        + _pdr(db, ledger, "6602", op_open, op_end, exclude_source_models=_bs_exclude)
+        + _pdr(db, ledger, "6603", op_open, op_end, exclude_source_models=_bs_exclude)
+    ).quantize(Q2)
+    dep_d, dep_c = _lp(db, ledger, "1602", op_open, op_end, exclude_source_models=_bs_exclude)
     depreciation_expense = dep_c.quantize(Q2)  # 已包含在6601中，此处仅用于报表展示
     amortization_expense = Decimal("0")  # 摊销已包含在6601中，保留字段兼容前端
-    # 税金及附加费用：兼容旧 6403 和新明细科目
-    surcharge_expense = (_balance("6403")
-                         + _balance("640301")
-                         + _balance("640302")
-                         + _balance("640303")
-                         + _balance("640304")
-                         + _balance("640305")
-                         + _balance("640306")
-                         + _balance("640307")
-                         + _balance("640308")
-                         + _balance("640309")
-                         + _balance("640310")
-                         + _balance("640311")).quantize(Q2)
-    income_tax_expense = _balance("6801").quantize(Q2)
-    # 营业外收支（6301/6701）+ 资产处置损益（6111/6711）
-    non_operating_income = (_credit_balance("6301") + _credit_balance("6111")).quantize(Q2)
-    non_operating_expense = (_balance("6701") + _balance("6711")).quantize(Q2)
+    # 税金及附加费用：兼容旧 6403 和新明细科目（期间发生额）
+    surcharge_expense = Decimal("0")
+    for sc in ["6403", "640301", "640302", "640303", "640304", "640305",
+               "640306", "640307", "640308", "640309", "640310", "640311"]:
+        sd, sc_v = _lp(db, ledger, sc, op_open, op_end, exclude_source_models=_bs_exclude)
+        surcharge_expense += sd - sc_v
+    surcharge_expense = surcharge_expense.quantize(Q2)
+    it_d, it_c = _lp(db, ledger, "6801", op_open, op_end, exclude_source_models=_bs_exclude)
+    income_tax_expense = (it_d - it_c).quantize(Q2)
+    # 营业外收支（6301/6701）+ 资产处置损益（6111/6711）（期间发生额）
+    noi_d, noi_c = _lp(db, ledger, "6301", op_open, op_end, exclude_source_models=_bs_exclude)
+    ado_d, ado_c = _lp(db, ledger, "6111", op_open, op_end, exclude_source_models=_bs_exclude)
+    non_operating_income = (noi_c + ado_c).quantize(Q2)
+    noe_d, noe_c = _lp(db, ledger, "6701", op_open, op_end, exclude_source_models=_bs_exclude)
+    adl_d, adl_c = _lp(db, ledger, "6711", op_open, op_end, exclude_source_models=_bs_exclude)
+    non_operating_expense = (noe_d + adl_d).quantize(Q2)
 
     period_profit = (period_revenue - period_cogs - period_expenses
                      - surcharge_expense - income_tax_expense
                      + non_operating_income - non_operating_expense)
 
     paid_in_capital = _credit_balance("3001").quantize(Q2)
-    retained_earnings = opening_retained_earnings + period_profit
-    total_equity = paid_in_capital + retained_earnings
+    # ── 未分配利润：直接读总账权益科目余额 ──
+    # 4103 本年利润（年末结转前累计；年末结转后为 0）
+    # 4104 利润分配-未分配利润（年末结转后累计）
+    # 期初未分配利润 + 当期净增加 = 期末未分配利润
+    current_year_profit = _credit_balance("4103").quantize(Q2)
+    retained_earnings_prev = _credit_balance("4104").quantize(Q2)
+    retained_earnings = (opening_retained_earnings
+                        + current_year_profit
+                        + retained_earnings_prev).quantize(Q2)
+    total_equity = (paid_in_capital + retained_earnings).quantize(Q2)
 
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable

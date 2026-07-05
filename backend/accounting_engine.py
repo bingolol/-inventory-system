@@ -4,24 +4,41 @@
 1. 计算规则单一来源
 2. 统一错误处理
 3. 统一验证逻辑
+
+⚠️ DEPRECATION NOTICE:
+calculate_vat / calculate_income_tax 已迁移至 policy.policy_engine。
+本模块保留旧方法作为桥接（委托至新引擎 + deprecation warning）。
+L3 政策常量已迁移至 policy/ 目录，此处仅做向后兼容 re-export。
 """
 
+import warnings
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any
 from enum import Enum
+from utils import _d
 
 # 金额精度：保留2位小数
 Q2 = Decimal('0.01')
 
 
 # ═══════════════════════════════════════════════════════════
-# [L3-政策] 附加税税率参数（单一政策来源，禁止在计算逻辑中硬编码）
+# [L3-政策] 附加税税率参数（已迁移至 policy/surcharge_facts.py）
+# 此处仅做向后兼容 re-export。新代码请从 policy 导入。
 # ═══════════════════════════════════════════════════════════
-SURCHARGE_RATE_EDUCATION = Decimal('0.03')               # 教育费附加
-SURCHARGE_RATE_LOCAL_EDUCATION = Decimal('0.02')         # 地方教育附加
-SURCHARGE_RATE_URBAN_CONSTRUCTION = Decimal('0.07')      # 城市维护建设税（市区）
-SURCHARGE_SMALL_MICRO_REDUCTION = Decimal('0.5')         # 小微企业附加税减征比例
+
+from policy.surcharge_facts import (
+    SURCHARGE_RATE_EDUCATION as _S_EDU,
+    SURCHARGE_RATE_LOCAL_EDUCATION as _S_LOCAL,
+    SURCHARGE_RATE_URBAN_CONSTRUCTION as _S_URBAN,
+    SURCHARGE_SMALL_MICRO_REDUCTION as _S_REDUCTION,
+)
+
+SURCHARGE_RATE_EDUCATION = _S_EDU.value
+SURCHARGE_RATE_LOCAL_EDUCATION = _S_LOCAL.value
+SURCHARGE_RATE_URBAN_CONSTRUCTION = _S_URBAN.value
+SURCHARGE_SMALL_MICRO_REDUCTION = _S_REDUCTION.value
 
 
 class AccountingErrorCode(str, Enum):
@@ -189,7 +206,11 @@ class IncomeTaxResult:
 
 
 class AccountingEngine:
-    """小企业会计准则计算引擎"""
+    """小企业会计准则计算引擎
+
+    ⚠️ DEPRECATED: calculate_vat / calculate_income_tax 已迁移至 policy.policy_engine。
+    旧方法保留为桥接，自动委托至新引擎。新代码请直接使用 policy_engine 模块函数。
+    """
 
     # ═══════════════════════════════════════════════════════════
     # 发票计算
@@ -512,125 +533,42 @@ class AccountingEngine:
         input_tax: Decimal = Decimal('0'),
         output_tax: Decimal = None,
         ordinary_revenue: Decimal = Decimal('0'),
-        special_revenue: Decimal = Decimal('0')
+        special_revenue: Decimal = Decimal('0'),
+        carry_forward: Decimal = Decimal('0')
     ) -> VATResult:
-        """计算增值税
+        """[DEPRECATED] 计算增值税 — 已迁移至 policy.policy_engine.calculate_vat
 
-        依据：《小企业会计准则》§二/2.4 增值税 + 增值税暂行条例
-        一般纳税人：应纳税额 = 销项税额 - 进项税额
-        小规模纳税人：征收率3%，2023-2027年减按1%征收。
-
-        单一真相源：output_tax 优先从发票明细汇总（销项发票 tax_amount 合计），
-        避免用 total_revenue × 硬编码0.13 估算销项税（无法支持9%/6%税率商品）。
-
-        小规模免税规则（2026.1.1-2027.12.31）：
-        - 季度销售额 ≤30万：普票免征增值税，专票不减兔（减按1%）
-        - 季度销售额 >30万：普票专票均减按1%征收
-        法规依据：《关于增值税小规模纳税人减免增值税政策的公告》
+        旧调用点自动桥接至新引擎。新代码请直接 import policy.calculate_vat。
         """
-        total_revenue = _d(total_revenue)
-        input_tax = _d(input_tax)
-
-        # 输入校验
-        if taxpayer_type not in ['small_scale', 'general']:
+        if taxpayer_type not in ('small_scale', 'general'):
             raise AccountingError(
                 code=AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID,
                 message=f"无效的纳税人类型：{taxpayer_type}，有效值：small_scale, general",
                 ai_instruction="STOP_RETRYING. 纳税人类型只能是 small_scale（小规模）或 general（一般）"
             )
 
-        # 注：营业收入 / 进项税额可为负（红冲发票、进项转出等正常业务场景），
-        # 不再做 < 0 校验。原 VAT_REVENUE_NEGATIVE / VAT_INPUT_TAX_NEGATIVE 抛错会阻断
-        # 当期红冲 > 当期销售时的正常申报。下游计算逻辑能正确处理负值：
-        # - 负销售额 → 负销项税 → 抵减后期应纳税额或形成留抵
-        # - 负进项税 → 进项税额转出 → 增加应纳税额
-        # 法规依据：《增值税暂行条例实施细则》第11条（销项税额=销售额×税率，销售额含负数情形）
+        warnings.warn(
+            "AccountingEngine.calculate_vat is deprecated. Use policy.policy_engine.calculate_vat instead.",
+            DeprecationWarning, stacklevel=2,
+        )
+        from policy.entity_profile import EntityProfile
+        from policy.policy_engine import calculate_vat as _new_calculate_vat
+        from policy.entity_profile import SURCHARGE_HALVED_TYPES
 
-        if taxpayer_type == 'general':
-            # 一般纳税人：销项税额 - 进项税额
-            # 单一真相源：优先用发票明细汇总的 output_tax，避免硬编码0.13估算
-            if output_tax is not None:
-                tax_payable_gross = _d(output_tax).quantize(Q2, rounding=ROUND_HALF_UP)
-                # 反推有效税率（用于报表展示，支持13%/9%/6%多税率商品混合）
-                # 注：total_revenue=0 时除零保护；total_revenue<0（红冲>销售）时也按正常除法计算
-                tax_rate = (tax_payable_gross / total_revenue).quantize(Decimal('0.01')) if total_revenue != 0 else Decimal('0')
-            else:
-                raise AccountingError(
-                    code=AccountingErrorCode.VAT_OUTPUT_TAX_MISSING,
-                    message="一般纳税人增值税计算必须提供 output_tax（发票明细汇总的销项税额），禁止按固定税率估算",
-                    ai_instruction="STOP_RETRYING. 调用 calculate_vat 时必须传入 output_tax 参数"
-                )
-            tax_payable = tax_payable_gross - input_tax
-
-            # 输出交叉校验：应纳税额 = 销项税额 - 进项税额
-            expected_tax_payable = tax_payable_gross - input_tax
-            if abs(tax_payable - expected_tax_payable) > Q2:
-                raise AccountingError(
-                    code=AccountingErrorCode.VAT_CALCULATION_INVALID,
-                    message=f"增值税计算错误：应纳税额 {tax_payable} ≠ 销项税额 {tax_payable_gross} - 进项税额 {input_tax}",
-                    accounting_rule="《小企业会计准则》§二/2.4 增值税",
-                    calculation_detail={
-                        "tax_payable_gross": float(tax_payable_gross),
-                        "input_tax": float(input_tax),
-                        "tax_payable": float(tax_payable),
-                        "expected_tax_payable": float(expected_tax_payable)
-                    }
-                )
-
-            # 附加税费（税率来自 L3 政策常量）
-            surcharge_education = (tax_payable * SURCHARGE_RATE_EDUCATION).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_local_education = (tax_payable * SURCHARGE_RATE_LOCAL_EDUCATION).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_urban_construction = (tax_payable * SURCHARGE_RATE_URBAN_CONSTRUCTION).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
-            tax_reduction = Decimal('0')
-            reduction_item = "一般纳税人"
-
-        else:
-            # 小规模纳税人：法定征收率3%，2026-2027年减按1%征收
-            # 按发票类型拆分（调用方必须传入 ordinary_revenue/special_revenue）
-            ordinary_rev = _d(ordinary_revenue)
-            special_rev = _d(special_revenue)
-
-            tax_rate = Decimal('0.03')
-            tax_payable_gross = (total_revenue * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
-
-            # 免税门槛：季度总销售额 ≤30万
-            QUARTERLY_EXEMPTION = Decimal('300000')
-
-            if total_revenue <= QUARTERLY_EXEMPTION:
-                # 季度≤30万：普票免征增值税，专票不减兔（减按1%）
-                ordinary_tax = Decimal('0')
-                special_tax = (special_rev * Decimal('0.01')).quantize(Q2, rounding=ROUND_HALF_UP)
-                reduction_item = "小规模普票免征增值税（季≤30万），专票减按1%"
-            else:
-                # 超过门槛：普票专票均减按1%征收
-                ordinary_tax = (ordinary_rev * Decimal('0.01')).quantize(Q2, rounding=ROUND_HALF_UP)
-                special_tax = (special_rev * Decimal('0.01')).quantize(Q2, rounding=ROUND_HALF_UP)
-                reduction_item = "小规模纳税人减按1%征收"
-
-            tax_payable = (ordinary_tax + special_tax).quantize(Q2, rounding=ROUND_HALF_UP)
-            tax_reduction = (tax_payable_gross - tax_payable).quantize(Q2, rounding=ROUND_HALF_UP)
-
-            # 附加税费：基于实际缴纳的增值税（免税部分不计附加税）
-            # 2023-2027年小微企业减征优惠（比例来自 L3 政策常量）
-            reduction_ratio = SURCHARGE_SMALL_MICRO_REDUCTION
-            surcharge_education = (tax_payable * SURCHARGE_RATE_EDUCATION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_local_education = (tax_payable * SURCHARGE_RATE_LOCAL_EDUCATION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_urban_construction = (tax_payable * SURCHARGE_RATE_URBAN_CONSTRUCTION * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-            surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
-
-        return VATResult(
+        profile = EntityProfile(
+            vat_type=taxpayer_type,
+            income_type="small_micro" if taxpayer_type == "small_scale" else "general",
+            surcharge_halved=taxpayer_type in SURCHARGE_HALVED_TYPES,
+            effective_date=date.today(),
+        )
+        return _new_calculate_vat(
+            profile=profile,
             total_revenue=total_revenue,
-            tax_rate=tax_rate,
-            tax_payable_gross=tax_payable_gross.quantize(Q2),
-            tax_reduction=tax_reduction,
-            tax_payable=tax_payable.quantize(Q2),
-            surcharge_education=surcharge_education,
-            surcharge_local_education=surcharge_local_education,
-            surcharge_urban_construction=surcharge_urban_construction,
-            surcharge_total=surcharge_total,
-            reduction_item=reduction_item,
-            reduction_amount=tax_reduction
+            input_tax=input_tax,
+            output_tax=output_tax,
+            ordinary_revenue=ordinary_revenue,
+            special_revenue=special_revenue,
+            carry_forward=carry_forward,
         )
 
     # ═══════════════════════════════════════════════════════════
@@ -643,92 +581,25 @@ class AccountingEngine:
         taxpayer_type: str,
         entity_type: str = "company"
     ) -> IncomeTaxResult:
-        """计算企业所得税
+        """[DEPRECATED] 计算企业所得税 — 已迁移至 policy.policy_engine.calculate_income_tax
 
-        依据：《小企业会计准则》§二/2.5 企业所得税
-        - 年应纳税所得额 ≤ 300万：减按25%计入，按20%税率缴纳，实际税负5%
-        - 年应纳税所得额 > 300万：法定税率25%
-
-        法规依据：《财政部 税务总局关于小微企业和个体工商户所得税优惠政策的公告》(2023年第12号)
-
-        主体类型规则：
-        - company（公司/有限责任公司）：缴纳企业所得税
-        - personal（个体工商户）：不缴企业所得税，缴经营所得个人所得税（系统不处理个税）
-        法规依据：《个体工商户个人所得税计税办法》
+        旧调用点自动桥接至新引擎。新代码请直接 import policy.calculate_income_tax。
         """
-        profit = _d(profit)
+        warnings.warn(
+            "AccountingEngine.calculate_income_tax is deprecated.",
+            DeprecationWarning, stacklevel=2,
+        )
+        from policy.entity_profile import EntityProfile
+        from policy.policy_engine import calculate_income_tax as _new_calculate_income_tax
 
-        # 个体工商户不缴企业所得税，缴个人所得税（系统不处理个税）
-        if entity_type == "personal":
-            return IncomeTaxResult(
-                profit=profit,
-                tax_rate=Decimal('0'),
-                tax_payable=Decimal('0'),
-                reduction_amount=Decimal('0'),
-                actual_tax=Decimal('0'),
-                reduction_item="个体工商户缴纳个人所得税，不计提企业所得税"
-            )
-
-        # 亏损不缴税（《小企业会计准则》§5.5：亏损不缴税）
-        # 与 engine_tax.py 的 max(cumulative_profit * rate, 0) 逻辑一致
-        if profit < Decimal('0'):
-            return IncomeTaxResult(
-                profit=profit,
-                tax_rate=Decimal('0'),
-                tax_payable=Decimal('0'),
-                reduction_amount=Decimal('0'),
-                actual_tax=Decimal('0'),
-                reduction_item="亏损，不计提所得税"
-            )
-
-        # 纳税人类型校验（允许 small_micro 或 general，其他类型默认走一般企业）
-        valid_taxpayer_types = ['small_micro', 'general']
-        if taxpayer_type not in valid_taxpayer_types:
-            # 默认按一般企业处理，但记录警告
-            taxpayer_type = 'general'
-
-        # 法定税率25%
-        tax_rate = Decimal('0.25')
-
-        # 小型微利企业优惠
-        reduction_amount = Decimal('0')
-        reduction_item = ""
-
-        if taxpayer_type == 'small_micro' and profit <= Decimal('3000000'):
-            # 小型微利企业：减按25%计入应纳税所得额，按20%税率缴纳
-            # 实际税负 = 25% * 20% = 5%
-            tax_payable = (profit * Decimal('0.25') * Decimal('0.20')).quantize(Q2, rounding=ROUND_HALF_UP)
-            reduction_item = "小型微利企业减免（≤300万，实际税负5%）"
-            reduction_amount = (profit * tax_rate - tax_payable).quantize(Q2, rounding=ROUND_HALF_UP)
-        else:
-            # 法定税率25%
-            tax_payable = (profit * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
-            if taxpayer_type == 'small_micro':
-                reduction_item = "不符合小型微利企业优惠条件（>300万）"
-            else:
-                reduction_item = "一般企业（法定税率25%）"
-
-        # 输出交叉校验：应纳税额 = 应纳税所得额 × 税率 - 减免税额
-        expected_tax_payable = (profit * tax_rate - reduction_amount).quantize(Q2, rounding=ROUND_HALF_UP)
-        if abs(tax_payable - expected_tax_payable) > Q2:
-            raise AccountingError(
-                code=AccountingErrorCode.INCOME_TAX_CALCULATION_INVALID,
-                message=f"企业所得税计算错误：应纳税额 {tax_payable} ≠ 应纳税所得额 {profit} × 税率 {tax_rate} - 减免税额 {reduction_amount}",
-                accounting_rule="《小企业会计准则》§二/2.5 企业所得税",
-                calculation_detail={
-                    "profit": float(profit),
-                    "tax_rate": float(tax_rate),
-                    "reduction_amount": float(reduction_amount),
-                    "tax_payable": float(tax_payable),
-                    "expected_tax_payable": float(expected_tax_payable)
-                }
-            )
-
-        return IncomeTaxResult(
+        profile = EntityProfile(
+            vat_type="" if entity_type == "personal" else "general",
+            income_type="personal" if entity_type == "personal"
+                else ("small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"),
+            surcharge_halved=taxpayer_type in ("small_scale", "small_micro") or entity_type == "personal",
+            effective_date=date.today(),
+        )
+        return _new_calculate_income_tax(
+            profile=profile,
             profit=profit,
-            tax_rate=tax_rate,
-            tax_payable=tax_payable,
-            reduction_amount=reduction_amount,
-            actual_tax=tax_payable,
-            reduction_item=reduction_item
         )

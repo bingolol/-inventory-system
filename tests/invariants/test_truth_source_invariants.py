@@ -17,7 +17,7 @@ from datetime import datetime
 pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
 from commands.base import dispatch
-from commands.purchase_commands import CreatePurchaseOrder, ReturnPurchaseOrder
+from commands.orders import CreateOrder, ReturnOrder
 from models import Account, StockMove, Inventory
 from models_finance import AccountMove, AccountMoveLine, LedgerAccount
 from tests.factories import make_product, make_supplier
@@ -82,14 +82,14 @@ def _setup_diluted_stock(db):
     s = make_supplier(db, account_id=1)
 
     # 1. 先入低价货（稀释均价）
-    dispatch(CreatePurchaseOrder(
+    dispatch(CreateOrder(order_type="purchase", 
         account_id=1, operator="test",
         supplier_id=s.id, purchase_date=PURCHASE_DATE,
         items=[{"product_id": p.id, "quantity": 5, "unit_price": 500, "tax_rate": 0.13}],
     ), db)
 
     # 2. 再入高价货 A（A 的 unit_cost 被稀释到 833.33）
-    order_a = dispatch(CreatePurchaseOrder(
+    order_a = dispatch(CreateOrder(order_type="purchase", 
         account_id=1, operator="test",
         supplier_id=s.id, purchase_date=PURCHASE_DATE,
         items=[{"product_id": p.id, "quantity": 10, "unit_price": 1000, "tax_rate": 0.13}],
@@ -127,7 +127,7 @@ class Test采购退货借贷同源:
         """
         p, order_a = _setup_diluted_stock(db)
 
-        ret = dispatch(ReturnPurchaseOrder(
+        ret = dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -148,7 +148,7 @@ class Test采购退货借贷同源:
         """不变量：Cr 222102 进项税额转出 = 1000 × 0.13 = 130"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnPurchaseOrder(
+        dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -166,7 +166,7 @@ class Test采购退货借贷同源:
         """不变量：Dr 2202 应付 = 1000 × 1.13 = 1130"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnPurchaseOrder(
+        dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -184,7 +184,7 @@ class Test采购退货借贷同源:
         """综合不变量：Dr 2202 == Cr 1405 + Cr 222102，且都基于原发票单价"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnPurchaseOrder(
+        dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -219,7 +219,7 @@ class Test反向StockMove同源:
     def test_反向StockMove总成本等于原入库按比例分摊(self, db, general_account):
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnPurchaseOrder(
+        dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -247,7 +247,7 @@ class Test反向StockMove同源:
         """
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnPurchaseOrder(
+        dispatch(ReturnOrder(order_type="purchase", 
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",

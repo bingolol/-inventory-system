@@ -37,8 +37,21 @@ def log_op(db, account_id, operation, entity_type, entity_id, detail="", operato
     db.flush()
 
 
-def get_or_create_inventory(db: Session, account_id: int, product_id: int) -> models.Inventory:
-    """获取或创建库存记录"""
+def get_or_create_inventory(db: Session, account_id: int, product_id: int):
+    """获取或创建库存记录(仅实物商品;服务类商品返回 None)
+
+    服务类商品(track_inventory=False)无库存概念,不创建 Inventory 记录。
+    此前无脑创建 quantity_l4=0 的空记录,违反 BR-7 并造成 AdjustInventory
+    else 分支误改脏数据。现在统一通过 domain.product_kind 判断。
+    """
+    product = db.query(models.Product).filter(
+        models.Product.id == product_id
+    ).first()
+    if product is not None:
+        from domain.product_kind import should_track_inventory
+        if not should_track_inventory(product):
+            return None
+
     inv = db.query(models.Inventory).filter(
         models.Inventory.account_id == account_id,
         models.Inventory.product_id == product_id
@@ -60,11 +73,19 @@ def get_account(db: Session, account_id: int):
     return db.query(models.Account).filter(models.Account.id == account_id).first()
 
 
-def update_account(db: Session, account_id: int, name: str):
+def update_account(db: Session, account_id: int, name: str, taxpayer_type: str = None):
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     if not account:
         return None
     account.name = name
+    if taxpayer_type is not None and taxpayer_type != account.taxpayer_type_l3:
+        account.taxpayer_type_l3 = taxpayer_type
+        effective_period = datetime.now().strftime("%Y-%m")
+        db.add(models.TaxpayerTypeHistory(
+            account_id=account_id,
+            taxpayer_type_l3=taxpayer_type,
+            effective_period=effective_period,
+        ))
     db.flush()
     return account
 
@@ -117,3 +138,19 @@ def delete_account(db: Session, account_id: int) -> bool:
     db.delete(account)
     db.flush()
     return True
+
+
+def resolve_taxpayer_type_by_date(db: Session, account_id: int, target_date):
+    """查询指定日期生效的纳税人类型"""
+    from datetime import date as date_type
+    if isinstance(target_date, str):
+        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    ref_period = target_date.strftime("%Y-%m") if hasattr(target_date, "strftime") else str(target_date)
+    result = db.query(models.TaxpayerTypeHistory).filter(
+        models.TaxpayerTypeHistory.account_id == account_id,
+        models.TaxpayerTypeHistory.effective_period <= ref_period,
+    ).order_by(models.TaxpayerTypeHistory.effective_period.desc()).first()
+    if result:
+        return result.taxpayer_type_l3
+    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    return account.taxpayer_type_l3 if account else "small_scale"

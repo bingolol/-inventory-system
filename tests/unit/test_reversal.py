@@ -1,6 +1,6 @@
 """冲销逻辑测试 — 取消/删除订单时反转收款/付款/银行流水
 
-测试 crud/reversal.py 的冲销函数：
+测试 commands/reversal_ops.py 的冲销函数：
 - reverse_receipts: 冲销收款记录 + 银行流水 + 余额
 - reverse_payments: 冲销付款记录 + 银行流水 + 余额
 """
@@ -9,7 +9,7 @@ from decimal import Decimal
 from datetime import datetime
 
 import models
-from crud.reversal import reverse_receipts, reverse_payments
+from commands.reversal_ops import reverse_receipts, reverse_payments
 
 
 @pytest.fixture

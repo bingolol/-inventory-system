@@ -138,6 +138,7 @@ def init_db():
         _sync_bank_account_balance_from_ledger()
         _create_immutable_triggers()
         _init_pending_confirms_table()
+        _seed_taxpayer_type_history()
     finally:
         set_maintenance_mode(False)
 
@@ -379,6 +380,33 @@ def _sync_bank_account_balance_from_ledger():
             if updated > 0:
                 conn.commit()
                 print(f"[BankSync] 已同步 {updated} 个 BankAccount.balance 与 1002 科目")
+    finally:
+        set_maintenance_mode(False)
+
+
+def _seed_taxpayer_type_history():
+    """为每个账本创建初始纳税人类型历史记录（幂等）"""
+    from sqlalchemy import text, inspect
+    set_maintenance_mode(True)
+    try:
+        with _engine.connect() as conn:
+            # 检查列是否存在以兼容新旧 schema
+            cols = [c["name"] for c in inspect(conn).get_columns("taxpayer_type_history")]
+            if "effective_period" in cols:
+                conn.execute(text(
+                    "INSERT OR IGNORE INTO taxpayer_type_history "
+                    "(account_id, taxpayer_type_l3, effective_period, changed_at)"
+                    " SELECT id, taxpayer_type_l3,"
+                    " CAST(strftime('%Y', COALESCE(created_at, CURRENT_TIMESTAMP)) AS TEXT) || '-' ||"
+                    " SUBSTR('0' || CAST(strftime('%m', COALESCE(created_at, CURRENT_TIMESTAMP)) AS TEXT), -2, 2),"
+                    " COALESCE(created_at, CURRENT_TIMESTAMP) FROM accounts"
+                ))
+            else:
+                conn.execute(text(
+                    "INSERT OR IGNORE INTO taxpayer_type_history (account_id, taxpayer_type_l3, changed_at)"
+                    " SELECT id, taxpayer_type_l3, COALESCE(created_at, CURRENT_TIMESTAMP) FROM accounts"
+                ))
+            conn.commit()
     finally:
         set_maintenance_mode(False)
 

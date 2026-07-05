@@ -246,6 +246,7 @@ const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
 import { resolveImageUrl, handleError } from '../api/index'
 import { formatMoney, formatDate } from '../utils/format'
+import AccountingTip from '../components/AccountingTip.vue'
 import { calculateInvoiceAmounts } from '../utils/invoiceCalc'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'

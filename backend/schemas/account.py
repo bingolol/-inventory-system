@@ -15,6 +15,7 @@ class AccountOut(BaseModel):
 
 class AccountUpdate(BaseModel):
     name: str
+    taxpayer_type: str = None
 
 
 class AccountCreate(BaseModel):

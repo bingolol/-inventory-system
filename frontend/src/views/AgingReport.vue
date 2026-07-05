@@ -113,6 +113,7 @@ import { getPartnerReceivable } from '../api/finance'
 import { getCustomers, getSuppliers } from '../api/partners'
 import { getReconciliations, getReconciliationDetail } from '../api/common'
 import { formatMoney } from '../utils/format'
+import AccountingTip from '../components/AccountingTip.vue'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
 

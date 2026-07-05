@@ -2,13 +2,16 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
 from database import get_db
 from account_dep import get_account_id
-from accounting_engine import AccountingEngine, AccountingError
+from accounting_engine import AccountingEngine, AccountingError, AccountingErrorCode
 from utils import _d
+from policy.entity_profile import EntityProfile
+from policy.policy_engine import calculate_vat as policy_vat, calculate_income_tax as policy_income_tax
 
 router = APIRouter()
 _engine = AccountingEngine()
@@ -222,7 +225,19 @@ def check_vat(
 ):
     """检查增值税计算是否正确"""
     try:
-        result = _engine.calculate_vat(total_revenue, taxpayer_type, input_tax, output_tax)
+        if taxpayer_type not in ("small_scale", "general"):
+            raise AccountingError(
+                code=AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID,
+                message=f"无效的纳税人类型：{taxpayer_type}",
+                ai_instruction="STOP_RETRYING. 纳税人类型只能是 small_scale（小规模）或 general（一般）"
+            )
+        profile = EntityProfile(
+            vat_type=taxpayer_type,
+            income_type="small_micro" if taxpayer_type == "small_scale" else "general",
+            surcharge_halved=taxpayer_type == "small_scale",
+            effective_date=date.today(),
+        )
+        result = policy_vat(profile, total_revenue, input_tax, output_tax)
 
         return {
             "valid": True,
@@ -260,7 +275,14 @@ def check_income_tax(
 ):
     """检查所得税计算是否正确"""
     try:
-        result = _engine.calculate_income_tax(profit, taxpayer_type)
+        profile = EntityProfile(
+            vat_type="" if taxpayer_type == "personal" else "general",
+            income_type="personal" if taxpayer_type == "personal"
+                else ("small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"),
+            surcharge_halved=taxpayer_type in ("small_scale", "small_micro", "personal"),
+            effective_date=date.today(),
+        )
+        result = policy_income_tax(profile, profit)
 
         return {
             "valid": True,

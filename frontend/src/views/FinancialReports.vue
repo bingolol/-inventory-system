@@ -38,6 +38,7 @@ import BalanceSheet from '../components/BalanceSheet.vue'
 import IncomeStatement from '../components/IncomeStatement.vue'
 import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
 import CWBBXQYKJZZ from '../components/CWBBXQYKJZZ.vue'
+import AccountingTip from '../components/AccountingTip.vue'
 import { handleError } from '../utils/errorHandler'
 
 const activeTab = ref('income-statement')

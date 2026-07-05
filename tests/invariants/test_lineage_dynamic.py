@@ -17,7 +17,7 @@ pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
 from models import Account, StockMove, SaleItem, PurchaseItem
 from models_finance import AccountMove, AccountMoveLine
-from commands.order_lifecycle import OrderLifecycle
+from commands.orders._lifecycle import OrderLifecycle
 from engine_inventory import InventoryEngine
 from tests.factories import make_product, make_supplier, make_customer
 

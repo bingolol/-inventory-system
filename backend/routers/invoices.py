@@ -15,8 +15,8 @@ from enums import InvoiceDirection, InvoiceType
 from image_utils import delete_old_image
 from uow import unit_of_work
 from commands.base import dispatch
-from commands.invoice_commands import (
-    CreateInvoice, UpdateInvoice, DeleteInvoice, CertifyInvoice,
+from commands.orders import (
+    CreateInvoice, UpdateInvoice, CertifyInvoice,
     CreateInvoiceWithFixedAsset, ReverseInvoice,
 )
 from accounting_engine import AccountingEngine
@@ -458,35 +458,21 @@ async def delete_invoice(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """删除发票"""
-    # 先查记录获取pdf_path（路由层删除PDF文件，Command层删除DB记录+图片）
-    invoice = db.query(Invoice).filter(
-        Invoice.id == invoice_id,
-        Invoice.account_id == account_id
-    ).first()
-    if not invoice:
-        raise BusinessError(code=ErrorCode.INVOICE_NOT_FOUND, data={"invoice_id": invoice_id})
+    """删除发票（已废弃，请使用 POST /{id}/reverse 冲红）"""
+    raise BusinessError(
+        code=ErrorCode.VALIDATION_ERROR,
+        message=f"发票不支持物理删除，请使用 POST /api/invoices/{invoice_id}/reverse 冲红",
+        ai_instruction="STOP_RETRYING. 发票不允许物理删除，请使用冲红接口。"
+    )
 
-    # 保存pdf_path，因为dispatch后会丢失
-    pdf_path = invoice.pdf_path
-
-    with unit_of_work(db):
-        dispatch(DeleteInvoice(account_id=account_id, operator=operator, invoice_id=invoice_id), db)
-
-    # 删除PDF文件（如果存在）
-    if pdf_path and os.path.exists(pdf_path):
-        try:
-            os.remove(pdf_path)
-        except OSError:
-            pass  # 文件清理失败不影响主操作
-
-    # 返回 OperationResult 格式
+    # 以下为历史实现，仅供引用
+    # (keep the rest of the function for reference)
     result = OperationResult(
         operation=OperationType.DELETE,
         entity_type=EntityType.INVOICE,
         entity_id=invoice_id,
-        summary=f"发票 {invoice.invoice_no} 删除成功",
-        ai_hint="发票已删除。",
+        summary=f"发票已废弃删除",
+        ai_hint="请使用冲红接口。",
         data={"invoice_id": invoice_id, "invoice_no": invoice.invoice_no}
     )
     return result.to_dict()

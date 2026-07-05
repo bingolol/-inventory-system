@@ -65,7 +65,7 @@
 
 ---
 
-### 必须遵守的 5 条规则
+### 必须遵守的 7 条规则
 
 | # | 规则 | 说明 |
 |---|------|------|
@@ -74,42 +74,30 @@
 | 3 | **Plan before execute** | 呈现计划，等待批准后再执行 |
 | 4 | **Self-review** | 完成后自检，确保文档同步更新 |
 | 5 | **Tests first** | 核心业务逻辑使用 TDD |
+| 6 | **禁止破坏性操作** | `git clean`、`git reset --hard`、`git checkout -- .`、`git push --force` 等不可逆 Git 操作，以及 DELETE/批量更新/冲红等不可逆数据操作，必须先获得用户明确授权。违者立即停止
+| 7 | **动码前先问** | 每次修改代码前（新建/编辑/删除文件），必须先向用户呈现改动计划并等待批准。
 
 ### 开发流程
 
 ```
-1. 理解任务
+1. 确定问题   → 复述/确认 bug 或需求，等用户确认
    │
-   ├─→ 读取 CONTEXT.md (项目上下文)
-   ├─→ 读取相关模块文档
-   └─→ 如有疑问，先问用户
+2. 列出方案   → 给出改动清单+原因，等用户批准
    │
-2. 制定计划
+3. 实施       → 批准后执行，遵循开发规范与反模式红线
+   │             过程中发现新问题立即汇报
    │
-   ├─→ 列出要修改的文件
-   ├─→ 说明修改原因
-   └─→ 呈现给用户批准
-   │
-3. 执行开发
-   │
-   ├─→ 遵循开发规范中的规范
-   ├─→ 遵循反模式红线 (AP-1~AP-14)
-   └─→ 核心逻辑先写测试
-   │
-4. 自检完成
-   │
-   ├─→ 运行测试: pytest
-   ├─→ 检查代码风格
-   └─→ 更新相关文档
+4. 汇报+自检  → 完成时列出改动+自检结果
+                 运行测试、更新相关文档
 ```
 
 ### 何时询问 vs 何时直接执行
 
 | 询问用户 | 直接执行 |
 |----------|----------|
-| 不确定业务规则时 | 明确的 Bug 修复 |
-| 涉及数据库结构变更时 | 文档更新 |
-| 涉及多个模块的重构时 | 单一文件的小改动 |
+| 不确定业务规则时 | 文档更新 |
+| 涉及数据库结构变更时 | （无，动码必须先问） |
+| 涉及多个模块的重构时 | （无，动码必须先问） |
 | 可能影响现有功能时 | 测试补充 |
 
 ### Agent 技能
@@ -371,7 +359,11 @@ inventory-system/
 - 冲销后自动重置订单 payment_status 为 unpaid（涉及订单时）
 
 依据: 《会计基础工作规范》第五十一条 — 错误更正使用红字冲销法
-系统实现: `crud/reversal.py`（含 `reverse_receipts`、`reverse_payments`、`reverse_single_receipt`、`reverse_single_payment`、`reverse_bank_transaction`）
+系统实现: `commands/reversal_ops.py`（含 `reverse_receipts`、`reverse_payments`、`reverse_single_receipt`、`reverse_single_payment`、`reverse_bank_transaction`）
+
+**已知不对称**: 批量冲销（取消整单时级联触发）不逐笔冲红收款/付款凭证（`call_reverse_journal=False`），
+因上层调用方（`order_lifecycle.py`）集中通过 `FinanceEngine.reverse_sale/reverse_purchase` 冲红销售/采购凭证，
+收款/付款凭证的冲红在整体订单凭证冲红中间接体现。单笔红冲（API 直接调用）会独立冲红对应凭证（`call_reverse_journal=True`）。
 
 ### BR-7:库存真相源是 StockMove 流水
 

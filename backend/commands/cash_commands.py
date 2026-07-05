@@ -12,7 +12,7 @@ from typing import Any, Optional
 from commands.base import Command, CommandHandler, register
 from crud.base import log_op
 from crud.invoice_linkage import has_invoice as linkage_has_invoice
-from crud.reversal import reverse_single_payment, reverse_single_receipt
+from commands.reversal_ops import reverse_single_payment, reverse_single_receipt
 from engine_bank import BankEngine
 from enums import EXPENSE_CATEGORIES
 from errors import BusinessError, ErrorCode

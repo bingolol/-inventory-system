@@ -112,6 +112,7 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import fixedAssetsApi from '../api/fixedAssets'
 import { formatMoney } from '../utils/format'
+import AccountingTip from './AccountingTip.vue'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../api/index'
 

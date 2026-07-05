@@ -8,10 +8,10 @@ from image_utils import delete_old_image
 import schemas, crud
 from uow import unit_of_work
 from commands.base import dispatch
-from commands.purchase_commands import (
-    CreatePurchaseOrder, CancelPurchaseOrder,
-    DeletePurchaseOrder, UpdatePurchaseOrderItems,
-    UpdatePurchaseOrderFields, ReturnPurchaseOrder,
+from commands.orders import (
+    CreateOrder, CancelOrder,
+    DeleteOrder, UpdateOrderItems,
+    UpdateOrderFields, ReturnOrder,
 )
 from enums import OrderStatus, OrderType
 from operation_result import OperationResult, EntityType, OperationType
@@ -67,7 +67,8 @@ def list_purchases(page: int = 1, page_size: int = 20, start_date: str = None, e
 def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     with unit_of_work(db):
         try:
-            cmd = CreatePurchaseOrder(
+            cmd = CreateOrder(
+                order_type="purchase",
                 account_id=account_id,
                 operator=operator,
                 supplier_id=data.supplier_id,
@@ -126,7 +127,8 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
             # 1) items 全量替换 → UpdatePurchaseOrderItems
             if has_items:
                 items_dicts = [item.model_dump() for item in data.items]
-                cmd = UpdatePurchaseOrderItems(
+                cmd = UpdateOrderItems(
+                    order_type="purchase",
                     account_id=account_id,
                     operator=operator,
                     order_id=purchase_id,
@@ -147,7 +149,7 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
                 if not current:
                     raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "采购单"})
                 if data.status == OrderStatus.CANCELLED and current.status != OrderStatus.CANCELLED:
-                    dispatch(CancelPurchaseOrder(account_id=account_id, operator=operator, order_id=purchase_id), db)
+                    dispatch(CancelOrder(order_type="purchase", account_id=account_id, operator=operator, order_id=purchase_id), db)
 
             # 3) 普通字段 → UpdatePurchaseOrderFields
             field_kwargs = {}
@@ -160,7 +162,8 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
             if not has_items and data.status is not None and data.status != OrderStatus.CANCELLED:
                 field_kwargs['status'] = data.status
             if field_kwargs:
-                dispatch(UpdatePurchaseOrderFields(
+                dispatch(UpdateOrderFields(
+                    order_type="purchase",
                     account_id=account_id,
                     operator=operator,
                     order_id=purchase_id,
@@ -202,7 +205,8 @@ def cancel_purchase(
     """
     with unit_of_work(db):
         try:
-            order = dispatch(CancelPurchaseOrder(
+            order = dispatch(CancelOrder(
+                order_type="purchase",
                 account_id=account_id,
                 operator=operator,
                 order_id=purchase_id,
@@ -243,7 +247,8 @@ def return_purchase(
     """
     items = [{"product_id": it.product_id, "quantity": it.quantity} for it in data.items]
     with unit_of_work(db):
-        order = dispatch(ReturnPurchaseOrder(
+        order = dispatch(ReturnOrder(
+            order_type="purchase",
             account_id=account_id,
             operator=operator,
             order_id=purchase_id,
@@ -278,7 +283,7 @@ def delete_purchase(purchase_id: int, account_id: int = Depends(get_account_id),
     if order.image_url:
         delete_old_image(order.image_url)
     with unit_of_work(db):
-        dispatch(DeletePurchaseOrder(account_id=account_id, operator=operator, order_id=purchase_id), db)
+        dispatch(DeleteOrder(order_type="purchase", account_id=account_id, operator=operator, order_id=purchase_id), db)
     
     result = OperationResult(
         operation=OperationType.DELETE,

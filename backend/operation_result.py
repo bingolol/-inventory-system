@@ -21,7 +21,7 @@ class OperationType(str, Enum):
 
 
 class EntityType(str, Enum):
-    """业务实体类型"""
+    """业务实体类型 — 全仓 source_model / related_entity_type / source_type 唯一真相源"""
     PURCHASE_ORDER = "purchase_order"
     SALE_ORDER = "sale_order"
     EXPENSE = "expense"
@@ -36,6 +36,24 @@ class EntityType(str, Enum):
     BANK_ENTRY = "bank_entry"
     PERSONAL_ADVANCE = "personal_advance"
     PERSONAL_ADVANCE_REPAYMENT = "personal_advance_repayment"
+    DEPRECIATION = "depreciation"
+    ASSET_DISPOSAL = "asset_disposal"
+    FIXED_ASSET_PURCHASE = "fixed_asset_purchase"
+    INTANGIBLE_ASSET_PURCHASE = "intangible_asset_purchase"
+    CASH_FLOW = "cash_flow"
+    SALE_RETURN = "sale_return"
+    PURCHASE_RETURN = "purchase_return"
+    TAX_SURCHARGE = "tax_surcharge"
+    TAX_INCOME = "tax_income"
+    TAX_INCOME_REVERSAL = "tax_income_reversal"
+    VAT_TRANSFER_OUT = "vat_transfer_out"
+    VAT_EXEMPTION = "vat_exemption"
+    BANK_FEE_ENTRY = "bank_fee_entry"
+    REVERSE_ENTRY = "reverse_entry"
+    PERIOD_CLOSE = "period_close"
+    YEAR_CLOSE = "year_close"
+    REVERSAL = "reversal"
+    INVENTORY_ADJUSTMENT = "inventory_adjustment"
 
 
 @dataclass

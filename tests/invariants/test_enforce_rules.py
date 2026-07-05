@@ -195,14 +195,15 @@ class Test业务入口拦截:
 
     def test_invoice_commands引用enforce_rules(self):
         """CreateInvoiceHandler / ReverseInvoiceHandler 应调用 enforce_rules"""
-        from commands import invoice_commands as mod
+        from commands.orders._invoice import CreateInvoiceHandler, ReverseInvoiceHandler
         import inspect
 
-        create_src = inspect.getsource(mod.CreateInvoiceHandler.handle)
+        create_src = inspect.getsource(CreateInvoiceHandler.handle)
         assert "enforce_rules" in create_src
         assert "AS-02" in create_src
 
-        reverse_src = inspect.getsource(mod.ReverseInvoiceHandler.handle)
+
+        reverse_src = inspect.getsource(ReverseInvoiceHandler.handle)
         assert "enforce_rules" in reverse_src
         assert "AS-06" in reverse_src
 
@@ -241,7 +242,7 @@ class Test业务入口拦截:
         import engine_journal
         import engine_inventory
         import engine_fixed_asset
-        import commands.invoice_commands
+        import commands.orders
 
         # 验证 enforce_rules 在各模块的命名空间中
         assert hasattr(engine_journal, "enforce_rules")

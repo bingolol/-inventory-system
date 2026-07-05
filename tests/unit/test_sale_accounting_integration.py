@@ -8,7 +8,7 @@ from models_finance import (
     Ledger, LedgerAccount, AccountMove, AccountMoveLine,
 )
 from commands.base import dispatch
-from commands.sale_commands import CreateSaleOrder
+from commands.orders import CreateOrder
 from enums import OrderStatus
 
 
@@ -69,7 +69,7 @@ class TestSaleCreateTriggersAccounting:
     """创建销售单 → 会计凭证 + 库存出库"""
 
     def test_creates_revenue_and_cogs_journal(self, db, account, accts, product):
-        cmd = CreateSaleOrder(
+        cmd = CreateOrder(order_type="sale", 
             account_id=1,
             operator="test",
             customer_id=1,

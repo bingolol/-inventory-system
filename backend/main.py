@@ -20,7 +20,7 @@ from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, gen
 from enums import ALL_ENUMS, ENUM_LABELS
 from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances, accounting_guide
 
 logging.basicConfig(
     level=logging.INFO,
@@ -211,6 +211,7 @@ app.include_router(finance.router, prefix="/api/finance", tags=["财务管理查
 app.include_router(month_end.router, prefix="/api/finance", tags=["月末结账"])
 app.include_router(tax_check.router, prefix="/api/tax", tags=["税务核对"])
 app.include_router(bank_reconcile.router, prefix="/api", tags=["银行对账"])
+app.include_router(accounting_guide.router, prefix="/api", tags=["会计规则指引"])
 # AI 能力发现接口（/api/_ai 前缀已在 AIGatewayMiddleware._SKIP_PREFIXES 放行）
 app.include_router(ai_capabilities.router, prefix="/api/_ai", tags=["AI 能力发现"])
 app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["初始化"])
@@ -402,7 +403,7 @@ def create_account(body: schemas.AccountCreate, db: Session = Depends(get_db)):
 
 @app.put("/api/accounts/{account_id}", response_model=schemas.AccountOut)
 def update_account(account_id: int, body: schemas.AccountUpdate, db: Session = Depends(get_db)):
-    account = crud.update_account(db, account_id, body.name)
+    account = crud.update_account(db, account_id, body.name, body.taxpayer_type)
     if not account:
         raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本"})
     db.commit()

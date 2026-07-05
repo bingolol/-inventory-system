@@ -247,6 +247,8 @@ class IncomeTaxReport(BaseModel):
     # 税率
     tax_rate: Decimal       # 小微企业实际税率（如5%或更低）
     tax_amount: Decimal     # 应纳企业所得税 = taxable_income * tax_rate
+    reduction_amount: Decimal = Decimal('0')   # 减免税额
+    reduction_item: str = ""  # 减免说明（如"小型微利企业减免"）
 
 
 # ── Income Tax Prepayment (企业所得税预缴申报表 - A类) ──

@@ -3,10 +3,8 @@
 from .base import Command, CommandHandler, register, dispatch, get_registered_commands
 
 # 导入各命令模块以触发 @register 装饰器注册
-from . import sale_commands  # noqa: F401
-from . import purchase_commands  # noqa: F401
+from . import orders  # noqa: F401
 from . import finance_commands  # noqa: F401
-from . import invoice_commands  # noqa: F401
 from . import product_commands  # noqa: F401
 from . import partner_commands  # noqa: F401
 from . import personal_commands  # noqa: F401
@@ -72,6 +70,21 @@ from .fixed_asset_commands import (
     BatchDepreciateFixedAssets,
     DisposeFixedAsset,
 )
+from .orders import (
+    CreateOrder,
+    CancelOrder,
+    ReturnOrder,
+    DeleteOrder,
+    UpdateOrderItems,
+    UpdateOrderFields,
+    RestoreOrder,
+    CreateInvoice,
+    UpdateInvoice,
+    CertifyInvoice,
+    CreateInvoiceWithFixedAsset,
+    ReverseInvoice,
+    UpdateAssetWithInvoice,
+)
 
 __all__ = [
     "Command",
@@ -126,4 +139,19 @@ __all__ = [
     "DepreciateFixedAsset",
     "BatchDepreciateFixedAssets",
     "DisposeFixedAsset",
+    # Order commands (parameterized)
+    "CreateOrder",
+    "CancelOrder",
+    "ReturnOrder",
+    "DeleteOrder",
+    "UpdateOrderItems",
+    "UpdateOrderFields",
+    "RestoreOrder",
+    # Invoice commands
+    "CreateInvoice",
+    "UpdateInvoice",
+    "CertifyInvoice",
+    "CreateInvoiceWithFixedAsset",
+    "ReverseInvoice",
+    "UpdateAssetWithInvoice",
 ]
