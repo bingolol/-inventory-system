@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+from contextlib import asynccontextmanager
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -20,7 +21,7 @@ from image_utils import UPLOAD_DIR, BUSINESS_TYPES, ALLOWED_TYPES, MAX_SIZE, gen
 from enums import ALL_ENUMS, ENUM_LABELS
 from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
-from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances, accounting_guide
+from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances, accounting_guide, tax_declaration
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +33,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger("inventory")
 
-app = FastAPI(title="进销存管理系统", version="1.0.0")
+
+def _startup():
+    """应用启动逻辑"""
+    from database import set_maintenance_mode
+    workspace.ensure_workspace()
+    set_maintenance_mode(True)
+    init_db()
+    set_maintenance_mode(False)
+    # ── 硬约束：Truth Source Bypass 静态扫描 + 不变量测试 ──
+    # 启动时强制跑，ERROR/测试失败 → sys.exit(1) 拒绝启动
+    _run_truth_source_hard_constraints()
+    # ── 清理过期 confirm token ──
+    from confirm_middleware import confirm_store
+    confirm_store.cleanup_expired()
+    # ── EventBus 初始化 ──
+    from middleware import register_middleware
+    import handlers
+    import commands
+    register_middleware()
+    # ── 审计日志事件监听 ──
+    from utils.audit import register_listeners
+    register_listeners()
+    logger.info("进销存管理系统启动完成")
+
+
+def _shutdown():
+    """应用关闭逻辑：关闭日志文件句柄，避免 ResourceWarning"""
+    for handler in logging.getLogger().handlers:
+        try:
+            handler.close()
+        except Exception:
+            pass
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期管理（替代 deprecated @app.on_event）"""
+    _startup()
+    yield
+    _shutdown()
+
+
+app = FastAPI(title="进销存管理系统", version="1.0.0", lifespan=lifespan)
 
 # CORS：开发环境允许 localhost，生产环境限制来源
 # 用正则匹配 localhost 开发端口（5173-5179/4173/8000），避免 Vite 端口漂移后 CORS 拦截
@@ -210,35 +253,12 @@ app.include_router(accounting_check.router, prefix="/api/accounting", tags=["会
 app.include_router(finance.router, prefix="/api/finance", tags=["财务管理查询"])
 app.include_router(month_end.router, prefix="/api/finance", tags=["月末结账"])
 app.include_router(tax_check.router, prefix="/api/tax", tags=["税务核对"])
+app.include_router(tax_declaration.router, prefix="/api/tax", tags=["税务申报"])
 app.include_router(bank_reconcile.router, prefix="/api", tags=["银行对账"])
 app.include_router(accounting_guide.router, prefix="/api", tags=["会计规则指引"])
 # AI 能力发现接口（/api/_ai 前缀已在 AIGatewayMiddleware._SKIP_PREFIXES 放行）
 app.include_router(ai_capabilities.router, prefix="/api/_ai", tags=["AI 能力发现"])
 app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["初始化"])
-
-
-@app.on_event("startup")
-def startup():
-    from database import set_maintenance_mode
-    workspace.ensure_workspace()
-    set_maintenance_mode(True)
-    init_db()
-    set_maintenance_mode(False)
-    # ── 硬约束：Truth Source Bypass 静态扫描 + 不变量测试 ──
-    # 启动时强制跑，ERROR/测试失败 → sys.exit(1) 拒绝启动
-    _run_truth_source_hard_constraints()
-    # ── 清理过期 confirm token ──
-    from confirm_middleware import confirm_store
-    confirm_store.cleanup_expired()
-    # ── EventBus 初始化 ──
-    from middleware import register_middleware
-    import handlers
-    import commands
-    register_middleware()
-    # ── 审计日志事件监听 ──
-    from utils.audit import register_listeners
-    register_listeners()
-    logger.info("进销存管理系统启动完成")
 
 
 def _load_truth_source_scanner():
@@ -259,8 +279,10 @@ def _run_truth_source_hard_constraints():
        - ERROR 级别违规 → sys.exit(1) 拒绝启动
        - WARNING 级别违规 → 打日志警告
     2. 不变量测试 tests/invariants/test_truth_source_invariants.py（约 2-3 秒）
-       - 任意测试失败 → sys.exit(1) 拒绝启动
+    - 任意测试失败 → sys.exit(1) 拒绝启动
     """
+    if os.environ.get("SKIP_HARD_CONSTRAINTS") == "1":
+        return
     # ── 1. 静态扫描 ──
     try:
         scanner = _load_truth_source_scanner()

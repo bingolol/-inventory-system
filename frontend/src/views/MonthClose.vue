@@ -55,9 +55,6 @@ const closedMonths = ref([])
 const lastResult = ref(null)
 const lastPeriod = ref('')
 
-const checkStatus = async () => {
-}
-
 const handleMonthClose = async () => {
   if (!period.value) { ElMessage.warning('请先选择月结期间'); return }
   try {
@@ -80,8 +77,6 @@ const handleMonthClose = async () => {
   } catch (e) { handleError(e, { defaultMsg: '月结失败，请检查该期间是否已月结或存在未处理事务' }) }
   finally { monthClosing.value = false }
 }
-
-useAccountAwareData(checkStatus)
 </script>
 
 <style scoped>

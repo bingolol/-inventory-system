@@ -19,7 +19,7 @@ from commands.orders import (
     CreateInvoice, UpdateInvoice, CertifyInvoice,
     CreateInvoiceWithFixedAsset, ReverseInvoice,
 )
-from accounting_engine import AccountingEngine
+# BR-27: tax_amount 为外部输入，发票税额不再内部推导
 
 from utils import _d, Q2
 from workspace import get_pdfs_dir as _get_pdfs_dir
@@ -27,9 +27,6 @@ from errors import BusinessError, ErrorCode
 from operation_result import OperationResult, EntityType, OperationType
 
 router = APIRouter()
-
-# 金额计算统一走 AccountingEngine（ROUND_HALF_UP），消除历史上的多套舍入实现
-_engine = AccountingEngine()
 
 # PDF 文件存储路径
 PDF_DIR = _get_pdfs_dir()
@@ -163,15 +160,12 @@ async def quick_create_invoice(
 ):
     """AI 快捷录入发票（规范接口）
 
-    - 仅传 amount_with_tax + tax_rate，系统自动算不含税金额/税额（统一走 AccountingEngine，ROUND_HALF_UP）。
-    - 携带可选 `fixed_asset` 嵌套对象时，同事务内原子创建发票 + 固定资产并关联
-      （合并自原 POST /with-fixed-asset，能力保留、入口统一）。
+    - tax_amount 为外部输入（发票上的实际税额），系统不再内部推导（BR-27）。
+    - amount_without_tax = amount_with_tax - tax_amount。
+    - 携带可选 `fixed_asset` 嵌套对象时，同事务内原子创建发票 + 固定资产并关联。
     """
-    # 统一金额计算（消除历史上 ROUND_HALF_EVEN / ROUND_HALF_UP 两套实现的不一致）
-    amounts = _engine.calculate_invoice_amounts(
-        amount_with_tax=_d(invoice.amount_with_tax),
-        tax_rate=_d(invoice.tax_rate),
-    )
+    tax_amount = _d(invoice.tax_amount)
+    amount_without_tax = (_d(invoice.amount_with_tax) - tax_amount).quantize(Q2)
 
     try:
         with unit_of_work(db):
@@ -213,9 +207,9 @@ async def quick_create_invoice(
                     direction=invoice.direction,
                     invoice_type=invoice.invoice_type,
                     tax_rate=invoice.tax_rate,
-                    amount_without_tax=amounts.amount_without_tax,
-                    tax_amount=amounts.tax_amount,
-                    amount_with_tax=amounts.amount_with_tax,
+                    amount_without_tax=amount_without_tax,
+                    tax_amount=tax_amount,
+                    amount_with_tax=invoice.amount_with_tax,
                     counterparty_name=invoice.counterparty_name,
                     seller_name=invoice.seller_name,
                     buyer_name=invoice.buyer_name,
@@ -269,6 +263,7 @@ async def upload_pdf(
     direction: str = Form(...),
     invoice_type: str = Form(...),
     amount_with_tax: Decimal = Form(...),
+    tax_amount: Decimal = Form(...),
     tax_rate: Decimal = Form(...),
     counterparty_name: str = Form(...),
     issue_date: str = Form(...),
@@ -286,11 +281,8 @@ async def upload_pdf(
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
-    # 金额计算统一走 AccountingEngine（原为路由层内联 quantize，舍入行为不一致）
-    amounts = _engine.calculate_invoice_amounts(
-        amount_with_tax=_d(amount_with_tax),
-        tax_rate=_d(tax_rate),
-    )
+    # BR-27: tax_amount 为外部输入，不推导
+    amount_without_tax = (_d(amount_with_tax) - _d(tax_amount)).quantize(Q2)
 
     # 日期解析与唯一性校验由 CreateInvoice Command 负责，路由层不再重复
     try:
@@ -302,9 +294,9 @@ async def upload_pdf(
                 direction=direction,
                 invoice_type=invoice_type,
                 tax_rate=tax_rate,
-                amount_without_tax=amounts.amount_without_tax,
-                tax_amount=amounts.tax_amount,
-                amount_with_tax=amounts.amount_with_tax,
+                amount_without_tax=amount_without_tax,
+                tax_amount=tax_amount,
+                amount_with_tax=amount_with_tax,
                 counterparty_name=counterparty_name,
                 issue_date=issue_date,
                 pdf_path=file_path,

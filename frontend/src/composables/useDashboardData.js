@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import financeApi from '../api/finance'
 import ordersApi from '../api/orders'
 import productsApi from '../api/products'
@@ -34,7 +34,7 @@ export function useDashboardData() {
     const range = getMonthRange()
     const [profitRes, expRes] = await Promise.all([
       financeApi.getProfitReport({ start_date: range.start, end_date: range.end }).catch(() => null),
-      expensesApi.getExpenses({ year: range.year, limit: 1000 }).catch(() => null)
+      expensesApi.getExpenses({ year: range.year, limit: 99999 }).catch(() => null)
     ])
     const rev = Number(profitRes?.total_revenue ?? 0)
     const cost = Number(profitRes?.total_cost ?? 0)

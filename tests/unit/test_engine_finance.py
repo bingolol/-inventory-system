@@ -64,6 +64,7 @@ class TestRecordPurchase:
         po = PurchaseOrder(
             account_id=1, order_no="PO-TEST-001", supplier_id=1,
             total_price_l1=Decimal("113.00"),
+            tax_amount_l1=Decimal("13.00"),
             status=OrderStatus.COMPLETED,
             payment_method=PaymentMethod.COMPANY,
             purchase_date_l1=datetime.now(),
@@ -73,7 +74,7 @@ class TestRecordPurchase:
         pi = PurchaseItem(
             order_id=po.id, product_id=product.id,
             quantity_l1=10, unit_price_l1=Decimal("10.00"),
-            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("113.00"),
+            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("100.00"),
         )
         db.add(pi)
         db.commit()
@@ -109,6 +110,7 @@ class TestRecordPurchase:
         po = PurchaseOrder(
             account_id=1, order_no="PO-TEST-002", supplier_id=1,
             total_price_l1=Decimal("56.50"),
+            tax_amount_l1=Decimal("6.50"),
             status=OrderStatus.COMPLETED,
             payment_method=PaymentMethod.COMPANY,
             purchase_date_l1=datetime.now(),
@@ -118,7 +120,7 @@ class TestRecordPurchase:
         pi = PurchaseItem(
             order_id=po.id, product_id=product.id,
             quantity_l1=5, unit_price_l1=Decimal("10.00"),
-            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("56.50"),
+            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("50.00"),
         )
         db.add(pi)
         db.commit()
@@ -140,7 +142,8 @@ class TestRecordSale:
     def test_creates_revenue_and_cogs_journal(self, db, account, accts, product):
         so = SaleOrder(
             account_id=1, order_no="SO-TEST-001", customer_id=1,
-            total_price_l1=Decimal("200.00"),
+            total_price_l1=Decimal("226.00"),
+            tax_amount_l1=Decimal("26.00"),
             status=OrderStatus.COMPLETED,
             sale_date_l1=datetime.now(),
         )
@@ -188,7 +191,7 @@ class TestReverse:
     def test_reverse_purchase(self, db, account, accts, product):
         po = PurchaseOrder(
             account_id=1, order_no="PO-TEST-003", supplier_id=1,
-            total_price_l1=Decimal("113.00"),
+            total_price_l1=Decimal("100.00"),
             status=OrderStatus.COMPLETED,
             payment_method=PaymentMethod.COMPANY,
             purchase_date_l1=datetime.now(),
@@ -198,7 +201,7 @@ class TestReverse:
         pi = PurchaseItem(
             order_id=po.id, product_id=product.id,
             quantity_l1=10, unit_price_l1=Decimal("10.00"),
-            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("113.00"),
+            tax_rate_l1=Decimal("0.13"), total_price_l1=Decimal("100.00"),
         )
         db.add(pi)
         db.commit()

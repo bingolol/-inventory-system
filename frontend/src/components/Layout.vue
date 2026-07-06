@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import accountsApi from '../api/accounts'
 import productsApi from '../api/products'
@@ -183,7 +183,7 @@ const currentDate = ref('')
 const accounts = ref([])
 
 const currentAccountId = computed({
-  get: () => Number(accountStore.currentAccountId) || 1,
+  get: () => Number(accountStore.currentAccountId) || 0,
   set: (val) => accountStore.setCurrentAccount(val)
 })
 const currentAccount = computed(() => accountStore.currentAccount)
@@ -210,7 +210,6 @@ const onAccountChange = (id) => {
 
 const { renameDialogVisible, renameForm, renameLoading, openRenameDialog, handleRename, createDialogVisible, createForm, createLoading, openCreateDialog, handleCreate, openDeleteConfirm } = useAccountManagement({ accounts, accountStore, onAccountsChanged: loadAccounts })
 
-watch(() => route.path, () => {})
 let dateTimer
 onMounted(() => { updateDate(); loadAccounts(); dateTimer = setInterval(updateDate, 60000) })
 onUnmounted(() => { clearInterval(dateTimer) })

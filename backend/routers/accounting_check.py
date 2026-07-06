@@ -20,30 +20,29 @@ _engine = AccountingEngine()
 @router.get("/invoice-amounts")
 def check_invoice_amounts(
     amount_with_tax: Decimal = Query(..., description="含税金额"),
-    tax_rate: Decimal = Query(..., description="税率"),
+    tax_amount: Decimal = Query(..., description="税额（发票上的实际值）"),
     account_id: int = Depends(get_account_id),
 ):
-    """检查发票金额计算是否正确"""
-    result = _engine.calculate_invoice_amounts(amount_with_tax, tax_rate)
-    expected_total = result.amount_without_tax + result.tax_amount
-    diff = abs(expected_total - amount_with_tax)
+    """检查发票金额等式：不含税金额 + 税额 == 含税金额（BR-27: 税额手动输入，不推导）"""
+    amount_without_tax = amount_with_tax - tax_amount
+    diff = amount_without_tax + tax_amount - amount_with_tax
 
-    if diff > Decimal("0.01"):
+    if diff != Decimal("0"):
         return {
             "valid": False,
             "violations": [
-                f"金额不平衡：不含税 {result.amount_without_tax} + 税额 {result.tax_amount} = {expected_total} ≠ 含税 {amount_with_tax}（差额 {diff}）"
+                f"金额不平衡：不含税 {amount_without_tax} + 税额 {tax_amount} = {amount_without_tax + tax_amount} ≠ 含税 {amount_with_tax}（差额 {diff}）"
             ],
-            "ai_instruction": "STOP_RETRYING. 发票金额计算错误，请检查：不含税金额 = 含税金额 / (1 + 税率)；税额 = 含税金额 - 不含税金额。",
+            "ai_instruction": "STOP_RETRYING. 发票金额计算错误。含税金额务必等于 不含税金额 + 税额。",
             "accounting_rule": "《小企业会计准则》第十五条：收入按从购买方已收或应收的合同价款确定"
         }
 
     return {
         "valid": True,
         "result": {
-            "amount_without_tax": float(result.amount_without_tax),
-            "tax_amount": float(result.tax_amount),
-            "amount_with_tax": float(result.amount_with_tax),
+            "amount_without_tax": float(amount_without_tax),
+            "tax_amount": float(tax_amount),
+            "amount_with_tax": float(amount_with_tax),
         },
         "rules": [
             "发票金额三件套：不含税金额 + 税额 = 含税金额",
@@ -246,7 +245,6 @@ def check_vat(
                 "tax_rate": float(result.tax_rate),
                 "tax_payable_gross": float(result.tax_payable_gross),
                 "tax_payable": float(result.tax_payable),
-                "surcharge_total": float(result.surcharge_total),
             },
             "rules": [
                 f"纳税人类型：{taxpayer_type}",

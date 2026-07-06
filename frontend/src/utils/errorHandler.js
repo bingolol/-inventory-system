@@ -70,6 +70,7 @@ const ACTION_HANDLERS = {
 
   login: () => {
     ElMessage.warning('登录已过期，请重新登录')
+    setTimeout(() => { window.location.href = '/login' }, 1500)
   },
 
   contact_admin: (errorInfo) => {

@@ -58,14 +58,9 @@ router.beforeEach(async (to) => {
   if (to.name !== 'Login') {
     const auth = useAuthStore()
     if (!auth.isLoggedIn) {
-      // 先尝试 refresh，失败则自动登录（无密码）
       const refreshed = auth.refreshToken ? await auth.refresh() : false
       if (!refreshed) {
-        try {
-          await auth.autoLogin()
-        } catch {
-          return '/login'
-        }
+        return '/login'
       }
     }
   }

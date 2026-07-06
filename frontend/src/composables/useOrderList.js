@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { usePagination } from './usePagination'
 import exportApi from '../api/export'
-import { handleError } from '../api/index'
+import { handleError } from '../utils/errorHandler'
 import { formatMoney } from '../utils/format'
 
 /**

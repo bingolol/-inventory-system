@@ -140,22 +140,6 @@ def get_or_create_ledger_id(db: Session, account_id: int) -> int:
 get_ledger_id = get_or_create_ledger_id  # 向下兼容
 
 
-def _calc_tax_from_items(total_with_tax: Decimal, items: list) -> dict:
-    """从 items 逐行计算税额，Decimal + quantize 精度保护
-
-    items 每个元素需包含: total_price (含税小计), tax_rate
-    返回: {"tax_amount": Decimal, "total_without_tax": Decimal}
-    """
-    tax_amount = Decimal("0")
-    for item in items:
-        tp = Decimal(str(item["total_price"]))
-        rate = Decimal(str(item["tax_rate"]))
-        line_tax = (tp * rate / (Decimal("1") + rate)).quantize(Q2)
-        tax_amount += line_tax
-    tax_amount = tax_amount.quantize(Q2)
-    total_without_tax = (Decimal(str(total_with_tax)) - tax_amount).quantize(Q2)
-    return {"tax_amount": tax_amount, "total_without_tax": total_without_tax}
-
 
 @writes("AccountMove.date_l1", tier=TIER_L1, source="external")
 @writes("AccountMove.amount_total_l2", tier=TIER_L2, source="engine")
@@ -256,3 +240,26 @@ def reverse_journal(
     move = engine.post(original.ledger_id, "reverse_entry", source)
     enforce_rules(db, ["AS-15"], {"move_id": move.id})
     return move
+
+
+def post_bank_fee_journal(
+    db: Session,
+    account_id: int,
+    amount: Decimal,
+    direction: str,
+    transaction_date: str,
+    source_model: str,
+    source_id: int,
+) -> AccountMove:
+    """银行手续费/利息过账 seam
+
+    构建 bank_fee_entry 所需 dict 并调用 post_journal。
+    被 CreateBankEntryHandler 和 BankReconcileEngine.generate_entries 共享。
+    """
+    return post_journal(db, account_id, "bank_fee_entry", {
+        "amount": amount,
+        "direction": direction,
+        "date": transaction_date,
+        "source_model": source_model,
+        "source_id": source_id,
+    })

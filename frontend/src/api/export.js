@@ -1,8 +1,8 @@
-import api from './index'
+import api, { baseURL } from './index'
 
 export const getExportUrl = (type, format = 'excel', params = {}) => {
   const query = new URLSearchParams({ format, ...params }).toString()
-  return `/api/export/${type}?${query}`
+  return `${baseURL}/export/${type}?${query}`
 }
 
 /**

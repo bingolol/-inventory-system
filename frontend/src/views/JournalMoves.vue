@@ -72,7 +72,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import dayjs from 'dayjs'
 import { getJournalMoves, getJournalMove } from '../api/finance'
 import { formatMoney, formatDate, formatDateTime } from '../utils/format'
 import { handleError } from '../api/index'

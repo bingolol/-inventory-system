@@ -216,12 +216,7 @@ class VATDeclaration(BaseModel):
     tax_payable: Decimal = Decimal('0')    # 应纳税额
     tax_paid: Decimal = Decimal('0')       # 已预缴税额
     tax_supplement: Decimal = Decimal('0') # 本期应补(退)税额
-    # 三、附加税费
-    surcharge_education: Decimal = Decimal('0')      # 教育费附加
-    surcharge_local_education: Decimal = Decimal('0') # 地方教育附加
-    surcharge_urban_construction: Decimal = Decimal('0') # 城市维护建设税（7%）
-    surcharge_total: Decimal = Decimal('0')           # 附加税费合计
-    # 四、减免税明细
+    # 三、减免税明细
     reduction_item: str = ""  # 减免项目
     reduction_amount: Decimal = Decimal('0')  # 减免金额
     # 发票明细
@@ -409,3 +404,59 @@ class CashFlowStatement(BaseModel):
     net_cash_flow: Decimal
     beginning_cash_balance: Decimal
     ending_cash_balance: Decimal
+
+
+# ── VAT / 附加税申报声明（L1 外部输入）──
+
+class VATDeclarationCreate(BaseModel):
+    period: str                    # "2026-Q2" | "2026-07"
+    taxpayer_type: str = "small_scale"
+
+
+class VATDeclarationOut(BaseModel):
+    id: int
+    period: str
+    taxpayer_type: str
+    total_revenue: Decimal = Decimal("0")
+    output_tax: Decimal = Decimal("0")
+    input_tax: Decimal = Decimal("0")
+    vat_payable: Decimal = Decimal("0")
+    carry_forward: Decimal = Decimal("0")
+    period_start: str
+    period_end: str
+    snapshot_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SurchargeDeclarationCreate(BaseModel):
+    period: str
+    urban_construction_tax: Decimal = Decimal("0")
+    education_surcharge: Decimal = Decimal("0")
+    local_education_surcharge: Decimal = Decimal("0")
+    notes: str = ""
+
+
+class SurchargeDeclarationOut(BaseModel):
+    id: int
+    period: str
+    vat_payable: Decimal
+    urban_construction_tax: Decimal
+    education_surcharge: Decimal
+    local_education_surcharge: Decimal
+    total: Decimal
+    status: str
+    declared_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeclaredPeriodOut(BaseModel):
+    period: str
+    period_start: str
+    period_end: str
+    due_date: str
+    taxpayer_type: str
+    vat_declared: bool
+    surcharge_declared: bool
+    status: str  # pending / vat_declared / surcharge_declared / overdue

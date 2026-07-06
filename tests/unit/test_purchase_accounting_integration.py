@@ -76,6 +76,8 @@ class TestPurchaseCreateTriggersAccounting:
                 "unit_price": "10.00",
                 "tax_rate": "0.13",
             }],
+            tax_amount=Decimal("13.00"),
+            total_price=Decimal("113.00"),
         )
         order = dispatch(cmd, db)
         db.flush()
@@ -126,10 +128,12 @@ class TestPurchaseCreateTriggersAccounting:
             purchase_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
-                "quantity": 5,
-                "unit_price": "20.00",
+                "quantity": 10,
+                "unit_price": "10.00",
                 "tax_rate": "0.13",
             }],
+            tax_amount=Decimal("13.00"),
+            total_price=Decimal("113.00"),
         )
         order = dispatch(cmd, db)
         db.flush()

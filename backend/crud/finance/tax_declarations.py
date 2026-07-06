@@ -143,17 +143,10 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
     unrecorded_revenue = Decimal('0')
     unrecorded_tax = Decimal('0')
     for order in unrecorded_orders:
-        for item in order.items:
-            line_total = _d(item.total_price_l1)
-            tax_rate = _d(item.tax_rate_l1)
-            if tax_rate > 0:
-                amount_without_tax = (line_total / (1 + tax_rate)).quantize(Q2)
-                tax_amount = (line_total - amount_without_tax).quantize(Q2)
-            else:
-                amount_without_tax = line_total
-                tax_amount = Decimal('0')
-            unrecorded_revenue += amount_without_tax
-            unrecorded_tax += tax_amount
+        order_total = _d(order.total_price_l1)
+        order_tax = _d(order.tax_amount_l1)
+        unrecorded_revenue += (order_total - order_tax)
+        unrecorded_tax += order_tax
 
     # 未开票收入按普通收入处理(享受小规模季度≤30万免税判定)
     output_total += unrecorded_revenue
@@ -234,10 +227,6 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "tax_payable": vat_result.tax_payable,
         "tax_paid": tax_paid.quantize(Q2),
         "tax_supplement": tax_supplement.quantize(Q2),
-        "surcharge_education": vat_result.surcharge_education,
-        "surcharge_local_education": vat_result.surcharge_local_education,
-        "surcharge_urban_construction": vat_result.surcharge_urban_construction,
-        "surcharge_total": vat_result.surcharge_total,
         "reduction_item": vat_result.reduction_item,
         "reduction_amount": vat_result.reduction_amount,
         "invoice_list": agg["out_invoices"],

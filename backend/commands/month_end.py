@@ -50,6 +50,13 @@ class MonthEndCloseHandler(CommandHandler):
         result["depreciation_count"] = len(depreciations)
         result["amortization_count"] = len(amortizations)
 
+        # ── 损益结转（月结最后一步，在税务计提之后）──
+        # 将收入/费用科目余额结转到 4103（本年利润），12月额外年结 4103→4104
+        from engine_period_close import PeriodCloseEngine
+        close_engine = PeriodCloseEngine(db)
+        close_result = close_engine.execute(cmd.account_id, cmd.period, force=False)
+        result["period_close"] = close_result
+
         log_op(db, cmd.account_id, "close", "month_end", cmd.account_id,
              f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",
              operator=cmd.operator)

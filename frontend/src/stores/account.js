@@ -8,14 +8,15 @@ export const useAccountStore = defineStore('account', {
 
   getters: {
     currentAccount: (state) => {
-      return state.accounts.find(a => String(a.id) === String(state.currentAccountId)) || { id: state.currentAccountId }
+      return state.accounts.find(a => String(a.id) === state.currentAccountId) || { id: state.currentAccountId }
     }
   },
 
   actions: {
     setCurrentAccount(id) {
-      this.currentAccountId = String(id)
-      localStorage.setItem('currentAccountId', String(id))
+      const sid = String(id)
+      this.currentAccountId = sid
+      localStorage.setItem('currentAccountId', sid)
     },
     setAccounts(list) {
       this.accounts = list

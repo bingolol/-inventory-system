@@ -265,6 +265,8 @@ def _build_snapshot(inner: dict) -> dict:
                 }]
 
         return snapshot
+    except Exception:
+        return {}
     finally:
         db.close()
 

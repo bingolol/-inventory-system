@@ -54,13 +54,13 @@
         <div class="fg" style="border-left-color:var(--success);margin-top:12px;">
           <div class="fgh"><span class="fgt" style="background:var(--success-light);color:var(--success);">对账单明细</span></div>
           <div class="fgb">
-            <div v-for="(line, idx) in stmtForm.lines" :key="idx" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+            <div v-for="(line, idx) in stmtForm.lines" :key="line._key" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
               <el-date-picker v-model="line.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:130px;" />
               <el-input-number v-model="line.amount" :precision="2" style="width:130px;" controls-position="right" />
               <el-input v-model="line.description" placeholder="描述" style="flex:1;" />
               <el-button size="small" type="danger" link @click="stmtForm.lines.splice(idx, 1)">×</el-button>
             </div>
-            <el-button size="small" @click="stmtForm.lines.push({transaction_date:'',amount:0,description:''})">+ 添加一行</el-button>
+            <el-button size="small" @click="stmtForm.lines.push({_key: newLineKey(), transaction_date:'',amount:0,description:''})">+ 添加一行</el-button>
           </div>
         </div>
       </el-form>
@@ -91,6 +91,9 @@ import bankReconcileApi from '../api/bankReconcile'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+
+let lineKey = 0
+function newLineKey() { return ++lineKey }
 
 const loading = ref(false)
 const period = ref(new Date().toISOString().slice(0, 7))

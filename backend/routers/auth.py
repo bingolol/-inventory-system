@@ -1,6 +1,8 @@
 import hashlib
 import secrets
 import time
+import os
+from collections import defaultdict
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Header
 from sqlalchemy.orm import Session
@@ -19,6 +21,20 @@ router = APIRouter(tags=["认证"])
 ACCESS_TOKEN_TTL = timedelta(hours=2)
 REFRESH_TOKEN_TTL = timedelta(days=7)
 
+# 登录频率限制（进程内，重启清零）
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_MAX_LOGIN_ATTEMPTS = 5
+_LOGIN_WINDOW = 300  # 5 分钟
+
+
+def _check_login_rate_limit(username: str):
+    now = time.time()
+    attempts = _login_attempts[username]
+    _login_attempts[username] = [t for t in attempts if now - t < _LOGIN_WINDOW]
+    if len(_login_attempts[username]) >= _MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="登录尝试次数过多，请5分钟后再试")
+    _login_attempts[username].append(now)
+
 
 @router.get("/api/auth/has-users")
 def has_users(db: Session = Depends(get_db)):
@@ -33,7 +49,7 @@ def register(body: LoginRequest, db: Session = Depends(get_db)):
 
     account = db.query(models.Account).first()
     if account is None:
-        account = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale")
+        account = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved=False)
         db.add(account)
         db.flush()
 
@@ -109,6 +125,7 @@ def get_user_from_token(token: str, db: Session) -> models.User | None:
 
 @router.post("/api/auth/login", response_model=LoginResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
+    _check_login_rate_limit(body.username)
     user = db.query(models.User).filter(
         models.User.username == body.username,
         models.User.is_active == True,
@@ -118,14 +135,14 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
     # 兼容旧 SHA256 哈希：password_salt 为 NULL 表示旧格式
     if user.password_salt is None:
-        if user.password_hash != _old_hash(body.password):
+        if not secrets.compare_digest(user.password_hash, _old_hash(body.password)):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         # 升级为新哈希
         user.password_salt = _generate_salt()
         user.password_hash = _hash_password(body.password, user.password_salt)
         db.flush()
     else:
-        if user.password_hash != _hash_password(body.password, user.password_salt):
+        if not secrets.compare_digest(user.password_hash, _hash_password(body.password, user.password_salt)):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     access_raw, access_hash, refresh_raw, refresh_hash = _make_token_pair()
@@ -151,28 +168,28 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/api/auth/auto-login", response_model=LoginResponse)
 def auto_login(db: Session = Depends(get_db)):
-    """无密码自动登录：返回第一个 active 用户的 token。
-    若数据库无用户，自动创建默认 admin 账号。"""
-    user = db.query(models.User).filter(models.User.is_active == True).first()
-    if user is None:
-        # 无用户则创建默认 admin（account_id=1，需确保 accounts 表有 id=1）
-        from models import Account
-        acct = db.query(Account).first()
-        if acct is None:
-            acct = Account(name="默认账本")
-            db.add(acct)
-            db.flush()
-        salt = _generate_salt()
-        pwd = "admin"
-        user = models.User(
-            username="admin",
-            password_hash=_hash_password(pwd, salt),
-            password_salt=salt,
-            account_id=acct.id,
-            is_active=True,
-        )
-        db.add(user)
+    """首次初始化：仅当数据库无用户时可用。
+    自动创建默认账本 + admin 账号（密码可从 AUTO_LOGIN_PASSWORD 环境变量读取，默认 admin）。"""
+    if db.query(models.User).count() > 0:
+        raise HTTPException(status_code=403, detail="auto-login 仅限首次初始化使用，请通过正常登录")
+
+    from models import Account
+    acct = db.query(Account).first()
+    if acct is None:
+        acct = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved=False)
+        db.add(acct)
         db.flush()
+    salt = _generate_salt()
+    pwd = os.environ.get("AUTO_LOGIN_PASSWORD", "admin")
+    user = models.User(
+        username="admin",
+        password_hash=_hash_password(pwd, salt),
+        password_salt=salt,
+        account_id=acct.id,
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
 
     access_raw, access_hash, refresh_raw, refresh_hash = _make_token_pair()
     now = datetime.now()
@@ -232,10 +249,10 @@ def change_password(body: ChangePasswordRequest, db: Session = Depends(get_db),
 
     # 验证旧密码（兼容两种哈希格式）
     if user.password_salt is None:
-        if user.password_hash != _old_hash(body.old_password):
+        if not secrets.compare_digest(user.password_hash, _old_hash(body.old_password)):
             raise HTTPException(status_code=422, detail="旧密码错误")
     else:
-        if user.password_hash != _hash_password(body.old_password, user.password_salt):
+        if not secrets.compare_digest(user.password_hash, _hash_password(body.old_password, user.password_salt)):
             raise HTTPException(status_code=422, detail="旧密码错误")
 
     # 换新盐 + 新哈希
@@ -263,8 +280,10 @@ def logout(db: Session = Depends(get_db),
     user = _resolve_user(authorization, db)
     if user is None:
         raise HTTPException(status_code=401, detail="未登录或令牌无效")
-    # 使该用户所有 token 失效
-    db.query(models.UserToken).filter(models.UserToken.user_id == user.id).delete()
+    # 仅清除当前会话 token，不影响其他设备
+    token = authorization[7:]
+    current_hash = hashlib.sha256(token.encode()).hexdigest()
+    db.query(models.UserToken).filter(models.UserToken.access_token_hash == current_hash).delete()
     db.commit()
     return LogoutResponse(message="已退出登录")
 

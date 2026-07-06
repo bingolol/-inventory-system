@@ -86,6 +86,8 @@ class InvoiceQuickCreate(BaseModel):
     direction: str = Field(..., pattern="^(in|out)$")
     invoice_type: str = Field(..., pattern="^(ordinary|special)$")
     amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    tax_amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2,
+        description="税额（外部输入，发票上的实际税额。必须手动填写，系统不推导。0税率发票可填0）")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
     counterparty_name: str = Field(..., max_length=200)
     seller_name: str = Field(..., max_length=200, description="销方名称")
@@ -123,6 +125,16 @@ class InvoiceQuickCreate(BaseModel):
                                      "或携带 fixed_asset 块走固定资产过账分支")
                 if self.purchase_order_action == "link_existing" and not self.related_order_id:
                     raise ValueError("purchase_order_action=link_existing 时必填 related_order_id")
+        return self
+
+    @model_validator(mode="after")
+    def validate_tax_amount(self):
+        """BR-27: tax_amount 必须手动输入，系统不推导。tax_rate > 0 时 tax_amount 必须 > 0。"""
+        if self.tax_rate > 0 and self.tax_amount == 0:
+            raise ValueError("tax_rate > 0 时 tax_amount 必须手动填写，系统不再内部推导税额（BR-27）")
+        computed = self.amount_with_tax - self.tax_amount
+        if computed < 0:
+            raise ValueError(f"amount_with_tax ({self.amount_with_tax}) 不能小于 tax_amount ({self.tax_amount})")
         return self
 
 

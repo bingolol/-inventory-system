@@ -39,6 +39,17 @@ from .runtime_checks import (
     validate_all_runtime,
     enforce_rules,
     RUNTIME_CHECKS,
+    check_global_balance,
+    check_accounting_equation,
+)
+from .journal_rules import (
+    AccountPattern,
+    JournalRule,
+    register_journal_rule,
+    get_journal_rule,
+    all_journal_rules,
+    check_journal_rule,
+    enforce_journal_rules,
 )
 
 __all__ = [
@@ -57,4 +68,13 @@ __all__ = [
     "validate_all_runtime",
     "enforce_rules",
     "RUNTIME_CHECKS",
+    "check_global_balance",
+    "check_accounting_equation",
+    "AccountPattern",
+    "JournalRule",
+    "register_journal_rule",
+    "get_journal_rule",
+    "all_journal_rules",
+    "check_journal_rule",
+    "enforce_journal_rules",
 ]

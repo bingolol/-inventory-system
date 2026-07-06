@@ -200,6 +200,7 @@ class Test未开票收入申报:
         order = SaleOrder(
             account_id=aid, order_no="TEST-CANCEL-001",
             order_type="retail", total_price_l1=Decimal("101.00"),
+            tax_amount_l1=Decimal("1.00"),
             has_invoice_l1=False,
             sale_date_l1=datetime(2026, 5, 15),
             status="cancelled",  # 已取消
@@ -239,6 +240,7 @@ class Test未开票收入申报:
         order = SaleOrder(
             account_id=aid, order_no="TEST-MERGE-001",
             order_type="retail", total_price_l1=Decimal("101.00"),
+            tax_amount_l1=Decimal("1.00"),
             has_invoice_l1=False,
             sale_date_l1=datetime(2026, 5, 15),
             status="completed",
@@ -282,6 +284,7 @@ class Test未开票收入申报:
         order = SaleOrder(
             account_id=aid, order_no="TEST-DECL-001",
             order_type="retail", total_price_l1=Decimal("101.00"),
+            tax_amount_l1=Decimal("1.00"),
             has_invoice_l1=False,
             sale_date_l1=datetime(2026, 5, 15),
             status="completed",

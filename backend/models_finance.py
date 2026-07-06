@@ -329,6 +329,57 @@ class PurchaseEstimateItem(Base):
 
 
 # ═══════════════════════════════════════════════════════════
+# 税务申报声明（L1 外部输入）
+# ═══════════════════════════════════════════════════════════
+
+
+class VATDeclaration(Base):
+    """增值税申报声明（L1）— 用户提交时锁定快照"""
+    __tablename__ = "vat_declarations"
+
+    id                  = Column(Integer, primary_key=True)
+    account_id          = Column(Integer, nullable=False, index=True)
+    period              = Column(String(10), nullable=False)
+    taxpayer_type       = Column(String(20), nullable=False)
+    total_revenue       = Column(Numeric(14, 2), default=Decimal("0"))
+    output_tax          = Column(Numeric(14, 2), default=Decimal("0"))
+    input_tax           = Column(Numeric(14, 2), default=Decimal("0"))
+    vat_payable         = Column(Numeric(14, 2), default=Decimal("0"))
+    carry_forward       = Column(Numeric(14, 2), default=Decimal("0"))
+    period_start        = Column(Date, nullable=False)
+    period_end          = Column(Date, nullable=False)
+    snapshot_at         = Column(DateTime, default=datetime.now)
+    created_at          = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "period", name="uq_vat_declaration_period"),
+    )
+
+
+class SurchargeDeclaration(Base):
+    """附加税申报声明（L1）— 用户录入的实际值，录入即过账"""
+    __tablename__ = "surcharge_declarations"
+
+    id                        = Column(Integer, primary_key=True)
+    account_id                = Column(Integer, nullable=False, index=True)
+    period                    = Column(String(10), nullable=False)
+    vat_declaration_id        = Column(Integer, nullable=False)
+    vat_payable               = Column(Numeric(14, 2), default=Decimal("0"))
+    urban_construction_tax    = Column(Numeric(14, 2), default=Decimal("0"))
+    education_surcharge       = Column(Numeric(14, 2), default=Decimal("0"))
+    local_education_surcharge = Column(Numeric(14, 2), default=Decimal("0"))
+    total                     = Column(Numeric(14, 2), default=Decimal("0"))
+    declared_at               = Column(DateTime, default=datetime.now)
+    notes                     = Column(Text, default="")
+    status                    = Column(String(20), default="posted")
+    created_at                = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "period", name="uq_surcharge_declaration_period"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════
 # before_update 事件：会计凭证真相源禁止 UPDATE
 # ═══════════════════════════════════════════════════════════
 

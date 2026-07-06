@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import shutil
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
 from database import SessionLocal, set_maintenance_mode, init_db, DB_PATH
@@ -46,6 +46,7 @@ def create_account_and_admin():
             type="company",
             code="qiaoyou",
             taxpayer_type_l3="small_scale",
+            surcharge_halved=True,  # 小型微利企业，附加税减半
         )
         db.add(acc)
         db.flush()
@@ -107,6 +108,24 @@ def run_simulation():
 
         # 阶段2-7
         step2_dec_2025(db, ACCOUNT_ID)
+
+        # 2025-12 业务完成后，创建 OpeningBalance 作为 2026 年期初
+        # 2025-12 银行业务：收款2000 + 利息0.01 - 手续费72.80 = 净1927.21
+        # 月结（附加税/所得税/损益结转）不涉及 1002，所以现在读 = 2025-12-31 期末余额
+        from models_finance import Ledger
+        from crud.finance._ledger_helpers import _bal
+        acc = db.query(models.Account).filter(models.Account.id == ACCOUNT_ID).first()
+        ledger = db.query(Ledger).filter(Ledger.code == acc.code).first()
+        bank_bal = _bal(db, ledger, "1002", datetime(2025, 12, 31, 23, 59, 59))
+        ob = models.OpeningBalance(
+            account_id=ACCOUNT_ID,
+            date_l1=date(2025, 12, 31),
+            bank_balance_l1=bank_bal,
+        )
+        db.add(ob)
+        db.flush()
+        print(f"[阶段2后] 创建 OpeningBalance: date=2025-12-31, bank_balance={bank_bal}")
+
         step3_jan_feb_2026(db, ACCOUNT_ID)
         step4_mar_2026(db, ACCOUNT_ID)
         step5_apr_2026(db, ACCOUNT_ID)

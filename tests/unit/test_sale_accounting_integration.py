@@ -80,6 +80,8 @@ class TestSaleCreateTriggersAccounting:
                 "unit_price": "20.00",
                 "tax_rate": "0.13",
             }],
+            tax_amount=Decimal("26.00"),
+            total_price=Decimal("226.00"),
         )
         order = dispatch(cmd, db)
         db.flush()

@@ -1,10 +1,11 @@
+from typing import Optional
 from fastapi import Header, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 import models
 
 
-def get_account_id(x_account_id: int = Header(None, alias="X-Account-ID")) -> int:
+def get_account_id(x_account_id: Optional[int] = Header(None, alias="X-Account-ID")) -> int:
     if x_account_id is None:
         raise HTTPException(status_code=401, detail="缺少 X-Account-ID 请求头，请先选择账本")
     return x_account_id

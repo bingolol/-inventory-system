@@ -30,46 +30,19 @@ def engine():
 # ═══════════════════════════════════════════════════════════
 # Behavior 1: 发票金额自动计算（Critical）
 # ═══════════════════════════════════════════════════════════
+# calculate_invoice_amounts — BR-27: no longer derives tax
+# Tax is external input. Function returns values as-is.
+# ═══════════════════════════════════════════════════════════
 
-def test_calculate_invoice_amounts_13_percent(engine):
-    """13%税率：含税11300 → 不含税10000 + 税额1300"""
+def test_calculate_invoice_amounts_passthrough(engine):
+    """BR-27: tax is external input, no longer derived. Passthrough only."""
     result = engine.calculate_invoice_amounts(
         amount_with_tax=Decimal('11300'),
         tax_rate=Decimal('0.13')
     )
-    assert result.amount_without_tax == Decimal('10000.00')
-    assert result.tax_amount == Decimal('1300.00')
     assert result.amount_with_tax == Decimal('11300')
-
-
-def test_calculate_invoice_amounts_9_percent(engine):
-    """9%税率：含税10900 → 不含税10000 + 税额900"""
-    result = engine.calculate_invoice_amounts(
-        amount_with_tax=Decimal('10900'),
-        tax_rate=Decimal('0.09')
-    )
-    assert result.amount_without_tax == Decimal('10000.00')
-    assert result.tax_amount == Decimal('900.00')
-
-
-def test_calculate_invoice_amounts_1_percent(engine):
-    """1%税率：含税10100 → 不含税10000 + 税额100"""
-    result = engine.calculate_invoice_amounts(
-        amount_with_tax=Decimal('10100'),
-        tax_rate=Decimal('0.01')
-    )
-    assert result.amount_without_tax == Decimal('10000.00')
-    assert result.tax_amount == Decimal('100.00')
-
-
-def test_calculate_invoice_amounts_3_percent(engine):
-    """3%税率：含税10300 → 不含税10000 + 税额300"""
-    result = engine.calculate_invoice_amounts(
-        amount_with_tax=Decimal('10300'),
-        tax_rate=Decimal('0.03')
-    )
-    assert result.amount_without_tax == Decimal('10000.00')
-    assert result.tax_amount == Decimal('300.00')
+    assert result.tax_amount == Decimal('0')  # not derived
+    assert result.amount_without_tax == Decimal('11300')  # passthrough
 
 
 # ═══════════════════════════════════════════════════════════
@@ -227,11 +200,9 @@ def test_calculate_vat_small_scale_monthly_exemption(engine):
         total_revenue=Decimal('300000'),  # 季度30万
         taxpayer_type='small_scale'
     )
-    # 季度≤30万：普票免税 → 应纳税额=0，附加税=0
+    # 季度≤30万：普票免税 → 应纳税额=0
     assert result.tax_payable == Decimal('0.00')
-    assert result.surcharge_education == Decimal('0')
-    assert result.surcharge_local_education == Decimal('0')
-    assert result.surcharge_urban_construction == Decimal('0')
+    # 附加税已迁移至 SurchargeDeclaration L1 用户录入，引擎不再计算
 
 
 def test_calculate_vat_invalid_type(engine):
@@ -281,7 +252,7 @@ def test_calculate_vat_general_taxpayer_zero_input(engine):
 
 @pytest.mark.golden
 def test_calculate_vat_general_taxpayer_surcharge(engine):
-    """一般纳税人：附加税计算"""
+    """一般纳税人：增值税计算（附加税已由 SurchargeDeclaration L1 录入替代）"""
     result = engine.calculate_vat(
         total_revenue=Decimal('100000'),
         taxpayer_type='general',
@@ -289,41 +260,21 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
         output_tax=Decimal('13000'),
     )
     # 应纳税额 = 5000
-    # 城市维护建设税 = 5000 * 7% = 350
-    # 教育费附加 = 5000 * 3% = 150
-    # 地方教育附加 = 5000 * 2% = 100
-    assert result.surcharge_urban_construction == Decimal('350.00')
-    assert result.surcharge_education == Decimal('150.00')
-    assert result.surcharge_local_education == Decimal('100.00')
+    assert result.tax_payable == Decimal('5000.00')
+    # 附加税已迁移至 SurchargeDeclaration L1 用户录入，引擎不再计算
 
 
 @pytest.mark.golden
-def test_calculate_vat_surcharge_uses_l3_policy_constants(engine, monkeypatch):
-    """附加税必须从 policy/surcharge_facts.py 事实源读取，禁止硬编码"""
-    from policy import policy_engine as pe
-    from policy.entity_profile import EntityProfile
-    from policy.policy_engine import calculate_vat
-    from policy.surcharge_facts import SurchargeFacts
-
-    mock_facts = SurchargeFacts(
-        rate_urban_construction=Decimal('0.14'),
-        rate_education=Decimal('0.06'),
-        rate_local_education=Decimal('0.04'),
-        reduction_rate=Decimal('0.5'),
-        no_reduction=Decimal('1'),
-        ref_date=date.today(),
+def test_calculate_vat_general_taxpayer_carry_forward(engine):
+    """一般纳税人：结转到下期抵扣"""
+    result = engine.calculate_vat(
+        total_revenue=Decimal('100000'),
+        taxpayer_type='general',
+        input_tax=Decimal('15000'),  # 进项 > 销项
+        output_tax=Decimal('13000'),
     )
-    monkeypatch.setattr(pe, "load_surcharge_facts", lambda ref_date=None: mock_facts)
-
-    profile = EntityProfile(
-        vat_type="general", income_type="general",
-        surcharge_halved=False, effective_date=date.today(),
-    )
-    result = calculate_vat(profile=profile, total_revenue=Decimal('100000'),
-                           input_tax=Decimal('8000'), output_tax=Decimal('13000'))
-    assert result.surcharge_urban_construction == Decimal('700.00')
-    assert result.surcharge_education == Decimal('300.00')
-    assert result.surcharge_local_education == Decimal('200.00')
+    assert result.tax_payable == Decimal('0.00')  # 留抵，应纳税额=0
+    # 附加税已迁移至 SurchargeDeclaration L1 用户录入，引擎不再计算
 
 
 # ═══════════════════════════════════════════════════════════

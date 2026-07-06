@@ -18,9 +18,11 @@ pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
 from commands.base import dispatch
 from commands.orders import CreateOrder, ReturnOrder
-from models import Account, StockMove, Inventory
+from models import Account, StockMove, Inventory, Invoice
+from enums import InvoiceDirection, CertificationStatus
 from models_finance import AccountMove, AccountMoveLine, LedgerAccount
 from tests.factories import make_product, make_supplier
+from utils import Q2
 
 PURCHASE_DATE = datetime(2026, 6, 10)
 
@@ -69,6 +71,35 @@ def _line_amount(lines, account_code, ledger_db):
     return debit, credit
 
 
+def _create_invoice_for_order(db, order, supplier):
+    """为采购单创建进项发票（测试辅助函数）"""
+    total_amt = sum(Decimal(str(it.total_price_l1)) for it in order.items)
+    tax_amt = sum(
+        Decimal(str(it.total_price_l1)) * Decimal(str(it.tax_rate_l1))
+        for it in order.items
+    ).quantize(Q2)
+    inv = Invoice(
+        account_id=order.account_id,
+        invoice_no=f"INV-{order.id}",
+        direction=InvoiceDirection.IN,
+        invoice_type="special",
+        tax_rate_l1=Decimal("0.13"),
+        amount_without_tax_l1=total_amt,
+        tax_amount_l1=tax_amt,
+        amount_with_tax_l1=(total_amt + tax_amt).quantize(Q2),
+        counterparty_name=supplier.name if supplier else "",
+        seller_name=supplier.name if supplier else "",
+        buyer_name="测试公司",
+        issue_date_l1=PURCHASE_DATE,
+        certification_status_l3=CertificationStatus.CERTIFIED,
+        related_order_id=order.id,
+        related_order_type="purchase_order",
+        notes="测试发票",
+    )
+    db.add(inv)
+    db.flush()
+
+
 def _setup_diluted_stock(db):
     """搭建"均价被稀释"的测试场景。
 
@@ -82,11 +113,12 @@ def _setup_diluted_stock(db):
     s = make_supplier(db, account_id=1)
 
     # 1. 先入低价货（稀释均价）
-    dispatch(CreateOrder(order_type="purchase", 
+    o1 = dispatch(CreateOrder(order_type="purchase", 
         account_id=1, operator="test",
         supplier_id=s.id, purchase_date=PURCHASE_DATE,
         items=[{"product_id": p.id, "quantity": 5, "unit_price": 500, "tax_rate": 0.13}],
     ), db)
+    _create_invoice_for_order(db, o1, s)
 
     # 2. 再入高价货 A（A 的 unit_cost 被稀释到 833.33）
     order_a = dispatch(CreateOrder(order_type="purchase", 
@@ -94,6 +126,7 @@ def _setup_diluted_stock(db):
         supplier_id=s.id, purchase_date=PURCHASE_DATE,
         items=[{"product_id": p.id, "quantity": 10, "unit_price": 1000, "tax_rate": 0.13}],
     ), db)
+    _create_invoice_for_order(db, order_a, s)
 
     return p, order_a
 

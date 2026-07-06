@@ -74,7 +74,6 @@ import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
-import AccountingTip from '../components/AccountingTip.vue'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
 

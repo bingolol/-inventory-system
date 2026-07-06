@@ -11,9 +11,10 @@ import models
 from errors import BusinessError, ErrorCode
 from operation_result import EntityType
 from utils import Q2
+# price tools moved to command layer — engines read pre-computed amounts
 from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
-from policy.entity_profile import build_profile
+from cost_engine import weighted_average
 
 
 class InventoryEngine:
@@ -62,12 +63,8 @@ class InventoryEngine:
                 force: bool = False) -> dict:
         """采购入库/调整入库
 
-        unit_price 是不含税单价（API 约定）。
-        按纳税人类型做价税分离：
-        - 一般纳税人(enable_vat_deduction=True)：
-          total_cost = qty * unit_price (不含税), total_amount = total_cost * (1+rate) (含税)
-        - 小规模(enable_vat_deduction=False)：
-          unit_price 视为含税单价，全额进成本
+        unit_price 由调用方保证已做价税分离（命令层负责）。
+        total_cost = qty * unit_price，直接写入 StockMove。
 
         返回: {"product_id", "quantity", "total_cost", "tax_amount", "total_amount"}
         """
@@ -84,17 +81,9 @@ class InventoryEngine:
                                 data={"details": f"账本不存在: account_id={account_id}"})
 
         new_qty = Decimal(str(quantity))
-        is_general = build_profile(account).vat_type == "general"
-        if is_general and tax_rate is not None:
-            rate = Decimal(str(tax_rate))
-            total_cost = (new_qty * Decimal(str(unit_price))).quantize(Q2)  # 不含税
-            total_amount = (total_cost * (Decimal("1") + rate)).quantize(Q2)  # 含税
-            tax_amount = (total_amount - total_cost).quantize(Q2)
-        else:
-            # 小规模：unit_price 含税，全额进成本
-            total_amount = (new_qty * Decimal(str(unit_price))).quantize(Q2)
-            total_cost = total_amount
-            tax_amount = Decimal("0")
+        total_cost = (new_qty * Decimal(str(unit_price))).quantize(Q2)
+        total_amount = total_cost
+        tax_amount = Decimal("0")
 
         existing = self.db.query(models.StockMove).filter(
             models.StockMove.source_type == source_type,
@@ -118,9 +107,7 @@ class InventoryEngine:
         old_qty = Decimal(str(inv.quantity_l4))
         old_value = Decimal(str(inv.total_value_l4))
 
-        avg_cost = unit_price
-        if old_qty + new_qty > 0:
-            avg_cost = ((old_value + total_cost) / (old_qty + new_qty)).quantize(Decimal("0.000001"))
+        avg_cost = weighted_average(old_qty + new_qty, old_value + total_cost)
 
         move = models.StockMove(
             product_id=product_id,
@@ -370,10 +357,7 @@ class InventoryEngine:
             inv.quantity_l4 += quantity
             inv.total_value_l4 = (old_value + rev_cost).quantize(Q2)
         new_qty = Decimal(str(inv.quantity_l4))
-        if new_qty > 0:
-            inv.average_cost_l4 = (Decimal(str(inv.total_value_l4)) / new_qty).quantize(Decimal("0.000001"))
-        else:
-            inv.average_cost_l4 = Decimal("0")
+        inv.average_cost_l4 = weighted_average(new_qty, Decimal(str(inv.total_value_l4)))
         self.db.flush()
 
         # AS-03 库存账面价值一致性校验(Inventory.total_value == Σ StockMove.total_cost)

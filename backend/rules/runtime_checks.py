@@ -505,6 +505,170 @@ def check_as15(db: Session, context: dict) -> List[RuleViolation]:
 
 
 # ═══════════════════════════════════════════════════════════════
+# 独立校验工具（非 AS-XX 规则，供运维/测试/月结调用）
+# ═══════════════════════════════════════════════════════════════
+
+def check_global_balance(db: Session, context: dict = None) -> List[RuleViolation]:
+    """全局借贷平衡校验：所有 posted 凭证 Σ(debit) == Σ(credit)
+
+    独立工具函数，不依赖单张凭证校验（AS-01 move_id 模式）。
+    用于月结/运维/测试做整体兜底校验，发现 AS-01 漏检或 DB 直写导致的失衡。
+
+    context:
+    - ledger_id: 可选，限定账本
+    - start_date / end_date: 可选，限定日期范围
+    - move_id: 可选，限定单张凭证（等价于 AS-01 move_id 模式，但走独立路径）
+    - include_draft: 可选，默认 False（仅 posted 凭证），True 时含 draft
+    """
+    context = context or {}
+    violations = []
+
+    from models_finance import AccountMove, AccountMoveLine
+    from sqlalchemy import func
+
+    q = db.query(
+        func.sum(AccountMoveLine.debit_l2).label("total_debit"),
+        func.sum(AccountMoveLine.credit_l2).label("total_credit"),
+    ).join(AccountMove)
+
+    if not context.get("include_draft", False):
+        q = q.filter(AccountMove.state == "posted")
+
+    ledger_id = context.get("ledger_id")
+    if ledger_id:
+        q = q.filter(AccountMove.ledger_id == ledger_id)
+
+    start_date = context.get("start_date")
+    end_date = context.get("end_date")
+    if start_date:
+        q = q.filter(AccountMove.date_l1 >= start_date)
+    if end_date:
+        q = q.filter(AccountMove.date_l1 <= end_date)
+
+    move_id = context.get("move_id")
+    if move_id:
+        q = q.filter(AccountMoveLine.move_id == move_id)
+
+    row = q.one()
+    total_debit = Decimal(str(row.total_debit or 0))
+    total_credit = Decimal(str(row.total_credit or 0))
+    diff = total_debit - total_credit
+
+    if abs(diff) > TOLERANCE:
+        scope = []
+        if ledger_id:
+            scope.append(f"ledger_id={ledger_id}")
+        if start_date or end_date:
+            scope.append(f"period={start_date}~{end_date}")
+        if move_id:
+            scope.append(f"move_id={move_id}")
+        scope_str = " ".join(scope) or "all"
+        violations.append(_make_violation(
+            "AS-01",
+            f"全局借贷不平[{scope_str}]: Σ(debit)={total_debit} ≠ Σ(credit)={total_credit} (差 {diff})",
+            fix_hint="检查是否有 DB 直写或 AS-01 漏检的凭证",
+            detail={"total_debit": float(total_debit), "total_credit": float(total_credit), "diff": float(diff)},
+        ))
+
+    return violations
+
+
+def check_accounting_equation(db: Session, context: dict) -> List[RuleViolation]:
+    """会计方程式校验（纯 SQL）：资产 == 负债 + 权益 + 当期损益净额
+
+    独立工具函数，不调用 generate_balance_sheet，纯 SQL 直查 AccountMoveLine。
+    与 BS 报表函数走两条独立路径，互为对账验证。
+
+    科目类型分组（系统支持 10 种 account_type，按方向归入会计方程式）：
+    - 资产侧（借-贷）: asset, asset_receivable, asset_prepaid
+    - 资产备抵（贷-借，从资产减）: asset_contra  # 累计折旧/累计摊销
+    - 负债侧（贷-借）: liability, liability_payable, liability_advance
+    - 权益侧（贷-借）: equity
+    - 收入侧（贷-借）: income
+    - 费用侧（借-贷）: expense
+
+    校验: 资产(含备抵) == 负债 + 权益 + (收入 - 费用)
+
+    context:
+    - report_date: 必填，截止日期
+    - ledger_id: 必填，账本ID
+    - include_draft: 可选，默认 False（仅 posted 凭证），True 时含 draft
+    """
+    violations = []
+
+    report_date = context.get("report_date")
+    ledger_id = context.get("ledger_id")
+    if not (report_date and ledger_id):
+        violations.append(_make_violation(
+            "AS-01",
+            "check_accounting_equation 需要 report_date + ledger_id",
+            fix_hint="补充 context 字段",
+        ))
+        return violations
+
+    from models_finance import AccountMove, AccountMoveLine, LedgerAccount
+    from sqlalchemy import func
+
+    # 按 account_type 分组求和（截止 report_date 的 posted 凭证）
+    q = db.query(
+        LedgerAccount.account_type,
+        func.sum(AccountMoveLine.debit_l2).label("d"),
+        func.sum(AccountMoveLine.credit_l2).label("c"),
+    ).join(AccountMoveLine, AccountMoveLine.ledger_account_id == LedgerAccount.id
+    ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id
+    ).filter(
+        AccountMove.ledger_id == ledger_id,
+        AccountMove.date_l1 <= report_date,
+    )
+
+    if not context.get("include_draft", False):
+        q = q.filter(AccountMove.state == "posted")
+
+    rows = q.group_by(LedgerAccount.account_type).all()
+
+    totals = {r.account_type: (Decimal(str(r.d or 0)), Decimal(str(r.c or 0))) for r in rows}
+
+    def net(typ, side):
+        """side='debit' → 借-贷（资产/费用）；side='credit' → 贷-借（负债/权益/收入）"""
+        d, c = totals.get(typ, (Decimal("0"), Decimal("0")))
+        return d - c if side == "debit" else c - d
+
+    # 资产 = Σ(普通资产 + 应收 + 预付) - Σ(资产备抵)
+    assets = (net("asset", "debit")
+              + net("asset_receivable", "debit")
+              + net("asset_prepaid", "debit")
+              - net("asset_contra", "credit"))  # 备抵科目贷方余额，从资产减
+    liabilities = (net("liability", "credit")
+                   + net("liability_payable", "credit")
+                   + net("liability_advance", "credit"))
+    equity = net("equity", "credit")
+    income = net("income", "credit")
+    expense = net("expense", "debit")
+    profit = income - expense  # 当期损益净额（年结前；年结后归零转到 4103）
+
+    # 会计方程式：资产 = 负债 + 权益 + 当期损益净额
+    rhs = liabilities + equity + profit
+    diff = assets - rhs
+
+    if abs(diff) > TOLERANCE:
+        violations.append(_make_violation(
+            "AS-01",
+            f"会计方程式不平[ledger={ledger_id}, date={report_date}]: "
+            f"资产 {assets} ≠ 负债 {liabilities} + 权益 {equity} + 损益净额 {profit} = {rhs} (差 {diff})",
+            fix_hint="检查凭证 cutoff、科目 account_type 分类、年结是否漏转、是否有 draft 凭证污染",
+            detail={
+                "ledger_id": ledger_id, "report_date": str(report_date),
+                "assets": float(assets), "liabilities": float(liabilities),
+                "equity": float(equity), "income": float(income),
+                "expense": float(expense), "profit": float(profit), "diff": float(diff),
+                "type_breakdown": {k: {"debit": float(v[0]), "credit": float(v[1])} for k, v in totals.items()},
+            },
+        ))
+
+    return violations
+
+
+# ═══════════════════════════════════════════════════════════════
 # 统一入口
 # ═══════════════════════════════════════════════════════════════
 

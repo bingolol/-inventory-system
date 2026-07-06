@@ -4,10 +4,17 @@
   - after_insert / before_delete：直接捕获当前状态
   - before_update / before_flush 配合：在 flush 前从 DB 查旧值，在 update 时写入审计
   - 审计上下文（account_id, operator）通过 session.info 传递
+
+注意：
+  在 flush 阶段（after_insert / after_flush / before_delete）不能使用 session.add()，
+  否则触发 SAWarning: "Usage of the 'Session.add()' operation is not currently
+  supported within the execution stage of the flush process"。
+  解决方案：通过事件回调中的 connection 参数直接执行 INSERT。
 """
+import json
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import event
+from sqlalchemy import event, insert
 from sqlalchemy.orm import Session
 from models import (
     AuditLog, SaleOrder, PurchaseOrder, Product, Expense, Invoice, FixedAsset,
@@ -45,20 +52,22 @@ def _ctx(db) -> dict:
     return {"account_id": c.get("account_id"), "operator": c.get("operator", "system")}
 
 
-def _write(db, action, entity_type, entity_id, before=None, after=None):
+def _write_via_conn(connection, db, action, entity_type, entity_id, before=None, after=None):
+    """通过 connection 直接 INSERT 审计日志，避免 flush 阶段 session.add() 警告。"""
     ctx = _ctx(db)
     changed = [k for k in (before or {}) if before.get(k) != (after or {}).get(k)] if before and after else None
-    log = AuditLog(
-        account_id=ctx["account_id"] or (after or before or {}).get("account_id"),
+    account_id = ctx["account_id"] or (after or before or {}).get("account_id")
+    connection.execute(insert(AuditLog.__table__).values(
+        account_id=account_id,
         operator=ctx["operator"],
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
-        before_data=before,
-        after_data=after,
-        changed_fields=changed,
-    )
-    db.add(log)
+        before_data=json.dumps(before, ensure_ascii=False) if before else None,
+        after_data=json.dumps(after, ensure_ascii=False) if after else None,
+        changed_fields=json.dumps(changed, ensure_ascii=False) if changed else None,
+        created_at=datetime.now(),
+    ))
 
 
 # ── 公共入口 ───────────────────────────────────────────────
@@ -81,8 +90,7 @@ def register_listeners():
             try:
                 db = Session.object_session(target)
                 if db is None: return
-                _write(db, "create", _t, target.id, after=_to_dict(target))
-                db.flush()
+                _write_via_conn(connection, db, "create", _t, target.id, after=_to_dict(target))
             except Exception:
                 pass
 
@@ -91,7 +99,7 @@ def register_listeners():
             try:
                 db = Session.object_session(target)
                 if db is None: return
-                _write(db, "delete", _t, target.id, before=_to_dict(target))
+                _write_via_conn(connection, db, "delete", _t, target.id, before=_to_dict(target))
             except Exception:
                 pass
 
@@ -117,6 +125,9 @@ def register_listeners():
     def write_update_logs(session, flush_context):
         """flush 后，对比新旧值写入审计。"""
         olds = session.info.pop("_audit_old", {})
+        if not olds:
+            return
+        conn = session.connection()
         for obj in session.dirty:
             if id(obj) not in olds:
                 continue
@@ -125,5 +136,5 @@ def register_listeners():
             before = olds[id(obj)]
             after = _to_dict(obj)
             if before != after:
-                _write(session, "update", type(obj).__tablename__, obj.id,
-                       before=before, after=after)
+                _write_via_conn(conn, session, "update", type(obj).__tablename__, obj.id,
+                               before=before, after=after)

@@ -38,7 +38,6 @@ import BalanceSheet from '../components/BalanceSheet.vue'
 import IncomeStatement from '../components/IncomeStatement.vue'
 import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
 import CWBBXQYKJZZ from '../components/CWBBXQYKJZZ.vue'
-import AccountingTip from '../components/AccountingTip.vue'
 import { handleError } from '../utils/errorHandler'
 
 const activeTab = ref('income-statement')
@@ -70,7 +69,6 @@ const handleMonthClose = async () => {
     if (data.surcharge !== undefined) msg += `\n附加税: ¥${data.surcharge}`
     if (data.depreciation_count !== undefined) msg += `\n折旧: ${data.depreciation_count}项`
     if (msg) ElMessage.info(`月结详情:${msg}`, 6000)
-    window.location.reload()
   } catch (e) { handleError(e, { defaultMsg: '月结失败，请检查该期间是否已月结或存在未处理事务' }) }
   finally { monthClosing.value = false }
 }

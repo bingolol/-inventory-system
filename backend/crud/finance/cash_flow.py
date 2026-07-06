@@ -10,6 +10,7 @@ from utils import _d, Q2
 from errors import BusinessError, ErrorCode
 from lineage import reads, TIER_L1, TIER_L2, TIER_L4
 
+from ._snapshot import LedgerSnapshot
 from .opening_balances import get_latest_opening_balance
 from .cash_flow_classifier import (
     classify_bank_transaction,
@@ -42,37 +43,27 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
 
+    sn = LedgerSnapshot(db, account_id, period_start=start_dt, period_end=end_dt)
+
     opening_balance = get_latest_opening_balance(db, account_id, start_date)
     beginning_cash_balance = (_d(opening_balance.cash_balance_l1) + _d(opening_balance.bank_balance_l1)) if opening_balance else Decimal('0')
 
     # 初始化 CF01~CF19 明细金额（收为正，付为负）
     cf_items = {code: Decimal("0") for code in CF_LINE_MAP.keys()}
 
-    # 手动录入的现金流水（用于投资/筹资活动）
-    cash_transactions = db.query(models.CashFlowTransaction).filter(
-        models.CashFlowTransaction.account_id == account_id,
-        models.CashFlowTransaction.transaction_date_l1 >= start_dt,
-        models.CashFlowTransaction.transaction_date_l1 <= end_dt
-    ).all()
-
-    for tx in cash_transactions:
+    # 手动录入的现金流水
+    for tx in sn.cash_flow_transactions():
         code = classify_cash_flow_transaction(tx)
         sign = Decimal("1") if tx.type == "inflow" else Decimal("-1")
         cf_items[code] += sign * _d(tx.amount_l2)
 
-    # 从银行流水表读取数据（按现金流量项目分类）
-    bank_transactions = db.query(models.BankTransaction).filter(
-        models.BankTransaction.account_id == account_id,
-        models.BankTransaction.transaction_date_l1 >= start_dt,
-        models.BankTransaction.transaction_date_l1 <= end_dt
-    ).all()
-
-    for tx in bank_transactions:
+    # 从银行流水表读取数据
+    for tx in sn.bank_transactions():
         code = classify_bank_transaction(db, tx)
         sign = Decimal("1") if tx.transaction_type == "inflow" else Decimal("-1")
         cf_items[code] += sign * _d(tx.amount_l2)
 
-    # 按大类汇总（兼容旧接口字段）
+    # 按大类汇总
     operating_inflows = cf_items.get("CF01", Decimal("0")) + cf_items.get("CF02", Decimal("0"))
     operating_outflows = -(cf_items.get("CF03", Decimal("0")) + cf_items.get("CF04", Decimal("0"))
                           + cf_items.get("CF05", Decimal("0")) + cf_items.get("CF06", Decimal("0")))
@@ -88,7 +79,6 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
     ending_cash_balance = beginning_cash_balance + net_cash_flow
 
     # ── 余额校验 ──
-    # 校验：期末余额 = 期初余额 + 净现金流量
     expected_ending_balance = beginning_cash_balance + net_cash_flow
     if abs(ending_cash_balance - expected_ending_balance) > Decimal('0.01'):
         raise BusinessError(
@@ -97,7 +87,6 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
             data={"ending_cash_balance": float(ending_cash_balance), "beginning_cash_balance": float(beginning_cash_balance), "net_cash_flow": float(net_cash_flow)}
         )
 
-    # 校验：净现金流量 = 经营活动净额 + 投资活动净额 + 筹资活动净额
     expected_net_cash_flow = net_operating + net_investing + net_financing
     if abs(net_cash_flow - expected_net_cash_flow) > Decimal('0.01'):
         raise BusinessError(
@@ -106,7 +95,6 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
             data={"net_cash_flow": float(net_cash_flow), "net_operating": float(net_operating), "net_investing": float(net_investing), "net_financing": float(net_financing)}
         )
 
-    # 明细项目（正数表示流入/净额，负数表示流出）
     cf_details = {code: amount.quantize(Q2) for code, amount in cf_items.items()}
 
     return {

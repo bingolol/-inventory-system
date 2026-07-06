@@ -118,7 +118,7 @@ const loadReferences = async () => {
     purchaseOrders.value = (poR?.items || []).filter(o => o.payment_status === 'unpaid')
     expenses.value = (expR?.items || []).filter(e => e.payment_status === 'unpaid')
     bankAccounts.value = baR?.items || []
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[Payments] 加载引用数据失败', e) }
 }
 
 const openCreateDialog = () => {

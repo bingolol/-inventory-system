@@ -18,27 +18,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any
 from enum import Enum
 from utils import _d
+# split removed — tax is external input (BR-27)
 
 # 金额精度：保留2位小数
 Q2 = Decimal('0.01')
-
-
-# ═══════════════════════════════════════════════════════════
-# [L3-政策] 附加税税率参数（已迁移至 policy/surcharge_facts.py）
-# 此处仅做向后兼容 re-export。新代码请从 policy 导入。
-# ═══════════════════════════════════════════════════════════
-
-from policy.surcharge_facts import (
-    SURCHARGE_RATE_EDUCATION as _S_EDU,
-    SURCHARGE_RATE_LOCAL_EDUCATION as _S_LOCAL,
-    SURCHARGE_RATE_URBAN_CONSTRUCTION as _S_URBAN,
-    SURCHARGE_SMALL_MICRO_REDUCTION as _S_REDUCTION,
-)
-
-SURCHARGE_RATE_EDUCATION = _S_EDU.value
-SURCHARGE_RATE_LOCAL_EDUCATION = _S_LOCAL.value
-SURCHARGE_RATE_URBAN_CONSTRUCTION = _S_URBAN.value
-SURCHARGE_SMALL_MICRO_REDUCTION = _S_REDUCTION.value
 
 
 class AccountingErrorCode(str, Enum):
@@ -72,6 +55,7 @@ class AccountingErrorCode(str, Enum):
     AMORTIZATION_CALCULATION_INVALID = "AMORTIZATION_CALCULATION_INVALID"
 
     # 凭证/科目 (引擎内部)
+    VALIDATION_ERROR = "VALIDATION_ERROR"
     ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
     AMOUNT_MISMATCH = "AMOUNT_MISMATCH"
     BALANCE_NOT_EQUAL = "BALANCE_NOT_EQUAL"
@@ -180,16 +164,12 @@ class AmortizationResult:
 
 @dataclass
 class VATResult:
-    """增值税计算结果"""
+    """增值税计算结果（附加税已迁移至 SurchargeDeclaration L1 录入）"""
     total_revenue: Decimal
     tax_rate: Decimal
     tax_payable_gross: Decimal
     tax_reduction: Decimal
     tax_payable: Decimal
-    surcharge_education: Decimal
-    surcharge_local_education: Decimal
-    surcharge_urban_construction: Decimal   # 城市维护建设税（7%）
-    surcharge_total: Decimal
     reduction_item: str
     reduction_amount: Decimal
 
@@ -232,11 +212,10 @@ class AccountingEngine:
         amount_with_tax = _d(amount_with_tax)
         tax_rate = _d(tax_rate)
 
-        # 计算不含税金额
-        amount_without_tax = (amount_with_tax / (Decimal('1') + tax_rate)).quantize(Q2, rounding=ROUND_HALF_UP)
-
-        # 计算税额
-        tax_amount = (amount_with_tax - amount_without_tax).quantize(Q2, rounding=ROUND_HALF_UP)
+        # BR-27: tax is external input, not derived
+        # Caller must pass tax_amount if rate > 0
+        amount_without_tax = amount_with_tax  # default: assume all is base
+        tax_amount = Decimal('0')
 
         return InvoiceAmounts(
             amount_without_tax=amount_without_tax,

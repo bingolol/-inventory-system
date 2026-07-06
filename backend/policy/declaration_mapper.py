@@ -50,15 +50,11 @@ def map_vat_to_main_form(
         "row_30": 0.0,
         "row_32": float(result.tax_payable),
         "row_34": float(result.tax_payable),
-        "surcharge_urban_construction": float(result.surcharge_urban_construction),
-        "surcharge_education": float(result.surcharge_education),
-        "surcharge_local_education": float(result.surcharge_local_education),
     }
 
     return {
         "taxpayer_type": profile.vat_type,
         "vat_payable": float(result.tax_payable),
-        "surcharge_total": float(result.surcharge_total),
         "reduction_item": result.reduction_item,
         "reduction_amount": float(result.reduction_amount),
         "tax_reduction": float(result.tax_reduction),

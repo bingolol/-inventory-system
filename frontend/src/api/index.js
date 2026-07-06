@@ -13,7 +13,7 @@ const api = axios.create({
   timeout: 10000
 })
 
-export { API_BASE_URL, handleError }
+export { API_BASE_URL, baseURL, handleError }
 
 export const resolveImageUrl = (url) => {
   if (!url) return ''
@@ -25,17 +25,22 @@ let _isRefreshing = false
 let _pendingRequests = []
 
 function _onRefreshed(token) {
-  _pendingRequests.forEach(cb => cb(token))
+  _pendingRequests.forEach(({ resolve }) => resolve(token))
   _pendingRequests = []
 }
 
-function _addPendingRequest(cb) {
-  _pendingRequests.push(cb)
+function _onRefreshFailed(err) {
+  _pendingRequests.forEach(({ reject }) => reject(err))
+  _pendingRequests = []
+}
+
+function _addPendingRequest(resolve, reject) {
+  _pendingRequests.push({ resolve, reject })
 }
 
 api.interceptors.request.use(config => {
   const method = config.method?.toUpperCase() || 'GET'
-  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts', 'POST /auth/auto-login']
+  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts']
   const isPublic = PUBLIC_ENDPOINTS.includes(`${method} ${config.url}`)
 
   const accountStore = useAccountStore()
@@ -95,14 +100,13 @@ api.interceptors.response.use(
       && !originalRequest.url?.includes('/auth/refresh')
       && !originalRequest.url?.includes('/auth/logout')
       && !originalRequest.url?.includes('/auth/change-password')
-      && !originalRequest.url?.includes('/auth/auto-login')
     ) {
       if (_isRefreshing) {
-        return new Promise(resolve => {
+        return new Promise((resolve, reject) => {
           _addPendingRequest(newToken => {
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`
             resolve(api(originalRequest))
-          })
+          }, () => reject(err))
         })
       }
 
@@ -133,7 +137,7 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch {
         _isRefreshing = false
-        _pendingRequests = []
+        _onRefreshFailed(err)
         authStore.logout()
         window.location.href = '/login'
         return Promise.reject(err)

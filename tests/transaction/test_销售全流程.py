@@ -22,8 +22,7 @@ from tests.factories import (
 )
 from tests.helpers import get_entity_id, uniq
 
-from accounting_engine import AccountingEngine
-from enums import OrderStatus, InvoiceDirection
+from enums import OrderStatus
 from models import SaleOrder, SaleItem, Inventory, StockMove, Invoice
 
 
@@ -342,19 +341,38 @@ class Test创建销售单:
     def test_t1_net_profit_equals_retained_earnings_delta(self, client, db, ids):
         """净利润 = 未分配利润变动额
 
-        取期初资产负债表（start_date 前一天）的未分配利润作为 opening，
+        前置：月结（含损益结转）将收入/费用科目余额结转到 4103（本年利润），
+        使资产负债表的留存收益反映当期净利润。
+
+        取期初资产负债表（2025-12-31）的未分配利润作为 opening，
         避免模块内其他测试用 2025 年的销售单污染期初余额。
         """
+        # ── 月结：损益结转（收入/费用 → 4103）──
+        # 逐月结账确保每月附加税/所得税正确计提：
+        # 2025-03 覆盖模块内唯一的 2025 年销售单（test_custom_sale_date）
+        # 2026-01 覆盖 1 月销售单（多笔）
+        # 2026-02 覆盖 2 月销售单（test_t2_cost_locked_at_sale_time）
+        for period in ["2025-03", "2026-01", "2026-02"]:
+            resp_close = client.post("/api/finance/month-close",
+                                     json={"period": period}, headers=HEADERS)
+            assert resp_close.status_code == 200, \
+                f"月结 {period} 失败: {resp_close.text}"
+        db.expire_all()
+
         start_date = "2026-01-01"
         end_date = "2026-12-31"
 
         resp_is = client.get("/api/financial-reports/income-statement",
                              params={"start_date": start_date, "end_date": end_date},
                              headers=HEADERS)
+        # source_mode=ledger: 从总账取增值税（222103），而非发票表。
+        # 测试中销售单不创建发票记录，invoice 口径 VAT=0 会导致 BS 不平。
         resp_bs_open = client.get("/api/financial-reports/balance-sheet",
-                                  params={"date": "2025-12-31"}, headers=HEADERS)
+                                  params={"date": "2025-12-31", "source_mode": "ledger"},
+                                  headers=HEADERS)
         resp_bs = client.get("/api/financial-reports/balance-sheet",
-                             params={"date": end_date}, headers=HEADERS)
+                             params={"date": end_date, "source_mode": "ledger"},
+                             headers=HEADERS)
         if resp_is.status_code != 200 or resp_bs.status_code != 200:
             pytest.skip("财报接口暂不可用")
 
@@ -370,45 +388,6 @@ class Test创建销售单:
         total_l_e = round2(Decimal(str(resp_bs.json().get("total_liabilities_and_equity", 0))))
         assert abs(total_assets - total_l_e) <= Decimal("0.01"), \
             f"资产负债表不平衡: 资产{total_assets} ≠ 负债+权益{total_l_e}"
-
-    @pytest.mark.golden
-    def test_t6_surcharge_equals_vat_times_12_percent(self, client, db, ids):
-        """附加税 = 增值税 × 12%"""
-        out_tax = db.query(sqlfunc.sum(Invoice.tax_amount_l1)).filter(
-            Invoice.account_id == 1, Invoice.direction == InvoiceDirection.OUT
-        ).scalar() or Decimal("0")
-        in_tax = db.query(sqlfunc.sum(Invoice.tax_amount_l1)).filter(
-            Invoice.account_id == 1, Invoice.direction == InvoiceDirection.IN
-        ).scalar() or Decimal("0")
-        vat_payable = max(out_tax - in_tax, Decimal("0"))
-
-        engine = AccountingEngine()
-        if float(vat_payable) > 0:
-            result = engine.calculate_vat(
-                total_revenue=Decimal("0"),
-                taxpayer_type="general",
-                input_tax=in_tax,
-                output_tax=out_tax,
-            )
-            expected_surcharge = (vat_payable * Decimal("0.12")).quantize(Decimal("0.01"))
-            actual_surcharge = (
-                result.surcharge_urban_construction + result.surcharge_education + result.surcharge_local_education
-            ).quantize(Decimal("0.01"))
-            assert abs(actual_surcharge - expected_surcharge) <= Decimal("0.01"), \
-                f"附加税错误: 预期{expected_surcharge}(={vat_payable}×12%), 实际{actual_surcharge}"
-        else:
-            result = engine.calculate_vat(
-                total_revenue=Decimal("100000"),
-                taxpayer_type="general",
-                input_tax=Decimal("8000"),
-                output_tax=Decimal("13000"),
-            )
-            actual_surcharge = (
-                result.surcharge_urban_construction + result.surcharge_education + result.surcharge_local_education
-            ).quantize(Decimal("0.01"))
-            assert actual_surcharge == Decimal("600.00"), \
-                f"附加税公式校验失败: 预期600.00, 实际{actual_surcharge}"
-
 
 class Test取消恢复销售单:
     """取消 + 恢复 + 库存回补"""

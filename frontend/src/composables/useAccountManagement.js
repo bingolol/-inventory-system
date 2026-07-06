@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import accountsApi from '../api/accounts'
-import { handleError } from '../api/index'
+import { handleError } from '../utils/errorHandler'
 
 /**
  * 账本管理 composable

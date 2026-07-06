@@ -2,36 +2,79 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id
-import schemas, crud, models
+import crud, models
+
+from datetime import datetime, timedelta
+from crud.finance._snapshot import LedgerSnapshot
+from reports.engine import ReportEngine
+from reports.reconcile import ReportReconciliation
+from reports.definitions.balance_sheet import BALANCE_SHEET
+from reports.definitions.income_statement import INCOME_STATEMENT
 
 router = APIRouter()
+
+
+def _extract_values_for_reconcile(result: dict) -> dict:
+    """从 engine.execute 结果中提取 {key: float} 用于对账
+
+    处理 trace=True（嵌套 {"value": ...}）和 trace=False（直接 float）两种格式。
+    排除 _reconciliation 等元字段。
+    """
+    out = {}
+    for k, v in result.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict) and "value" in v:
+            out[k] = v["value"]
+        elif isinstance(v, (int, float)):
+            out[k] = v
+    return out
 
 
 @router.get("/balance-sheet")
 def get_balance_sheet(
     date: str = Query(..., description="报表日期 (YYYY-MM-DD)"),
+    trace: bool = Query(False, description="是否返回追溯链"),
+    reconcile: bool = Query(False, description="是否返回双路径对账结果"),
+    source_mode: str = Query("invoice", description="取数口径: invoice/ledger/both"),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """生成资产负债表
-
-    异常处理：不在路由层吞没异常。crud 层可能抛出 BusinessError（如日期格式非法）
-    或 AccountingError（如科目余额不平衡），由 main.py 的全局 exception_handler
-    统一映射为正确的 HTTP 状态码与错误码。原 try/except 会把这些异常统一包成
-    INTERNAL_ERROR，掩盖真实错误类型并误导前端处理。
-    """
-    return crud.generate_balance_sheet(db, account_id, date)
+    """生成资产负债表"""
+    qd = datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
+    engine = ReportEngine()
+    result = engine.execute(BALANCE_SHEET, sn, trace=trace, source_mode=source_mode)
+    if reconcile:
+        # 对账用 invoice 口径（避免 source_mode=both 导致 engine_values 嵌套）
+        recon_values = _extract_values_for_reconcile(result)
+        if source_mode != "invoice":
+            recon_values = _extract_values_for_reconcile(engine.execute(BALANCE_SHEET, sn, source_mode="invoice"))
+        recon = ReportReconciliation(db, sn, report_type="balance_sheet")
+        result["_reconciliation"] = recon.reconcile(BALANCE_SHEET, recon_values, source_mode="invoice").to_dict()
+    return result
 
 
 @router.get("/income-statement")
 def get_income_statement(
     start_date: str = Query(..., description="开始日期 (YYYY-MM-DD)"),
     end_date: str = Query(..., description="结束日期 (YYYY-MM-DD)"),
+    trace: bool = Query(False, description="是否返回追溯链"),
+    reconcile: bool = Query(False, description="是否返回双路径对账结果"),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """生成利润表（异常交由全局 handler 处理，不在路由层吞没）"""
-    return crud.generate_income_statement(db, account_id, start_date, end_date)
+    """生成利润表"""
+    sd = datetime.strptime(start_date, "%Y-%m-%d")
+    ed = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    sn = LedgerSnapshot(db, account_id, bs_cutoff=ed, period_start=sd, period_end=ed)
+    engine = ReportEngine()
+    result = engine.execute(INCOME_STATEMENT, sn, trace=trace)
+    if reconcile:
+        recon_values = _extract_values_for_reconcile(result)
+        recon = ReportReconciliation(db, sn, report_type="income_statement")
+        result["_reconciliation"] = recon.reconcile(INCOME_STATEMENT, recon_values).to_dict()
+    return result
 
 
 @router.get("/financial-summary")
@@ -40,10 +83,12 @@ def get_financial_summary(
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    """获取财务汇总信息（异常交由全局 handler 处理，不在路由层吞没）"""
-    balance_sheet = crud.generate_balance_sheet(db, account_id, date)
+    """获取财务汇总信息"""
+    qd = datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
+    engine = ReportEngine()
+    balance_sheet = engine.execute(BALANCE_SHEET, sn)
     opening_balance = crud.get_latest_opening_balance(db, account_id, date)
-
     return {
         "balance_sheet": balance_sheet,
         "opening_balance_exists": opening_balance is not None,

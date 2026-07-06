@@ -149,7 +149,7 @@ const isReady = ref(false)
 const isFirstTime = ref(false)
 
 const form = reactive({
-  username: '',
+  username: localStorage.getItem('saved_username') || '',
   password: '',
   confirmPassword: '',
 })
@@ -179,13 +179,14 @@ onMounted(async () => {
     auth.logout()
   }
 
-  // 自动登录：跳过登录页
+  // 检查系统是否已初始化，决定显示注册还是登录
   try {
-    await auth.autoLogin()
-    router.replace('/')
-  } catch (e) {
-    isReady.value = true
+    const res = await api.get('/auth/has-users')
+    isFirstTime.value = !res.hasUsers
+  } catch {
+    // 出错时默认显示登录页
   }
+  isReady.value = true
 })
 
 async function handleRegister() {
@@ -216,10 +217,8 @@ async function handleLogin() {
     await auth.login(form.username, form.password)
     if (rememberMe.value) {
       localStorage.setItem('saved_username', form.username)
-      localStorage.setItem('saved_password', form.password)
     } else {
       localStorage.removeItem('saved_username')
-      localStorage.removeItem('saved_password')
     }
     router.push('/')
   } catch (e) {

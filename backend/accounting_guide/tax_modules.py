@@ -10,12 +10,6 @@ from policy.entity_profile import build_profile
 from policy.policy_engine import (
     calculate_vat as policy_vat,
     calculate_income_tax as policy_income_tax,
-    calculate_surcharges as policy_surcharges,
-)
-from policy.surcharge_facts import (
-    SURCHARGE_RATE_URBAN_CONSTRUCTION,
-    SURCHARGE_RATE_EDUCATION,
-    SURCHARGE_RATE_LOCAL_EDUCATION,
 )
 from utils import _d, Q2
 
@@ -132,26 +126,4 @@ def build_module_income_tax(db: Session, account_id: int, start_date: datetime, 
         "entity_type": profile.income_type,
         "is_loss": float(taxable_income) <= 0 and profile.income_type != "personal",
         "is_personal": profile.income_type == "personal", "steps": steps,
-    }
-
-
-def build_module_surcharge(account, vat_payable: Decimal):
-    profile = build_profile(account)
-    result = policy_surcharges(profile=profile, vat_payable=vat_payable)
-    full_rate = float(SURCHARGE_RATE_URBAN_CONSTRUCTION + SURCHARGE_RATE_EDUCATION + SURCHARGE_RATE_LOCAL_EDUCATION)
-    effective_rate = float(result.reduction_ratio) * full_rate
-    return {
-        "vat_payable": float(vat_payable),
-        "breakdown": [
-            {"name": "城建税（修路）", "rate": "7%", "amount": float(result.urban_construction),
-             "law": "城市维护建设税法第四条"},
-            {"name": "教育费附加（办学）", "rate": "3%", "amount": float(result.education),
-             "law": "国务院关于教育费附加征收问题的紧急通知"},
-            {"name": "地方教育附加", "rate": "2%", "amount": float(result.local_education),
-             "law": "财综〔2010〕98 号"},
-        ],
-        "full_rate": f"{full_rate * 100:.0f}%", "effective_rate": f"{effective_rate * 100:.1f}%",
-        "total": float(result.total), "is_halved": profile.surcharge_halved,
-        "reduction_note": "六税两费减半征收（财税〔2022〕10 号）：小规模纳税人、小型微利企业、个体工商户享受附加税减半"
-            if profile.surcharge_halved else "不享受六税两费减半政策",
     }

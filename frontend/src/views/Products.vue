@@ -141,7 +141,7 @@ const loadData = async () => {
 }
 
 const loadCategories = async () => {
-  try { categories.value = await productsApi.getCategories() } catch (e) { /* ignore */ }
+  try { categories.value = await productsApi.getCategories() } catch (e) { console.error('[Products] 加载分类失败', e) }
 }
 
 const showDialog = (row) => {
@@ -193,7 +193,6 @@ const exportBatch = async (format) => {
   }
   try {
     const ids = selectedRows.value.map(r => r.id)
-    console.log('[exportBatch] 准备导出:', ids, format)
     await exportApi.exportProductsBatch(ids, format)
     ElMessage.success('导出成功')
   } catch (e) {

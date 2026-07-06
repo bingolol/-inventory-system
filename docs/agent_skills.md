@@ -148,5 +148,5 @@ doc-type: catalog
 
 ---
 
-*agent_skills v1.0 | 2026-06-20*
+*agent_skills v1.1 | 2026-07-05*
 

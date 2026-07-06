@@ -120,7 +120,7 @@ const handleAdjust = async () => {
   } catch (e) { handleError(e, { defaultMsg: '调整失败，请检查输入数量是否正确' }) }
 }
 
-const loadCategories = async () => { try { categories.value = await productsApi.getCategories() } catch (e) {} }
+const loadCategories = async () => { try { categories.value = await productsApi.getCategories() } catch (e) { console.error('[InventorySection] 加载分类失败', e) } }
 
 loadCategories()
 </script>

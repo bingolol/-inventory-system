@@ -121,10 +121,11 @@ export const useEnumsStore = defineStore('enums', {
     async fetchEnums(force = false) {
       const accountStore = useAccountStore()
       const currentId = accountStore.currentAccountId
-      // 同一账本且已加载且非强制刷新，则跳过
       if (!force && this.loaded && this.loadedAccountId === currentId) return
       try {
         const data = await commonApi.getEnums()
+        // 防止竞态：请求返回时账本已切换，则忽略此响应
+        if (accountStore.currentAccountId !== currentId) return
         this.enums = data
         this.loaded = true
         this.loadedAccountId = currentId

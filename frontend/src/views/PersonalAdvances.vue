@@ -158,7 +158,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import advancesApi from '../api/personalAdvances'
@@ -265,6 +265,7 @@ const openRepayDialog = async (row) => {
 }
 
 const saveRepay = async () => {
+  if (!repayTarget.value) { ElMessage.warning('请先选择垫付单'); return }
   if (!repayForm.value.amount || repayForm.value.amount <= 0) { ElMessage.warning('偿还金额必须大于 0'); return }
   if (!repayForm.value.repayment_date) { ElMessage.warning('请选择偿还日期'); return }
   if (repayForm.value.amount > repayTarget.value.remaining_amount) {
@@ -298,6 +299,7 @@ const handleReverseAdvance = async (row) => {
 }
 
 const handleReverseRepayment = async (row) => {
+  if (!repayTarget.value) { ElMessage.warning('请先选择垫付单'); return }
   try {
     await advancesApi.reversePersonalAdvanceRepayment(repayTarget.value.id, row.id)
     ElMessage.success('偿还记录已冲红')

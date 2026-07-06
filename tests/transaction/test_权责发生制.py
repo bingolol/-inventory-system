@@ -1021,8 +1021,8 @@ def test_full_business_flow(client):
     assert income_resp.status_code == 200
     income = income_resp.json()
 
-    # 验证：营业收入 = 50 * 150 = 7500
-    assert income["revenue"] == 7500.0
+    # 验证：营业收入 = 50 * 150 / 1.01 = 7425.74（小规模纳税人 1% VAT，unit_price 含税）
+    assert income["revenue"] == 7425.74
 
     # 验证：营业成本 = 50 * 100 = 5000
     assert income["cost_of_goods_sold"] == 5000.0

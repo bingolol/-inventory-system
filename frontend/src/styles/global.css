@@ -180,26 +180,6 @@ body {
   padding: 20px;
 }
 
-.el-card:hover {
-  box-shadow: var(--shadow-md) !important;
-}
-
-.el-card.shadow-never {
-  box-shadow: none !important;
-  border: 1px solid var(--border-light) !important;
-}
-
-.el-card__header {
-  border-bottom: 1px solid var(--border-light);
-  color: var(--text-primary);
-  padding: 14px 20px;
-}
-
-.el-card__body {
-  color: var(--text-regular);
-  padding: 20px;
-}
-
 /* ── 表格 ── */
 .el-table {
   --el-table-bg-color: var(--bg-card);

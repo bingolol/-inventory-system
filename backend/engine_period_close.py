@@ -1,47 +1,42 @@
 """期间损益结转引擎 — 月结最后一步
 
 契约（原方案逐条确认）:
-  1. _l 取累计余额，不排除 period_close（与 engine_tax 的 _lp+排除相反）
-  2. 收入类（贷方余额→借方结转）: 6001/6051/6301
-  3. 费用类（借方余额→贷方结转）: 6401/6403/6601/6602/6603/6701/6801
+  1. _list_subaccount_balances 列出父科目及其所有子科目的累计余额
+  2. 收入类（贷方余额→借方结转）: 6001/6051/6301（含子科目）
+  3. 费用类（借方余额→贷方结转）: 6401/6403/6601/6602/6603/6701/6801（含子科目）
   4. 差额进 4103（净利润贷方，净损失借方）
   5. post_journal(account_id, "period_close", {lines, date, source_model, source_id}, force)
-  6. source_id = _period_hash(period, "period_close")
-  7. 12月额外 year_close: 4103→4104，source_id = _period_hash(period, "year_close")
+  6. source_id = period_hash(period, "period_close")
+  7. 12月额外 year_close: 4103→4104，source_id = period_hash(period, "year_close")
   8. force=False 幂等（source_id），force=True 覆盖
+
+破坏性升级（不兼容老数据）:
+  - 损益结转按"每个非零余额科目分别结转"原则，确保每个子科目都被结平
+  - 原因：附加税计提写入明细 640302/640303/640304，主科目 6403 余额为 0。
+    若只汇总到父科目结转，子科目余额会滞留，导致父科目残留贷方、子科目残留借方，
+    虽 BS 能"形式上"平衡（父+子净额抵消），但会计核算错误（每个科目应结平）。
+  - 正确做法：用 LIKE 'code%' 列出所有子科目，对每个非零余额科目分别生成结转分录。
+  - 会计科目编码体系（4-2-2 结构）保证 LIKE 'code%' 前缀匹配不会误伤：
+    6001 主营业务收入 → 子科目 600101/600102/...
+    6403 税金及附加   → 子科目 640302/640303/640304/...
+    不存在跳级编码（如 64031 这种 5 位科目）。
 """
 
 import logging
-from calendar import monthrange
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List, Tuple
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sqlfunc
 
 import models
-from models_finance import AccountMove, Ledger
+from models_finance import AccountMove, AccountMoveLine, Ledger, LedgerAccount
 from finance_integration import post_journal, reverse_journal
-from crud.finance._ledger_helpers import _l
-from utils import Q2
+from utils import _d, Q2
+from utils.period import parse_period, period_hash
 
 logger = logging.getLogger("inventory")
-
-
-def _parse_period(period: str):
-    year, month = int(period[:4]), int(period[5:7])
-    _, last_day = monthrange(year, month)
-    start_dt = datetime(year, month, 1, 0, 0, 0)
-    end_dt = datetime(year, month, last_day, 23, 59, 59)
-    return start_dt, end_dt
-
-
-def _period_hash(period: str, tag: str) -> int:
-    h = 0
-    for c in f"{period}_{tag}":
-        h = ((h << 5) - h) + ord(c)
-        h &= 0x7FFFFFFFFFFFFFFF
-    return h
 
 
 class PeriodCloseEngine:
@@ -52,8 +47,34 @@ class PeriodCloseEngine:
     def __init__(self, db: Session):
         self.db = db
 
+    def _list_subaccount_balances(self, ledger: Ledger, code: str,
+                                  close_dt: datetime) -> List[Tuple[str, Decimal, Decimal]]:
+        """列出 code 及其所有子科目（以 code 为前缀）的累计 (debit, credit)。
+
+        返回 [(sub_code, debit, credit), ...]，每个子科目一行。
+        损益结转必须按子科目分别结平：附加税计提写入 640302/640303/640304，
+        必须对每个子科目分别生成结转分录，否则子科目余额会滞留。
+        """
+        if not ledger:
+            return []
+        pattern = f"{code}%"
+        rows = self.db.query(
+            LedgerAccount.code,
+            sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0),
+            sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.credit_l2), 0),
+        ).join(
+            AccountMoveLine, AccountMoveLine.ledger_account_id == LedgerAccount.id
+        ).join(
+            AccountMove, AccountMoveLine.move_id == AccountMove.id
+        ).filter(
+            LedgerAccount.ledger_id == ledger.id,
+            LedgerAccount.code.like(pattern),
+            AccountMove.date_l1 <= close_dt
+        ).group_by(LedgerAccount.code).all()
+        return [(row[0], _d(row[1]), _d(row[2])) for row in rows]
+
     def execute(self, account_id: int, period: str, force: bool = False) -> Dict:
-        period_start, close_dt = _parse_period(period)
+        period_start, close_dt = parse_period(period)
         ledger = self.db.query(Ledger).join(
             models.Account, Ledger.code == models.Account.code
         ).filter(models.Account.id == account_id).first()
@@ -73,36 +94,38 @@ class PeriodCloseEngine:
                 return {"status": "skipped", "period": period,
                         "msg": "已结转过，使用 force=True 重跑"}
 
-        # ── 第 2 步：取损益科目余额（_l 累计，不排除 period_close）──
+        # ── 第 2 步：取损益科目余额（按子科目分别列出，不排除 period_close）──
         lines = []
         total_revenue = Decimal("0")
         total_expense = Decimal("0")
 
         for code in self.INCOME_CODES:
-            d, c = _l(self.db, ledger, code, close_dt)
-            balance = c - d
-            amt = balance.quantize(Q2)
-            if abs(amt) >= Decimal("0.01"):
-                if balance > 0:
-                    lines.append({"account_code": code,
-                                  "debit": amt, "credit": Decimal("0")})
-                else:
-                    lines.append({"account_code": code,
-                                  "debit": Decimal("0"), "credit": abs(amt)})
-                total_revenue += amt
+            # 收入类：贷方余额 → 借方结转
+            for sub_code, d, c in self._list_subaccount_balances(ledger, code, close_dt):
+                balance = c - d
+                amt = balance.quantize(Q2)
+                if abs(amt) >= Decimal("0.01"):
+                    if balance > 0:
+                        lines.append({"account_code": sub_code,
+                                      "debit": amt, "credit": Decimal("0")})
+                    else:
+                        lines.append({"account_code": sub_code,
+                                      "debit": Decimal("0"), "credit": abs(amt)})
+                    total_revenue += amt
 
         for code in self.EXPENSE_CODES:
-            d, c = _l(self.db, ledger, code, close_dt)
-            balance = d - c
-            amt = balance.quantize(Q2)
-            if abs(amt) >= Decimal("0.01"):
-                if balance > 0:
-                    lines.append({"account_code": code,
-                                  "debit": Decimal("0"), "credit": amt})
-                else:
-                    lines.append({"account_code": code,
-                                  "debit": abs(amt), "credit": Decimal("0")})
-                total_expense += amt
+            # 费用类：借方余额 → 贷方结转
+            for sub_code, d, c in self._list_subaccount_balances(ledger, code, close_dt):
+                balance = d - c
+                amt = balance.quantize(Q2)
+                if abs(amt) >= Decimal("0.01"):
+                    if balance > 0:
+                        lines.append({"account_code": sub_code,
+                                      "debit": Decimal("0"), "credit": amt})
+                    else:
+                        lines.append({"account_code": sub_code,
+                                      "debit": abs(amt), "credit": Decimal("0")})
+                    total_expense += amt
 
         # ── 第 3 步：差额进 4103 ──
         net_profit = total_revenue - total_expense
@@ -119,7 +142,7 @@ class PeriodCloseEngine:
         # ── 第 4 步：force 模式下先冲红旧凭证 ──
         if force:
             reverse_journal(self.db, account_id, "period_close",
-                            _period_hash(period, "period_close"),
+                            period_hash(period, "period_close"),
                             reversal_date=close_dt, force=True)
 
         # ── 第 5 步：过账 period_close ──
@@ -128,7 +151,7 @@ class PeriodCloseEngine:
                 "lines": lines,
                 "date": close_dt,
                 "source_model": "period_close",
-                "source_id": _period_hash(period, "period_close"),
+                "source_id": period_hash(period, "period_close"),
             }, force=force)
             logger.info(f"损益结转 {period}: 收入={total_revenue:.2f} 费用={total_expense:.2f} 净利润={net_profit:.2f}")
 
@@ -151,7 +174,13 @@ class PeriodCloseEngine:
     def _execute_year_close(self, ledger: Ledger, account_id: int,
                             period: str, close_dt: datetime,
                             force: bool) -> Dict:
-        d, c = _l(self.db, ledger, "4103", close_dt)
+        # 4103 无子科目，但用 _list_subaccount_balances 保持口径一致
+        # 取列表第一项（4103 自身）；列表为空表示无 4103 科目
+        rows = self._list_subaccount_balances(ledger, "4103", close_dt)
+        if rows:
+            _, d, c = rows[0]
+        else:
+            d, c = Decimal("0"), Decimal("0")
         balance_4103 = (c - d).quantize(Q2)
 
         if balance_4103 == Decimal("0"):
@@ -175,14 +204,14 @@ class PeriodCloseEngine:
 
         if force:
             reverse_journal(self.db, account_id, "year_close",
-                            _period_hash(period, "year_close"),
+                            period_hash(period, "year_close"),
                             reversal_date=close_dt, force=True)
 
         post_journal(self.db, account_id, "year_close", {
             "lines": year_lines,
             "date": close_dt,
             "source_model": "year_close",
-            "source_id": _period_hash(period, "year_close"),
+            "source_id": period_hash(period, "year_close"),
         }, force=force)
 
         logger.info(f"年结 {period}: 4103→4104 结转 {balance_4103:.2f}")

@@ -13,11 +13,10 @@ import models
 from commands.base import dispatch
 from commands.orders import CreateOrder
 from commands.cash_commands import CreateExpense, CreateReceipt
-from commands.bank_commands import CreateBankTransaction
+from commands.bank_commands import CreateBankEntry
 from schemas.order import SaleOrderCreate, SaleItemCreate, PurchaseOrderCreate, PurchaseItemCreate
 from schemas.expense import ExpenseCreate
 from schemas.receipt import ReceiptCreate
-from schemas.bank import BankTransactionCreate
 from schemas.finance import FixedAssetCreate
 from crud.finance.fixed_assets import create_fixed_asset
 from uow import unit_of_work
@@ -239,37 +238,41 @@ def create_customer_payment(db, account_id: int, customer_name: str,
 
 def create_bank_fee(db, account_id: int, amount: float, fee_date: date,
                     description: str) -> models.BankTransaction:
-    """银行扣款（开户费/年费等）"""
+    """银行扣款（开户费/年费等）
+
+    通过 CreateBankEntry 过账到总账 6603 财务费用（借方）/ 1002 银行存款（贷方），
+    确保 GL 与银行流水同步。
+    """
     with unit_of_work(db):
-        result = dispatch(CreateBankTransaction(
+        result = dispatch(CreateBankEntry(
             account_id=account_id,
             operator="sim",
-            data=BankTransactionCreate(
-                bank_account_id=BANK_ACCOUNT_ID,
-                transaction_type="outflow",
-                amount=Decimal(str(amount)),
-                transaction_date=datetime.combine(fee_date, datetime.min.time()),
-                description=description,
-            ),
+            entry_type="bank_fee",
+            amount=amount,
+            transaction_date=fee_date.strftime("%Y-%m-%d"),
+            description=description,
         ), db)
+    tx = db.get(models.BankTransaction, result["entity_id"])
     db.flush()
-    return result
+    return tx
 
 
 def create_bank_interest(db, account_id: int, amount: float,
                          interest_date: date) -> models.BankTransaction:
-    """银行利息收入"""
+    """银行利息收入
+
+    通过 CreateBankEntry 过账到总账 1002 银行存款（借方）/ 6603 财务费用（贷方），
+    冲减财务费用。会计准则要求利息收入贷记 6603，不进 6301 营业外收入。
+    """
     with unit_of_work(db):
-        result = dispatch(CreateBankTransaction(
+        result = dispatch(CreateBankEntry(
             account_id=account_id,
             operator="sim",
-            data=BankTransactionCreate(
-                bank_account_id=BANK_ACCOUNT_ID,
-                transaction_type="inflow",
-                amount=Decimal(str(amount)),
-                transaction_date=datetime.combine(interest_date, datetime.min.time()),
-                description="银行利息收入",
-            ),
+            entry_type="interest_income",
+            amount=amount,
+            transaction_date=interest_date.strftime("%Y-%m-%d"),
+            description="银行利息收入",
         ), db)
+    tx = db.get(models.BankTransaction, result["entity_id"])
     db.flush()
-    return result
+    return tx

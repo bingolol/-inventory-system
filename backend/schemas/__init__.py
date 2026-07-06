@@ -51,6 +51,9 @@ from .finance import (
     BalanceSheet, IncomeStatement,
     CashFlowTransactionCreate, CashFlowTransactionUpdate, CashFlowTransactionOut,
     CashFlowStatement,
+    VATDeclarationCreate, VATDeclarationOut,
+    SurchargeDeclarationCreate, SurchargeDeclarationOut,
+    DeclaredPeriodOut,
 )
 
 from .inventory_adjustment import InventoryAdjustmentCreate, InventoryAdjustmentOut
@@ -91,7 +94,10 @@ __all__ = [
     "FixedAssetBase", "FixedAssetCreate", "FixedAssetUpdate", "FixedAssetOut",
     "IntangibleAssetBase", "IntangibleAssetCreate", "IntangibleAssetUpdate", "IntangibleAssetOut",
     "TaxReport", "TaxReportMonth", "IncomeTaxReport",
-    "VATDeclaration", "IncomeTaxPrepayment", "AssetDepreciationDetail",
+    "VATDeclaration", "VATDeclarationCreate", "VATDeclarationOut",
+    "SurchargeDeclarationCreate", "SurchargeDeclarationOut",
+    "DeclaredPeriodOut",
+    "IncomeTaxPrepayment", "AssetDepreciationDetail",
     "BalanceSheet", "IncomeStatement",
     "CashFlowTransactionCreate", "CashFlowTransactionUpdate", "CashFlowTransactionOut",
     "CashFlowStatement",

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -214,6 +214,7 @@ class BankEntryBody(BaseModel):
     amount: float
     transaction_date: str  # YYYY-MM-DD
     description: str = ""
+    bank_account_id: Optional[int] = Field(default=None, description="银行账户ID，为空时自动选择首个账户")
 
 
 @router.post("/bank/entry")
@@ -232,4 +233,5 @@ def create_bank_entry(
             amount=body.amount,
             transaction_date=body.transaction_date,
             description=body.description,
+            bank_account_id=body.bank_account_id,
         ), db)

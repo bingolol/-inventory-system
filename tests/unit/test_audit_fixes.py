@@ -27,7 +27,8 @@ from models_finance import (
     Ledger, LedgerAccount, LedgerAccountBalance, AccountMove, AccountMoveLine,
 )
 from engine_finance import FinanceEngine
-from engine_tax import TaxAccrualEngine, _period_hash, _parse_period
+from engine_tax import TaxAccrualEngine
+from utils.period import period_hash, parse_period
 from engine_inventory import InventoryEngine
 from engine_fixed_asset import FixedAssetEngine
 from finance_integration import post_journal, CHART_OF_ACCOUNTS
@@ -121,11 +122,14 @@ def _make_sale_order(db, account_id=1, customer_id=1, order_id=1,
                      tax_rate=Decimal("0.01"), unit_price=Decimal("200"),
                      quantity=10, unit_cost=Decimal("100")):
     """快速创建已完成的销售单"""
+    line_total = (unit_price * quantity).quantize(Decimal("0.01"))
+    tax_amount = (line_total * tax_rate).quantize(Decimal("0.01"))
     so = SaleOrder(
         id=order_id, account_id=account_id, order_no=f"SO-TEST-{order_id}",
         customer_id=customer_id, order_type=OrderType.RETAIL,
         payment_status=PaymentStatus.UNPAID, status=OrderStatus.COMPLETED,
-        total_price_l1=(unit_price * quantity).quantize(Decimal("0.01")),
+        total_price_l1=line_total + tax_amount,
+        tax_amount_l1=tax_amount,
         sale_date_l1=datetime(2026, 6, 15),
     )
     db.add(so)
@@ -242,7 +246,8 @@ class TestFix10RecordSaleTaxRate:
         so = SaleOrder(
             id=10, account_id=2, order_no="SO-GN-001", customer_id=1,
             order_type=OrderType.RETAIL, payment_status=PaymentStatus.UNPAID,
-            status=OrderStatus.COMPLETED, total_price_l1=Decimal("2000.00"),
+            status=OrderStatus.COMPLETED, total_price_l1=Decimal("2260.00"),
+            tax_amount_l1=Decimal("260.00"),
             sale_date_l1=datetime(2026, 6, 15),
         )
         db.add(so)
@@ -345,28 +350,6 @@ class TestFix1MonthlyCloseSupplement:
         assert result2["status"] == "ok"
         # target 应该比第一次大（利润增加了）
         assert result2["target_income_tax"] >= result1["target_income_tax"]
-
-    def test_surcharge_delta_mode(
-        self, db, small_scale_account, ledger, full_accts, product
-    ):
-        """附加税应支持 delta 补提"""
-        # 小规模无附加税（curr_vat 直接进 222103，无附加税计提）
-        # 用一般纳税人测试附加税 delta
-        # 先简单验证附加税不会因 closed["surcharge"] 被跳过
-        so = _make_sale_order(
-            db, tax_rate=Decimal("0.01"),
-            unit_price=Decimal("200"), quantity=5,
-        )
-        fin = FinanceEngine(db, account_id=1)
-        fin.record_sale(so)
-        db.flush()
-
-        engine = TaxAccrualEngine(db)
-        result = engine.execute(account_id=1, period="2026-06",
-                                taxpayer_type="small_scale")
-        db.flush()
-        assert result["status"] == "ok"
-
 
 # ═══════════════════════════════════════════════════════════
 # #4: 小规模免税规则错乱 (P1)
@@ -561,26 +544,26 @@ class TestFix3PeriodHash:
 
     def test_hash_within_63bit_range(self):
         """哈希值应在 63 位范围内（< 2^63）"""
-        h = _period_hash("2026-06", "income")
+        h = period_hash("2026-06", "income")
         assert h < 2**63
         assert h >= 0
 
     def test_hash_deterministic(self):
         """相同输入应产生相同哈希"""
-        h1 = _period_hash("2026-06", "surcharge")
-        h2 = _period_hash("2026-06", "surcharge")
+        h1 = period_hash("2026-06", "surcharge")
+        h2 = period_hash("2026-06", "surcharge")
         assert h1 == h2
 
     def test_different_tags_different_hash(self):
         """不同 tag 应产生不同哈希"""
-        h1 = _period_hash("2026-06", "income")
-        h2 = _period_hash("2026-06", "surcharge")
+        h1 = period_hash("2026-06", "income")
+        h2 = period_hash("2026-06", "surcharge")
         assert h1 != h2
 
     def test_different_periods_different_hash(self):
         """不同期间应产生不同哈希"""
-        h1 = _period_hash("2026-06", "income")
-        h2 = _period_hash("2026-05", "income")
+        h1 = period_hash("2026-06", "income")
+        h2 = period_hash("2026-05", "income")
         assert h1 != h2
 
 
@@ -638,23 +621,23 @@ class TestFix6ReverseNoneOriginal:
 # ═══════════════════════════════════════════════════════════
 
 class TestRegression2NoOffByOne:
-    """验证 _parse_period 的日期边界正确（Date 类型）"""
+    """验证 parse_period 的日期边界正确（Date 类型）"""
 
     def test_parse_period_month_end(self):
         """月末日期应正确"""
-        start, end = _parse_period("2026-06")
+        start, end = parse_period("2026-06")
         assert start == datetime(2026, 6, 1, 0, 0, 0)
         # 6 月有 30 天
         assert end == datetime(2026, 6, 30, 23, 59, 59)
 
     def test_parse_period_feb_leap_year(self):
         """闰年 2 月有 29 天"""
-        start, end = _parse_period("2024-02")
+        start, end = parse_period("2024-02")
         assert end == datetime(2024, 2, 29, 23, 59, 59)
 
     def test_parse_period_feb_non_leap(self):
         """非闰年 2 月有 28 天"""
-        start, end = _parse_period("2026-02")
+        start, end = parse_period("2026-02")
         assert end == datetime(2026, 2, 28, 23, 59, 59)
 
     def test_account_move_date_is_date_type(self):

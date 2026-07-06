@@ -1,7 +1,7 @@
 """层 2：主体画像（Entity Profile）— 一次计算处处复用
 
-统一的小规模↔小微映射、附加税减半判定、纳税人类型归类。
-替代散落在 4 个调用点的重复映射逻辑。
+统一的小规模↔小微映射、纳税人类型归类。
+surcharge_halved（附加税减半）来自 Account 配置，独立于 income_type，消除循环依赖。
 """
 
 from dataclasses import dataclass
@@ -11,14 +11,15 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from models import Account
 
+# 保持向后兼容（accounting_engine.py 仍引用）
 SURCHARGE_HALVED_TYPES = frozenset({"small_scale", "small_micro", "personal"})
 
 
 @dataclass(frozen=True)
 class EntityProfile:
     vat_type: str        # small_scale / general
-    income_type: str     # personal / small_micro / general
-    surcharge_halved: bool
+    income_type: str     # personal / small_micro / general（仅用于所得税）
+    surcharge_halved: bool  # 来自 Account.surcharge_halved，独立于 income_type
     effective_date: date
 
 
@@ -41,17 +42,16 @@ def resolve_taxpayer_type_by_date(account: "Account", db: "Session", ref_date: d
 
 
 def build_profile(account: "Account", ref_date: Optional[date] = None,
-                  vat_type_override: Optional[str] = None) -> EntityProfile:
+                  vat_type_override: Optional[str] = None,
+                  surcharge_halved: Optional[bool] = None) -> EntityProfile:
     """从 Account 构建主体画像。
 
-    统一映射规则：
-    - small_scale → income_type=small_micro, surcharge_halved=True
-    - personal → income_type=personal, surcharge_halved=True
-    - general → income_type=general（需额外利润判定 small_micro）
+    surcharge_halved 与 income_type 独立：
+    - surcharge_halved 来自 Account 配置（创建账本时设定，年末评估更新）
+    - income_type 由纳税人类型 + 利润精炼决定，仅用于所得税
 
     vat_type_override: 覆盖纳税人类型（用于历史月份回溯）。
-        来自 resolve_taxpayer_type_by_date 的返回值。
-        为 None 时使用 account.taxpayer_type_l3（当前类型）。
+    surcharge_halved: 覆盖附加税减半标志。为 None 时使用 account.surcharge_halved。
     """
     effective_date = ref_date or date.today()
     vat_type = vat_type_override if vat_type_override is not None else (
@@ -66,7 +66,9 @@ def build_profile(account: "Account", ref_date: Optional[date] = None,
     else:
         income_type = "general"
 
-    surcharge_halved = income_type in SURCHARGE_HALVED_TYPES
+    # surcharge_halved 从 Account 配置读取，不依赖 income_type
+    if surcharge_halved is None:
+        surcharge_halved = account.surcharge_halved if account else False
 
     return EntityProfile(
         vat_type=vat_type,
@@ -77,14 +79,17 @@ def build_profile(account: "Account", ref_date: Optional[date] = None,
 
 
 def refine_small_micro(profile: EntityProfile, profit: "Decimal", threshold: "Decimal") -> EntityProfile:
-    """对一般纳税人进一步判定小型微利企业身份（利润门槛）。"""
+    """对一般纳税人进一步判定小型微利企业身份（利润门槛）。
+
+    仅影响 income_type（所得税税率），不影响 surcharge_halved。
+    """
     if profile.income_type != "general":
         return profile
     if profit <= threshold:
         return EntityProfile(
             vat_type=profile.vat_type,
             income_type="small_micro",
-            surcharge_halved=True,
+            surcharge_halved=profile.surcharge_halved,  # 保持原值，不覆盖
             effective_date=profile.effective_date,
         )
     return profile

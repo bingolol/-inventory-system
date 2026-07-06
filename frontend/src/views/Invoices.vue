@@ -127,8 +127,11 @@
               <el-button type="warning" size="small">红冲</el-button>
             </template>
           </el-popconfirm>
-          <el-button v-if="scope.row.direction === 'in' && scope.row.invoice_type === 'special' && scope.row.certification_status === 'n_a'" @click="certifyInvoice(scope.row.id)" type="success" size="small">
+          <el-button v-if="scope.row.direction === 'in' && scope.row.invoice_type === 'special' && scope.row.certification_status !== 'certified'" @click="certifyInvoice(scope.row.id)" type="success" size="small">
             认证
+          </el-button>
+          <el-button v-else-if="scope.row.direction === 'in' && scope.row.invoice_type === 'special' && scope.row.certification_status === 'certified'" @click="uncertifyInvoice(scope.row)" type="warning" size="small">
+            取消认证
           </el-button>
         </template>
       </el-table-column>
@@ -183,18 +186,19 @@
         </el-form-item>
         <el-form-item label="税率" required>
           <el-select v-model.number="invoiceForm.tax_rate" placeholder="请选择税率">
-            <el-option label="1%" value="0.01" />
-            <el-option label="3%" value="0.03" />
-            <el-option label="6%" value="0.06" />
-            <el-option label="9%" value="0.09" />
-            <el-option label="13%" value="0.13" />
+            <el-option label="1%" :value="0.01" />
+            <el-option label="3%" :value="0.03" />
+            <el-option label="6%" :value="0.06" />
+            <el-option label="9%" :value="0.09" />
+            <el-option label="13%" :value="0.13" />
           </el-select>
         </el-form-item>
         <el-form-item label="PDF上传">
           <el-upload
             class="upload-demo"
-            action="/api/invoices/upload"
+            :action="`${baseURL}/invoices/upload`"
             :on-success="handleUploadSuccess"
+            :on-error="handleUploadError"
             :before-upload="beforeUpload"
             :headers="{ 'X-Account-ID': String(accountId) }"
           >
@@ -239,19 +243,18 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useAccountStore } from '../stores/account'
 const accountStore = useAccountStore()
 import invoicesApi from '../api/invoices'
-import { resolveImageUrl, handleError } from '../api/index'
+import { resolveImageUrl, handleError, baseURL } from '../api/index'
 import { formatMoney, formatDate } from '../utils/format'
-import AccountingTip from '../components/AccountingTip.vue'
 import { calculateInvoiceAmounts } from '../utils/invoiceCalc'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
-const accountId = computed(() => accountStore.currentAccount.id)
+const accountId = computed(() => accountStore.currentAccount?.id ?? '')
 const enumsStore = useEnumsStore()
 
 // 发票列表
@@ -410,8 +413,19 @@ const editInvoice = (invoice) => {
   dialogType.value = 'edit'
   currentInvoiceId.value = invoice.id
   invoiceForm.value = {
-    ...invoice,
-    issue_date: invoice.issue_date ? new Date(invoice.issue_date) : ''
+    invoice_no: invoice.invoice_no,
+    direction: invoice.direction,
+    invoice_type: invoice.invoice_type,
+    tax_rate: invoice.tax_rate,
+    amount_without_tax: Number(invoice.amount_without_tax) || 0,
+    tax_amount: Number(invoice.tax_amount) || 0,
+    amount_with_tax: Number(invoice.amount_with_tax) || 0,
+    counterparty_name: invoice.counterparty_name,
+    issue_date: invoice.issue_date ? new Date(invoice.issue_date) : '',
+    pdf_path: invoice.pdf_path || '',
+    image_url: invoice.image_url || '',
+    notes: invoice.notes || '',
+    certification_status: invoice.certification_status
   }
   amountInputType.value = '价税合计'
   dialogVisible.value = true
@@ -442,15 +456,30 @@ const reverseInvoice = async (id) => {
 const certifyInvoice = async (id) => {
   try {
     await invoicesApi.certifyInvoice(id)
+    ElMessage.success('认证成功')
     getInvoices()
   } catch (error) {
     handleError(error, { defaultMsg: '认证发票失败，请检查发票认证状态' })
   }
 }
 
+// 取消认证
+const uncertifyInvoice = async (row) => {
+  try {
+    await ElMessageBox.confirm('确认将发票认证状态恢复为"待认证"？', '提示', { type: 'warning' })
+    await invoicesApi.updateInvoice(row.id, { certification_status: 'pending' })
+    ElMessage.success('已取消认证')
+    getInvoices()
+  } catch (error) {
+    if (error !== 'cancel') {
+      handleError(error, { defaultMsg: '取消认证失败' })
+    }
+  }
+}
+
 // 预览PDF
 const previewPdf = (id) => {
-  pdfUrl.value = `/api/invoices/${id}/pdf`
+  pdfUrl.value = `${baseURL}/invoices/${id}/pdf`
   pdfVisible.value = true
 }
 
@@ -463,6 +492,10 @@ const previewImage = (invoice) => {
 // 上传PDF
 const handleUploadSuccess = (response) => {
   invoiceForm.value.pdf_path = response.pdf_path
+}
+
+const handleUploadError = () => {
+  ElMessage.error('上传失败，请重试')
 }
 
 const beforeUpload = (file) => {

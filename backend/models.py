@@ -42,6 +42,7 @@ class Account(Base):
     taxpayer_type_l3 = Column(String(20), nullable=False, default="small_scale", comment="[L3-政策] 纳税人类型: small_scale / general", info={"tier":"L3","source":"policy"})
     taxpayer_id_l1 = Column(String(50), nullable=True, comment="[L1-外部] 纳税人识别号（统一社会信用代码）", info={"tier":"L1","source":"external"})
     taxpayer_name_l1 = Column(String(200), nullable=True, comment="[L1-外部] 纳税人名称", info={"tier":"L1","source":"external"})
+    surcharge_halved = Column(Boolean, default=False, comment="附加税减半标志（创建账本时配置，年末评估更新）")
     created_at = Column(DateTime, default=datetime.now)
 
 

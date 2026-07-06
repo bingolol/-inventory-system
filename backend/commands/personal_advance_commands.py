@@ -194,7 +194,7 @@ class RepayPersonalAdvanceHandler(CommandHandler):
             )
             repayment.bank_transaction_id = bank_tx.id
 
-        post_journal(db, account_id, "personal_advance_repay", {
+        post_journal(db, account_id, EntityType.PERSONAL_ADVANCE_REPAYMENT, {
             "amount": repay_amount,
             "date": data.repayment_date.isoformat(),
             "bank_account_id": bank_account_id,

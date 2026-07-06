@@ -10,7 +10,8 @@ from errors import BusinessError, ErrorCode
 from models_finance import Ledger
 from lineage import reads, TIER_L1, TIER_L2, TIER_L4
 
-from ._ledger_helpers import _lp, _pdr
+from ._snapshot import LedgerSnapshot
+from ._profit import compute_cumulative_profit
 
 @reads("AccountMoveLine.debit_l2", tier=TIER_L2, source="engine")
 @reads("AccountMoveLine.credit_l2", tier=TIER_L2, source="engine")
@@ -19,27 +20,22 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
 
-    # ── 利润表全从总账取数 ──
-    account = db.query(models.Account).filter(models.Account.id == account_id).first()
-    ledger_is = account and db.query(Ledger).filter(Ledger.code == account.code).first()
+    sn = LedgerSnapshot(db, account_id, bs_cutoff=end_dt, period_start=start_dt, period_end=end_dt)
 
-    # 排除损益结转凭证：月结 period_close 会把损益科目余额清零到 4103，
-    # 年末 year_close 进一步把 4103 清零到 4104。
-    # 若不排除，收入/费用的借方（结转出去）会与贷方（实现收入）相互抵消，
-    # 导致利润表所有项目显示为 0。
-    _exclude = ["period_close", "year_close"]
-
-    # 营业收入 = 主营业务收入(6001) + 其他业务收入(6051)
-    rev_d, rev_c = _lp(db, ledger_is, "6001", start_dt, end_dt, exclude_source_models=_exclude)
-    other_rev_d, other_rev_c = _lp(db, ledger_is, "6051", start_dt, end_dt, exclude_source_models=_exclude)
+    # 营业收入
+    rev_d, rev_c = sn.pnl_dc("6001", start_dt, end_dt)
+    other_rev_d, other_rev_c = sn.pnl_dc("6051", start_dt, end_dt)
     revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
-    cogs_d, cgs_c = _lp(db, ledger_is, "6401", start_dt, end_dt, exclude_source_models=_exclude)
+    cogs_d, cgs_c = sn.pnl_dc("6401", start_dt, end_dt)
     cost_of_goods_sold = (cogs_d - cgs_c).quantize(Q2)
-    administrative_expenses = _pdr(db, ledger_is, "6601", start_dt, end_dt, exclude_source_models=_exclude).quantize(Q2)
-    selling_expenses = _pdr(db, ledger_is, "6602", start_dt, end_dt, exclude_source_models=_exclude).quantize(Q2)
-    fin_d, fin_c = _lp(db, ledger_is, "6603", start_dt, end_dt, exclude_source_models=_exclude)
+    # 费用科目取净额（借方 - 贷方），处理贷方冲减
+    _adm_d, _adm_c = sn.pnl_dc("6601", start_dt, end_dt)
+    administrative_expenses = (_adm_d - _adm_c).quantize(Q2)
+    _sell_d, _sell_c = sn.pnl_dc("6602", start_dt, end_dt)
+    selling_expenses = (_sell_d - _sell_c).quantize(Q2)
+    fin_d, fin_c = sn.pnl_dc("6603", start_dt, end_dt)
     financial_expenses = (fin_d - fin_c).quantize(Q2)
-    depr_d, depr_c = _lp(db, ledger_is, "1602", start_dt, end_dt, exclude_source_models=_exclude)
+    depr_d, depr_c = sn.pnl_dc("1602", start_dt, end_dt)
     depreciation_expense = depr_c.quantize(Q2)
     total_operating_expenses = (selling_expenses + administrative_expenses + financial_expenses).quantize(Q2)
 
@@ -49,9 +45,8 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     # ── 营业利润 ──
     operating_profit = gross_profit - total_operating_expenses
 
-    # ── 税金及附加 + 所得税 — 纯总账取数（月结后自动体现）──
-    # 总账取数兼容旧 6403 和新的明细科目
-    sur_d, sur_c = _lp(db, ledger_is, "6403", start_dt, end_dt, exclude_source_models=_exclude)
+    # ── 税金及附加 + 所得税 ──
+    sur_d, sur_c = sn.pnl_dc("6403", start_dt, end_dt)
     tax_surcharges = (sur_d - sur_c).quantize(Q2)
     # 明细科目
     surcharge_detail_codes = {
@@ -69,7 +64,7 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     }
     surcharge_details = {}
     for key, code in surcharge_detail_codes.items():
-        d, c = _lp(db, ledger_is, code, start_dt, end_dt, exclude_source_models=_exclude)
+        d, c = sn.pnl_dc(code, start_dt, end_dt)
         surcharge_details[key] = (d - c).quantize(Q2)
     # 若 6403 有旧数据而明细为 0，总额用 6403；否则用明细合计
     detail_total = sum(surcharge_details.values())
@@ -79,20 +74,18 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
     operating_profit = gross_profit - total_operating_expenses
 
     # ── 营业外收支 ──
-    # 营业外收入 = 税收减免(6301) + 资产处置收益(6111)
-    noi_d, noi_c = _lp(db, ledger_is, "6301", start_dt, end_dt, exclude_source_models=_exclude)
-    ado_d, ado_c = _lp(db, ledger_is, "6111", start_dt, end_dt, exclude_source_models=_exclude)
+    noi_d, noi_c = sn.pnl_dc("6301", start_dt, end_dt)
+    ado_d, ado_c = sn.pnl_dc("6111", start_dt, end_dt)
     non_operating_income = (noi_c + ado_c).quantize(Q2)
-    # 营业外支出 = 营业外支出(6701) + 资产处置损失(6711)
-    noe_d, noe_c = _lp(db, ledger_is, "6701", start_dt, end_dt, exclude_source_models=_exclude)
-    adl_d, adl_c = _lp(db, ledger_is, "6711", start_dt, end_dt, exclude_source_models=_exclude)
+    noe_d, noe_c = sn.pnl_dc("6701", start_dt, end_dt)
+    adl_d, adl_c = sn.pnl_dc("6711", start_dt, end_dt)
     non_operating_expense = (noe_d + adl_d).quantize(Q2)
 
-    # ── 利润总额 ──
-    gross_profit_total = operating_profit + non_operating_income - non_operating_expense
+    # ── 利润总额（复用统一损益汇总）──
+    gross_profit_total = compute_cumulative_profit(sn, start_dt, end_dt)
 
-    # ── 所得税 = 期内 6801 净发生额 ──
-    it_d, it_c = _lp(db, ledger_is, "6801", start_dt, end_dt, exclude_source_models=_exclude)
+    # ── 所得税 ──
+    it_d, it_c = sn.pnl_dc("6801", start_dt, end_dt)
     income_tax_expense = (it_d - it_c).quantize(Q2)
 
     # ── 净利润 ──
@@ -115,15 +108,6 @@ def generate_income_statement(db: Session, account_id: int, start_date: str, end
             code=ErrorCode.INCOME_STATEMENT_INVALID,
             message=f"利润表公式错误：营业利润 {operating_profit} ≠ 营业毛利 {gross_profit} - 营业费用 {total_operating_expenses}",
             data={"operating_profit": float(operating_profit), "gross_profit": float(gross_profit), "total_operating_expenses": float(total_operating_expenses)}
-        )
-
-    # 校验3：利润总额 = 营业利润 + 营业外收入 - 营业外支出
-    expected_gross_profit_total = operating_profit + non_operating_income - non_operating_expense
-    if abs(gross_profit_total - expected_gross_profit_total) > Decimal('0.01'):
-        raise BusinessError(
-            code=ErrorCode.INCOME_STATEMENT_INVALID,
-            message=f"利润表公式错误：利润总额 {gross_profit_total} ≠ 营业利润 {operating_profit} + 营业外收入 {non_operating_income} - 营业外支出 {non_operating_expense}",
-            data={"gross_profit_total": float(gross_profit_total), "operating_profit": float(operating_profit), "non_operating_income": float(non_operating_income), "non_operating_expense": float(non_operating_expense)}
         )
 
     # 校验4：净利润 = 利润总额 - 所得税费用

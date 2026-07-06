@@ -13,7 +13,7 @@ from commands.base import Command, CommandHandler, register
 from crud.base import log_op
 from engine_bank import BankEngine
 from errors import BusinessError, ErrorCode
-from finance_integration import post_journal
+from finance_integration import post_bank_fee_journal
 from lineage import writes, TIER_L1, TIER_L4
 from models import BankAccount, BankTransaction
 from operation_result import EntityType, OperationResult, OperationType
@@ -196,12 +196,13 @@ class CreateBankEntry(Command):
     amount: float = 0.0
     transaction_date: str = ""     # YYYY-MM-DD
     description: str = ""
+    bank_account_id: Optional[int] = None  # None 时使用首个银行账户（兼容 BR-9）
 
 
 @register(CreateBankEntry)
 class CreateBankEntryHandler(CommandHandler):
     # BankTransaction 由 BankEngine.record_transaction 写入；
-    # AccountMove 由 post_journal / JournalEngine.post 写入；Handler 仅编排。
+    # AccountMove 由 post_bank_fee_journal / post_journal 写入；Handler 仅编排。
     def handle(self, cmd: CreateBankEntry, db: Any) -> Any:
         import models as _models
 
@@ -212,35 +213,34 @@ class CreateBankEntryHandler(CommandHandler):
             )
 
         amt = _d(cmd.amount)
-        dt = datetime.strptime(cmd.transaction_date, "%Y-%m-%d")
         direction = "in" if cmd.entry_type == "interest_income" else "out"
 
-        ba = db.query(_models.BankAccount).filter(
-            _models.BankAccount.account_id == cmd.account_id,
-        ).first()
-        if not ba:
-            raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND)
+        if cmd.bank_account_id is None:
+            ba = db.query(_models.BankAccount).filter(
+                _models.BankAccount.account_id == cmd.account_id,
+            ).first()
+            if not ba:
+                raise BusinessError(code=ErrorCode.BANK_ACCOUNT_NOT_FOUND)
+            bank_account_id = ba.id
+        else:
+            bank_account_id = cmd.bank_account_id
 
         tx = BankEngine(db, cmd.account_id).record_transaction(
-            bank_account_id=ba.id,
+            bank_account_id=bank_account_id,
             transaction_type="inflow" if direction == "in" else "outflow",
             amount=amt,
-            transaction_date=dt,
+            transaction_date=datetime.strptime(cmd.transaction_date, "%Y-%m-%d"),
             description=cmd.description or cmd.entry_type,
             flow_category="operating",
         )
-        tx_id = tx.id
 
-        post_journal(db, cmd.account_id, "bank_fee_entry", {
-            "amount": amt,
-            "direction": direction,
-            "date": cmd.transaction_date,
-            "source_model": "bank_entry",
-            "source_id": tx_id,
-        })
+        post_bank_fee_journal(
+            db, cmd.account_id, amt, direction, cmd.transaction_date,
+            "bank_entry", tx.id,
+        )
 
         entry_label = "利息收入" if cmd.entry_type == "interest_income" else "手续费"
-        log_op(db, cmd.account_id, "create", "bank_entry", tx_id,
+        log_op(db, cmd.account_id, "create", "bank_entry", tx.id,
                f"{entry_label}: {cmd.amount}", operator=cmd.operator)
 
         changes = {"cash": {"amount": f"+{cmd.amount}" if direction == "in" else f"-{cmd.amount}"}}
@@ -248,7 +248,7 @@ class CreateBankEntryHandler(CommandHandler):
         return OperationResult(
             operation=OperationType.CREATE,
             entity_type=EntityType.BANK_ENTRY,
-            entity_id=tx_id,
+            entity_id=tx.id,
             summary=f"{entry_label}录入成功，金额 {cmd.amount}",
             ai_hint=f"{entry_label}已录入，银行存款余额已更新。",
             changes=changes,

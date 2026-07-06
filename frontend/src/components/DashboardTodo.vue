@@ -23,7 +23,8 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { getPendingDeclarations } from '../api/taxDeclaration'
 const now = new Date()
 const year = now.getFullYear(); const month = now.getMonth() + 1; const day = now.getDate()
 const quarter = Math.ceil(month / 3); const weekday = now.getDay()
@@ -45,6 +46,21 @@ const isDec = month === 12
 const is15th = day <= 15
 const next15th = quarter < 4 ? `${quarter * 3}月15日` : `${year + 1}年1月15日`
 
+const pendingDeclarations = ref([])
+
+onMounted(async () => {
+  try {
+    const r = await getPendingDeclarations()
+    pendingDeclarations.value = r || []
+  } catch (e) {
+    // 静默失败，不阻塞页面
+  }
+})
+
+const surchargePending = computed(() =>
+  pendingDeclarations.value.filter(p => p.status === 'vat_declared' && !p.surcharge_declared)
+)
+
 const taskGroups = computed(() => [
   { label: '本月截止', cls: 'd-todo-sh-urgent', items: buildUrgent() },
   { label: '本月例行', cls: 'd-todo-sh-monthly', items: buildMonthly() },
@@ -60,6 +76,29 @@ function buildUrgent() {
   if (isQuarterStart15 && !isJan) t.push({ label: `上季度申报截止 — 增值税+企业所得税预缴`, desc: `必须在${next15th}前完成。逾期每日万分之五滞纳金！`, deadline: next15th, urgent: true, route: '/period-end-tax', action: '查税务报表' })
   if (isBetweenJanMay) t.push({ label: `企业所得税年度汇算清缴（${year}年5月31日截止）`, desc: `完成${year - 1}年度企业所得税年度申报。${month >= 5 ? '本月最后期限，切勿逾期！' : '尽早准备，别拖到最后。'}`, deadline: '5月31日', urgent: month >= 4, route: '/period-end-tax', action: '查所得税' })
   if (isBetweenJanMay || (month === 6 && day <= 30)) t.push({ label: `工商年报（${year}年6月30日截止）`, desc: `国家企业信用信息公示系统报送上年度工商年报。不报将被列入经营异常名录，影响贷款和招投标。${month >= 6 ? '本月最后期限！' : ''}`, deadline: '6月30日', urgent: month >= 6 })
+
+  for (const p of surchargePending.value) {
+    const daysOverdue = day > 15 ? day - 15 : 0
+    let label, desc, urgent, deadline
+    if (daysOverdue > 0) {
+      label = `⚠️ ${p.period} 附加税未录入（已逾期${daysOverdue}天）`
+      desc = `VAT 已申报，附加税尚未录入。逾期申报可能产生滞纳金。建议立即补录。`
+      urgent = true
+      deadline = `逾期${daysOverdue}天`
+    } else if (day <= 6) {
+      label = `📌 ${p.period} 附加税待录入`
+      desc = `VAT 已申报，请在本月15号前录入附加税。需要根据税务局核定的金额填写。`
+      urgent = false
+      deadline = `本月15日前`
+    } else {
+      label = `🔔 ${p.period} 附加税待录入（即将截止）`
+      desc = `VAT 已申报，距截止日期仅剩${15 - day}天。`
+      urgent = day > 10
+      deadline = `本月15日前`
+    }
+    t.push({ label, desc, urgent, deadline, route: '/period-end-tax?tab=surcharge', action: '录入附加税' })
+  }
+
   return t
 }
 

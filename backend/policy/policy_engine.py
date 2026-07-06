@@ -12,7 +12,6 @@ from typing import Optional
 
 from policy.vat_facts import load_vat_facts
 from policy.income_tax_facts import load_income_tax_facts
-from policy.surcharge_facts import load_surcharge_facts
 from policy.entity_profile import EntityProfile
 from utils import _d
 
@@ -27,10 +26,6 @@ class VATResult:
     tax_payable_gross: Decimal
     tax_reduction: Decimal
     tax_payable: Decimal
-    surcharge_education: Decimal
-    surcharge_local_education: Decimal
-    surcharge_urban_construction: Decimal
-    surcharge_total: Decimal
     reduction_item: str
     reduction_amount: Decimal
 
@@ -45,16 +40,6 @@ class IncomeTaxResult:
     reduction_item: str
 
 
-@dataclass
-class SurchargeResult:
-    education: Decimal
-    local_education: Decimal
-    urban_construction: Decimal
-    total: Decimal
-    vat_payable: Decimal
-    reduction_ratio: Decimal
-
-
 def calculate_vat(
     profile: EntityProfile,
     total_revenue: Decimal,
@@ -66,7 +51,6 @@ def calculate_vat(
     ref_date: Optional[date] = None,
 ) -> VATResult:
     vat_facts = load_vat_facts(ref_date)
-    surcharge_facts = load_surcharge_facts(ref_date)
 
     total_revenue = _d(total_revenue)
     input_tax = _d(input_tax)
@@ -86,11 +70,6 @@ def calculate_vat(
         )
         tax_payable = max(tax_payable_gross - input_tax - carry_forward, Decimal("0"))
 
-        reduction_ratio = surcharge_facts.reduction_rate if profile.surcharge_halved else surcharge_facts.no_reduction
-        surcharge_education = (tax_payable * surcharge_facts.rate_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_local_education = (tax_payable * surcharge_facts.rate_local_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_urban_construction = (tax_payable * surcharge_facts.rate_urban_construction * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
         tax_reduction = Decimal("0")
         reduction_item = "一般纳税人"
     else:
@@ -112,22 +91,12 @@ def calculate_vat(
         tax_payable = (ordinary_tax + special_tax).quantize(Q2, rounding=ROUND_HALF_UP)
         tax_reduction = (tax_payable_gross - tax_payable).quantize(Q2, rounding=ROUND_HALF_UP)
 
-        reduction_ratio = surcharge_facts.reduction_rate if profile.surcharge_halved else surcharge_facts.no_reduction
-        surcharge_education = (tax_payable * surcharge_facts.rate_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_local_education = (tax_payable * surcharge_facts.rate_local_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_urban_construction = (tax_payable * surcharge_facts.rate_urban_construction * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-        surcharge_total = surcharge_education + surcharge_local_education + surcharge_urban_construction
-
     return VATResult(
         total_revenue=total_revenue,
         tax_rate=tax_rate,
         tax_payable_gross=tax_payable_gross.quantize(Q2),
         tax_reduction=tax_reduction,
         tax_payable=tax_payable.quantize(Q2),
-        surcharge_education=surcharge_education,
-        surcharge_local_education=surcharge_local_education,
-        surcharge_urban_construction=surcharge_urban_construction,
-        surcharge_total=surcharge_total,
         reduction_item=reduction_item,
         reduction_amount=tax_reduction,
     )
@@ -177,27 +146,6 @@ def calculate_income_tax(
     )
 
 
-def calculate_surcharges(
-    profile: EntityProfile,
-    vat_payable: Decimal,
-    ref_date: Optional[date] = None,
-) -> SurchargeResult:
-    """基于实际应缴增值税计算附加税费（月结用，真相源是总账余额）。"""
-    surcharge_facts = load_surcharge_facts(ref_date)
-    reduction_ratio = surcharge_facts.reduction_rate if profile.surcharge_halved else surcharge_facts.no_reduction
-
-    education = (vat_payable * surcharge_facts.rate_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-    local_education = (vat_payable * surcharge_facts.rate_local_education * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-    urban_construction = (vat_payable * surcharge_facts.rate_urban_construction * reduction_ratio).quantize(Q2, rounding=ROUND_HALF_UP)
-
-    return SurchargeResult(
-        education=education, local_education=local_education,
-        urban_construction=urban_construction,
-        total=education + local_education + urban_construction,
-        vat_payable=vat_payable, reduction_ratio=reduction_ratio,
-    )
-
-
 class PolicyEngine:
     """政策引擎实例（兼容 AccountingEngine 接口风格）"""
     @staticmethod
@@ -207,7 +155,3 @@ class PolicyEngine:
     @staticmethod
     def calculate_income_tax(*args, **kwargs) -> IncomeTaxResult:
         return calculate_income_tax(*args, **kwargs)
-
-    @staticmethod
-    def calculate_surcharges(*args, **kwargs) -> SurchargeResult:
-        return calculate_surcharges(*args, **kwargs)

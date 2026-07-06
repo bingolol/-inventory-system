@@ -13,7 +13,6 @@ import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Expenses from './Expenses.vue'
 import PersonalAdvances from './PersonalAdvances.vue'
-import AccountingTip from '../components/AccountingTip.vue'
 const route = useRoute()
 const activeTab = ref(route.query.tab === 'advances' ? 'advances' : 'expenses')
 </script>

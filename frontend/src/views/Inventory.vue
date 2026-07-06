@@ -152,7 +152,7 @@ const handleAdjust = async () => {
 }
 
 const loadCategories = async () => {
-  try { categories.value = await productsApi.getCategories() } catch (e) { /* ignore */ }
+  try { categories.value = await productsApi.getCategories() } catch (e) { console.error('[Inventory] 加载分类失败', e) }
 }
 
 const exportData = async (format) => {

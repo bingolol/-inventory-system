@@ -429,7 +429,6 @@ class BankReconcileEngine:
 
     def generate_entries(self, rec_id: int) -> list:
         mb = self._models_bank
-        from finance_integration import post_journal
 
         rec = self.db.query(mb.BankReconciliation).filter(
             mb.BankReconciliation.id == rec_id,
@@ -442,16 +441,15 @@ class BankReconcileEngine:
             mb.ReconciliationItem.action == "generate_entry",
         ).all()
 
+        from finance_integration import post_bank_fee_journal
+
         generated = []
         for it in items:
             direction = "out" if it.item_type == "bank_paid_not_book" else "in"
-            post_journal(self.db, self.account_id, "bank_fee_entry", {
-                "amount": abs(it.amount_l2),
-                "direction": direction,
-                "date": self.period + "-15",
-                "source_model": "bank_fee_entry",
-                "source_id": it.id,
-            })
+            post_bank_fee_journal(
+                self.db, self.account_id, abs(it.amount_l2), direction,
+                self.period + "-15", "bank_fee_entry", it.id,
+            )
             it.resolved = True
             generated.append(it.id)
         self.db.flush()

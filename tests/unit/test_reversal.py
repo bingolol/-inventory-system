@@ -87,13 +87,13 @@ class TestReverseReceipts:
     def test_reverses_bank_balance(self, db, seed_sale_with_receipt):
         """冲销收款：银行余额回滚"""
         reverse_receipts(db, 1, 100)
-        bank_account = db.query(models.BankAccount).get(1)
+        bank_account = db.get(models.BankAccount, 1)
         assert bank_account.balance_l4 == Decimal("0")
 
     def test_resets_payment_status(self, db, seed_sale_with_receipt):
         """冲销收款：重置销售单付款状态"""
         reverse_receipts(db, 1, 100)
-        sale = db.query(models.SaleOrder).get(100)
+        sale = db.get(models.SaleOrder, 100)
         assert sale.payment_status == "unpaid"
 
 
@@ -128,11 +128,11 @@ class TestReversePayments:
     def test_reverses_bank_balance(self, db, seed_purchase_with_payment):
         """冲销付款：银行余额回滚"""
         reverse_payments(db, 1, 200)
-        bank_account = db.query(models.BankAccount).get(1)
+        bank_account = db.get(models.BankAccount, 1)
         assert bank_account.balance_l4 == Decimal("5650")
 
     def test_resets_payment_status(self, db, seed_purchase_with_payment):
         """冲销付款：重置采购单付款状态"""
         reverse_payments(db, 1, 200)
-        purchase = db.query(models.PurchaseOrder).get(200)
+        purchase = db.get(models.PurchaseOrder, 200)
         assert purchase.payment_status == "unpaid"

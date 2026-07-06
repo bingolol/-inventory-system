@@ -10,6 +10,9 @@ import models
 from finance_integration import post_journal, reverse_journal
 from operation_result import EntityType
 from utils import Q2
+# price tools moved to command layer — engines read tax from entities
+from errors import BusinessError, ErrorCode
+from enums import OrderStatus
 from lineage import reads, TIER_L3
 from policy.vat_facts import VAT_GENERAL_DEFAULT_RATE, VAT_SMALL_SCALE_SYNDICATED_RATE
 
@@ -23,7 +26,7 @@ class FinanceEngine:
     @property
     def account(self):
         if self._account is None:
-            self._account = self.db.query(models.Account).get(self.account_id)
+            self._account = self.db.get(models.Account, self.account_id)
         return self._account
 
     @staticmethod
@@ -54,22 +57,19 @@ class FinanceEngine:
             "vat_rate": self._vat_rate(self.account),
         }
 
-    def record_purchase(self, order, calculated_data: List[dict] = None,
-                        force: bool = False) -> None:
-        if calculated_data is not None:
-            total_with_tax = Decimal(sum(Decimal(str(i["total_amount"])) for i in calculated_data)).quantize(Q2)
-            total_without_tax = Decimal(sum(Decimal(str(i["total_cost"])) for i in calculated_data)).quantize(Q2)
-            tax_amount = Decimal(sum(Decimal(str(i["tax_amount"])) for i in calculated_data)).quantize(Q2)
-        else:
-            from finance_integration import _calc_tax_from_items
-            items_for_tax = [
-                {"total_price": str(item.total_price_l1), "tax_rate": str(item.tax_rate_l1)}
-                for item in order.items
-            ]
-            tax_info = _calc_tax_from_items(order.total_price_l1, items_for_tax)
-            total_with_tax = order.total_price_l1
-            total_without_tax = tax_info["total_without_tax"]
-            tax_amount = tax_info["tax_amount"]
+    def record_purchase(self, order, *, force=False):
+        if not order or not order.items:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                data={"details": "采购单无明细，无法生成凭证"}
+            )
+
+        config = self._account_config()
+        enable_vat = config["enable_vat_deduction"]
+
+        total_with_tax = Decimal(str(order.total_price_l1 or 0))
+        tax_amount = Decimal(str(order.tax_amount_l1 or 0))
+        total_without_tax = (total_with_tax - tax_amount).quantize(Q2)
 
         source = {
             "partner_id": order.supplier_id or 0,
@@ -79,25 +79,20 @@ class FinanceEngine:
             "source_model": EntityType.PURCHASE_ORDER,
             "source_id": order.id,
             "date": order.purchase_date_l1,
-            "account_config": self._account_config(),
+            "account_config": config,
         }
-        post_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, source, force=force)
+        return post_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, source, force=force)
 
-    def record_sale(self, order, force: bool = False) -> None:
-        # 修复 #10：移除小规模 3% 覆盖逻辑，直接用行项 item.tax_rate_l1
-        # 原代码 is_small_scale 时用 _vat_rate() 返回 3% 覆盖 item.tax_rate_l1(默认1%)，
-        # 导致 1122 应收账款永久虚高 2%（季末免税只冲 222103 不调 1122）。
-        # 正确做法：小规模 item.tax_rate_l1 默认 0.01（减按1%），一般纳税人按商品行税率。
-        total_without_tax = Decimal('0')
-        tax_amount = Decimal('0')
-        for item in order.items:
-            line_total = Decimal(str(item.total_price_l1))
-            total_without_tax += line_total
-            rate = item.tax_rate_l1
-            if rate:
-                tax_amount += (line_total * Decimal(str(rate))).quantize(Q2)
-        tax_amount = tax_amount.quantize(Q2)
-        total_with_tax = (total_without_tax + tax_amount).quantize(Q2)
+    def record_sale(self, order, *, force=False):
+        if not order or not order.items:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                data={"details": "销售单无明细，无法生成凭证"}
+            )
+
+        total_with_tax = Decimal(str(order.total_price_l1 or 0))
+        tax_amount = Decimal(str(order.tax_amount_l1 or 0))
+        total_without_tax = (total_with_tax - tax_amount).quantize(Q2)
         source = {
             "partner_id": order.customer_id or 0,
             "total_with_tax": total_with_tax,
@@ -117,12 +112,25 @@ class FinanceEngine:
             "date": order.sale_date_l1,
             "account_config": self._account_config(),
         }
-        post_journal(self.db, self.account_id, EntityType.SALE_ORDER, source, force=force)
+        return post_journal(self.db, self.account_id, EntityType.SALE_ORDER, source, force=force)
 
-    def reverse_purchase(self, order_id: int, force: bool = False) -> None:
-        """冲红采购凭证"""
-        reverse_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, order_id, force=force)
+    def _resolve_order(self, order_id: int, model):
+        order = self.db.query(model).filter(
+            model.id == order_id,
+            model.account_id == self.account_id,
+        ).first()
+        if not order:
+            order_type = "销售单" if model.__name__ == "SaleOrder" else "采购单"
+            raise BusinessError(
+                code=ErrorCode.ORDER_NOT_FOUND,
+                data={"order_type": order_type, "order_id": order_id},
+            )
+        return order
 
-    def reverse_sale(self, order_id: int, force: bool = False) -> None:
-        """冲红销售凭证"""
-        reverse_journal(self.db, self.account_id, EntityType.SALE_ORDER, order_id, force=force)
+    def reverse_purchase(self, order_id: int, *, force=False):
+        self._resolve_order(order_id, models.PurchaseOrder)
+        return reverse_journal(self.db, self.account_id, EntityType.PURCHASE_ORDER, order_id, force=force)
+
+    def reverse_sale(self, order_id: int, *, force=False):
+        self._resolve_order(order_id, models.SaleOrder)
+        return reverse_journal(self.db, self.account_id, EntityType.SALE_ORDER, order_id, force=force)

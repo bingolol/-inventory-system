@@ -39,8 +39,8 @@ function parseChinaDate(str) {
 export const formatDateTime = (str) => {
   const p = parseChinaDate(str)
   if (!p) return '-'
-  const m = String(p.m).padStart(2, '0')
-  return `${p.y}-${p.M}-${p.d}-${p.h}:${m}`
+  const min = String(p.m).padStart(2, '0')
+  return `${p.y}-${p.M}-${p.d}-${p.h}:${min}`
 }
 
 /**

@@ -56,7 +56,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import commonApi from '../api/common'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { formatDateTime } from '../utils/format'

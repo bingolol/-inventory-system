@@ -105,14 +105,14 @@ const loadSaleOrders = async () => {
   try {
     const r = await ordersApi.getSales({ limit: 200, status: 'completed' })
     saleOrders.value = (r?.items || []).filter(o => o.payment_status === 'unpaid')
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[Receipts] 加载销售单失败', e) }
 }
 
 const loadBankAccounts = async () => {
   try {
     const r = await bankAccountsApi.getBankAccounts()
     bankAccounts.value = r?.items || []
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[Receipts] 加载银行账户失败', e) }
 }
 
 const openCreateDialog = () => {

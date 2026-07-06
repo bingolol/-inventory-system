@@ -1,16 +1,15 @@
 """税务核对引擎 — 6 项账表核对，月结后自动联动"""
 
 import logging
-from datetime import datetime, timedelta
-from calendar import monthrange
 from decimal import Decimal
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
 from models_finance import Ledger
-from crud.finance._ledger_helpers import _l, _lp, _bal, _crd
+from crud.finance._snapshot import LedgerSnapshot
 from utils import _d, Q2
+from utils.period import parse_period
 
 logger = logging.getLogger("inventory")
 
@@ -27,39 +26,40 @@ class TaxCheckEngine:
 
     def execute(self, period: str, declared: Optional[Dict] = None) -> Dict:
         declared = declared or {}
-        start_dt, end_dt = _parse_period(period)
-        ledger = self.ledger
+        start_dt, end_dt = parse_period(period)
         checks = []
 
+        sn = LedgerSnapshot(self.db, self.account_id, bs_cutoff=end_dt, period_start=start_dt, period_end=end_dt)
+
         # ── 1. 销售额: 申报 vs 6001+6051 贷方净额(扣减退货冲红) ──
-        s1d, s1c = _lp(self.db, ledger, "6001", start_dt, end_dt)
-        _, s1b = _lp(self.db, ledger, "6051", start_dt, end_dt)
+        s1d, s1c = sn.per_dc("6001", start_dt, end_dt)
+        _, s1b = sn.per_dc("6051", start_dt, end_dt)
         checks.append(self._ck("销售额", declared.get("sales"),
                                (s1c - s1d + s1b).quantize(Q2)))
 
         # ── 2. 销项税额: 申报 vs 222101 贷方净额(扣减退货冲红/红字发票) ──
-        b2d, b2c = _lp(self.db, ledger, "222101", start_dt, end_dt)
+        b2d, b2c = sn.per_dc("222101", start_dt, end_dt)
         checks.append(self._ck("销项税额", declared.get("output_vat"),
                                (b2c - b2d).quantize(Q2)))
 
         # ── 3. 进项税额: 申报 vs 222102 借方净额(扣减退货冲红/进项转出) ──
-        b3d, b3c = _lp(self.db, ledger, "222102", start_dt, end_dt)
+        b3d, b3c = sn.per_dc("222102", start_dt, end_dt)
         checks.append(self._ck("进项税额", declared.get("input_vat"),
                                (b3d - b3c).quantize(Q2)))
 
         # ── 4. 未交增值税: 申报"应补税额" vs 222107 贷方余额 ──
-        b4 = _crd(self.db, ledger, "222107", end_dt)
+        b4 = sn.crd("222107")
         checks.append(self._ck("未交增值税", declared.get("unpaid_vat"),
                                b4.quantize(Q2)))
 
         # ── 5. 所得税: 申报 vs 6801 借方发生额 ──
-        b5, b5c = _lp(self.db, ledger, "6801", start_dt, end_dt)
+        b5, b5c = sn.per_dc("6801", start_dt, end_dt)
         checks.append(self._ck("所得税费用", declared.get("income_tax"),
                                (b5 - b5c).quantize(Q2)))
 
         # ── 6. 附加税: 申报计税依据 vs 222106借方, 申报附加税 vs 6403借方 ──
-        b6a, _ = _lp(self.db, ledger, "222106", start_dt, end_dt)
-        b6b, b6c = _lp(self.db, ledger, "6403", start_dt, end_dt)
+        b6a, _ = sn.per_dc("222106", start_dt, end_dt)
+        b6b, b6c = sn.per_dc("6403", start_dt, end_dt)
         checks.append(self._ck("附加税-计税依据(转出未交增值税)",
                                declared.get("vat_payable"),
                                b6a.quantize(Q2)))
@@ -104,11 +104,3 @@ class TaxCheckEngine:
             "passed": passed,
             "status": "ok" if passed else "mismatch",
         }
-
-
-def _parse_period(period: str):
-    year, month = int(period[:4]), int(period[5:7])
-    _, last_day = monthrange(year, month)
-    start_dt = datetime(year, month, 1, 0, 0, 0)
-    end_dt = datetime(year, month, last_day, 23, 59, 59)
-    return start_dt, end_dt

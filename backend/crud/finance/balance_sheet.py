@@ -12,7 +12,8 @@ from models_finance import Ledger
 from lineage import reads, TIER_L1, TIER_L2
 
 from .opening_balances import get_latest_opening_balance
-from ._ledger_helpers import _l, _lp, _bal, _crd, _pdr, _stock_moves_as_of
+from ._snapshot import LedgerSnapshot
+
 
 @reads("OpeningBalance.cash_balance_l1", tier=TIER_L1, source="external")
 @reads("OpeningBalance.bank_balance_l1", tier=TIER_L1, source="external")
@@ -39,7 +40,11 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     """生成资产负债表"""
     query_date = datetime.strptime(date, "%Y-%m-%d")
     query_end = query_date + timedelta(days=1) - timedelta(seconds=1)
-    opening_balance = get_latest_opening_balance(db, account_id, date)
+
+    # ── 构造 snapshot：BS 只需要累计到截止日的数据 ──
+    sn = LedgerSnapshot(db, account_id, bs_cutoff=query_end)
+
+    opening_balance = sn.opening_balance
 
     if not opening_balance:
         opening_date = datetime(2000, 1, 1)
@@ -93,21 +98,11 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         models.Expense.payment_method == PaymentMethod.COMPANY
     ).scalar())
 
-    # 货币资金计算：单一真相源-从总账取数
-    acct = db.query(models.Account).filter(models.Account.id == account_id).first()
-    ledger = acct and db.query(Ledger).filter(Ledger.code == acct.code).first()
+    # 货币资金计算：单一真相源-从总账取数（通过 snapshot）
+    cash_from_ledger = sn.bal("1001")
+    bank_from_ledger = sn.bal("1002")
 
-    L  = lambda code, cutoff=None: _l(db, ledger, code, cutoff or query_end)
-    B  = lambda code, cutoff=None: _bal(db, ledger, code, cutoff or query_end)
-    C  = lambda code, cutoff=None: _crd(db, ledger, code, cutoff or query_end)
-    # 旧名兼容
-    _balance = B
-    _credit_balance = C
-
-    cash_from_ledger = _balance("1001")
-    bank_from_ledger = _balance("1002")
-
-    if ledger and (cash_from_ledger != 0 or bank_from_ledger != 0):
+    if sn._ledger and (cash_from_ledger != 0 or bank_from_ledger != 0):
         ending_cash = cash_from_ledger
         ending_bank = bank_from_ledger
     else:
@@ -144,23 +139,20 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
             ending_cash = opening_cash - total_payments + total_receipts
             ending_bank = Decimal('0')
 
-    # 应收账款 = 总账 1122；总账为空时使用期初应收账款（L1 外部输入）
-    accounts_receivable = _balance("1122").quantize(Q2)
+    # 应收账款 = 总账 1122
+    accounts_receivable = sn.bal("1122").quantize(Q2)
     opening_accounts_receivable = _d(opening_balance.accounts_receivable_l1) if opening_balance else Decimal('0')
     if accounts_receivable == 0 and opening_accounts_receivable > 0:
         accounts_receivable = opening_accounts_receivable
 
-    # BR-7: 库存真相源是 StockMove 流水，Inventory 表仅为缓存。
-    # 按 query_end 截止日期过滤 StockMove（关联业务单据日期），聚合期末存货数量与价值。
-    as_of_moves = _stock_moves_as_of(db, account_id, query_end)
+    # BR-7: 库存真相源是 StockMove 流水
+    as_of_moves = sn.stock_moves()
     inv_agg = {}
     for m in as_of_moves:
         pid = m.product_id
         if pid not in inv_agg:
             inv_agg[pid] = {"qty": Decimal("0"), "value": Decimal("0")}
         qty = Decimal(str(m.quantity_l1))
-        # total_cost_l2 符号与数量方向可能不完全一致（如销售退货为正值但成本为负），
-        # 统一用数量方向决定库存价值增减：数量>0 增加库存，数量<0 减少库存。
         cost = _d(m.total_cost_l2)
         value_delta = abs(cost) * (Decimal("1") if qty > 0 else Decimal("-1"))
         inv_agg[pid]["qty"] += qty
@@ -169,45 +161,35 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     for pid, agg in inv_agg.items():
         if agg["qty"] > 0:
             inventory_value += agg["value"]
-    # StockMove 无流水时，回退到期初存货价值（L1 外部输入）
     opening_inventory_value = _d(opening_balance.inventory_value_l1) if opening_balance else Decimal('0')
     if inventory_value == 0 and opening_inventory_value > 0:
         inventory_value = opening_inventory_value
 
-    # 预付账款（1123）
-    prepayments = _balance("1123").quantize(Q2)
+    prepayments = sn.bal("1123").quantize(Q2)
 
-    # ── 非流动资产 ── 从总账取
-    fixed_assets_original = _balance("1601").quantize(Q2)
-    accumulated_depreciation = _credit_balance("1602").quantize(Q2)
+    # ── 非流动资产 ──
+    fixed_assets_original = sn.bal("1601").quantize(Q2)
+    accumulated_depreciation = sn.crd("1602").quantize(Q2)
     fixed_assets_net = fixed_assets_original - accumulated_depreciation
 
-    # 无形资产
-    intangible_assets_original = _balance("1701").quantize(Q2)
-    accumulated_amortization = _credit_balance("1702").quantize(Q2)
+    intangible_assets_original = sn.bal("1701").quantize(Q2)
+    accumulated_amortization = sn.crd("1702").quantize(Q2)
     intangible_assets_net = intangible_assets_original - accumulated_amortization
-    
+
     total_non_current_assets = fixed_assets_net + intangible_assets_net
 
-    # ── 流动负债 ── 从总账；总账为空时回退到期初负债（L1 外部输入）
-    accounts_payable = _credit_balance("2202").quantize(Q2)
+    # ── 流动负债 ──
+    accounts_payable = sn.crd("2202").quantize(Q2)
     opening_accounts_payable = _d(opening_balance.accounts_payable_l1) if opening_balance else Decimal('0')
     if accounts_payable == 0 and opening_accounts_payable > 0:
         accounts_payable = opening_accounts_payable
 
-    salaries_payable = _credit_balance("2211").quantize(Q2)  # 应付职工薪酬
-    # 其他应付款 2241 — 个人垫付余额（含老板/员工替公司垫付形成的负债）
-    other_payable = _credit_balance("2241").quantize(Q2)
+    salaries_payable = sn.crd("2211").quantize(Q2)
+    other_payable = sn.crd("2241").quantize(Q2)
 
-    # ── 应交税费 — 纯总账取数（月结后税金自动体现）──
-    # 一般纳税人：222101→222106→222107 月结后余额在 222107
-    # 小规模纳税人：直接用 222103，不走转出未交增值税机制，余额即应交税金
-    vat_credit = (_credit_balance("222101")  # 一般纳税人销项/应交的贷方余额
-                  + _credit_balance("222107")  # 一般纳税人月结后未交增值税
-                  + _credit_balance("222103")).quantize(Q2)  # 小规模纳税人应交增值税
-    # 留抵/待抵扣 = 进项相关科目的借方余额（一般纳税人：222102+222106）
-    vat_debit_balance = (_balance("222102") + _balance("222106")).quantize(Q2)
-    # 应交税费按净额列示：贷方净额负债，借方净额资产（留抵）
+    # ── 应交税费 ──
+    vat_credit = (sn.crd("222101") + sn.crd("222107") + sn.crd("222103")).quantize(Q2)
+    vat_debit_balance = (sn.bal("222102") + sn.bal("222106")).quantize(Q2)
     vat_net = vat_credit - vat_debit_balance
     if vat_net > 0:
         vat_payable = vat_net
@@ -216,86 +198,63 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         vat_payable = Decimal("0")
         prepaid_tax = (-vat_net).quantize(Q2)
 
-    # 应交附加税：兼容旧 222104 和新明细科目
-    surcharge_liability = (_credit_balance("222104")
-                           + _credit_balance("222110")
-                           + _credit_balance("222111")
-                           + _credit_balance("222112")
-                           + _credit_balance("222113")
-                           + _credit_balance("222114")
-                           + _credit_balance("222115")
-                           + _credit_balance("222116")
-                           + _credit_balance("222117")
-                           + _credit_balance("222118")
-                           + _credit_balance("222119")
-                           + _credit_balance("222120")).quantize(Q2)
-    income_tax_liability = _credit_balance("222105").quantize(Q2)
-    personal_income_tax_liability = _credit_balance("222108").quantize(Q2)  # 代扣员工个税(业务因果链 E)
+    surcharge_liability = (sn.crd("222104") + sn.crd("222110") + sn.crd("222111")
+                           + sn.crd("222112") + sn.crd("222113") + sn.crd("222114")
+                           + sn.crd("222115") + sn.crd("222116") + sn.crd("222117")
+                           + sn.crd("222118") + sn.crd("222119") + sn.crd("222120")).quantize(Q2)
+    income_tax_liability = sn.crd("222105").quantize(Q2)
+    personal_income_tax_liability = sn.crd("222108").quantize(Q2)
     tax_payable = (vat_payable + surcharge_liability + income_tax_liability + personal_income_tax_liability).quantize(Q2)
 
     # ── 非流动负债 ──
-    long_term_borrowings = _credit_balance("2501").quantize(Q2)
+    long_term_borrowings = sn.crd("2501").quantize(Q2)
 
-    # ── 利润构成（用于报表附注展示，非真实余额）──
-    # 月结已通过 period_close 将损益科目余额结转到 4103 本年利润，
-    # 年末 year_close 进一步将 4103 结转到 4104 利润分配-未分配利润。
-    # 因此损益科目余额通常为 0，不能直接用来计算 retained_earnings。
-    # 这里仅保留作为报表附注的"当期发生额"展示，通过 _lp 取期间发生额。
-    # 必须排除 period_close/year_close，否则收入借方（结转出去）会与贷方（实现收入）抵消。
-    _bs_exclude = ["period_close", "year_close"]
+    # ── 利润构成（用于报表附注展示）──
     op_open = opening_date
     op_end = query_end
-    rev_d, rev_c = _lp(db, ledger, "6001", op_open, op_end, exclude_source_models=_bs_exclude)
-    other_rev_d, other_rev_c = _lp(db, ledger, "6051", op_open, op_end, exclude_source_models=_bs_exclude)
+    rev_d, rev_c = sn.pnl_dc("6001", op_open, op_end)
+    other_rev_d, other_rev_c = sn.pnl_dc("6051", op_open, op_end)
     period_revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
-    cogs_d, cogs_c = _lp(db, ledger, "6401", op_open, op_end, exclude_source_models=_bs_exclude)
+    cogs_d, cogs_c = sn.pnl_dc("6401", op_open, op_end)
     period_cogs = (cogs_d - cogs_c).quantize(Q2)
-    # 期间费用（含折旧/摊销，已在月结时计入 6601）
-    period_expenses = (
-        _pdr(db, ledger, "6601", op_open, op_end, exclude_source_models=_bs_exclude)
-        + _pdr(db, ledger, "6602", op_open, op_end, exclude_source_models=_bs_exclude)
-        + _pdr(db, ledger, "6603", op_open, op_end, exclude_source_models=_bs_exclude)
-    ).quantize(Q2)
-    dep_d, dep_c = _lp(db, ledger, "1602", op_open, op_end, exclude_source_models=_bs_exclude)
-    depreciation_expense = dep_c.quantize(Q2)  # 已包含在6601中，此处仅用于报表展示
-    amortization_expense = Decimal("0")  # 摊销已包含在6601中，保留字段兼容前端
-    # 税金及附加费用：兼容旧 6403 和新明细科目（期间发生额）
+    _e1_d, _e1_c = sn.pnl_dc("6601", op_open, op_end)
+    _e2_d, _e2_c = sn.pnl_dc("6602", op_open, op_end)
+    _e3_d, _e3_c = sn.pnl_dc("6603", op_open, op_end)
+    period_expenses = ((_e1_d - _e1_c) + (_e2_d - _e2_c) + (_e3_d - _e3_c)).quantize(Q2)
+    dep_d, dep_c = sn.pnl_dc("1602", op_open, op_end)
+    depreciation_expense = dep_c.quantize(Q2)
+    amortization_expense = Decimal("0")
     surcharge_expense = Decimal("0")
     for sc in ["6403", "640301", "640302", "640303", "640304", "640305",
                "640306", "640307", "640308", "640309", "640310", "640311"]:
-        sd, sc_v = _lp(db, ledger, sc, op_open, op_end, exclude_source_models=_bs_exclude)
+        sd, sc_v = sn.pnl_dc(sc, op_open, op_end)
         surcharge_expense += sd - sc_v
     surcharge_expense = surcharge_expense.quantize(Q2)
-    it_d, it_c = _lp(db, ledger, "6801", op_open, op_end, exclude_source_models=_bs_exclude)
+    it_d, it_c = sn.pnl_dc("6801", op_open, op_end)
     income_tax_expense = (it_d - it_c).quantize(Q2)
-    # 营业外收支（6301/6701）+ 资产处置损益（6111/6711）（期间发生额）
-    noi_d, noi_c = _lp(db, ledger, "6301", op_open, op_end, exclude_source_models=_bs_exclude)
-    ado_d, ado_c = _lp(db, ledger, "6111", op_open, op_end, exclude_source_models=_bs_exclude)
+    noi_d, noi_c = sn.pnl_dc("6301", op_open, op_end)
+    ado_d, ado_c = sn.pnl_dc("6111", op_open, op_end)
     non_operating_income = (noi_c + ado_c).quantize(Q2)
-    noe_d, noe_c = _lp(db, ledger, "6701", op_open, op_end, exclude_source_models=_bs_exclude)
-    adl_d, adl_c = _lp(db, ledger, "6711", op_open, op_end, exclude_source_models=_bs_exclude)
+    noe_d, noe_c = sn.pnl_dc("6701", op_open, op_end)
+    adl_d, adl_c = sn.pnl_dc("6711", op_open, op_end)
     non_operating_expense = (noe_d + adl_d).quantize(Q2)
 
     period_profit = (period_revenue - period_cogs - period_expenses
                      - surcharge_expense - income_tax_expense
                      + non_operating_income - non_operating_expense)
 
-    paid_in_capital = _credit_balance("3001").quantize(Q2)
-    # ── 未分配利润：直接读总账权益科目余额 ──
-    # 4103 本年利润（年末结转前累计；年末结转后为 0）
-    # 4104 利润分配-未分配利润（年末结转后累计）
-    # 期初未分配利润 + 当期净增加 = 期末未分配利润
-    current_year_profit = _credit_balance("4103").quantize(Q2)
-    retained_earnings_prev = _credit_balance("4104").quantize(Q2)
+    paid_in_capital = sn.crd("3001").quantize(Q2)
+    current_year_profit = sn.crd("4103").quantize(Q2)
+    retained_earnings_prev = sn.crd("4104").quantize(Q2)
     retained_earnings = (opening_retained_earnings
-                        + current_year_profit
-                        + retained_earnings_prev).quantize(Q2)
-    total_equity = (paid_in_capital + retained_earnings).quantize(Q2)
+                         + current_year_profit
+                         + retained_earnings_prev).quantize(Q2)
+    total_equity = (paid_in_capital + retained_earnings + period_profit).quantize(Q2)
 
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable
                             + prepayments + inventory_value + prepaid_tax
-                            + _balance("1901").quantize(Q2))  # 待处理财产损溢
+                            + sn.bal("1901").quantize(Q2))
     total_assets = total_current_assets + total_non_current_assets
     total_non_current_liabilities = long_term_borrowings
     total_current_liabilities = accounts_payable + salaries_payable + tax_payable + other_payable

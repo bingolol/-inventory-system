@@ -11,7 +11,7 @@ from accounting_engine import AccountingError, AccountingErrorCode
 from engine_ledger import LedgerEngine
 from lineage import writes, reads, derives, TIER_L1, TIER_L2
 from operation_result import EntityType
-from rules import enforce_rules
+from rules import enforce_rules, enforce_journal_rules
 
 
 # 税金及附加明细科目 -> 应交税费对应科目
@@ -88,6 +88,9 @@ class JournalEngine:
 
         # AS-01 借贷平衡后写校验(纵深防御:即使 _validate 漏检,DB 层兜底)
         enforce_rules(self.db, ["AS-01"], {"move_id": move.id})
+
+        # JR-01 凭证科目结构校验（补充 AS-01 盲区：科目是否正确）
+        enforce_journal_rules(self.db, move.id)
 
         return move
 

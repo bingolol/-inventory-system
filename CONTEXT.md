@@ -1,5 +1,9 @@
 # CONTEXT.md - 进销存管理系统
 
+## Agent 语言规则
+
+**始终使用中文回复。** 所有分析、解释、建议、代码注释、报告均使用简体中文。
+
 ## 项目概述
 
 面向中小企业的全栈业务管理平台，涵盖库存管理、采购/销售、项目归集、财务报表及个人账单等核心模块。
@@ -8,144 +12,54 @@
 
 | 场景 | 手册 |
 |------|------|
-| **记账操作**（查/录/改业务数据） | [docs/财务Agent手册.md](docs/财务Agent手册.md) |
-| **开发代码**（改/增/修功能） | [docs/开发Agent手册.md](docs/开发Agent手册.md) |
+| **记账操作**（查/录/改业务数据） | [docs/INDEX.md → 记账 Agent 技能](docs/INDEX.md) |
+| **开发代码**（改/增/修功能） | [docs/开发规范.md](docs/开发规范.md) |
 
 > 以下为本体文档，记录架构、业务规则、目录结构等底层事实。
 
 ## Agent 工作流
 
-### 📚 知识库入口
+### ⚠️ 编码前检查清单
 
-| 文档 | 内容 |
-|------|------|
-| [docs/INDEX.md](docs/INDEX.md) | 完整文档索引 |
-| [docs/开发规范.md](docs/开发规范.md) | 开发规范 + 反模式红线（**修改代码前必读**） |
-| [docs/架构参考.md](docs/架构参考.md) | 完整架构手册 |
-| [docs/文件索引.md](docs/文件索引.md) | 全仓库文件清单 |
-| [docs/会计实务.md](docs/会计实务.md) | 会计实践逻辑与系统实现映射 |
-| [代码调用逻辑图.md](代码调用逻辑图.md) | 函数级调用链：Router→Command→Engine→ORM 全链路 |
+判断任务类型 → 加载对应 Skill → 执行。不可跳过。
 
-### ⚠️ 强制执行：编码前检查清单
+| 类型 | 关键词 | Skill |
+|------|--------|-------|
+| 新功能 | 添加/实现/创建/写一个/新增 | `skill(name="tdd")` |
+| 调试 | 报错/修复/bug/问题/失败/不工作 | `skill(name="diagnose")` |
+| 需求讨论 | 怎么做/方案/设计/思路/规划 | `skill(name="grill-me")` |
+| 代码理解 | 这是什么/解释/看看/了解 | `skill(name="zoom-out")` |
+| 重构 | 优化/重构/整理/改进 | `skill(name="improve-codebase-architecture")` |
+| 精简沟通 | 用户要求精简/连续对话超 10 轮 | `skill(name="caveman")` |
+| 创建 PRD/Issue | 创建 PRD/创建 Issue | `skill(name="to-prd")` / `skill(name="to-issues")` |
 
-**每次收到编码任务时，必须按顺序执行以下检查，不可跳过：**
+加载失败**必须**停止并告知用户。
 
-#### 第 1 步：识别任务类型
-判断用户请求属于哪种类型：
-
-| 类型 | 关键词 |
-|------|--------|
-| 新功能 | "添加"、"实现"、"创建"、"写一个"、"新增" |
-| 调试 | "报错"、"修复"、"bug"、"问题"、"失败"、"不工作" |
-| 需求讨论 | "怎么做"、"方案"、"设计"、"思路"、"规划" |
-| 代码理解 | "这是什么"、"解释"、"看看"、"了解" |
-| 重构 | "优化"、"重构"、"整理"、"改进" |
-| 精简沟通 | 用户明确要求精简、或连续对话超过 10 轮 |
-
-#### 第 2 步：加载对应 Skill（必须）
-根据任务类型，**必须**使用 `skill` 工具加载对应 skill：
-
-```
-任务类型 → 加载 Skill
-─────────────────────────────────
-新功能开发 → skill(name="tdd")
-调试修复   → skill(name="diagnose")
-需求对齐   → skill(name="grill-me")
-代码理解   → skill(name="zoom-out")
-重构优化   → skill(name="improve-codebase-architecture")
-创建 PRD  → skill(name="to-prd")
-创建 Issue → skill(name="to-issues")
-精简输出   → skill(name="caveman")
-创建 Skill → skill(name="write-a-skill")
-问题分类   → skill(name="triage")
-```
-
-#### 第 3 步：验证加载
-加载后，确认 skill 内容已注入当前上下文。如果加载失败，**必须**告知用户并停止执行。
-
----
-
-### 必须遵守的 7 条规则
+### 8 条规则
 
 | # | 规则 | 说明 |
 |---|------|------|
-| 1 | **Read docs first** | 先读文档再写代码，理解上下文 |
-| 2 | **Docs before code** | 新模块/重构时先创建设计文档 |
-| 3 | **Plan before execute** | 呈现计划，等待批准后再执行 |
-| 4 | **Self-review** | 完成后自检，确保文档同步更新 |
-| 5 | **Tests first** | 核心业务逻辑使用 TDD |
-| 6 | **禁止破坏性操作** | `git clean`、`git reset --hard`、`git checkout -- .`、`git push --force` 等不可逆 Git 操作，以及 DELETE/批量更新/冲红等不可逆数据操作，必须先获得用户明确授权。违者立即停止
-| 7 | **动码前先问** | 每次修改代码前（新建/编辑/删除文件），必须先向用户呈现改动计划并等待批准。
+| 1 | **Read docs first** | 先读文档再写代码 |
+| 2 | **Docs before code** | 新模块/重构先创建设计文档 |
+| 3 | **Plan before execute** | 呈现计划，等批准后执行 |
+| 4 | **Self-review** | 完成后自检，同步文档 |
+| 5 | **Tests first** | 核心业务逻辑用 TDD |
+| 6 | **禁止破坏性操作** | `git clean`/`reset --hard`/`checkout -- .`/`push --force` 等不可逆操作必须获明确授权 |
+| 7 | **动码前先问** | 新建/编辑/删除文件前必须呈现计划并等批准 |
+| 8 | **Task Agent 禁越权** | 委托 task agent 时明确列出禁止做的事，否则会注入无关代码 |
 
 ### 开发流程
 
-```
-1. 确定问题   → 复述/确认 bug 或需求，等用户确认
-   │
-2. 列出方案   → 给出改动清单+原因，等用户批准
-   │
-3. 实施       → 批准后执行，遵循开发规范与反模式红线
-   │             过程中发现新问题立即汇报
-   │
-4. 汇报+自检  → 完成时列出改动+自检结果
-                 运行测试、更新相关文档
-```
+1. 确定问题 → 复述并等用户确认
+2. 列出方案（改动清单+原因）→ 等批准
+3. 实施 → 遇新问题立即汇报等批准
+4. 汇报+自检 → `git status` / 测试 / diff
 
-### 何时询问 vs 何时直接执行
+### 技能使用规范
 
-| 询问用户 | 直接执行 |
-|----------|----------|
-| 不确定业务规则时 | 文档更新 |
-| 涉及数据库结构变更时 | （无，动码必须先问） |
-| 涉及多个模块的重构时 | （无，动码必须先问） |
-| 可能影响现有功能时 | 测试补充 |
-
-### Agent 技能
-
-技能是规则的落地工具。`docs/agent_skills.md` 按 5 类场景说明 19 个技能的用途。
-
-| 规则 | 对应技能 |
-|------|----------|
-| Tests first | `tdd` |
-| Self-review | `review`、`neat-freak` |
-| Read docs first | `zoom-out` |
-| Plan before execute | `grill-me`、`grill-with-docs` |
-
-| 场景 | 技能 |
-|------|------|
-| **开发核心**（高频） | `tdd`、`diagnose`、`review`、`zoom-out` |
-| **计划设计**（中频） | `to-issues`、`to-prd`、`triage`、`grill-me`、`grill-with-docs`、`prototype`、`improve-codebase-architecture` |
-| **会话交接**（低频） | `handoff`、`neat-freak`、`teach`、`write-a-skill` |
-| **通信模式** | `caveman` |
-| **不适用** | `migrate-to-shoehorn`、`scaffold-exercises`、`setup-pre-commit`、`git-guardrails-claude-code`、`setup-matt-pocock-skills` |
-
-### 文档检查清单
-
-Agent 完成任务后检查：
-
-- [ ] 代码测试通过
-- [ ] 相关文档已更新
-- [ ] 没有引入新的反模式
-- [ ] 遵循命名约定
-- [ ] 错误处理使用 BusinessError
-
----
-
-## 技能使用规范
-
-- 每次使用技能（Skill 工具）完成任务后，静默执行 Review。
-- 一切顺利 → 无需任何操作。
-- 发现问题或绕路方案 → 先询问用户是否同意更新技能文档，用户确认后再修改对应的 SKILL.md。
-
-## Skills 说明
-
-- Skills 文件位于 `C:\Users\Administrator\.claude\skills\` 目录
-- 加载时使用 skill 名称（如 `tdd`、`diagnose`），不要用文件路径
-- 系统会自动从 skills 目录查找对应的 SKILL.md 文件
-
-## 违反后果
-
-如果跳过上述检查清单直接编码，**必须**立即停止，回退到第 1 步重新执行.
+- Skills 在 `.opencode/skills/` + `~/.claude/skills/` 中按名查找（如 `skill(name="tdd")`）
+- 使用后静默 Review；发现问题先问用户再改 SKILL.md
+- 完整技能清单见 `docs/agent_skills.md`
 
 ---
 
@@ -158,7 +72,7 @@ Agent 完成任务后检查：
 | **CRUD** | 仅查询+报表，**写操作已下沉** | `backend/crud/*.py` |
 | **Domain** | 业务规则验证（库存/采购/销售单） | `backend/domain/*.py` |
 | **Engines** | 会计核算子系统，直连 ORM | `backend/engine_*.py` |
-| **EventBus** | 日志+汇总重算，解耦副作用 | `backend/middleware/event_bus.py` |
+| **EventBus** | 日志+汇总重算，解耦副作用 | `backend/events.py` |
 
 **五大红线**：
 - ❌ 读 `has_invoice` 做分支 → ✅ 查 `Invoice` 表（BR-1）
@@ -166,6 +80,8 @@ Agent 完成任务后检查：
 - ❌ 直接 UPDATE `StockMove`/`AccountMove` → ✅ 只 INSERT 反向记录（BR-8）
 - ❌ 增值税进费用 → ✅ 仅进负债 2221（BR-5）
 - ❌ 绕过 API 直连 DB/脚本 → ✅ 全走 API（BR-17）
+- ❌ 凭证科目/方向用错 → ✅ `enforce_journal_rules`（JR-01）校验科目结构
+- ❌ 引擎内推导税额 → ✅ 税额是实体字段，命令层写入，引擎只读（BR-27）
 
 ---
 
@@ -215,15 +131,85 @@ Routers → (Commands / 直接调用) → FinanceEngines → ORM
 - **Domain**: 领域模型，业务规则验证
 - **Events**: 领域事件
 - **EventBus**: 事件总线，负责日志和汇总重算
-- **FinanceEngines**: 会计核算引擎子系统，含总账引擎、凭证引擎、往来账引擎、库存引擎、财务引擎、税务引擎(`engine_tax.py`)、税务核对引擎(`engine_tax_check.py`)、银行对账引擎(`engine_bank_reconcile.py`)，独立于 Commands 层面直接操作 ORM
+- **FinanceEngines**: 会计核算引擎子系统，含总账引擎、凭证引擎、往来账引擎、库存引擎、成本引擎(`cost_engine.py`)、财务引擎(`engine_finance.py`)、税务引擎(`engine_tax.py`)、税务核对引擎(`engine_tax_check.py`)、银行对账引擎(`engine_bank_reconcile.py`)、固定资产引擎(`engine_fixed_asset.py`)，独立于 Commands 层面直接操作 ORM。银行手续费/利息统一通过 `finance_integration.py` 的 `post_bank_fee_journal()` seam 生成凭证
+
+### 数据层级 (L1–L4)
+
+所有数据字段按"数字源原则"分为四层，字段名末尾标注层级（`_l1`/`_l2`/`_l3`/`_l4`）。
+
+#### L1 — 外部输入（API 边界写入，引擎层只读）
+
+用户/发票/银行流水等外部来源的原始数据，命令层接收后写入。
+
+| 分类 | 字段 |
+|------|------|
+| **税率 / 税额** | `Invoice.tax_rate_l1`, `Invoice.tax_amount_l1`, `PurchaseItem.tax_rate_l1`, `SaleItem.tax_rate_l1`, `PurchaseOrder.tax_amount_l1`, `SaleOrder.tax_amount_l1` |
+| **金额 / 数量** | `Invoice.amount_with_tax_l1`, `Invoice.amount_without_tax_l1`, `PurchaseOrder.total_price_l1`, `SaleOrder.total_price_l1`, `PurchaseItem.unit_price_l1`, `PurchaseItem.quantity_l1`, `SaleItem.unit_price_l1`, `SaleItem.quantity_l1`, `Expense.amount_l1`, `Receipt.amount_l1`, `Payment.amount_l1` |
+| **日期** | `Invoice.issue_date_l1`, `PurchaseOrder.purchase_date_l1`, `SaleOrder.sale_date_l1`, `Expense.expense_date_l1`, `Payment.payment_date_l1`, `StockMove.move_date_l1`(取源单据日期) |
+| **数量方向** | `StockMove.quantity_l1`（正=入/负=出，值来自源单据） |
+
+#### L2 — 引擎计算（内部真相源，Writer 唯一）
+
+引擎层从 L1 数据计算出的不可变事实。
+
+| 分类 | 字段 | 写入者 |
+|------|------|--------|
+| **库存成本** | `StockMove.unit_cost_l2`, `StockMove.total_cost_l2` | `InventoryEngine.inbound/outbound/reverse` |
+| **加权平均** | `CostEngine.weighted_average()`（纯函数，无表字段） | `InventoryEngine.inbound/reverse` 调用 |
+| **出库锁定** | `SaleItem.unit_cost_l2`（出库时冻结的加权平均） | `InventoryEngine.outbound() → item.set_calculated_cost()` |
+| **凭证分录** | `AccountMoveLine.debit_l2`, `AccountMoveLine.credit_l2`, `AccountMove.amount_total_l2`, `AccountMove.amount_untaxed_l2`, `AccountMove.amount_tax_l2` | `JournalEngine.post()` |
+| **折旧 / 摊销** | `FixedAssetDepreciation.amount_l2`, `IntangibleAssetAmortization.amount_l2` | `FixedAssetEngine` / `IntangibleAssetEngine` |
+| **现金流分类** | `BankTransaction.flow_category_l2`, `BankTransaction.cash_flow_item_code_l2` | `BankEngine` |
+
+#### L3 — 政策配置（创建时配置，引擎做分支判断）
+
+主数据、税率类型、库存策略等政策选择，不是计算产出。
+
+| 分类 | 字段 |
+|------|------|
+| **纳税人类型** | `Account.taxpayer_type_l3`（general / small_scale） |
+| **商品属性** | `Product.track_inventory_l3`（是否追踪库存）, `Product.purchase_price_l3`, `Product.sale_price_l3`, `Product.min_stock_l3` |
+| **固定资产参数** | `FixedAsset.depreciation_method_l3`, `FixedAsset.useful_life_l3`, `FixedAsset.salvage_rate_l3` |
+| **发票认证** | `Invoice.certification_status_l3` |
+
+#### L4 — 派生汇总（性能缓存，仅供报表/API 查询）
+
+从 L2 自动派生的缓存值，禁止作为计算输入。
+
+| 分类 | 字段 |
+|------|------|
+| **库存缓存** | `Inventory.quantity_l4`, `Inventory.average_cost_l4`, `Inventory.total_value_l4` |
+| **科目余额** | `LedgerAccountBalance.balance_l4`, `LedgerAccountBalance.debit_total_l4`, `LedgerAccountBalance.credit_total_l4` |
+| **银行余额** | `BankAccount.balance_l4` |
+| **累计折旧** | `FixedAsset.accumulated_depreciation_l4` |
+| **已偿还垫付** | `PersonalAdvance.paid_amount_l4` |
+
+#### 四条铁律（`backend/lineage/registry.py` 强制校验）
+
+| # | 规则 | 说明 |
+|---|------|------|
+| 1 | 层级单调不降 | L1→L2→L3 合法；L4→L2 禁止（缓存不得作为计算输入） |
+| 2 | Writer 唯一 | 每个 L2 字段只能有一个写入函数（避免双算法不一致） |
+| 3 | 禁止跳层 | L1 直写 L4 跳过 L2 计算环节属违规（期初余额例外） |
+| 4 | L4 不作为下游真相源 | L4 字段被 `@reads` 装饰器引用即违规 |
+
+#### 本系统的追溯链
+
+```
+L1 发票 (Invoice/PurchaseOrder)
+  → L2 原始凭证 (StockMove)
+  → L2 内部计算 (CostEngine.weighted_average)
+  → L4 缓存 (Inventory) + 凭证 COGS (AccountMove)
+```
 
 ## 关键特性
 
 - 多账本隔离（X-Account-ID）
 - 命令模式写操作
 - 显式编排（Command Handler 直接调用库存和收入联动）
-- 领域模型业务规则验证
+- 领域模型业务规则验证（含 `domain/product_kind.py` 商品类型判定：实体/服务、科目映射）
 - 金额精度（Decimal + round(2)）
+- 价税分离工具（`utils/price.py` — `split`/`combine`/`quantize` 统一计算）
 - 危险操作拦截（readonly_middleware 403 + confirm_middleware 202）
 - 数据库自动迁移（启动时自动检测并 ALTER TABLE 新增列，`database.py` `_auto_migrate_columns`）
 
@@ -235,77 +221,104 @@ inventory-system/
 │   ├── routers/        # API 路由（读操作直接调用 CRUD）
 │   ├── commands/       # 命令模式（全部写操作）
 │   │   ├── base.py            # Command + Handler 基类 + dispatch
-│   │   ├── crud_compat.py     # CRUD 桥接层
-│   │   ├── partner_commands.py # 通用 Partner 命令（Supplier/Customer 合并）
+│   │   ├── partner_commands.py # 通用 Partner 命令
 │   │   ├── product_commands.py
-│   │   ├── purchase_commands.py
-│   │   ├── sale_commands.py
-│   │   ├── invoice_commands.py
 │   │   ├── finance_commands.py
 │   │   ├── personal_commands.py
-│   │   └── account_commands.py
+│   │   ├── personal_advance_commands.py # 个人垫付命令
+│   │   ├── account_commands.py
+│   │   ├── bank_commands.py            # 银行账户/流水命令
+│   │   ├── bank_reconcile.py           # 银行对账命令
+│   │   ├── cash_commands.py            # 现金流命令（费用/付款/收款）
+│   │   ├── tax_declaration_commands.py # 税务申报命令
+│   │   ├── fixed_asset_commands.py     # 固定资产命令
+│   │   ├── month_end.py                # 月结命令
+│   │   ├── reversal_ops.py             # 冲销操作
+│   │   └── orders/                     # 订单子包（重构自旧 purchase/sale/invoice 命令）
+│   │       ├── __init__.py
+│   │       ├── _order.py               # 参数化订单命令
+│   │       ├── _purchase.py            # 采购领域规则
+│   │       ├── _sale.py                # 销售领域规则
+│   │       ├── _invoice.py             # 发票命令
+│   │       ├── _lifecycle.py           # 订单生命周期编排
+│   │       └── _cascade.py             # 冲红级联策略
 │   ├── crud/           # 数据访问（仅查询 + 报表）
-│   │   ├── base.py            # 公共函数（_log, _generate_order_no）
-│   │   ├── products.py        # 商品 + 库存查询
-│   │   ├── partners.py        # 伙伴查询（只读）
-│   │   ├── orders.py          # 订单查询（只读）
-│   │   ├── invoices.py        # 发票查询 + 税务报表
-│   │   ├── invoice_linkage.py # 发票与业务关联查询
-│   │   ├── finance.py         # 财务查询 + 报表生成
-│   │   ├── personal.py        # 个人流水查询 + 统计
-│   │   ├── inventory_ops.py   # 库存操作（已废弃，改用 engine_inventory.py）
-│   │   ├── reports.py         # 统计报表
-│   │   └── logs.py            # 操作日志查询
+│   │   ├── base.py
+│   │   ├── products.py
+│   │   ├── partners.py
+│   │   ├── orders.py
+│   │   ├── invoices.py
+│   │   ├── invoice_linkage.py
+│   │   ├── finance.py
+│   │   ├── personal.py
+│   │   ├── inventory_ops.py   # 已废弃
+│   │   ├── reports.py
+│   │   └── logs.py
 │   ├── domain/         # 领域模型
-│   │   ├── base.py            # 基类
-│   │   ├── inventory.py       # 库存业务规则
-│   │   ├── money.py           # 金额值对象
-│   │   ├── purchase_order.py  # 采购单业务规则
-│   │   └── sale_order.py      # 销售单业务规则
+│   │   ├── base.py
+│   │   ├── inventory.py
+│   │   ├── money.py
+│   │   ├── purchase_order.py
+│   │   ├── sale_order.py
+│   │   └── product_kind.py
 │   ├── models.py           # ORM 模型（业务表）
 │   ├── models_finance.py   # ORM 模型（会计核算表）
+│   ├── models_bank.py      # ORM 模型（银行对账表）
 │   ├── account_dep.py      # 账本依赖注入
 │   ├── accounting_engine.py# 会计核算引擎编排
 │   ├── engine_bank.py      # 银行引擎
+│   ├── engine_bank_reconcile.py# 银行对账引擎
 │   ├── engine_finance.py   # 财务引擎（采购/销售凭证生成）
-│   ├── engine_fixed_asset.py# 固定资产引擎（折旧/处置）
-│   ├── engine_inventory.py # 库存引擎（StockMove 流水 + 移动加权平均）
+│   ├── engine_fixed_asset.py# 固定资产引擎
+│   ├── engine_intangible_asset.py# 无形资产引擎
+│   ├── engine_inventory.py # 库存引擎（StockMove 流水）
 │   ├── engine_journal.py   # 凭证引擎
 │   ├── engine_ledger.py    # 总账/明细账引擎
+│   ├── engine_period_close.py# 期间结转引擎
 │   ├── engine_receivable.py# 往来账龄引擎
-│   ├── finance_integration.py # 财务引擎与业务的集成层
+│   ├── engine_tax.py       # 税务引擎
+│   ├── engine_tax_check.py # 税务核对引擎
+│   ├── cost_engine.py      # 成本引擎（加权平均 L2 计算真相源）
+│   ├── finance_integration.py # 财务集成层
 │   ├── operation_result.py # 操作结果类型
-│   ├── utils/               # 工具包（`_d`/`get_or_404`/日期解析/工厂函数 + `audit.py` 审计日志）
-│   ├── middleware/          # 中间件包（只读 + EventBus 中间件）
+│   ├── events.py           # 事件总线
+│   ├── handlers.py         # 事件处理器
+│   ├── uow.py              # Unit of Work 事务边界
+│   ├── ai_gateway.py       # AI 网关
+│   ├── errors.py           # 错误定义
+│   ├── image_utils.py      # 图片工具
+│   ├── utils/              # 工具包
+│   │   ├── audit.py
+│   │   ├── period.py
+│   │   ├── price.py
+│   │   └── process_guard.py
+│   ├── middleware/         # 中间件包
+│   │   ├── readonly_middleware.py
+│   │   └── confirm_middleware.py
+│   ├── journal/            # 凭证分录构建
+│   │   ├── _cash.py / _fixed_asset.py / _misc.py / _purchase.py
+│   │   ├── _reverse.py / _sale.py / _tax.py
+│   ├── reports/            # 报表引擎
+│   │   ├── dsl.py / engine.py / reconcile.py
+│   │   └── definitions/
+│   ├── policy/             # 税务政策
+│   │   ├── entity_profile.py / policy_engine.py / vat_facts.py
+│   │   ├── declaration_mapper.py / income_tax_facts.py
+│   ├── rules/              # 运行时校验
+│   │   ├── dsl.py / journal_rules.py / rules_definition.py
+│   │   ├── runtime_checks.py / validator.py
+│   ├── lineage/            # 数据血缘（L1-L4 层级校验）
+│   │   └── registry.py
+│   ├── accounting_guide/   # 会计规则指引
 │   ├── schemas/            # Pydantic 模式
 │   └── enums.py            # 枚举定义
 ├── frontend/
 │   ├── src/
-│   │   ├── views/      # 页面视图
-│   │   │   ├── Dashboard.vue         # 首页仪表盘
-│   │   │   ├── Products.vue          # 商品管理
-│   │   │   ├── Suppliers.vue         # 供应商管理
-│   │   │   ├── Customers.vue         # 客户管理
-│   │   │   ├── Purchases.vue         # 采购管理
-│   │   │   ├── Sales.vue             # 销售管理
-│   │   │   ├── Inventory.vue         # 库存管理
-│   │   │   ├── Invoices.vue          # 发票管理
-│   │   │   ├── Expenses.vue          # 费用管理
-│   │   │   ├── Personal.vue          # 个人流水
-│   │   │   ├── FinancialReports.vue  # 财务报表
-│   │   │   ├── CashFlow.vue          # 现金流管理
-│   │   │   ├── TaxReport.vue         # 税务报表
-│   │   │   ├── Reconciliations.vue   # 对账管理
-│   │   │   ├── Reports.vue           # 统计报表
-│   │   │   ├── Logs.vue              # 操作日志
-│   │   │   ├── TrialBalance.vue      # 试算平衡表
-│   │   │   ├── JournalMoves.vue      # 凭证管理
-│   │   │   ├── AgingReport.vue       # 往来账龄
-│   │   │   └── Backup.vue            # 数据备份
-│   │   ├── components/ # 组件
-│   │   ├── composables/# 组合式逻辑
-│   │   ├── stores/     # Pinia 状态
-│   │   └── api/        # API 请求
+│   │   ├── views/      # 页面视图（36+ 文件，含 Dashboard、SupplyChain、FinancialOverview 等）
+│   │   ├── components/ # 组件（24 个，含 Layout、OrderFormDialog、BalanceSheet 等）
+│   │   ├── composables/# 组合式逻辑（8 个）
+│   │   ├── stores/     # Pinia 状态（account / auth / enums）
+│   │   └── api/        # API 请求（22 个文件）
 │   └── ...
 └── docs/               # 文档
 
@@ -317,8 +330,8 @@ inventory-system/
 ### BR-1:单一真相源原则
 
 "某记录是否有发票"这个事实,**唯一真相**是发票表是否存在指向该记录的关联(Invoice.related_order_id + related_order_type)。
-订单/采购/费用表上的 `has_invoice` 布尔字段是历史遗留副本,目标是删除并改为派生查询(见架构改进方案 1)。
-在此之前,新增逻辑不得依赖 `has_invoice` 字段做业务分支,应查询发票表。
+订单/采购/费用表上的 `has_invoice` 布尔字段是历史遗留副本。
+新增逻辑不得依赖 `has_invoice` 字段做业务分支,应查询发票表。
 
 ### BR-3:开票与销售单的关系
 
@@ -343,11 +356,8 @@ inventory-system/
 | 附加税(城建/教育/地方教育) | ✅ 是费用 | `税金及附加` | `税金及附加` | 跟随增值税,属税金及附加科目 | 城市维护建设税法第四条 |
 | 增值税 | ❌ 不是费用 | 不走费用 | 不走费用 | 属负债(代收代付),缴纳只是清负债,不计入费用。若入费用会虚增费用、少计利润 | 增值税暂行条例 |
 
-- 现有 EXPENSE_CATEGORIES 需补充 `税金及附加`、`所得税` 两个类目。
-- 现有 EXPENSE_FUNCTIONAL_CATEGORIES 需补充 `税金及附加`(与销售/管理/财务费用并列,利润表单列)。
 - **禁止**把增值税塞进费用支出。
 - 分录依据: [小企业会计准则.md §六/6.6 缴纳税金](docs/小企业会计准则.md#66-缴纳)
-- 计算依据: [小企业会计准则.md §二/2.4 增值税](docs/小企业会计准则.md#24-增值税)
 
 ### BR-6:冲销生成反向分录（非删除）
 
@@ -362,7 +372,7 @@ inventory-system/
 系统实现: `commands/reversal_ops.py`（含 `reverse_receipts`、`reverse_payments`、`reverse_single_receipt`、`reverse_single_payment`、`reverse_bank_transaction`）
 
 **已知不对称**: 批量冲销（取消整单时级联触发）不逐笔冲红收款/付款凭证（`call_reverse_journal=False`），
-因上层调用方（`order_lifecycle.py`）集中通过 `FinanceEngine.reverse_sale/reverse_purchase` 冲红销售/采购凭证，
+因上层调用方（`reversal_ops.py`）集中通过 `FinanceEngine.reverse_sale/reverse_purchase` 冲红销售/采购凭证，
 收款/付款凭证的冲红在整体订单凭证冲红中间接体现。单笔红冲（API 直接调用）会独立冲红对应凭证（`call_reverse_journal=True`）。
 
 ### BR-7:库存真相源是 StockMove 流水
@@ -379,7 +389,7 @@ inventory-system/
 - StockMove 一旦生成**严禁修改或删除**，错误修正通过红冲调整单实现
 - 创建商品时不再创建 Inventory 记录（不再接受 `initial_stock`），库存必须通过采购单/期初余额/调整单创建
 - **COGS 真相源**: 所有涉及销售成本的查询/报表必须读 `SaleItem.unit_cost`（出库时锁定的移动加权平均成本），禁止读 `Product.purchase_price`。见 [docs/单一真相源原则.md](docs/单一真相源原则.md)
-- 系统实现: `backend/engine_inventory.py`
+- 系统实现: `backend/engine_inventory.py`（写入 StockMove），`backend/cost_engine.py`（加权平均 L2 计算真相源）
 
 ### BR-8:会计凭证/折旧流水同样是真相源
 
@@ -409,9 +419,9 @@ inventory-system/
 
 月末销项>进项时，系统自动生成 `dr 222106(转出未交增值税) cr 222107(未交增值税)`。留抵不作专门分录，自然体现在应交增值税科目借方余额中。附加税以当期`curr_vat`为基数计提（12%），不是等到次月实缴才计提。
 
-### BR-12: 月结自动计提折旧
+### BR-12: 月结完整流程
 
-`POST /api/finance/month-close` 在算税之前自动调用 `FixedAssetEngine.batch_depreciate(period)`，折旧计入费用从而影响所得税。月结返回含 `depreciation_count` 字段。
+`POST /api/finance/month-close` 按固定顺序执行：折旧计提（`FixedAssetEngine.batch_depreciate`）→ 无形资产摊销 → 增值税计算 → 附加税计提 → 所得税计提 → **损益结转**（`PeriodCloseEngine` 将收入/费用科目余额结转到 4103 本年利润，12 月追加 4103→4104 年结）。折旧和摊销计入费用从而影响所得税。月结返回含 `depreciation_count`、`amortization_count`、`period_close_count` 字段。
 
 ### BR-13: 银行手续费/利息统一走 post_journal
 
@@ -421,7 +431,7 @@ inventory-system/
 - **直录** — 平时实时记账，同时生成 BankTransaction + 会计凭证
 - **对账流程** — 期末对账时补录，只生成会计凭证（银行流水已在银行对账单上）
 
-### BR-14: 小规模增值税普票/专票分开计算（2026-06-29 修复）
+### BR-14: 小规模增值税普票/专票分开计算
 
 小规模纳税人增值税计算区分普票/专票，季度总销售额≤30万时普票免征：
 
@@ -460,7 +470,28 @@ inventory-system/
 - ORM 模型不在 API 层复用可能导致数据不一致
 - 调试/运维场景如需批量操作，通过 API 循环调用实现
 
-### BR-18: 红字发票冲红（2026-06-29 新增）
+### BR-26: 运行时校验护栏（纵深防御）
+
+除五大红线和 BR-8 防护外，系统提供两个独立校验工具（`backend/rules/runtime_checks.py`）：
+
+| 函数 | 功能 | 调用场景 |
+|------|------|---------|
+| `check_global_balance()` | 全局借贷平衡校验：所有 posted 凭证 Σ(debit) == Σ(credit) | 月结/运维兜底，发现 AS-01 漏检或 DB 直写导致的失衡 |
+| `check_accounting_equation()` | 会计方程式：资产 == 负债 + 权益 + (收入 - 费用)，纯 SQL，不经 BS 报表 | 与 BS 报表走两条独立路径，互为对账验证 |
+
+- `check_accounting_equation` 按 `LedgerAccount.account_type` 分组求和，`asset_contra` 型科目（累计折旧/摊销）正确作为资产减项
+- 损益净额 = 收入 - 费用（年结前直接参与方程式；年结后已转到 4103，收入/费用归零）
+
+### BR-27: 税额为外部输入，禁止引擎推导（2026-07-05 确立）
+
+税额（`tax_amount_l1`）是业务凭证（发票、订单）上的**外部事实**，不是引擎内部的推导值。
+
+- **写入**：税额在命令层（API 边界）写入 `Order.tax_amount_l1` / `Invoice.tax_amount_l1`。如果调用方仅提供含税金额+税率，命令层可调用 `split()`/`combine()` **一次**补全缺失项，此后再不重算。
+- **读取**：引擎层（`engine_finance`、`engine_inventory`、`tax_declarations`）只读实体上的 `tax_amount_l1`，严禁调用 `split()`/`combine()`。
+- **退货**：退货单的税额按原单税额 ×（退货金额/原单金额）比例计算，不重新推导。
+- **禁止**：`split()` 和 `combine()` 不可出现在 `backend/engine_*.py` 或 `backend/crud/finance/*.py` 的 import 中。
+
+### BR-18: 红字发票冲红
 
 发票通过 `POST /api/invoices/{id}/reverse` 冲红，而非物理删除：
 
@@ -474,12 +505,10 @@ inventory-system/
      ├─ 费用发票 → 无库存冲红
      ├─ 固定资产发票 → 资产冲红需人工处理
      └─ 独立发票 → 无级联冲红
-  4. 操作日志
 ```
 
-- 红字发票金额为负数是税法要求，`InvoiceOut` schema 不限制 `ge=0`（仅 `InvoiceCreate` 限制）
-- 幂等防御：已冲红发票再次冲红报错
-- `DELETE /api/invoices/{id}` 被 readonly 中间件 403 拦截，强制走 reverse
+- 红字发票金额负数是税法要求，`InvoiceOut` schema 不限制 `ge=0`
+- 幂等防御：已冲红发票再次冲红报错；DELETE 被 403 拦截
 
 系统实现: `commands/invoice_commands.py` `ReverseInvoice` + `routers/invoices.py`
 
@@ -526,9 +555,9 @@ inventory-system/
 
 - 业务日期级联到凭证日期（`AccountMove.date`）和库存移动日期（`StockMove.move_date`）
 - 用当前时间兜底会导致：BS 按日期过滤时凭证被错误排除、利润表期间归属错误
-- 系统实现: `commands/purchase_commands.py` + `commands/sale_commands.py`
+- 系统实现: `commands/orders/_purchase.py` + `commands/orders/_sale.py`
 
-### BR-22: BS 应交税费包含小规模纳税人科目（2026-06-29 修复）
+### BR-22: BS 应交税费包含小规模纳税人科目
 
 资产负债表 `tax_payable` 必须同时读取两种纳税人的应交增值税科目：
 
@@ -543,28 +572,41 @@ vat_payable = _credit_balance("222107") + _credit_balance("222103")
 
 小规模纳税人没有"转出未交增值税"子科目，222103 本身就是负债科目。
 
-### BR-23: 报表科目完整覆盖（2026-06-29 修复）
+### BR-23: 报表科目完整覆盖
 
 BS 和利润表必须覆盖科目表中全部损益类科目：
 
-| 科目 | 名称 | BS | 利润表 | 修复说明 |
-|------|------|----|--------|---------|
-| 6001 | 主营业务收入 | ✓ | ✓ | 已有 |
-| 6051 | 其他业务收入 | ✓ | ✓ | 本轮修复（原只读 6001） |
-| 6111 | 资产处置收益 | ✓ | ✓ | 本轮修复（原遗漏） |
-| 6401 | 主营业务成本 | ✓ | ✓ | 已有 |
-| 6403 | 税金及附加 | ✓ | ✓ | 已有 |
-| 6601 | 管理费用 | ✓ | ✓ | 已有 |
-| 6602 | 销售费用 | ✓ | ✓ | 本轮修复（原 BS 只读 6601，利润表硬编码 0） |
-| 6603 | 财务费用 | ✓ | ✓ | 本轮修复（同上） |
-| 6301 | 营业外收入-税收减免 | ✓ | ✓ | 本轮修复（BS 原遗漏） |
-| 6701 | 营业外支出 | ✓ | ✓ | 本轮修复（BS 原遗漏） |
-| 6711 | 资产处置损失 | ✓ | ✓ | 本轮修复（原遗漏） |
-| 6801 | 所得税费用 | ✓ | ✓ | 已有 |
+| 科目 | 名称 | BS | 利润表 | 说明 |
+|------|------|----|--------|------|
+| 6001 | 主营业务收入 | ✓ | ✓ | |
+| 6051 | 其他业务收入 | ✓ | ✓ | 原只读 6001 |
+| 6111 | 资产处置收益 | ✓ | ✓ | 原遗漏 |
+| 6401 | 主营业务成本 | ✓ | ✓ | |
+| 6403 | 税金及附加 | ✓ | ✓ | |
+| 6601 | 管理费用 | ✓ | ✓ | |
+| 6602 | 销售费用 | ✓ | ✓ | 原 BS 只读 6601，利润表硬编码 0 |
+| 6603 | 财务费用 | ✓ | ✓ | 同上 |
+| 6301 | 营业外收入-税收减免 | ✓ | ✓ | 原遗漏 |
+| 6701 | 营业外支出 | ✓ | ✓ | 原遗漏 |
+| 6711 | 资产处置损失 | ✓ | ✓ | 原遗漏 |
+| 6801 | 所得税费用 | ✓ | ✓ | |
 
 BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 + 营业外收入 - 营业外支出`
 
-### BR-24: 其他应付款/个人垫付模块（2026-06-30 新增）
+### BR-25: 附加税减半独立配置（2026-07-05 重构）
+
+附加税减半判定不再跟随 `income_type`（所得税小型微利），而是独立从 `Account.surcharge_halved` 字段读取：
+
+| 判定 | 真相源 | 更新时机 |
+|------|--------|---------|
+| 附加税减半 | `Account.surcharge_halved` 布尔字段 | 创建账本时配置，**年末评估待实现** |
+| 所得税小型微利（`income_type`） | 纳税人类型 + 当年累计利润 ≤ 300万 | 月结时实时计算 |
+
+**待实现**：`POST /api/finance/assess-surcharge` 年末自动评估路由 + `policy/annual_revenue_assessment.py`。当前需手动通过 API 更新 `Account.surcharge_halved`。
+
+**教育费附加/地方教育附加季度免征**（财税〔2016〕12 号）：季度不含税销售额 ≤ 30 万时，教育费附加（3%）和地方教育附加（2%）免征，城建税（7%）照常征收。`policy/vat_facts.py` 定义 `VAT_SMALL_SCALE_QUARTERLY_EXEMPTION` 常量，`policy/policy_engine.py` 的 `calculate_surcharges()` 通过 `vat_facts.small_scale_quarterly_exemption` 读取门槛值并接收 `quarterly_revenue` 参数，月结时由 `engine_tax.py` 计算季度销售额并传入。
+
+### BR-24: 其他应付款/个人垫付模块
 
 老板/员工用个人资金替公司垫付费用（如零星采购、办公费用、固定资产）时，公司形成一笔对个人的负债，挂账"其他应付款"科目（2241）。
 
@@ -603,11 +645,15 @@ BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 
 
 ### PR-2: 报表直击痛点（含已知局限）
 
-> **已知局限**（纯前端方案，不依赖后端改动）：
+> **已知局限**：
 > 1. **应收/应付汇总**：通过前端聚合未结清订单计算，不支持大数据分页。远期需加 `GET /finance/receivable/summary` 后端端点。
 > 2. **月度损益不含费用**：`GET /reports/profit` 不返回费用汇总，需额外调 expenses API 前端计算。远期建议 profit 端点内置 expense 字段。
-> 3. **税务速算需 2 趚请求**：增值税月报 + 所得税季报分开调用。远期建议合并为 `GET /tax-report/dashboard-summary`。
-> 4. **坏账核销端点暂未实现**（2026-06-29 标记暂缓）：[models_finance.py](backend/models_finance.py) 已有 `BadDebt` 模型，但无对应 router 暴露。实现需先确认会计处理方式（直接冲销法 vs 备抵法）、增值税是否转出、是否关联原销售单/发票等设计决策，待后续排期。AI Agent 触发坏账核销场景时应跳过或标记为"未实现"，不要尝试调用 `POST /api/finance/bad-debt`（会 404）。
+> 3. **税务速算需 2 请求**：增值税月报 + 所得税季报分开调用。远期建议合并为 `GET /tax-report/dashboard-summary`。
+> 4. **坏账核销端点暂未实现**：[models_finance.py](backend/models_finance.py) 已有 `BadDebt`
+> 
+> **已实现**：
+> - 报表端点支持 `trace` 参数返回数据追溯链，`reconcile` 参数启用双路径对账验证
+> - `check_global_balance()` 全局借贷平衡校验 + `check_accounting_equation()` 会计方程式独立验证（`backend/rules/runtime_checks.py`），与 BS 报表走两条独立路径互为对账 模型，但无对应 router 暴露。实现需先确认会计处理方式（直接冲销法 vs 备抵法）、增值税是否转出、是否关联原销售单/发票等设计决策，待后续排期。AI Agent 触发坏账核销场景时应跳过或标记为"未实现"，不要尝试调用 `POST /api/finance/bad-debt`（会 404）。
 
 老板不关心复杂的勾稽关系，只关心四个问题。所有报表设计围绕核心问题展开：
 
@@ -619,3 +665,20 @@ BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 
 | **这个月该交多少税？** | 税务速算 | 增值税 + 企业所得税 + 附加税 |
 
 税务报表输出格式与税务局电子申报系统一致，数字可直接照抄填写，无需二次计算。
+
+---
+
+## 部署与安全上下文
+
+### DS-1: 本地单机系统（已确认决策）
+
+本系统设计为**本地单机部署**（localhost / 内网），不面向公网暴露：
+
+| 方面 | 决策 | 理由 |
+|------|------|------|
+| 部署范围 | 用户个人电脑或公司内网服务器 | 面向中小企业，无 SaaS 化需求 |
+| Token 存储 | localStorage（不改成 httpOnly cookie） | 无 XSS 攻击面（浏览器仅加载自家前端），简化架构 |
+| 密码安全 | 当前措施已足够 | pbkdf2 哈希 + 盐 + 限流 + timing-safe 比较 |
+| 传输加密 | 建议通过反向代理（nginx/caddy）启用 HTTPS | 内网传输非明文即可，非强制 |
+
+**安全决策原则**：系统安全措施与部署环境匹配。本地单机场景下，localStorage token 存储和公网级 CSRF/XSS 纵深防御的投入产出比低，不做额外加固。如需公网部署，应整体评估安全方案（WAF、HTTPS、httpOnly cookie、CSRF token 等）。
