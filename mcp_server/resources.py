@@ -36,6 +36,8 @@ def read_resource(uri: str) -> dict:
 
     if full_path == "policy/vat":
         return _read_vat_policy(query)
+    elif full_path == "policy/vat/applicable":
+        return _read_vat_applicable(query)
     elif full_path == "report/balance-sheet":
         return _read_balance_sheet(query)
     elif full_path == "report/income-statement":
@@ -66,6 +68,88 @@ def _read_vat_policy(query: dict) -> dict:
         "note": "小规模纳税人 2023-2027 年减按 1% 征收; 季度销售额 ≤30 万普票免征。"
                 "一般纳税人适用 13%/9%/6%/0% 税率。",
     }
+
+
+def _read_vat_applicable(query: dict) -> dict:
+    """增值税政策适用判断 (结合当前账本实际数据)。
+
+    返回当前季度累计销售额、是否免征、适用税率、剩余免征额度。
+    agent 回答"我这个月能不能免征""该开几个点"时用。
+    """
+    from .account_context import require_account_id
+    from decimal import Decimal
+    from models_finance import VATDeclaration, SurchargeDeclaration
+    import models
+
+    period = query.get("period", [None])[0]
+    if not period:
+        raise ValueError("vat/applicable resource 必须提供 period 参数 (YYYY-QQ 或 YYYY-MM)")
+
+    account_id = require_account_id()
+    db = SessionLocal()
+    try:
+        acc = db.query(models.Account).filter(models.Account.id == account_id).first()
+        if not acc:
+            raise ValueError(f"账本 {account_id} 不存在")
+        taxpayer_type = acc.taxpayer_type_l3 or "small_scale"
+        surcharge_halved = bool(acc.surcharge_halved)
+
+        # 推算当前季度所有期间
+        if "Q" in period:  # 2026-Q2
+            year_str, q_str = period.split("-")
+            q_num = int(q_str[1:])
+            q_periods = [period]
+        else:  # 2026-06
+            year_str, m_str = period.split("-")
+            month = int(m_str)
+            q_num = (month - 1) // 3 + 1
+            if taxpayer_type == "small_scale":
+                q_periods = [f"{year_str}-Q{q_num}"]
+            else:
+                q_periods = [f"{year_str}-{m:02d}" for m in range((q_num-1)*3+1, q_num*3+1)]
+
+        # 查该季度所有 VAT 申报的 total_revenue 合计
+        q_vats = db.query(VATDeclaration).filter(
+            VATDeclaration.account_id == account_id,
+            VATDeclaration.period.in_(q_periods),
+        ).all()
+        quarterly_revenue = sum((Decimal(str(v.total_revenue or 0)) for v in q_vats), Decimal("0"))
+        quarterly_vat = sum((Decimal(str(v.vat_payable or 0)) for v in q_vats), Decimal("0"))
+
+        # 政策快照
+        facts = load_vat_facts(date.today())
+        exempt_threshold = Decimal(str(facts.small_scale_quarterly_exemption))
+
+        # 判断免征 (仅小规模普票享受, 专票始终缴税)
+        is_exempt = (taxpayer_type == "small_scale" and quarterly_revenue <= exempt_threshold)
+        remaining = exempt_threshold - quarterly_revenue if is_exempt else Decimal("0")
+
+        # 适用税率
+        if taxpayer_type == "small_scale":
+            applicable_rate = facts.small_scale_reduced_rate  # 1%
+        else:
+            applicable_rate = facts.general_default_rate  # 13%
+
+        return {
+            "period": period,
+            "taxpayer_type": taxpayer_type,
+            "surcharge_halved": surcharge_halved,
+            "quarterly_revenue": float(quarterly_revenue),
+            "quarterly_vat_payable": float(quarterly_vat),
+            "exempt_threshold": float(exempt_threshold),
+            "is_vat_exempt": is_exempt,
+            "remaining_exemption": float(remaining),
+            "applicable_rate": str(applicable_rate),
+            "policy_note": (
+                f"小规模纳税人: 季度销售额 ≤{float(exempt_threshold):.0f} 元普票免征, 专票始终按 {applicable_rate} 缴税;"
+                " 一般纳税人: 销项-进项, 按适用税率计征。"
+                if taxpayer_type == "small_scale"
+                else f"一般纳税人: 销项-进项, 默认税率 {applicable_rate}。"
+            ),
+            "declaration_periods_in_quarter": q_periods,
+        }
+    finally:
+        db.close()
 
 
 def _read_balance_sheet(query: dict) -> dict:
@@ -174,6 +258,16 @@ RESOURCE_TEMPLATES = [
         "description": (
             "返回指定日期有效的增值税政策 (税率、免征门槛、法规文号)。"
             "用于讲解增值税适用政策、判断小规模季度免征。"
+        ),
+        "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "accounting://policy/vat/applicable?period={period}",
+        "name": "增值税政策适用判断",
+        "description": (
+            "返回指定期间的增值税政策适用判断: 当前季度累计销售额、是否免征、"
+            "适用税率、剩余免征额度。agent 回答'我这个月能不能免征'时用。"
+            "period 格式: 小规模 YYYY-QQ (如 2026-Q2) / 一般纳税人 YYYY-MM (如 2026-06)。"
         ),
         "mimeType": "application/json",
     },

@@ -305,6 +305,7 @@ const invoiceForm = ref({
   amount_with_tax: 0,
   counterparty_name: '',
   issue_date: '',
+  certification_status: '',
   pdf_path: '',
   image_url: '',
   notes: ''

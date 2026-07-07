@@ -37,6 +37,7 @@
       </div>
       <div class="fo-tc"><div class="fo-th" style="color:var(--warning);">负债</div>
         <div class="fo-tr"><span>应付账款</span><span class="fo-tv">{{ formatMoney(bs?.accounts_payable || 0) }}</span></div>
+        <div class="fo-tr"><span>其他应付款</span><span class="fo-tv">{{ formatMoney(bs?.other_payable || 0) }}</span></div>
         <div class="fo-tr"><span>应交税费</span><span class="fo-tv">{{ formatMoney(bs?.tax_payable || 0) }}</span></div>
         <div class="fo-tt"><span>负债合计</span><span>{{ formatMoney(bs?.total_liabilities || 0) }}</span></div>
       </div>

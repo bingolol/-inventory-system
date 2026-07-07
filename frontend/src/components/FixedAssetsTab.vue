@@ -1,5 +1,6 @@
 <template>
   <div class="fixed-assets-tab">
+    <AccountingTip page="assets" />
     <div class="row" style="margin-bottom:12px;">
       <div class="c4"><div class="stat-mini"><span class="stat-mini-label">资产原值</span><span class="stat-mini-value" style="color:var(--primary);">¥{{ formatMoney(totalOriginal) }}</span></div></div>
       <div class="c4"><div class="stat-mini"><span class="stat-mini-label">累计折旧</span><span class="stat-mini-value" style="color:var(--warning);">¥{{ formatMoney(totalDepreciation) }}</span></div></div>

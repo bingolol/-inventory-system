@@ -59,7 +59,7 @@
             <div class="ff"><span class="fl" style="min-width:70px;">日期</span><el-date-picker v-model="cfForm.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
             <div class="ff"><span class="fl" style="min-width:70px;">类型</span><el-select v-model="cfForm.type" style="width:100%"><el-option label="流入" value="inflow" /><el-option label="流出" value="outflow" /></el-select></div>
             <div class="ff"><span class="fl" style="min-width:70px;">金额</span><el-input-number v-model="cfForm.amount" :precision="2" :min="0" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">分类</span><el-select v-model="cfForm.flow_category" style="width:100%"><el-option label="经营" value="operating" /><el-option label="投资" value="investing" /><el-option label="筹资" value="financing" /></el-select></div>
+            <div class="ff"><span class="fl" style="min-width:70px;">分类</span><el-select v-model="cfForm.flow_category" style="width:100%"><el-option v-for="opt in enumsStore.flowCategoryOptions" :key="opt.value" :label="opt.label" :value="opt.value" /></el-select></div>
             <div class="ff"><span class="fl" style="min-width:70px;">描述</span><el-input v-model="cfForm.description" /></div>
           </div>
         </div>
@@ -76,6 +76,9 @@ import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { useEnumsStore } from '../stores/enums'
+
+const enumsStore = useEnumsStore()
 
 const q = reactive({ startDate: new Date(new Date().getFullYear(),0,1).toISOString().split('T')[0], endDate: new Date().toISOString().split('T')[0] })
 const d = ref(null)

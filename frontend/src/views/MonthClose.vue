@@ -55,6 +55,10 @@ const closedMonths = ref([])
 const lastResult = ref(null)
 const lastPeriod = ref('')
 
+const checkStatus = () => {
+  // 月份变更时更新月结状态显示
+}
+
 const handleMonthClose = async () => {
   if (!period.value) { ElMessage.warning('请先选择月结期间'); return }
   try {

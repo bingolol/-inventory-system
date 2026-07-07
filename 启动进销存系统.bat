@@ -30,12 +30,19 @@ set "BACKEND_URL=http://localhost:8000"
 set "FRONTEND_URL=http://localhost:5173"
 set "SERVICE_LOG=%~dp0service.log"
 set "PS_TAIL=%~dp0_tail.ps1"
+set "PID_FILE=%~dp0.pids"
 
 if exist "%SERVICE_LOG%" del /f "%SERVICE_LOG%" >nul 2>&1
 
+if exist "%PID_FILE%" (
+    echo [INFO] Cleaning up previous session...
+    for /f "usebackq tokens=*" %%p in ("%PID_FILE%") do taskkill /F /T /PID %%p >nul 2>&1
+    del /f "%PID_FILE%" >nul 2>&1
+    timeout /t 2 /nobreak >nul
+)
 echo [INFO] Checking ports...
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do taskkill /PID %%p >nul 2>&1
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do taskkill /PID %%p >nul 2>&1
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do taskkill /F /T /PID %%p >nul 2>&1
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do taskkill /F /T /PID %%p >nul 2>&1
 timeout /t 1 /nobreak >nul
 echo [OK] Ports cleared
 echo.
@@ -143,12 +150,17 @@ goto menu
 :stop
 echo.
 echo [STOP] Stopping all services...
+if exist "%PID_FILE%" (
+    for /f "usebackq tokens=*" %%p in ("%PID_FILE%") do taskkill /F /T /PID %%p >nul 2>&1
+    del /f "%PID_FILE%" >nul 2>&1
+)
 taskkill /FI "WINDOWTITLE eq InventoryServices*" >nul 2>&1
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do taskkill /PID %%p >nul 2>&1
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do taskkill /PID %%p >nul 2>&1
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8000 " ^| findstr "LISTENING"') do taskkill /F /T /PID %%p >nul 2>&1
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do taskkill /F /T /PID %%p >nul 2>&1
 timeout /t 1 /nobreak >nul
 echo [DONE] All services stopped
 if exist "%PS_TAIL%" del /f "%PS_TAIL%" >nul 2>&1
+if exist "%PID_FILE%" del /f "%PID_FILE%" >nul 2>&1
 timeout /t 2 /nobreak >nul
 exit /b 0
 

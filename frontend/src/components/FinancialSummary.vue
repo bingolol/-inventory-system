@@ -16,6 +16,7 @@
         <div class="fs-card">
           <div class="fs-card-title" style="color:var(--warning);">负债状况</div>
           <div class="fs-row"><span class="fs-label">应付账款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.accounts_payable) }}</span></div>
+          <div class="fs-row"><span class="fs-label">其他应付款</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.other_payable) }}</span></div>
           <div class="fs-row"><span class="fs-label">应交税费</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.tax_payable) }}</span></div>
           <div class="fs-row fs-total"><span class="fs-label">负债合计</span><span class="fs-value">{{ formatMoney(financialSummary.balance_sheet.total_liabilities) }}</span></div>
         </div>
@@ -84,8 +85,9 @@ const debtRatio = computed(() => {
 })
 const currentRatio = computed(() => {
   if (!financialSummary.value) return 0
-  return financialSummary.value.balance_sheet.total_liabilities > 0
-    ? (financialSummary.value.balance_sheet.total_current_assets / financialSummary.value.balance_sheet.total_liabilities) : 0
+  const cl = financialSummary.value.balance_sheet.total_current_liabilities
+  return cl > 0
+    ? (financialSummary.value.balance_sheet.total_current_assets / cl) : 0
 })
 const equityRatio = computed(() => {
   if (!financialSummary.value) return 0

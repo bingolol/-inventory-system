@@ -35,6 +35,7 @@
           <div class="bs-table">
             <div class="bs-row bs-main"><span>流动负债：</span><span></span></div>
             <div class="bs-row"><span>应付账款</span><span class="bs-val">{{ formatMoney(d.accounts_payable) }}</span></div>
+            <div class="bs-row"><span>其他应付款</span><span class="bs-val">{{ formatMoney(d.other_payable) }}</span></div>
             <div class="bs-row"><span>应交税费</span><span class="bs-val">{{ formatMoney(d.tax_payable) }}</span></div>
             <div class="bs-row bs-total"><span>流动负债合计</span><span>{{ formatMoney(d.total_current_liabilities) }}</span></div>
             <div class="bs-row bs-main" style="margin-top:8px;"><span>非流动负债：</span><span></span></div>

@@ -71,13 +71,24 @@ async def list_tools() -> list[Tool]:
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+async def call_tool(name: str, arguments: dict):
+    """执行 tool 调用。
+
+    返回类型:
+        成功: list[TextContent]  (默认 isError=False)
+        失败: CallToolResult(isError=True, content=[TextContent(...)])
+              必须显式设置 isError=True, 否则 client 端 is_error=False,
+              导致 period 格式校验等 BusinessError 被误判为成功。
+    """
     handler = tools.TOOL_HANDLERS.get(name)
     if not handler:
-        return [TextContent(
-            type="text",
-            text=f'{{"ok": false, "error": "未知 tool: {name}"}}',
-        )]
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(
+                type="text",
+                text=f'{{"ok": false, "error": "未知 tool: {name}"}}',
+            )],
+        )
 
     try:
         result = handler(arguments)
@@ -86,16 +97,22 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     except BusinessError as e:
         err = tool_dispatcher.format_business_error(e)
         import json
-        return [TextContent(
-            type="text",
-            text=json.dumps({"ok": False, "error": err}, ensure_ascii=False, default=str),
-        )]
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(
+                type="text",
+                text=json.dumps({"ok": False, "error": err}, ensure_ascii=False, default=str),
+            )],
+        )
     except Exception as e:
         logger.exception(f"tool {name} 执行失败")
-        return [TextContent(
-            type="text",
-            text=f'{{"ok": false, "error": "{type(e).__name__}: {str(e)}"}}',
-        )]
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(
+                type="text",
+                text=f'{{"ok": false, "error": "{type(e).__name__}: {str(e)}"}}',
+            )],
+        )
 
 
 # ──────────────────────────────────────────────────────────────
