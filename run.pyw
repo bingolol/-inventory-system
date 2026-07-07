@@ -16,23 +16,20 @@ import socket
 import threading
 import subprocess
 import urllib.request
-import logging
 
 # ── 路径配置 ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(BASE_DIR, "backend")
 ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
 PORT = 8000
-BACKEND_URL = f"http://127.0.0.1:{PORT}"
-HEALTH_URL = f"{BACKEND_URL}/api/health"
+HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
+LOG_FILE = os.path.join(BACKEND_DIR, "launcher.log")
+
 # 后端子进程用 python.exe（不是 pythonw.exe），避免 stdout/stderr=None 导致崩溃
 _pythonw = sys.executable
 _python_dir = os.path.dirname(_pythonw)
 _python_exe = os.path.join(_python_dir, "python.exe")
 PYTHON_EXE = _python_exe if os.path.exists(_python_exe) else _pythonw
-
-# 将 backend 目录加入 Python 路径
-sys.path.insert(0, BACKEND_DIR)
 
 # ── 颜色主题 ──
 COLOR_BG = "#1a1a2e"
@@ -42,6 +39,15 @@ COLOR_TEXT = "#ffffff"
 COLOR_TEXT_DIM = "#8892b0"
 COLOR_SUCCESS = "#64ffda"
 COLOR_ERROR = "#ff6b6b"
+
+
+def _log(msg):
+    """写入启动器日志"""
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
 
 
 class SplashWindow:
@@ -67,9 +73,7 @@ class SplashWindow:
         self.root.configure(bg=COLOR_BG)
         self.root.attributes("-topmost", True)
 
-        # 设置窗口图标
         self._set_icon()
-
         self._build_ui()
 
     def _set_icon(self):
@@ -214,34 +218,65 @@ def _kill_port(port):
 
 
 def _start_backend():
-    """启动后端服务（子进程方式，隐藏窗口）"""
+    """启动后端服务（子进程方式，隐藏窗口，stderr 写入日志文件）"""
     env = os.environ.copy()
     env["DEV"] = "1"
-    env["SKIP_HARD_CONSTRAINTS"] = "1"  # 跳过硬约束检查，加快启动
+    env["SKIP_HARD_CONSTRAINTS"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
+
+    # stderr 写入日志文件，方便诊断启动失败
+    err_log = open(LOG_FILE, "a", encoding="utf-8")
+    err_log.write(f"\n{'='*50}\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 后端启动\n{'='*50}\n")
+    err_log.flush()
 
     proc = subprocess.Popen(
         [PYTHON_EXE, "main.py"],
         cwd=BACKEND_DIR,
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=err_log,
+        stderr=err_log,
         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
     )
+    _log(f"后端进程已启动, PID={proc.pid}, python={PYTHON_EXE}")
     return proc
 
 
-def _wait_backend(splash, timeout=60):
-    """等待后端就绪"""
+def _wait_backend(splash, proc, timeout=30):
+    """等待后端就绪，同时检测进程是否已崩溃退出"""
     start = time.time()
     while time.time() - start < timeout:
+        # ── 检测后端进程是否已经退出（说明崩溃了）──
+        rc = proc.poll()
+        if rc is not None:
+            _log(f"后端进程已退出, returncode={rc}")
+            # 读取错误日志最后几行
+            error_tail = _read_log_tail(10)
+            splash.update_status(f"后端启动失败 (code={rc})", COLOR_ERROR)
+            time.sleep(2)
+            return ("crash", error_tail)
+
+        # ── 健康检查 ──
         if _check_health():
-            return True
+            _log("后端健康检查通过")
+            return ("ok", None)
+
         elapsed = int(time.time() - start)
         dots = "." * ((elapsed % 3) + 1)
-        splash.update_status(f"正在启动服务{dots}", COLOR_SUCCESS)
+        splash.update_status(f"正在启动服务{dots} ({elapsed}s)", COLOR_SUCCESS)
         time.sleep(1)
-    return False
+
+    _log(f"后端启动超时 ({timeout}s)")
+    return ("timeout", _read_log_tail(10))
+
+
+def _read_log_tail(n=10):
+    """读取日志文件最后 n 行"""
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-n:]) if lines else "(空)"
+    except Exception:
+        return "(无法读取日志)"
 
 
 def _open_webview_window(port):
@@ -264,21 +299,41 @@ def _open_webview_window(port):
     webview.start(
         debug=os.environ.get("WEBVIEW_DEBUG", "0") == "1",
         private_mode=False,
-        # 设置应用图标
         icon=ICON_PATH if os.path.exists(ICON_PATH) else None,
     )
 
 
+def _show_error(title, detail):
+    """显示错误对话框"""
+    import tkinter as tk
+    import tkinter.messagebox as mb
+    root = tk.Tk()
+    root.withdraw()
+    mb.showerror(title, detail)
+    root.destroy()
+
+
 def main():
     """主入口：启动画面 → 后端 → pywebview 原生窗口"""
+    _log("=" * 50)
+    _log("启动器开始执行")
+    _log(f"BASE_DIR={BASE_DIR}")
+    _log(f"PYTHON_EXE={PYTHON_EXE}")
+    _log(f"BACKEND_DIR={BACKEND_DIR}")
 
     # ── 1. 如果后端已经在运行，直接打开窗口 ──
     if _check_health():
-        _open_webview_window(PORT)
+        _log("后端已在运行，直接打开窗口")
+        try:
+            _open_webview_window(PORT)
+        except Exception as e:
+            _show_error("启动失败", f"无法打开窗口:\n{e}")
         return
 
     # ── 2. 创建启动画面 ──
     splash = SplashWindow()
+    backend_proc = [None]  # 用 list 包装，方便闭包修改
+    startup_result = [None]  # ("ok"|"crash"|"timeout", error_detail)
 
     # ── 3. 后台线程执行启动序列 ──
     def _startup_thread():
@@ -291,31 +346,30 @@ def main():
         # 启动后端
         splash.update_status("正在启动后端服务...", COLOR_SUCCESS)
         try:
-            _start_backend()
+            backend_proc[0] = _start_backend()
         except Exception as e:
+            _log(f"启动后端异常: {e}")
             splash.update_status(f"启动失败: {e}", COLOR_ERROR)
             time.sleep(3)
+            startup_result[0] = ("error", str(e))
             splash.close()
             return
 
         # 等待就绪
         splash.update_status("等待服务就绪...", COLOR_SUCCESS)
-        if not _wait_backend(splash):
-            splash.update_status("启动超时，请检查日志", COLOR_ERROR)
-            time.sleep(3)
+        result, error_detail = _wait_backend(splash, backend_proc[0], timeout=30)
+
+        if result == "ok":
+            splash.update_status("服务已就绪，正在打开窗口...", COLOR_SUCCESS)
+            time.sleep(0.8)
+            startup_result[0] = ("ok", None)
             splash.close()
-            return
-
-        # 就绪
-        splash.update_status("服务已就绪，正在打开窗口...", COLOR_SUCCESS)
-        time.sleep(0.8)
-
-        # 关闭启动画面，打开 pywebview 窗口
-        splash.close()
-
-        # 在主线程中打开 webview（必须在主线程）
-        # 通过 after 回调确保在 tk mainloop 退出后执行
-        # webview.start() 会阻塞直到窗口关闭
+        elif result == "crash":
+            startup_result[0] = ("crash", error_detail)
+            splash.close()
+        else:
+            startup_result[0] = ("timeout", error_detail)
+            splash.close()
 
     thread = threading.Thread(target=_startup_thread, daemon=True)
     thread.start()
@@ -324,17 +378,37 @@ def main():
     splash.run_mainloop()
 
     # 启动画面已关闭，等待线程完成
-    thread.join(timeout=2)
+    thread.join(timeout=3)
 
-    # ── 4. 打开 pywebview 原生桌面窗口 ──
-    if _check_health():
-        _open_webview_window(PORT)
+    # ── 4. 根据启动结果决定下一步 ──
+    result = startup_result[0]
+
+    if result and result[0] == "ok" and _check_health():
+        # 后端就绪，打开 pywebview 窗口
+        try:
+            _open_webview_window(PORT)
+        except ImportError:
+            _show_error(
+                "缺少依赖",
+                "pywebview 未安装，请运行：\n\npip install pywebview\n\n"
+                "安装后重新启动系统。",
+            )
+            sys.exit(1)
+        except Exception as e:
+            _show_error("窗口创建失败", str(e))
+            sys.exit(1)
     else:
-        # 后端没起来，显示错误
-        import tkinter.messagebox as mb
-        mb.showerror(
-            "启动失败",
-            "后端服务未能正常启动。\n请检查日志文件：\n" + os.path.join(BACKEND_DIR, "app.log"),
+        # 后端没起来，显示具体错误
+        error_detail = result[1] if result else "未知错误"
+        _show_error(
+            "后端启动失败",
+            f"后端服务未能正常启动。\n\n"
+            f"错误日志（最后10行）：\n"
+            f"{'-'*40}\n"
+            f"{error_detail}\n"
+            f"{'-'*40}\n\n"
+            f"完整日志：{LOG_FILE}\n"
+            f"后端日志：{os.path.join(BACKEND_DIR, 'app.log')}",
         )
         sys.exit(1)
 
