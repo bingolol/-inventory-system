@@ -7,6 +7,11 @@ const BACKEND_PORT = 8000
 
 let mainWindow = null
 let backendProcess = null
+let mcpProcess = null
+let mcpRestartCount = 0
+let mcpIntentionalKill = false
+const MCP_MAX_RESTARTS = 5
+const MCP_RESTART_DELAY = 2000
 
 const isDev = !app.isPackaged
 
@@ -31,6 +36,8 @@ if (!gotLock) {
     try {
       await startBackend()
       createWindow()
+      // MCP server 与 backend 平级 spawn, 不阻塞窗口创建
+      startMcpServer()
     } catch (err) {
       console.error('[electron] 启动失败:', err.message)
       app.quit()
@@ -42,6 +49,8 @@ if (!gotLock) {
   })
 
   app.on('before-quit', () => {
+    mcpIntentionalKill = true
+    if (mcpProcess) { mcpProcess.kill(); mcpProcess = null }
     if (backendProcess) { backendProcess.kill(); backendProcess = null }
   })
 
@@ -100,6 +109,62 @@ async function startBackend() {
     }
   })
   await waitForServer(BACKEND_PORT)
+}
+
+// ── MCP server: 随系统启动, 与 backend 平级 ──
+function getMcpServerPath() {
+  if (isDev) {
+    const venvPython = path.join(__dirname, '..', '..', 'venv', 'Scripts', 'python.exe')
+    const python = require('fs').existsSync(venvPython) ? venvPython : 'python'
+    // cwd 设为项目根, 让 mcp_server 包能被 import, 同时 backend 也能被 import
+    const projectRoot = path.join(__dirname, '..', '..')
+    return { cmd: python, args: ['-m', 'mcp_server.server'], cwd: projectRoot }
+  }
+  // 打包模式暂留 TODO: 打包时把 mcp_server 包一起打包, 后续用独立入口
+  // 阶段 1 仅支持 dev 模式启动 MCP server
+  return null
+}
+
+function startMcpServer() {
+  const mcpPath = getMcpServerPath()
+  if (!mcpPath) {
+    console.log('[mcp] 打包模式暂未启用 MCP server, 跳过启动 (dev 模式可用)')
+    return
+  }
+
+  mcpIntentionalKill = false
+  console.log(`[mcp] 启动 MCP server: ${mcpPath.cmd} ${mcpPath.args.join(' ')}`)
+  mcpProcess = spawn(mcpPath.cmd, mcpPath.args, {
+    cwd: mcpPath.cwd,
+    // stdin 继承供 MCP stdio 通信; stdout/stderr 走管道避免与 backend 日志混淆
+    stdio: ['inherit', 'pipe', 'pipe'],
+    env: { ...process.env },
+  })
+
+  mcpProcess.stdout.on('data', (d) => process.stdout.write(`[mcp] ${d}`))
+  mcpProcess.stderr.on('data', (d) => process.stderr.write(`[mcp] ${d}`))
+
+  mcpProcess.on('exit', (code, signal) => {
+    console.error(`[mcp] 进程退出, code=${code}, signal=${signal}`)
+    if (mcpIntentionalKill) {
+      console.log('[mcp] 主动 kill, 不重启')
+      return
+    }
+    // 自动重启 (最多 MCP_MAX_RESTARTS 次, 防无限重启)
+    mcpRestartCount += 1
+    if (mcpRestartCount > MCP_MAX_RESTARTS) {
+      console.error(`[mcp] 已达最大重启次数 ${MCP_MAX_RESTARTS}, 放弃重启`)
+      return
+    }
+    console.log(`[mcp] ${MCP_RESTART_DELAY}ms 后重启 (第 ${mcpRestartCount} 次)`)
+    setTimeout(() => {
+      startMcpServer()
+    }, MCP_RESTART_DELAY)
+  })
+
+  mcpProcess.on('error', (err) => {
+    console.error(`[mcp] 进程错误: ${err.message}`)
+  })
 }
 
 function createWindow() {

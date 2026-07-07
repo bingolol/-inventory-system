@@ -326,6 +326,9 @@ class AdjustInventoryHandler(CommandHandler):
                 post_journal(db, cmd.account_id, "opening_balance", {
                     "date": journal_date,
                     "lines": lines,
+                    # BR-REV: 补 source_model/source_id，使 ReverseInventoryAdjustment 能定位原凭证冲红
+                    "source_model": "inventory_adjustment",
+                    "source_id": adj_id,
                 })
         else:
             inv.quantity_l4 = new_qty
@@ -336,3 +339,65 @@ class AdjustInventoryHandler(CommandHandler):
              log_detail, operator=cmd.operator)
         db.flush()
         return inv
+
+
+# ═══════════════════════════════════════════════════════════
+# 5. ReverseInventoryAdjustment — 冲红库存盘点调整
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ReverseInventoryAdjustment(Command):
+    """冲红库存盘点调整（盘盈/盘亏）
+
+    安全约束：
+    - 必须提供原调整的 adj_id（AdjustInventory 返回的 StockMove.source_id）
+    - 通过 InventoryEngine.reverse 反向 StockMove
+    - 通过 reverse_journal 冲红 1901/1405 凭证
+    """
+    product_id: int = 0
+    adj_id: int = 0              # 原调整的 source_id（AdjustInventoryHandler 内 adj_id = int(time.time() * 1000)）
+
+
+@register(ReverseInventoryAdjustment)
+class ReverseInventoryAdjustmentHandler(CommandHandler):
+    def handle(self, cmd: ReverseInventoryAdjustment, db: Any) -> Any:
+        account_id = cmd.account_id
+
+        # 1. 校验原 StockMove 存在
+        orig_move = db.query(models.StockMove).filter(
+            models.StockMove.account_id == account_id,
+            models.StockMove.source_type == "inventory_adjustment",
+            models.StockMove.source_id == cmd.adj_id,
+        ).first()
+        if not orig_move:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"未找到库存调整记录 adj_id={cmd.adj_id}",
+                data={"product_id": cmd.product_id, "adj_id": cmd.adj_id},
+            )
+
+        # 2. 冲红 StockMove（InventoryEngine.reverse 自动按原流水方向反转）
+        engine = InventoryEngine(db)
+        reverse_qty = abs(int(orig_move.quantity_l1))
+        unit_cost = orig_move.unit_cost_l2 or Decimal("0")
+        engine.reverse(
+            account_id=account_id, product_id=cmd.product_id,
+            quantity=reverse_qty, unit_cost=unit_cost,
+            source_type="inventory_adjustment", source_id=cmd.adj_id,
+            operator=cmd.operator, force=True,
+        )
+
+        # 3. 冲红 1901/1405 凭证（source_model="inventory_adjustment", source_id=adj_id）
+        from finance_integration import reverse_journal
+        move = reverse_journal(db, account_id, "inventory_adjustment", cmd.adj_id, force=True)
+
+        log_op(db, account_id, "reverse", "inventory_adjustment", cmd.adj_id,
+               f"冲红库存调整: 商品#{cmd.product_id} adj_id={cmd.adj_id}",
+               operator=cmd.operator)
+
+        return {
+            "message": "库存调整冲红成功",
+            "product_id": cmd.product_id,
+            "adj_id": cmd.adj_id,
+            "journal_reversed": move is not None,
+        }

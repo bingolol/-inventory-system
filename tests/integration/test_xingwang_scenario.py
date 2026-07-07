@@ -68,8 +68,10 @@ def client():
         yield c
 
 
+from helpers import make_headers
+
 ACCT_ID = 1
-HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "user"}
+HEADERS = make_headers("user", ACCT_ID)
 
 
 class TestXingWangQ1:
@@ -220,6 +222,7 @@ class TestXingWangQ1:
             "invoice_type": "ordinary",
             "amount_with_tax": 18600,
             "tax_rate": 0.01,
+            "tax_amount": 184.16,
             "counterparty_name": "北京中关村科技",
             "seller_name": "兴旺电子贸易公司",
             "buyer_name": "北京中关村科技",

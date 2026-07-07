@@ -1,11 +1,11 @@
 """利润表 (会小企02表)"""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
 import models
-from utils import _d, Q2
+from utils import _d, Q2, end_of_day
 from errors import BusinessError, ErrorCode
 from models_finance import Ledger
 from lineage import reads, TIER_L1, TIER_L2, TIER_L4
@@ -18,7 +18,7 @@ from ._profit import compute_cumulative_profit
 def generate_income_statement(db: Session, account_id: int, start_date: str, end_date: str):
     """生成利润表"""
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    end_dt = end_of_day(datetime.strptime(end_date, "%Y-%m-%d"))
 
     sn = LedgerSnapshot(db, account_id, bs_cutoff=end_dt, period_start=start_dt, period_end=end_dt)
 

@@ -18,11 +18,9 @@ import time
 import pytest
 from decimal import Decimal
 from datetime import datetime
-from helpers import get_entity_id
+from helpers import get_entity_id, get_stock, make_headers
 
-# ── 获取测试用 account_id ──
-# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
-HEADERS = {"X-Account-ID": "1", "X-Operator": "verify_test"}
+HEADERS = make_headers("verify_test")
 
 # 数据变化记录
 DATA_CHANGES = []
@@ -103,15 +101,7 @@ class TestNoInvoiceSale:
         customer_id = setup_data["customer_id"]
         product_id = setup_data["product_id"]
         
-        # 记录销售前库存
-        resp = client.get("/api/inventory", params={"page": 1, "page_size": 500}, headers=HEADERS)
-        assert resp.status_code == 200
-        items = resp.json().get("items", [])
-        stock_before = 0
-        for item in items:
-            if item.get("product_id") == product_id:
-                stock_before = item.get("quantity", 0)
-                break
+        stock_before = get_stock(client, product_id, HEADERS)
         
         # 创建销售单：卖了300元（3个×100元），无票
         resp = client.post("/api/sales", json={
@@ -128,15 +118,7 @@ class TestNoInvoiceSale:
         data = resp.json()
         setup_data["sale_id"] = get_entity_id(data)
         
-        # 记录销售后库存
-        resp = client.get("/api/inventory", params={"page": 1, "page_size": 500}, headers=HEADERS)
-        assert resp.status_code == 200
-        items = resp.json().get("items", [])
-        stock_after = 0
-        for item in items:
-            if item.get("product_id") == product_id:
-                stock_after = item.get("quantity", 0)
-                break
+        stock_after = get_stock(client, product_id, HEADERS)
         
         # 记录数据变化
         record_change(
@@ -172,15 +154,7 @@ class TestReturnSale:
         sale_id = setup_data["sale_id"]
         product_id = setup_data["product_id"]
         
-        # 记录退货前库存
-        resp = client.get("/api/inventory", params={"page": 1, "page_size": 500}, headers=HEADERS)
-        assert resp.status_code == 200
-        items = resp.json().get("items", [])
-        stock_before_return = 0
-        for item in items:
-            if item.get("product_id") == product_id:
-                stock_before_return = item.get("quantity", 0)
-                break
+        stock_before_return = get_stock(client, product_id, HEADERS)
         
         # 获取销售单详情
         resp = client.get(f"/api/sales/{sale_id}", headers=HEADERS)
@@ -194,15 +168,7 @@ class TestReturnSale:
         }, headers=HEADERS)
         assert resp.status_code == 200, f"取消销售单失败: {resp.text}"
         
-        # 记录退货后库存
-        resp = client.get("/api/inventory", params={"page": 1, "page_size": 500}, headers=HEADERS)
-        assert resp.status_code == 200
-        items = resp.json().get("items", [])
-        stock_after_return = 0
-        for item in items:
-            if item.get("product_id") == product_id:
-                stock_after_return = item.get("quantity", 0)
-                break
+        stock_after_return = get_stock(client, product_id, HEADERS)
         
         # 记录数据变化
         record_change(

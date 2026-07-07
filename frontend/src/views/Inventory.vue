@@ -54,7 +54,7 @@
           <template #default="{ row }"><span class="money">¥{{ formatMoney(row.sale_price) }}</span></template>
         </el-table-column>
         <el-table-column label="库存价值" min-width="120" align="right">
-          <template #default="{ row }"><span class="money">¥{{ formatMoney(row.quantity * (row.purchase_price ?? 0)) }}</span></template>
+          <template #default="{ row }"><span class="money">¥{{ formatMoney(row.total_value ?? 0) }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">

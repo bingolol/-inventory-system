@@ -6,12 +6,13 @@
 - 业务日期显式传入，禁止用 datetime.now() 默认值
 """
 from datetime import datetime, date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
+import uuid
 
 import models
 from commands.base import dispatch
-from commands.orders import CreateOrder
+from commands.orders import CreateOrder, CreateInvoice
 from commands.cash_commands import CreateExpense, CreateReceipt
 from commands.bank_commands import CreateBankEntry
 from schemas.order import SaleOrderCreate, SaleItemCreate, PurchaseOrderCreate, PurchaseItemCreate
@@ -20,6 +21,8 @@ from schemas.receipt import ReceiptCreate
 from schemas.finance import FixedAssetCreate
 from crud.finance.fixed_assets import create_fixed_asset
 from uow import unit_of_work
+
+Q2 = Decimal("0.01")
 
 
 # ── 基础数据 ──
@@ -102,14 +105,68 @@ def setup_basic_data(db, account_id: int) -> None:
 
 # ── 业务创建工具 ──
 
+def _split_amounts(amount_with_tax: Decimal, tax_rate: Decimal):
+    """价税分离：含税金额 → (不含税金额, 税额)"""
+    amount_without_tax = (amount_with_tax / (Decimal("1") + tax_rate)).quantize(Q2, rounding=ROUND_HALF_UP)
+    tax_amount = (amount_with_tax - amount_without_tax).quantize(Q2, rounding=ROUND_HALF_UP)
+    return amount_without_tax, tax_amount
+
+
 def create_sale_order(db, account_id: int, customer_name: str, sale_date: datetime,
                       items: list, has_invoice: bool = True,
                       notes: str = "") -> models.SaleOrder:
-    """创建销售单
+    """创建销售单（发票驱动：先创建发票，自动生成销售单）
 
     items: [(product_name, quantity, unit_price, tax_rate, item_notes), ...]
-    unit_price 为含税单价（小规模纳税人按 1% 价税分离）
+    unit_price 为含税单价
+    发票是销项税的真相源（BR-1, BR-27）
     """
+    invoice_items = [
+        {
+            "product_id": PRODUCTS[pn],
+            "quantity": qty,
+            "unit_price": str(price),
+            "tax_rate": str(rate),
+        }
+        for pn, qty, price, rate, _ in items
+    ]
+
+    if has_invoice:
+        # 价税分离
+        amount_with_tax = sum(
+            Decimal(str(qty)) * Decimal(str(price))
+            for _, qty, price, _, _ in items
+        ).quantize(Q2, rounding=ROUND_HALF_UP)
+        tax_rate = Decimal(str(items[0][3]))
+        amount_without_tax, tax_amount = _split_amounts(amount_with_tax, tax_rate)
+
+        # 发票号唯一（uuid 防止同日多笔冲突）
+        invoice_no = f"INV-OUT-{sale_date.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+
+        with unit_of_work(db):
+            invoice = dispatch(CreateInvoice(
+                account_id=account_id,
+                operator="sim",
+                invoice_no=invoice_no,
+                direction="out",
+                invoice_type="ordinary",
+                tax_rate=tax_rate,
+                amount_without_tax=amount_without_tax,
+                tax_amount=tax_amount,
+                amount_with_tax=amount_with_tax,
+                counterparty_name=customer_name,
+                issue_date=sale_date.date() if isinstance(sale_date, datetime) else sale_date,
+                sale_order_action="auto_create",
+                items=invoice_items,
+            ), db)
+        db.flush()
+        # 返回关联的销售单
+        order = db.query(models.SaleOrder).filter(
+            models.SaleOrder.id == invoice.related_order_id
+        ).first()
+        return order
+
+    # 无发票模式：直接创建订单
     with unit_of_work(db):
         order = dispatch(CreateOrder(
             order_type="sale",
@@ -117,18 +174,10 @@ def create_sale_order(db, account_id: int, customer_name: str, sale_date: dateti
             operator="sim",
             customer_id=CUSTOMERS[customer_name],
             sale_date=sale_date,
-            has_invoice=has_invoice,
+            has_invoice=False,
             notes=notes,
             payment_status="unpaid",
-            items=[
-                {
-                    "product_id": PRODUCTS[pn],
-                    "quantity": qty,
-                    "unit_price": str(price),
-                    "tax_rate": str(rate),
-                }
-                for pn, qty, price, rate, _ in items
-            ],
+            items=invoice_items,
         ), db)
     db.flush()
     return order
@@ -138,11 +187,56 @@ def create_purchase_order(db, account_id: int, supplier_name: str,
                           purchase_date: datetime, items: list,
                           has_invoice: bool = True,
                           notes: str = "") -> models.PurchaseOrder:
-    """创建采购单
+    """创建采购单（发票驱动：先创建发票，自动生成采购单）
 
     items: [(product_name, quantity, unit_price, tax_rate, item_notes), ...]
     小规模纳税人：unit_price 含税，tax_rate=0.01（减按1%）
+    发票是进项税的真相源（BR-1, BR-27）
     """
+    invoice_items = [
+        {
+            "product_id": PRODUCTS[pn],
+            "quantity": qty,
+            "unit_price": str(price),
+            "tax_rate": str(rate),
+        }
+        for pn, qty, price, rate, _ in items
+    ]
+
+    if has_invoice:
+        # 价税分离
+        amount_with_tax = sum(
+            Decimal(str(qty)) * Decimal(str(price))
+            for _, qty, price, _, _ in items
+        ).quantize(Q2, rounding=ROUND_HALF_UP)
+        tax_rate = Decimal(str(items[0][3]))
+        amount_without_tax, tax_amount = _split_amounts(amount_with_tax, tax_rate)
+
+        invoice_no = f"INV-IN-{purchase_date.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+
+        with unit_of_work(db):
+            invoice = dispatch(CreateInvoice(
+                account_id=account_id,
+                operator="sim",
+                invoice_no=invoice_no,
+                direction="in",
+                invoice_type="ordinary",
+                tax_rate=tax_rate,
+                amount_without_tax=amount_without_tax,
+                tax_amount=tax_amount,
+                amount_with_tax=amount_with_tax,
+                counterparty_name=supplier_name,
+                issue_date=purchase_date.date() if isinstance(purchase_date, datetime) else purchase_date,
+                purchase_order_action="auto_create",
+                items=invoice_items,
+            ), db)
+        db.flush()
+        order = db.query(models.PurchaseOrder).filter(
+            models.PurchaseOrder.id == invoice.related_order_id
+        ).first()
+        return order
+
+    # 无发票模式
     with unit_of_work(db):
         order = dispatch(CreateOrder(
             order_type="purchase",
@@ -151,15 +245,7 @@ def create_purchase_order(db, account_id: int, supplier_name: str,
             supplier_id=SUPPLIERS[supplier_name],
             purchase_date=purchase_date,
             notes=notes,
-            items=[
-                {
-                    "product_id": PRODUCTS[pn],
-                    "quantity": qty,
-                    "unit_price": str(price),
-                    "tax_rate": str(rate),
-                }
-                for pn, qty, price, rate, _ in items
-            ],
+            items=invoice_items,
         ), db)
     db.flush()
     return order

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 import models
 from enums import FlowCategory
-from utils import _d, Q2
+from utils import _d, Q2, end_of_day
 from errors import BusinessError, ErrorCode
 from lineage import reads, TIER_L1, TIER_L2, TIER_L4
 
@@ -26,7 +26,7 @@ def list_cash_flow_transactions(db: Session, account_id: int, skip: int = 0, lim
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         q = q.filter(models.CashFlowTransaction.transaction_date_l1 >= start_dt)
     if end_date:
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+        end_dt = end_of_day(datetime.strptime(end_date, "%Y-%m-%d"))
         q = q.filter(models.CashFlowTransaction.transaction_date_l1 <= end_dt)
     if flow_category:
         q = q.filter(models.CashFlowTransaction.flow_category_l2 == flow_category)

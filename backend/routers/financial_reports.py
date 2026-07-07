@@ -4,7 +4,8 @@ from database import get_db
 from account_dep import get_account_id
 import crud, models
 
-from datetime import datetime, timedelta
+from datetime import datetime
+from utils import end_of_day
 from crud.finance._snapshot import LedgerSnapshot
 from reports.engine import ReportEngine
 from reports.reconcile import ReportReconciliation
@@ -41,7 +42,7 @@ def get_balance_sheet(
     db: Session = Depends(get_db)
 ):
     """生成资产负债表"""
-    qd = datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    qd = end_of_day(datetime.strptime(date, "%Y-%m-%d"))
     sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
     engine = ReportEngine()
     result = engine.execute(BALANCE_SHEET, sn, trace=trace, source_mode=source_mode)
@@ -66,7 +67,7 @@ def get_income_statement(
 ):
     """生成利润表"""
     sd = datetime.strptime(start_date, "%Y-%m-%d")
-    ed = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    ed = end_of_day(datetime.strptime(end_date, "%Y-%m-%d"))
     sn = LedgerSnapshot(db, account_id, bs_cutoff=ed, period_start=sd, period_end=ed)
     engine = ReportEngine()
     result = engine.execute(INCOME_STATEMENT, sn, trace=trace)
@@ -84,7 +85,7 @@ def get_financial_summary(
     db: Session = Depends(get_db)
 ):
     """获取财务汇总信息"""
-    qd = datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    qd = end_of_day(datetime.strptime(date, "%Y-%m-%d"))
     sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
     engine = ReportEngine()
     balance_sheet = engine.execute(BALANCE_SHEET, sn)

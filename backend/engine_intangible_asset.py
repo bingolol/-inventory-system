@@ -17,6 +17,8 @@ import models
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal
 from utils import Q2
+from utils.period import period_bounds
+from cost_engine import straight_line_depreciation
 from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
 
@@ -28,22 +30,10 @@ class IntangibleAssetEngine:
 
     @reads("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
     def calculate_monthly(self, asset: models.IntangibleAsset) -> Decimal:
-        """计算月摊销额（年限平均法，无残值）
-
-        返回实际可摊销金额，已满额则返回 0。
-        """
         original = Decimal(str(asset.original_value_l1))
         useful_life = int(asset.useful_life_l3)
         accumulated = Decimal(str(asset.accumulated_amortization_l4 or 0))
-
-        if useful_life <= 0:
-            return Decimal("0")
-
-        monthly = (original / useful_life).quantize(Q2)
-        remaining = original - accumulated
-        if remaining <= 0:
-            return Decimal("0")
-        return min(monthly, remaining)
+        return straight_line_depreciation(original, useful_life, accumulated)
 
     @writes("IntangibleAssetAmortization.amount_l2", tier=TIER_L2, source="engine")
     @writes("IntangibleAssetAmortization.accumulated_before_l2", tier=TIER_L2, source="engine")
@@ -71,7 +61,7 @@ class IntangibleAssetEngine:
         if asset.status == "已报废":
             return None
 
-        period_start, period_end = _period_bounds(period)
+        period_start, period_end = period_bounds(period)
 
         # 当月增加当月摊：开始日期在当月或之前即应摊
         if asset.start_date_l1:
@@ -184,11 +174,3 @@ class IntangibleAssetEngine:
             "contra_account_code": "1702",
         }
         post_journal(self.db, self.account_id, "asset_disposal", source)
-
-
-def _period_bounds(period: str) -> tuple[date, date]:
-    """YYYY-MM → (该月第一天, 该月最后一天)"""
-    year, month = map(int, period.split("-"))
-    import calendar
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last_day)

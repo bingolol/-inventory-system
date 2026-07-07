@@ -24,9 +24,7 @@ from operation_result import EntityType, OperationResult, OperationType
 from schemas import ExpenseCreate, ExpenseUpdate
 from schemas.payment import PaymentCreate, PaymentOut
 from schemas.receipt import ReceiptCreate, ReceiptOut
-from utils import to_decimal
-
-Q2 = Decimal("0.01")
+from utils import to_decimal, Q2
 
 
 # ═══════════════════════════════════════════════════════════
@@ -219,6 +217,17 @@ class DeleteExpenseHandler(CommandHandler):
         if not expense:
             raise BusinessError(code=ErrorCode.EXPENSE_NOT_FOUND, data={"expense_id": expense_id})
 
+        # BR-REV: 财务安全原则 — 已过账凭证不得物理删除。
+        # 未冲红费用（is_reversed=False）已有 AccountMove 关联，直接 db.delete 会留下 dangling 凭证，
+        # 导致 BS 不平。必须先调 ReverseExpense 冲红凭证，再调用 DeleteExpense 清理记录。
+        if not expense.is_reversed:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"费用 #{expense_id} 已过账未冲红，禁止物理删除。请先调用 ReverseExpense 冲红凭证，再删除。",
+                ai_instruction="STOP_RETRYING. 财务安全规则：已过账凭证必须先冲红再删除，不得直接物理删除。",
+                data={"expense_id": expense_id, "is_reversed": False},
+            )
+
         if expense.image_url:
             delete_old_image(expense.image_url)
 
@@ -231,7 +240,7 @@ class DeleteExpenseHandler(CommandHandler):
             entity_type=EntityType.EXPENSE,
             entity_id=expense_id,
             summary=f"费用删除成功，类别：{expense.category}，金额 {expense.amount_l1}",
-            ai_hint="费用已删除。",
+            ai_hint="费用已删除（已冲红记录清理）。",
             data={"expense_id": expense_id, "category": expense.category},
         ).to_dict()
 
@@ -332,6 +341,9 @@ class CreatePaymentHandler(CommandHandler):
             "partner_id": data.related_entity_id,
             "partner_type": "supplier",
             "bank_account_id": data.bank_account_id,
+            # BR-REV: 补 source_model/source_id，使 reverse_journal("payment", payment.id) 能定位原凭证
+            "source_model": "payment",
+            "source_id": payment.id,
         })
 
         db.flush()
@@ -443,6 +455,9 @@ class CreateReceiptHandler(CommandHandler):
             "date": data.receipt_date.strftime("%Y-%m-%d"),
             "partner_id": data.related_entity_id,
             "bank_account_id": data.bank_account_id,
+            # BR-REV: 补 source_model/source_id，使 reverse_journal("receipt", receipt.id) 能定位原凭证
+            "source_model": "receipt",
+            "source_id": receipt.id,
         })
 
         db.flush()

@@ -133,7 +133,7 @@ class CreateOpeningBalanceHandler(CommandHandler):
                 models.BankAccount.account_id == cmd.account_id,
             ).order_by(models.BankAccount.id.asc()).first()
             if bank_account:
-                bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) + bank_balance_val).quantize(Decimal("0.01"))
+                bank_account.balance_l4 = (to_decimal(bank_account.balance_l4) + bank_balance_val).quantize(Decimal("0.01"))
             else:
                 # 没有银行账户时记录日志（不影响期初余额过账本身）
                 import logging
@@ -288,7 +288,7 @@ class UpdateOpeningBalanceHandler(CommandHandler):
         if bank_account:
             old_bank_val = to_decimal(old_ob.bank_balance_l1)
             new_bank_val = to_decimal(new_bank)
-            bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) - old_bank_val + new_bank_val).quantize(Decimal("0.01"))
+            bank_account.balance_l4 = (to_decimal(bank_account.balance_l4) - old_bank_val + new_bank_val).quantize(Decimal("0.01"))
 
         # 9. 日志
         log_op(db, cmd.account_id, "update", "opening_balance", new_ob.id,
@@ -329,7 +329,7 @@ class DeleteOpeningBalanceHandler(CommandHandler):
         ).order_by(models.BankAccount.id.asc()).first()
         if bank_account:
             old_bank_val = to_decimal(ob.bank_balance_l1)
-            bank_account.balance_l4 = (Decimal(str(bank_account.balance_l4)) - old_bank_val).quantize(Decimal("0.01"))
+            bank_account.balance_l4 = (to_decimal(bank_account.balance_l4) - old_bank_val).quantize(Decimal("0.01"))
 
         # 3. 标记作废
         ob.is_reversed = True
@@ -532,4 +532,118 @@ class DeleteCashFlowTransactionHandler(CommandHandler):
              f"删除(冲红)现金流水: {transaction.type} {transaction.amount_l2}", operator=cmd.operator)
         db.flush()
         return True
+
+
+# ═══════════════════════════════════════════════════════════
+# 6. ReverseJournal — 通用凭证冲红命令（统一入口）
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ReverseJournal(Command):
+    """通用凭证冲红命令
+
+    包装 finance_integration.reverse_journal 为统一 Command 入口。
+    安全约束：
+    - source_model + source_id 必填，精确定位原凭证
+    - 默认 reversal_date=None（用原凭证日期，BR-22）
+    - force=True 时跳过幂等防御（用于重建场景）
+    """
+    source_model: str = ""
+    source_id: int = 0
+    reversal_date: Optional[str] = None    # YYYY-MM-DD，默认用原凭证日期
+    force: bool = False
+
+
+@register(ReverseJournal)
+class ReverseJournalHandler(CommandHandler):
+    def handle(self, cmd: ReverseJournal, db: Any) -> Any:
+        from finance_integration import reverse_journal
+        from datetime import datetime as _dt
+
+        reversal_date = None
+        if cmd.reversal_date:
+            try:
+                reversal_date = _dt.strptime(cmd.reversal_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise BusinessError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=f"reversal_date 格式错误: {cmd.reversal_date}，应为 YYYY-MM-DD",
+                )
+
+        move = reverse_journal(
+            db, cmd.account_id, cmd.source_model, cmd.source_id,
+            reversal_date=reversal_date, force=cmd.force,
+        )
+        if not move:
+            return {
+                "message": "无原凭证可冲红（可能已冲红或不存在）",
+                "source_model": cmd.source_model,
+                "source_id": cmd.source_id,
+            }
+
+        log_op(db, cmd.account_id, "reverse", cmd.source_model, cmd.source_id,
+               f"冲红凭证: {cmd.source_model}#{cmd.source_id} → move#{move.id}",
+               operator=cmd.operator)
+
+        return {
+            "message": "凭证冲红成功",
+            "source_model": cmd.source_model,
+            "source_id": cmd.source_id,
+            "reversal_move_id": move.id,
+        }
+
+
+# ═══════════════════════════════════════════════════════════
+# 7. ReverseBankTransaction — 银行流水冲红命令
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ReverseBankTransaction(Command):
+    """银行流水冲红命令
+
+    包装 reversal_ops.reverse_bank_transaction 为统一 Command 入口。
+    安全约束：
+    - 仅冲红 source_model="bank_fee_entry" 的银行手续费凭证
+    - 同时反向 BankTransaction 流水
+    """
+    bank_transaction_id: int = 0
+
+
+@register(ReverseBankTransaction)
+class ReverseBankTransactionHandler(CommandHandler):
+    def handle(self, cmd: ReverseBankTransaction, db: Any) -> Any:
+        from reversal_ops import reverse_bank_transaction
+
+        tx = db.query(models.BankTransaction).filter(
+            models.BankTransaction.id == cmd.bank_transaction_id,
+            models.BankTransaction.account_id == cmd.account_id,
+        ).first()
+        if not tx:
+            raise BusinessError(
+                code=ErrorCode.BANK_ACCOUNT_NOT_FOUND,
+                data={"bank_transaction_id": cmd.bank_transaction_id},
+            )
+
+        if getattr(tx, "is_reversed", False):
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"银行流水 #{cmd.bank_transaction_id} 已冲红",
+                ai_instruction="STOP_RETRYING. 该银行流水已冲红。",
+            )
+
+        result = reverse_bank_transaction(db, cmd.account_id, cmd.bank_transaction_id)
+        if not result:
+            return {
+                "message": "无原凭证可冲红（可能已冲红或非银行手续费凭证）",
+                "bank_transaction_id": cmd.bank_transaction_id,
+            }
+
+        log_op(db, cmd.account_id, "reverse", "bank_transaction", cmd.bank_transaction_id,
+               f"冲红银行流水: {tx.transaction_type} {tx.amount_l2}",
+               operator=cmd.operator)
+
+        return {
+            "message": "银行流水冲红成功",
+            "bank_transaction_id": cmd.bank_transaction_id,
+        }
 

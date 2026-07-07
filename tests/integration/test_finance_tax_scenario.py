@@ -36,7 +36,7 @@ class TestFullTaxScenario:
         pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("IN-SPEC"), "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "11300.00", "tax_rate": "0.13",
+            "amount_with_tax": "11300.00", "tax_rate": "0.13", "tax_amount": "1300.00",
             "counterparty_name": "供应商甲", "seller_name": "供应商甲", "buyer_name": "本公司",
             "issue_date": "2026-04-15",
             "purchase_order_action": "auto_create",
@@ -71,7 +71,7 @@ class TestFullTaxScenario:
         pid = ensure_test_product(aid)
         r = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("OUT-ORD"), "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "10100.00", "tax_rate": "0.01",
+            "amount_with_tax": "10100.00", "tax_rate": "0.01", "tax_amount": "100.00",
             "counterparty_name": "客户乙", "seller_name": "本公司", "buyer_name": "客户乙",
             "issue_date": "2026-05-20",
             "sale_order_action": "auto_create",
@@ -131,7 +131,7 @@ class TestFullTaxScenario:
 
     def test_08_invoice_amounts_check_closed_loop(self, client):
         """会计预检查:发票金额三件套闭环(校验通过)"""
-        r = client.get("/api/accounting/invoice-amounts?amount_with_tax=113&tax_rate=0.13",
+        r = client.get("/api/accounting/invoice-amounts?amount_with_tax=113&tax_amount=13",
                        headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()

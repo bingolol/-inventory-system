@@ -36,6 +36,7 @@ def _base_out_invoice_payload():
         "invoice_type": "ordinary",
         "amount_with_tax": "1030.00",
         "tax_rate": "0.03",
+        "tax_amount": "30.00",
         "counterparty_name": "测试买方公司",
         "seller_name": "本公司",
         "buyer_name": "测试买方公司",

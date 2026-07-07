@@ -23,21 +23,10 @@ from decimal import Decimal
 from database import SessionLocal, set_maintenance_mode
 from models import Account, OpeningBalance, BankAccount, Product, Inventory, StockMove
 from test_helpers import ensure_test_product
+from helpers import extract_data, make_headers
 
-
-def _extract_data(resp_json):
-    """从 AI Gateway 响应中提取 data 字段"""
-    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
-        ent = resp_json["entity"]
-        if "data" in ent:
-            return ent["data"]
-    if isinstance(resp_json, dict) and "data" in resp_json:
-        return resp_json["data"]
-    return resp_json
-
-# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
 ACCOUNT_ID = 1
-HEADERS = {"X-Account-ID": "1", "X-Operator": "accounting_test"}
+HEADERS = make_headers("accounting_test")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -54,7 +43,8 @@ def seed_opening_balance():
     for tname in ["account_move_lines", "account_moves", "stock_moves",
                    "receipts", "payments", "invoice_items", "invoices",
                    "fixed_assets", "sale_items", "sale_orders",
-                   "purchase_items", "purchase_orders", "expenses"]:
+                   "purchase_items", "purchase_orders", "expenses",
+                   "opening_balances"]:
         raw.execute(f"DELETE FROM {tname}")
     raw.execute(f"DELETE FROM inventory WHERE account_id={ACCOUNT_ID}")
     raw.execute(f"DELETE FROM bank_accounts WHERE account_id={ACCOUNT_ID}")
@@ -64,11 +54,7 @@ def seed_opening_balance():
 
     db = SessionLocal()
     try:
-        ob = db.query(OpeningBalance).filter(
-            OpeningBalance.account_id == ACCOUNT_ID
-        ).first()
-        if not ob:
-            ob = OpeningBalance(account_id=ACCOUNT_ID)
+        ob = OpeningBalance(account_id=ACCOUNT_ID)
         ob.date_l1 = date(2026, 1, 1)
         ob.cash_balance_l1 = Decimal('10000.00')
         ob.bank_balance_l1 = Decimal('50000.00')
@@ -408,6 +394,7 @@ class TestInvoiceAmountCalculation:
             "invoice_type": "special",
             "amount_with_tax": "11300.00",
             "tax_rate": "0.13",
+            "tax_amount": "1300.00",
             "counterparty_name": "测试供应商",
             "seller_name": "测试供应商",
             "buyer_name": "本公司",
@@ -416,7 +403,7 @@ class TestInvoiceAmountCalculation:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
-        data = _extract_data(resp.json())
+        data = extract_data(resp.json())
 
         # 验证计算: 不含税金额 = 11300 ÷ 1.13 = 10000
         amount_without_tax = Decimal(str(data.get("amount_without_tax", 0)))
@@ -441,6 +428,7 @@ class TestInvoiceAmountCalculation:
             "invoice_type": "ordinary",
             "amount_with_tax": "10100.00",
             "tax_rate": "0.01",
+            "tax_amount": "100.00",
             "counterparty_name": "测试客户",
             "seller_name": "本公司",
             "buyer_name": "测试客户",
@@ -449,7 +437,7 @@ class TestInvoiceAmountCalculation:
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
-        data = _extract_data(resp.json())
+        data = extract_data(resp.json())
         assert data.get("related_order_type") == "sale_order", "销项发票应生成销售单"
 
         # 验证计算: 不含税金额 = 10100 ÷ 1.01 = 10000

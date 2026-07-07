@@ -94,7 +94,20 @@ class PeriodCloseEngine:
                 return {"status": "skipped", "period": period,
                         "msg": "已结转过，使用 force=True 重跑"}
 
-        # ── 第 2 步：取损益科目余额（按子科目分别列出，不排除 period_close）──
+        # ── 第 2 步：force 模式下先冲红旧凭证（必须在读余额之前）──
+        # 冲红后收入/费用余额恢复为原始值 + 新增调整（如附加税），
+        # 然后读取的余额才是正确的待结转金额。
+        if force:
+            # 12月需要先冲红 year_close，否则 4103 余额不正确
+            if period_start.month == 12:
+                reverse_journal(self.db, account_id, "year_close",
+                                period_hash(period, "year_close"),
+                                reversal_date=close_dt, force=True)
+            reverse_journal(self.db, account_id, "period_close",
+                            period_hash(period, "period_close"),
+                            reversal_date=close_dt, force=True)
+
+        # ── 第 3 步：取损益科目余额（按子科目分别列出）──
         lines = []
         total_revenue = Decimal("0")
         total_expense = Decimal("0")
@@ -127,7 +140,7 @@ class PeriodCloseEngine:
                                       "debit": abs(amt), "credit": Decimal("0")})
                     total_expense += amt
 
-        # ── 第 3 步：差额进 4103 ──
+        # ── 第 4 步：差额进 4103 ──
         net_profit = total_revenue - total_expense
         if abs(net_profit) >= Decimal("0.01"):
             if net_profit > 0:
@@ -138,12 +151,6 @@ class PeriodCloseEngine:
                 lines.append({"account_code": "4103",
                               "debit": abs(net_profit).quantize(Q2),
                               "credit": Decimal("0")})
-
-        # ── 第 4 步：force 模式下先冲红旧凭证 ──
-        if force:
-            reverse_journal(self.db, account_id, "period_close",
-                            period_hash(period, "period_close"),
-                            reversal_date=close_dt, force=True)
 
         # ── 第 5 步：过账 period_close ──
         if lines:
@@ -174,6 +181,9 @@ class PeriodCloseEngine:
     def _execute_year_close(self, ledger: Ledger, account_id: int,
                             period: str, close_dt: datetime,
                             force: bool) -> Dict:
+        # 注意：year_close 的冲红已在 execute() Step 2 中完成（force 模式下）
+        # 此处只需读取 4103 余额并过账新的 year_close
+
         # 4103 无子科目，但用 _list_subaccount_balances 保持口径一致
         # 取列表第一项（4103 自身）；列表为空表示无 4103 科目
         rows = self._list_subaccount_balances(ledger, "4103", close_dt)
@@ -201,11 +211,6 @@ class PeriodCloseEngine:
                 {"account_code": "4103", "debit": Decimal("0"),
                  "credit": bal},
             ]
-
-        if force:
-            reverse_journal(self.db, account_id, "year_close",
-                            period_hash(period, "year_close"),
-                            reversal_date=close_dt, force=True)
 
         post_journal(self.db, account_id, "year_close", {
             "lines": year_lines,

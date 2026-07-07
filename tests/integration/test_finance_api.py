@@ -4,25 +4,18 @@ import pytest
 from decimal import Decimal
 
 from test_helpers import ensure_test_product
-from helpers import get_entity_id
+from helpers import get_entity_id, make_headers
+from factories import api_create_customer, api_create_supplier
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
-
-
-def _ensure_customer(client, tag: str) -> int:
-    u = str(int(time.time()))[-6:]
-    resp = client.post("/api/customers", json={
-        "name": f"FinCust-{tag}-{u}", "contact": "T", "phone": f"138{tag}0001",
-    }, headers=HEADERS)
-    return get_entity_id(resp.json())
+HEADERS = make_headers()
 
 
-def _ensure_supplier(client, tag: str) -> int:
-    u = str(int(time.time()))[-6:]
-    resp = client.post("/api/suppliers", json={
-        "name": f"FinSup-{tag}-{u}", "contact": "T", "phone": f"139{tag}0001",
-    }, headers=HEADERS)
-    return get_entity_id(resp.json())
+def _get_cid(client, tag):
+    return api_create_customer(client, HEADERS)[0]
+
+
+def _get_sid(client, tag):
+    return api_create_supplier(client, HEADERS)[0]
 
 
 def _create_sale(client, pid: int, cid: int) -> dict:
@@ -69,7 +62,7 @@ class TestJournalMoves:
 
     def test_moves_list_after_sale(self, client):
         pid = ensure_test_product(1)
-        cid = _ensure_customer(client, "JM1")
+        cid = _get_cid(client, "JM1")
         _create_sale(client, pid, cid)
 
         resp = client.get("/api/finance/journal/moves", headers=HEADERS)
@@ -124,7 +117,7 @@ class TestTrialBalance:
 
     def test_balanced_after_sale(self, client):
         pid = ensure_test_product(1)
-        cid = _ensure_customer(client, "TB1")
+        cid = _get_cid(client, "TB1")
         _create_sale(client, pid, cid)
 
         resp = client.get("/api/finance/reports/trial-balance",
@@ -151,7 +144,7 @@ class TestPartnerReceivable:
 
     def test_customer_balance_and_aging(self, client):
         pid = ensure_test_product(1)
-        cid = _ensure_customer(client, "PR1")
+        cid = _get_cid(client, "PR1")
         _create_sale(client, pid, cid)
 
         resp = client.get(f"/api/finance/receivable/partner/{cid}",
@@ -167,7 +160,7 @@ class TestPartnerReceivable:
 
     def test_supplier_balance_and_aging(self, client):
         pid = ensure_test_product(1)
-        sid = _ensure_supplier(client, "SP1")
+        sid = _get_sid(client, "SP1")
 
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,

@@ -242,7 +242,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useAccountStore } from '../stores/account'
@@ -386,15 +386,17 @@ const resetFilter = () => {
 // 保存发票
 const saveInvoice = async () => {
   try {
-    const result = calculateInvoiceAmounts(
-      invoiceForm.value.amount_with_tax,
-      invoiceForm.value.amount_without_tax,
-      invoiceForm.value.tax_rate,
-      amountInputType.value,
-    )
-    invoiceForm.value.amount_without_tax = result.amount_without_tax
-    invoiceForm.value.tax_amount = result.tax_amount
-    invoiceForm.value.amount_with_tax = result.amount_with_tax
+    if (dialogType.value === 'create') {
+      const result = calculateInvoiceAmounts(
+        invoiceForm.value.amount_with_tax,
+        invoiceForm.value.amount_without_tax,
+        invoiceForm.value.tax_rate,
+        amountInputType.value,
+      )
+      invoiceForm.value.amount_without_tax = result.amount_without_tax
+      invoiceForm.value.tax_amount = result.tax_amount
+      invoiceForm.value.amount_with_tax = result.amount_with_tax
+    }
 
     if (dialogType.value === 'create') {
       await invoicesApi.createInvoice(invoiceForm.value)
@@ -533,25 +535,6 @@ const getCertificationText = (status) => {
       return status
   }
 }
-
-// 监听金额变化
-watch([() => invoiceForm.value.amount_with_tax, () => invoiceForm.value.amount_without_tax, () => invoiceForm.value.tax_rate], () => {
-  if (amountInputType.value === '价税合计' && invoiceForm.value.amount_with_tax > 0 && invoiceForm.value.tax_rate > 0) {
-    const amountWithTax = invoiceForm.value.amount_with_tax
-    const taxRate = invoiceForm.value.tax_rate
-    const amountWithoutTax = amountWithTax / (1 + taxRate)
-    const taxAmount = amountWithTax - amountWithoutTax
-    invoiceForm.value.amount_without_tax = parseFloat(amountWithoutTax.toFixed(2))
-    invoiceForm.value.tax_amount = parseFloat(taxAmount.toFixed(2))
-  } else if (amountInputType.value === '不含税金额' && invoiceForm.value.amount_without_tax > 0 && invoiceForm.value.tax_rate > 0) {
-    const amountWithoutTax = invoiceForm.value.amount_without_tax
-    const taxRate = invoiceForm.value.tax_rate
-    const taxAmount = amountWithoutTax * taxRate
-    const amountWithTax = amountWithoutTax + taxAmount
-    invoiceForm.value.tax_amount = parseFloat(taxAmount.toFixed(2))
-    invoiceForm.value.amount_with_tax = parseFloat(amountWithTax.toFixed(2))
-  }
-})
 
 generateYears()
 useAccountAwareData(getInvoices)

@@ -1,9 +1,19 @@
 """集成测试：小企业会计准则财务报表接口"""
 from decimal import Decimal
+import os
+import pytest
 import xlrd
 from io import BytesIO
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+from helpers import make_headers
+
+HEADERS = make_headers()
+
+_xls_template = r"C:\Users\Administrator\Desktop\CWBB_XQYKJZZ"
+
+def _need_template():
+    if not os.path.isdir(_xls_template):
+        pytest.skip(f"模板目录不存在: {_xls_template}")
 
 
 def _find_line(data, sheet, line_no):
@@ -24,6 +34,7 @@ class TestCWBBXQYKJZZ:
         assert len(data["cash_flow_statement"]) == 22
 
     def test_export_cwbb_monthly_xls(self, client):
+        _need_template()
         resp = client.get("/api/export/cwbb-xqykjzz?report_type=monthly&date=2026-06-30", headers=HEADERS)
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/vnd.ms-excel"
@@ -33,6 +44,7 @@ class TestCWBBXQYKJZZ:
         assert "现金流量表_月季报" in book.sheet_names()
 
     def test_export_cwbb_annual_xls(self, client):
+        _need_template()
         resp = client.get("/api/export/cwbb-xqykjzz?report_type=annual&date=2026-12-31", headers=HEADERS)
         assert resp.status_code == 200
         book = xlrd.open_workbook(file_contents=resp.content)

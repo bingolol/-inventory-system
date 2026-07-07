@@ -58,7 +58,7 @@ class TestQuickBatchCreate:
             r = client.post("/api/invoices/quick", json={
                 "invoice_no": _uniq("STRESS-INV", i),
                 "direction": "out", "invoice_type": "ordinary",
-                "amount_with_tax": "113.00", "tax_rate": "0.13",
+                "amount_with_tax": "113.00", "tax_rate": "0.13", "tax_amount": "13.00",
                 "counterparty_name": "压测客户", "seller_name": "本公司", "buyer_name": "压测客户",
                 "issue_date": "2026-06-20",
                 "sale_order_action": "auto_create",
@@ -119,7 +119,8 @@ class TestMiddlewareStackMixedLoad:
             r = client.post("/api/invoices/quick", json={
                 "invoice_no": _uniq("MX-INV", i), "direction": "out",
                 "invoice_type": "ordinary", "amount_with_tax": "113.00",
-                "tax_rate": "0.13", "counterparty_name": "x", "seller_name": "本公司",
+                "tax_rate": "0.13", "tax_amount": "13.00",
+                "counterparty_name": "x", "seller_name": "本公司",
                 "buyer_name": "x", "issue_date": "2026-06-20",
                 "sale_order_action": "auto_create",
                 "items": [{"product_id": pid, "quantity": 1, "unit_price": "100.00", "tax_rate": "0.13"}],

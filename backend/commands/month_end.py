@@ -57,12 +57,7 @@ class MonthEndCloseHandler(CommandHandler):
         close_result = close_engine.execute(cmd.account_id, cmd.period, force=False)
         result["period_close"] = close_result
 
-        log_op(db, cmd.account_id, "close", "month_end", cmd.account_id,
-             f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",
-             operator=cmd.operator)
-        db.flush()
-
-        # 月结后自动税务核对
+        # ── 月结后自动税务核对（必须在日志 flush 前执行）──
         check_engine = TaxCheckEngine(db, cmd.account_id)
         check_result = check_engine.execute(cmd.period)
         result["tax_check"] = {
@@ -70,5 +65,10 @@ class MonthEndCloseHandler(CommandHandler):
             "checks": check_result["checks"],
             "warnings": check_result["warnings"],
         }
+
+        log_op(db, cmd.account_id, "close", "month_end", cmd.account_id,
+             f"月结 {cmd.period}: {result.get('status')} — {'; '.join(result.get('lines', [])) or result.get('msg', '')}",
+             operator=cmd.operator)
+        db.flush()
 
         return result

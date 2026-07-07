@@ -102,7 +102,7 @@ def create_account(db: Session, name: str, type: str = "company", code: str = ""
     return account
 
 
-def delete_account(db: Session, account_id: int) -> bool:
+def delete_account(db: Session, account_id: int, operator: str = "system") -> bool:
     """删除账本，仅允许删除无业务数据的空账本"""
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     if not account:
@@ -135,6 +135,7 @@ def delete_account(db: Session, account_id: int) -> bool:
             if count > 0:
                 raise BusinessError(code=ErrorCode.PRODUCT_HAS_TRANSACTIONS, data={"count": count, "label": label})
 
+    log_op(db, account_id, "delete", "account", account_id, f"删除账本: {account.name}", operator=operator)
     db.delete(account)
     db.flush()
     return True

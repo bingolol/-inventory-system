@@ -9,6 +9,7 @@ import models
 from enums import (OrderStatus, InvoiceDirection, InvoiceType,
                    CertificationStatus, TaxpayerType)
 from utils import _d, Q2
+from utils.period import quarter_bounds
 from errors import BusinessError, ErrorCode
 from accounting_engine import AccountingEngine
 from policy.entity_profile import build_profile
@@ -18,19 +19,9 @@ from lineage import reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 
 _engine = AccountingEngine()
 
-def _quarter_range(year: int, quarter: int):
-    """返回季度 [start_date, end_date_exclusive)（左闭右开，覆盖属期最后一天全天）。
 
-    统一使用左闭右开区间，避免 23:59:59 与 <next_start 两种写法在 DateTime 字段上
-    产生边界漂移。返回的 end_date 为下一季度首日 00:00:00。
-    """
-    start_month = (quarter - 1) * 3 + 1
-    start_date = datetime(year, start_month, 1)
-    if quarter == 4:
-        end_date = datetime(year + 1, 1, 1)
-    else:
-        end_date = datetime(year, quarter * 3 + 1, 1)
-    return start_date, end_date
+def _quarter_range(year: int, quarter: int):
+    return quarter_bounds(year, quarter)
 
 
 def compute_carry_forward(db, account, start_date):

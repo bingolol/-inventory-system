@@ -294,6 +294,9 @@ class ReportReconciliation:
         result = ReconciliationResult(report_type=self.report_type)
 
         for f in fields:
+            # label=None 的字段是内部辅助字段（如 _vat_net），跳过对账
+            if f.label is None:
+                continue
             eng_val = Decimal(str(engine_values.get(f.key, 0)))
             sql_val, note, skipped, skip_reason = self._reconcile_field(f, source_mode)
 
@@ -445,10 +448,17 @@ class ReportReconciliation:
             )
 
     def _reconcile_composite(self, source: Source) -> Decimal:
-        """COMPOSITE 独立 SQL：按 part.side 和 part.sign 聚合"""
+        """COMPOSITE 独立 SQL：按 part.side 和 part.sign 聚合
+
+        模式选择与 engine._resolve_composite 对齐：
+        - BS（无 period_start/end）→ cum 模式（用 bs_cutoff）
+        - IS（有 period_start/end）→ period 模式
+        """
+        has_period = self._period_start is not None and self._period_end is not None
+        mode = "period" if has_period else "cum"
         value = Decimal("0")
         for part in source.parts:
-            d, c = self._sql_ledger(part.codes, source.bucket, mode="period")
+            d, c = self._sql_ledger(part.codes, source.bucket, mode=mode)
             if part.side == "debit":
                 value += d * part.sign
             elif part.side == "credit":

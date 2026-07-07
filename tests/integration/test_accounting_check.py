@@ -1,18 +1,20 @@
 """集成测试：会计准则检查 (routers/accounting_check.py)"""
 import pytest
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+from helpers import make_headers
+
+HEADERS = make_headers()
 
 
 class TestCheckInvoiceAmounts:
     def test_valid_invoice_amounts(self, client):
-        resp = client.get("/api/accounting/invoice-amounts?amount_with_tax=103&tax_rate=0.03", headers=HEADERS)
+        resp = client.get("/api/accounting/invoice-amounts?amount_with_tax=103&tax_amount=3", headers=HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True
 
     def test_invalid_invoice_amounts(self, client):
-        resp = client.get("/api/accounting/invoice-amounts?amount_with_tax=105.50&tax_rate=0.03", headers=HEADERS)
+        resp = client.get("/api/accounting/invoice-amounts?amount_with_tax=105.50&tax_amount=3.07", headers=HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert "result" in data

@@ -46,8 +46,7 @@ def check_invoice_amounts(
         },
         "rules": [
             "发票金额三件套：不含税金额 + 税额 = 含税金额",
-            f"税率：{tax_rate}",
-            f"计算：{result.amount_without_tax} + {result.tax_amount} = {amount_with_tax}"
+            f"计算：{float(amount_without_tax)} + {float(tax_amount)} = {float(amount_with_tax)}"
         ],
         "ai_instruction": "发票金额计算正确，可以继续。"
     }

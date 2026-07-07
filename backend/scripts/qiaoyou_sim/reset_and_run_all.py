@@ -139,9 +139,20 @@ def run_simulation():
         set_maintenance_mode(False)
 
 
+def run_declarations():
+    """[5] 提交 VAT 声明 + 附加税声明（输入层）
+
+    发票是销项税真相源（BR-1, BR-27），附加税是用户输入（BR-5）。
+    声明必须在月结前提交，使总账 222103/222110 等科目有正确余额。
+    """
+    print("\n[5/7] 提交 VAT + 附加税声明")
+    from .run_declarations_and_validate import submit_declarations
+    submit_declarations()
+
+
 def run_month_close():
-    """[5] 月结 2025-12 ~ 2026-06"""
-    print("\n[5/6] 月结 2025-12 ~ 2026-06")
+    """[6] 月结 2025-12 ~ 2026-06"""
+    print("\n[6/7] 月结 2025-12 ~ 2026-06")
     set_maintenance_mode(True)
     db = SessionLocal()
     try:
@@ -194,20 +205,21 @@ def run_month_close():
 
 
 def run_compare_report():
-    """[6] 对照分析报告"""
-    print("\n[6/6] 对照分析报告")
+    """[7] 对照分析报告"""
+    print("\n[7/7] 对照分析报告")
     from .compare_report import main as compare_main
     compare_main()
 
 
 def main():
     print("=" * 80)
-    print("  巧游电子科技 — 一键重置 + 重跑 + 月结 + 对照分析")
+    print("  巧游电子科技 — 一键重置 + 重跑 + 声明 + 月结 + 对照分析")
     print("=" * 80)
 
     reset_database()
     create_account_and_admin()
     run_simulation()
+    run_declarations()
     run_month_close()
     run_compare_report()
 

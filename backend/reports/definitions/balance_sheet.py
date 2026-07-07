@@ -82,7 +82,7 @@ BALANCE_SHEET = [
 
     Field("accounts_receivable", "应收账款",
         source=LEDGER_BALANCE(["1122"]),
-        transform=OpeningFallback("accounts_receivable"),
+        transform=OpeningFallback("accounts_receivable_l1"),
     ),
 
     Field("prepayments", "预付账款",
@@ -91,7 +91,7 @@ BALANCE_SHEET = [
 
     Field("inventory", "存货",
         source=STOCK_MOVES(),
-        transform=OpeningFallback("inventory_value"),
+        transform=OpeningFallback("inventory_value_l1"),
     ),
 
     Field("prepaid_tax", "预付税款",
@@ -143,7 +143,7 @@ BALANCE_SHEET = [
     # ── 流动负债 ──
     Field("accounts_payable", "应付账款",
         source=LEDGER_CREDIT(["2202"]),
-        transform=OpeningFallback("accounts_payable"),
+        transform=OpeningFallback("accounts_payable_l1"),
     ),
 
     Field("salaries_payable", "应付职工薪酬",

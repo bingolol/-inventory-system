@@ -205,14 +205,56 @@ def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_pr
     assert resp.status_code in (200, 201), f"采购入库失败: {resp.text}"
     return purchase_id
 
-def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=20.00, has_invoice=False):
+def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=20.00,
+                    tax_rate=0.03, has_invoice=False, sale_date=None, **extra):
     tag = uniq("SO")
-    now_str = datetime.now().strftime("%Y-%m-%d")
-    resp = client.post("/api/sales", json={
+    now_str = sale_date or datetime.now().strftime("%Y-%m-%d")
+    payload = {
         "order_no": f"SO-{tag}", "customer_id": customer_id,
-        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price}],
+        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
         "sale_date": now_str,
         "has_invoice": has_invoice,
-    }, headers=headers)
+    }
+    payload.update(extra)
+    resp = client.post("/api/sales", json=payload, headers=headers)
     assert resp.status_code in (200, 201), f"创建销售单失败: {resp.text}"
+    return get_entity_id(resp.json()), resp.json()
+
+
+def api_create_purchase(client, headers, product_id, supplier_id, qty=1, unit_price=10.00,
+                        tax_rate=0.03, purchase_date=None, **extra):
+    tag = uniq("PO")
+    now_str = purchase_date or datetime.now().strftime("%Y-%m-%d")
+    payload = {
+        "order_no": f"PO-{tag}", "supplier_id": supplier_id,
+        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
+        "purchase_date": now_str,
+    }
+    payload.update(extra)
+    resp = client.post("/api/purchases", json=payload, headers=headers)
+    assert resp.status_code in (200, 201), f"创建采购单失败: {resp.text}"
+    return get_entity_id(resp.json()), resp.json()
+
+
+def api_create_invoice_quick(client, headers, product_id, invoice_no=None, direction="in",
+                             invoice_type="ordinary", amount_with_tax="113.00", tax_rate="0.03",
+                             tax_amount=None, issue_date="2026-06-15", items=None, **extra):
+    inv_no = invoice_no or uniq("INV")
+    default_items = items or [
+        {"product_id": product_id, "quantity": 1, "unit_price": "100.00", "tax_rate": tax_rate}
+    ]
+    if tax_amount is None and "tax_amount" not in extra:
+        atw = Decimal(str(amount_with_tax))
+        tr = Decimal(str(tax_rate))
+        tax_amount = str(round2(atw - (atw / (Decimal("1") + tr))))
+    payload = {
+        "invoice_no": inv_no, "direction": direction, "invoice_type": invoice_type,
+        "amount_with_tax": amount_with_tax, "tax_rate": tax_rate,
+        "tax_amount": tax_amount,
+        "counterparty_name": "测试往来方", "seller_name": "本公司", "buyer_name": "测试往来方",
+        "issue_date": issue_date, "items": default_items,
+    }
+    payload.update(extra)
+    resp = client.post("/api/invoices/quick", json=payload, headers=headers)
+    assert resp.status_code in (200, 201), f"创建发票失败: {resp.text}"
     return get_entity_id(resp.json()), resp.json()

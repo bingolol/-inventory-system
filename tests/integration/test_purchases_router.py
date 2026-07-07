@@ -3,7 +3,9 @@ import pytest
 from helpers import get_account_id, get_entity_id
 from factories import api_create_product, api_create_supplier
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+from helpers import make_headers
+
+HEADERS = make_headers()
 
 
 class TestListPurchases:

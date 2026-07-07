@@ -12,6 +12,8 @@ import models
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal, reverse_journal
 from utils import Q2
+from utils.period import period_end_date
+from cost_engine import straight_line_depreciation
 from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
 
@@ -24,25 +26,11 @@ class FixedAssetEngine:
     @reads("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
     @reads("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
     def calculate_monthly(self, asset: models.FixedAsset) -> Decimal:
-        """计算月折旧额（年限平均法）
-
-        返回实际可计提金额，已满额则返回 0。
-        """
         original = Decimal(str(asset.original_value_l1))
         salvage_rate = Decimal(str(asset.salvage_rate_l3))
         useful_life = int(asset.useful_life_l3)
         accumulated = Decimal(str(asset.accumulated_depreciation_l4))
-
-        if useful_life <= 0:
-            return Decimal("0")
-
-        depreciable = (original * (1 - salvage_rate)).quantize(Q2)
-        monthly = (depreciable / useful_life).quantize(Q2)
-
-        remaining = depreciable - accumulated
-        if remaining <= 0:
-            return Decimal("0")
-        return min(monthly, remaining)
+        return straight_line_depreciation(original, useful_life, accumulated, salvage_rate)
 
     @writes("FixedAssetDepreciation.amount_l2", tier=TIER_L2, source="engine")
     @writes("FixedAssetDepreciation.accumulated_before_l2", tier=TIER_L2, source="engine")
@@ -108,7 +96,7 @@ class FixedAssetEngine:
         self.db.flush()
 
         # 生成会计凭证：借:6601（管理费用）贷:1602（累计折旧）
-        dep_date = _period_to_date(period)
+        dep_date = period_end_date(period)
         source = {
             "amount": monthly,
             "expense_account_code": "6601",
@@ -220,11 +208,3 @@ class FixedAssetEngine:
                 related_entity_type="fixed_asset_disposal",
                 related_entity_id=asset_id,
             )
-
-
-def _period_to_date(period: str) -> date:
-    """YYYY-MM → 该月最后一天"""
-    year, month = map(int, period.split("-"))
-    import calendar
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, last_day)

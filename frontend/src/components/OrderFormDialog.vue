@@ -45,8 +45,8 @@
         </el-select>
       </el-form-item>
 
-      <!-- 是否开票 -->
-      <el-form-item label="是否开票">
+      <!-- 开票通过发票模块管理，此处不暴露开关（BR-3：发票与销售单同步创建） -->
+      <el-form-item v-if="false" label="是否开票">
         <el-switch v-model="form.has_invoice" />
       </el-form-item>
 

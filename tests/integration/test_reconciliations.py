@@ -2,10 +2,10 @@
 import pytest
 from decimal import Decimal
 from database import SessionLocal
-from helpers import get_account_id
+from helpers import get_account_id, make_headers
 from factories import api_create_customer, api_create_supplier, api_create_product
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+HEADERS = make_headers()
 DATE_RANGE = "start_date=2026-01-01&end_date=2026-12-31"
 
 

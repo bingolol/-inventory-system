@@ -19,24 +19,10 @@ import time
 import pytest
 from datetime import datetime, timedelta
 from decimal import Decimal
-from database import SessionLocal
-from models import Account
 from test_helpers import ensure_test_product
-from helpers import get_entity_id
+from helpers import get_entity_id, extract_data, get_stock, make_headers
 
-
-def _extract_data(resp_json):
-    """从 AI Gateway 响应中提取 data 字段"""
-    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
-        ent = resp_json["entity"]
-        if "data" in ent:
-            return ent["data"]
-    if isinstance(resp_json, dict) and "data" in resp_json:
-        return resp_json["data"]
-    return resp_json
-
-# 公共请求头（account_id 固定为 1，ensure_account fixture 已创建）
-HEADERS = {"X-Account-ID": "1", "X-Operator": "e2e_test"}
+HEADERS = make_headers("e2e_test")
 UNIQUE = str(int(time.time()))[-6:]
 
 # 时间配置: 模拟2026年1月-6月
@@ -92,16 +78,6 @@ def created_data(client):
     data["fixed_asset_id"] = get_entity_id(resp.json())
 
     return data
-
-
-def _get_inventory_qty(client, product_id):
-    """辅助：获取指定商品当前库存"""
-    resp = client.get("/api/inventory", params={"page": 1, "page_size": 500},
-                     headers=HEADERS)
-    assert resp.status_code == 200
-    items = resp.json().get("items", [])
-    target = next((i for i in items if i["product_id"] == product_id), None)
-    return target["quantity"] if target else 0
 
 
 def _generate_monthly_dates(year, month):
@@ -193,7 +169,7 @@ class TestMonthlyBusinessCycle:
         created_data["jan_purchase_id"] = get_entity_id(resp.json())
 
         # 验证库存增加
-        qty = _get_inventory_qty(client, pid)
+        qty = get_stock(client, pid)
         assert qty >= 500, f"1月采购后库存应>=500，实际为{qty}"
 
         # 1月10日: 销售出库
@@ -211,7 +187,7 @@ class TestMonthlyBusinessCycle:
         created_data["jan_sale_id"] = get_entity_id(resp.json())
 
         # 验证库存减少
-        qty_after = _get_inventory_qty(client, pid)
+        qty_after = get_stock(client, pid)
         assert qty_after == qty - 100, f"1月销售后库存应为{qty-100}，实际为{qty_after}"
 
         # 1月15日: 费用支出
@@ -228,7 +204,7 @@ class TestMonthlyBusinessCycle:
         # 1月20日: 录入进项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JAN-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "5650.00", "tax_rate": "0.13",
+            "amount_with_tax": "5650.00", "tax_rate": "0.13", "tax_amount": "650.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-01-20",
             "purchase_order_action": "auto_create",
@@ -239,14 +215,14 @@ class TestMonthlyBusinessCycle:
         # 1月25日: 录入销项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JAN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "2020.00", "tax_rate": "0.01",
+            "amount_with_tax": "2020.00", "tax_rate": "0.01", "tax_amount": "20.00",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-01-25",
             "sale_order_action": "auto_create",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销项发票失败: {resp.text}"
-        data = _extract_data(resp.json())
+        data = extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "1月销项发票应生成销售单"
 
     def test_february_business(self, client, created_data):
@@ -338,7 +314,7 @@ class TestMonthlyBusinessCycle:
         # 3月20日: 录入进项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-MAR-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "4520.00", "tax_rate": "0.13",
+            "amount_with_tax": "4520.00", "tax_rate": "0.13", "tax_amount": "520.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-03-20",
             "purchase_order_action": "auto_create",
@@ -349,14 +325,14 @@ class TestMonthlyBusinessCycle:
         # 3月25日: 录入销项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-MAR-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "4040.00", "tax_rate": "0.01",
+            "amount_with_tax": "4040.00", "tax_rate": "0.01", "tax_amount": "40.00",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-03-25",
             "sale_order_action": "auto_create",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销项发票失败: {resp.text}"
-        data = _extract_data(resp.json())
+        data = extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "3月销项发票应生成销售单"
 
     def test_april_business(self, client, created_data):
@@ -491,7 +467,7 @@ class TestMonthlyBusinessCycle:
         # 6月20日: 录入进项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JUN-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "5650.00", "tax_rate": "0.13",
+            "amount_with_tax": "5650.00", "tax_rate": "0.13", "tax_amount": "650.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-06-20",
             "purchase_order_action": "auto_create",
@@ -502,14 +478,14 @@ class TestMonthlyBusinessCycle:
         # 6月25日: 录入销项发票
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JUN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "4440.00", "tax_rate": "0.01",
+            "amount_with_tax": "4440.00", "tax_rate": "0.01", "tax_amount": "43.96",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-06-25",
             "sale_order_action": "auto_create",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销项发票失败: {resp.text}"
-        data = _extract_data(resp.json())
+        data = extract_data(resp.json())
         assert data["related_order_type"] == "sale_order", "6月销项发票应生成销售单"
 
 
@@ -688,7 +664,7 @@ class TestDataConsistency:
         pid = created_data["product_track_id"]
         
         # 获取当前库存
-        qty = _get_inventory_qty(client, pid)
+        qty = get_stock(client, pid)
         
         # 计算预期库存: 1月采购500 + 2月采购300 + 3月采购400 + 4月采购350 + 5月采购300 + 6月采购450 = 2300
         # 销售: 1月100 + 2月150 + 3月200 + 4月180 + 5月160 + 6月220 = 1010
@@ -783,7 +759,7 @@ class TestConcurrency:
         cid = created_data["customer_id"]
         
         # 获取当前库存
-        qty = _get_inventory_qty(client, pid)
+        qty = get_stock(client, pid)
         if qty < 10:
             pytest.skip("库存不足，跳过并发测试")
         

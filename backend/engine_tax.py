@@ -16,14 +16,9 @@ from finance_integration import post_journal
 from utils import _d, Q2
 from utils.period import parse_period, period_hash
 from crud.finance._snapshot import LedgerSnapshot
-from crud.finance._profit import compute_cumulative_profit
 from lineage import reads, TIER_L3
 from policy.entity_profile import build_profile, EntityProfile, resolve_taxpayer_type_by_date
-from policy.policy_engine import (
-    calculate_income_tax as policy_income_tax,
-)
 from policy.vat_facts import load_vat_facts
-from policy.income_tax_facts import load_income_tax_facts
 from enums import InvoiceDirection
 
 logger = logging.getLogger("inventory")
@@ -123,68 +118,44 @@ class TaxAccrualEngine:
                     result_lines.append(f"增值税减免结转: {exemption_amt} → 营业外收入")
                     logger.info(f"月结 {period} 增值税减免结转: {exemption_amt}")
 
-        # 所得税计算前刷新 snapshot
-        sn = LedgerSnapshot(self.db, account_id, bs_cutoff=close_dt,
-                            period_start=period_start, period_end=close_dt)
+        # ── 所得税计算（委托 IncomeTaxEngine）──
+        from engine_income_tax import IncomeTaxEngine
+        r = IncomeTaxEngine(self.db).calculate(account_id, period)
 
-        year_start = datetime(period_start.year, 1, 1, 0, 0, 0)
-        cumulative_profit = compute_cumulative_profit(sn, year_start, close_dt)
+        rate_info = r.trace.get("rate", {})
+        reason = rate_info.get("reason", "")
+        reduction = rate_info.get("reduction", "")
+        if reason:
+            result_lines.append(reason)
+        if reduction:
+            result_lines.append(f"所得税减免: {reduction}")
 
-        ytd_debit, ytd_credit, _ = sn.trace_per_dc("222105", year_start, close_dt)
-        posted_tax = (ytd_credit - ytd_debit).quantize(Decimal("0.01"))
-
-        if profile.income_type == "personal":
-            result_lines.append("个体工商户：不计提企业所得税（缴个人所得税）")
-            return {
-                "status": "ok",
-                "period": period,
-                "curr_vat": float(curr_vat),
-                "cumulative_profit": float(cumulative_profit),
-                "target_income_tax": 0,
-                "posted_income_tax": float(posted_tax),
-                "lines": result_lines,
-            }
-
-        if profile.income_type == "general":
-            income_facts_data = load_income_tax_facts(period_start.date())
-            from policy.entity_profile import refine_small_micro
-            profile = refine_small_micro(profile, cumulative_profit, income_facts_data.small_micro_threshold)
-
-        income_tax_result = policy_income_tax(
-            profile=profile,
-            profit=cumulative_profit,
-        )
-        target_tax = income_tax_result.tax_payable
-        if income_tax_result.reduction_item:
-            result_lines.append(f"所得税减免: {income_tax_result.reduction_item}（减{income_tax_result.reduction_amount}）")
-        delta = target_tax - posted_tax
-
-        if abs(delta) > Decimal("0.01"):
-            if delta > Decimal("0"):
+        if r.tax_rate_l2 > 0 and abs(r.delta_l2) > Decimal("0.01"):
+            if r.delta_l2 > Decimal("0"):
                 post_journal(self.db, account_id, "tax_income", {
-                    "amount": delta,
+                    "amount": r.delta_l2,
                     "date": close_dt,
                     "source_model": "tax_income",
                     "source_id": period_hash(period, "income"),
                 })
-                result_lines.append(f"所得税: +{delta}")
-                logger.info(f"月结 {period} 计提所得税: +{delta}")
+                result_lines.append(f"所得税: +{r.delta_l2}")
+                logger.info(f"月结 {period} 计提所得税: +{r.delta_l2}")
             else:
                 post_journal(self.db, account_id, "tax_income_reversal", {
-                    "amount": abs(delta),
+                    "amount": abs(r.delta_l2),
                     "date": close_dt,
                     "source_model": "tax_income_reversal",
                     "source_id": period_hash(period, "income_rev"),
                 })
-                result_lines.append(f"所得税: -{abs(delta)} (冲回)")
-                logger.info(f"月结 {period} 冲回所得税: {abs(delta)}")
+                result_lines.append(f"所得税: -{abs(r.delta_l2)} (冲回)")
+                logger.info(f"月结 {period} 冲回所得税: {abs(r.delta_l2)}")
 
         return {
             "status": "ok",
             "period": period,
             "curr_vat": float(curr_vat),
-            "cumulative_profit": float(cumulative_profit),
-            "target_income_tax": float(target_tax),
-            "posted_income_tax": float(posted_tax),
+            "cumulative_profit": float(r.profit_l2),
+            "target_income_tax": float(r.tax_payable_l2),
+            "posted_income_tax": float(r.posted_l2),
             "lines": result_lines,
         }

@@ -13,10 +13,9 @@ from typing import Optional
 from policy.vat_facts import load_vat_facts
 from policy.income_tax_facts import load_income_tax_facts
 from policy.entity_profile import EntityProfile
-from utils import _d
+from utils import _d, Q2
 
 logger = logging.getLogger("inventory")
-Q2 = Decimal("0.01")
 
 
 @dataclass

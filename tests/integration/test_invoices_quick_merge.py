@@ -21,6 +21,7 @@ def _base_invoice_payload():
         "invoice_type": "special",
         "amount_with_tax": "11300.00",
         "tax_rate": "0.13",
+        "tax_amount": "1300.00",
         "counterparty_name": "测试供应商",
         "seller_name": "测试供应商",
         "buyer_name": "本公司",

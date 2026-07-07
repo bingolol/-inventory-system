@@ -1,13 +1,13 @@
 """资产负债表 (会小企01表)"""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 
 import models
 from enums import OrderStatus, PaymentStatus, PaymentMethod
-from utils import _d, Q2
+from utils import _d, Q2, end_of_day
 from models_finance import Ledger
 from lineage import reads, TIER_L1, TIER_L2
 
@@ -39,7 +39,7 @@ from ._snapshot import LedgerSnapshot
 def generate_balance_sheet(db: Session, account_id: int, date: str):
     """生成资产负债表"""
     query_date = datetime.strptime(date, "%Y-%m-%d")
-    query_end = query_date + timedelta(days=1) - timedelta(seconds=1)
+    query_end = end_of_day(query_date)
 
     # ── 构造 snapshot：BS 只需要累计到截止日的数据 ──
     sn = LedgerSnapshot(db, account_id, bs_cutoff=query_end)

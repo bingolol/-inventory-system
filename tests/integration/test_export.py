@@ -6,7 +6,9 @@ from database import SessionLocal
 from helpers import get_account_id
 from factories import api_create_product, api_create_customer, api_create_supplier
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+from helpers import make_headers
+
+HEADERS = make_headers()
 
 
 def _count_excel_rows(content):

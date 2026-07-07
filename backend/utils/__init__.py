@@ -7,6 +7,7 @@ from sqlalchemy import ColumnElement
 from errors import BusinessError, ErrorCode
 
 Q2 = Decimal('0.01')
+ZERO = Decimal('0')
 
 
 def _d(value) -> Decimal:
@@ -14,6 +15,11 @@ def _d(value) -> Decimal:
     if value is None:
         return Decimal('0')
     return Decimal(str(value))
+
+
+def end_of_day(dt: datetime) -> datetime:
+    """返回当日 23:59:59，用于截止时间查询"""
+    return dt.replace(hour=23, minute=59, second=59, microsecond=0)
 
 
 def to_decimal(val):

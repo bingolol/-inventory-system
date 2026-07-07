@@ -44,3 +44,17 @@ def combine(amount_without_tax, tax_rate):
     tax = (b * r).quantize(Q2, rounding=ROUND_HALF_UP)
     with_tax = (b + tax).quantize(Q2, rounding=ROUND_HALF_UP)
     return tax, with_tax
+
+
+def without_tax_from(amount_with_tax: Decimal, tax_amount: Decimal) -> Decimal:
+    """含税金额 - 税额 → 不含税金额（BR-27 合规）"""
+    a = _d(amount_with_tax)
+    t = _d(tax_amount)
+    return (a - t).quantize(Q2, rounding=ROUND_HALF_UP)
+
+
+def with_tax_from(amount_without_tax: Decimal, tax_amount: Decimal) -> Decimal:
+    """不含税金额 + 税额 → 含税金额（BR-27 合规）"""
+    b = _d(amount_without_tax)
+    t = _d(tax_amount)
+    return (b + t).quantize(Q2, rounding=ROUND_HALF_UP)

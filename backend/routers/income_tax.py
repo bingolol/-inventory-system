@@ -15,6 +15,7 @@ from models import Account
 from schemas import IncomeTaxReport
 from account_dep import get_account_id
 from utils import _d, Q2
+from utils.period import quarter_bounds
 from errors import BusinessError, ErrorCode
 from crud.finance.income_statement import generate_income_statement
 from policy.entity_profile import build_profile
@@ -26,16 +27,8 @@ router = APIRouter()
 def _get_date_range(year: int, quarter: Optional[int]):
     """计算起止日期"""
     if quarter and 1 <= quarter <= 4:
-        quarter_start_month = (quarter - 1) * 3 + 1
-        start_date = datetime(year, quarter_start_month, 1)
-        if quarter == 4:
-            end_date = datetime(year + 1, 1, 1)
-        else:
-            end_date = datetime(year, quarter_start_month + 3, 1)
-    else:
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year + 1, 1, 1)
-    return start_date, end_date
+        return quarter_bounds(year, quarter)
+    return datetime(year, 1, 1), datetime(year + 1, 1, 1)
 
 
 def _calc_accounting_caliber(db: Session, account_id: int, start_date: datetime, end_date: datetime):

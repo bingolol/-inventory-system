@@ -200,7 +200,9 @@ def reverse_journal(
     force=True 时跳过幂等检查，并取最近一条 is_reversal=False 的凭证作为冲红基准
     （用于"冲红+重建"反复执行的场景：同一 source_id 有多条正向凭证，需冲红最近一条）。
     """
+    ledger_id = get_or_create_ledger_id(db, account_id)
     existing_reversal = db.query(AccountMove).filter(
+        AccountMove.ledger_id == ledger_id,
         AccountMove.source_model == source_model,
         AccountMove.source_id == source_id,
         AccountMove.is_reversal == True,
@@ -209,6 +211,7 @@ def reverse_journal(
         return None
 
     orig_query = db.query(AccountMove).filter(
+        AccountMove.ledger_id == ledger_id,
         AccountMove.source_model == source_model,
         AccountMove.source_id == source_id,
         AccountMove.is_reversal == False,

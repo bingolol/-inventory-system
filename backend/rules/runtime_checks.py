@@ -27,8 +27,8 @@ from .dsl import RuleViolation
 from .validator import get_rule_by_id
 from errors import BusinessError, ErrorCode
 from policy.vat_facts import get_legal_rate_values
+from utils import Q2
 
-Q2 = Decimal("0.01")
 TOLERANCE = Decimal("0.01")  # 误差容忍
 
 

@@ -3,7 +3,7 @@
 VATDeclaration: 用户提交时锁定 VAT 快照（L1 外部输入）
 SurchargeDeclaration: 用户录入实际附加税（L1 外部输入），录入即过账 + 级联修正
 """
-
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -14,15 +14,12 @@ from sqlalchemy.orm import Session
 from .base import Command, CommandHandler, register
 from crud.base import log_op
 from models_finance import VATDeclaration, SurchargeDeclaration
-from finance_integration import post_journal
+from finance_integration import post_journal, get_or_create_ledger_id
 from errors import BusinessError, ErrorCode
 from utils import _d, Q2
+
+logger = logging.getLogger("inventory")
 from utils.period import period_hash
-
-
-def _get_quarter_end(month: int) -> int:
-    """返回季度末月份"""
-    return ((month - 1) // 3 + 1) * 3
 
 
 # ── VAT 声明 ──
@@ -125,7 +122,7 @@ class DeclareVATHandler(CommandHandler):
                 ).first() if "AccountMove" in db.registry._class_registry else None
                 move_exists = existing_move is not None
             except Exception:
-                pass
+                logger.debug("vat_transfer_out existence check failed, assuming not posted")
 
             if not move_exists:
                 try:
@@ -135,8 +132,9 @@ class DeclareVATHandler(CommandHandler):
                         "source_model": "vat_transfer_out",
                         "source_id": period_hash(cmd.period, "vat_xfer"),
                     })
-                except Exception as e:
-                    pass
+                except Exception:
+                    logger.exception("vat_transfer_out post_journal failed for period=%s", cmd.period)
+                    raise
 
         log_op(db, cmd.account_id, "create", "vat_declaration", declaration.id,
              f"VAT 申报声明: 期间={cmd.period}, 应缴={vat_result.tax_payable}", operator=cmd.operator)
@@ -171,8 +169,6 @@ class DeclareSurchargeHandler(CommandHandler):
         import models
         from models_finance import AccountMove
         from engine_period_close import PeriodCloseEngine
-        from crud.finance._snapshot import LedgerSnapshot
-        from crud.finance._profit import compute_cumulative_profit
         from utils.period import parse_period
 
         # 验证 VATDeclaration 存在
@@ -195,7 +191,7 @@ class DeclareSurchargeHandler(CommandHandler):
         total = cmd.urban_construction_tax + cmd.education_surcharge + cmd.local_education_surcharge
 
         if existing:
-            # 已有 → 计算 delta 过账差额
+            # 已有 → 冲红旧凭证 + 重建（BR-REV: 替代旧 delta 模式，避免凭证累计叠加）
             old_total = existing.total
             delta = total - old_total
             if abs(delta) <= Q2:
@@ -205,6 +201,10 @@ class DeclareSurchargeHandler(CommandHandler):
                     "total": float(total),
                     "posted": "no_change",
                 }
+            # 冲红原 tax_surcharge 凭证
+            from finance_integration import reverse_journal
+            reverse_journal(db, cmd.account_id, "tax_surcharge",
+                            period_hash(cmd.period, "surcharge"), force=True)
             # 更新声明值
             existing.urban_construction_tax = cmd.urban_construction_tax
             existing.education_surcharge = cmd.education_surcharge
@@ -212,17 +212,18 @@ class DeclareSurchargeHandler(CommandHandler):
             existing.total = total
             existing.notes = cmd.notes or existing.notes
             db.flush()
+            # 重新过账（force=True 跳过幂等防御）
             _post_surcharge_journal(db, cmd.account_id, cmd.period, vat_decl.period_end,
                                      cmd.urban_construction_tax, cmd.education_surcharge, cmd.local_education_surcharge)
             _cascade_fix(db, cmd.account_id, cmd.period)
             log_op(db, cmd.account_id, "update", "surcharge_declaration", existing.id,
-                 f"附加税更新: 期间={cmd.period}, 金额={total}", operator=cmd.operator)
+                 f"附加税更新(冲红+重建): 期间={cmd.period}, 金额={total}", operator=cmd.operator)
             db.flush()
             return {
                 "id": existing.id,
                 "period": cmd.period,
                 "total": float(total),
-                "posted": "delta",
+                "posted": "reverse_and_rebuild",
             }
 
         # 新建
@@ -294,12 +295,9 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
     因为 PeriodCloseEngine 和所得税 source_id 都使用月度 period 格式。
     附加税凭证日期 = 季度末月末日，所以只需重跑季度末月的 period_close。
     """
-    print(f"  [CASCADE] _cascade_fix called: period={period}")
     from datetime import datetime
     from calendar import monthrange
     from models_finance import AccountMove
-    from crud.finance._snapshot import LedgerSnapshot
-    from crud.finance._profit import compute_cumulative_profit
     from engine_period_close import PeriodCloseEngine
 
     # 季度 period → 月度 period（取季度末月）
@@ -313,11 +311,41 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
 
     from utils.period import parse_period
     period_start, close_dt = parse_period(monthly_period)
-    print(f"  [CASCADE] monthly_period={monthly_period} start={period_start} close={close_dt}")
     result = {"period_close_rerun": False, "income_tax_adjusted": 0}
 
-    # 检查 period_close 是否已执行（用月度 period 查询和重跑）
+    # ── 第 1 步：先调整所得税（必须在 period_close 重跑之前）──
+    ledger_id = get_or_create_ledger_id(db, account_id)
+    income_exists = db.query(AccountMove).filter(
+        AccountMove.ledger_id == ledger_id,
+        AccountMove.source_model.in_(["tax_income", "tax_income_reversal"]),
+        AccountMove.date_l1 >= period_start.date(),
+        AccountMove.date_l1 <= close_dt.date(),
+    ).first()
+
+    if income_exists:
+        try:
+            from engine_income_tax import IncomeTaxEngine
+            r = IncomeTaxEngine(db).calculate(account_id, monthly_period)
+            if abs(r.delta_l2) > Q2:
+                if r.delta_l2 > Q2:
+                    post_journal(db, account_id, "tax_income", {
+                        "amount": r.delta_l2, "date": close_dt,
+                        "source_model": "tax_income",
+                        "source_id": period_hash(monthly_period, "income"),
+                    }, force=True)
+                else:
+                    post_journal(db, account_id, "tax_income_reversal", {
+                        "amount": abs(r.delta_l2), "date": close_dt,
+                        "source_model": "tax_income_reversal",
+                        "source_id": period_hash(monthly_period, "income_rev"),
+                    }, force=True)
+                result["income_tax_adjusted"] = float(r.delta_l2)
+        except Exception:
+            logger.exception("_cascade_fix income_tax adjustment failed for period=%s", period)
+
+    # ── 第 2 步：重跑 period_close（将调整后的 6701 余额结转到 4103）──
     close_exists = db.query(AccountMove).filter(
+        AccountMove.ledger_id == ledger_id,
         AccountMove.source_model == "period_close",
         AccountMove.date_l1 >= period_start.date(),
         AccountMove.date_l1 <= close_dt.date(),
@@ -328,73 +356,7 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
             engine = PeriodCloseEngine(db)
             engine.execute(account_id, monthly_period, force=True)
             result["period_close_rerun"] = True
-        except Exception as e:
-            print(f"  [CASCADE ERROR] period_close rerun failed: {e}")
-
-    # 检查 income_tax 是否已执行
-    income_exists = db.query(AccountMove).filter(
-        AccountMove.source_model.in_(["tax_income", "tax_income_reversal"]),
-        AccountMove.date_l1 >= period_start.date(),
-        AccountMove.date_l1 <= close_dt.date(),
-    ).first()
-
-    if income_exists:
-        try:
-            from policy.entity_profile import build_profile, resolve_taxpayer_type_by_date, refine_small_micro
-            from policy.policy_engine import calculate_income_tax as policy_income_tax
-            from policy.income_tax_facts import load_income_tax_facts
-            import models
-            account = db.query(models.Account).filter(models.Account.id == account_id).first()
-
-            sn = LedgerSnapshot(db, account_id, bs_cutoff=close_dt,
-                                period_start=period_start, period_end=close_dt)
-            year_start = datetime(period_start.year, 1, 1, 0, 0, 0)
-            cumulative_profit = compute_cumulative_profit(sn, year_start, close_dt)
-
-            # 与 engine_tax.py 保持一致：解析历史纳税人类型 + 小微企业判定
-            vat_type_ov = resolve_taxpayer_type_by_date(account, db, period_start.date()) if account else None
-            profile = build_profile(account, period_start.date(), vat_type_override=vat_type_ov,
-                                    surcharge_halved=account.surcharge_halved if account else None) if account else None
-            if profile and profile.income_type == "general":
-                income_facts_data = load_income_tax_facts(period_start.date())
-                profile = refine_small_micro(profile, cumulative_profit, income_facts_data.small_micro_threshold)
-
-            import logging
-            logging.getLogger("inventory").info(
-                f"_cascade_fix {period}: monthly={monthly_period}, "
-                f"profit={cumulative_profit}, profile.income_type={profile.income_type if profile else None}, "
-                f"vat_type_ov={vat_type_ov}"
-            )
-            print(f"  [DEBUG _cascade_fix] period={period} monthly={monthly_period} "
-                  f"profit={cumulative_profit} income_type={profile.income_type if profile else None} "
-                  f"vat_ov={vat_type_ov} target_tax={target_tax if 'target_tax' in dir() else '?'}")
-
-            if profile and profile.income_type != "personal":
-                income_result = policy_income_tax(
-                    profile=profile, profit=cumulative_profit,
-                )
-                target_tax = income_result.tax_payable
-                ytd_debit, ytd_credit, _ = sn.trace_per_dc("222105", year_start, close_dt)
-                posted_tax = (ytd_credit - ytd_debit).quantize(Q2)
-                delta = target_tax - posted_tax
-
-                if abs(delta) > Q2:
-                    if delta > Q2:
-                        post_journal(db, account_id, "tax_income", {
-                            "amount": delta, "date": close_dt,
-                            "source_model": "tax_income",
-                            "source_id": period_hash(monthly_period, "income"),
-                        }, force=True)
-                    else:
-                        post_journal(db, account_id, "tax_income_reversal", {
-                            "amount": abs(delta), "date": close_dt,
-                            "source_model": "tax_income_reversal",
-                            "source_id": period_hash(monthly_period, "income_rev"),
-                        }, force=True)
-                    result["income_tax_adjusted"] = float(delta)
-        except Exception as e:
-            print(f"  [CASCADE ERROR] income_tax adjustment failed: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            logger.exception("_cascade_fix period_close rerun failed for period=%s", period)
 
     return result

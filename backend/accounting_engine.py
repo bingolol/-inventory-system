@@ -17,11 +17,8 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any
 from enum import Enum
-from utils import _d
+from utils import _d, Q2
 # split removed — tax is external input (BR-27)
-
-# 金额精度：保留2位小数
-Q2 = Decimal('0.01')
 
 
 class AccountingErrorCode(str, Enum):
@@ -130,12 +127,6 @@ class AccountingError(Exception):
             }
         }
 
-
-def _d(value) -> Decimal:
-    """安全转换为 Decimal，None → 0"""
-    if value is None:
-        return Decimal('0')
-    return Decimal(str(value))
 
 
 @dataclass

@@ -10,6 +10,7 @@ from account_dep import get_account_id, get_operator
 from uow import unit_of_work
 from commands.base import dispatch
 from commands.tax_declaration_commands import DeclareVAT, DeclareSurcharge
+from crud.base import log_op
 from models_finance import VATDeclaration, SurchargeDeclaration
 from schemas.finance import (
     VATDeclarationCreate, VATDeclarationOut,
@@ -35,6 +36,15 @@ def declare_vat(
             VATDeclaration.period == body.period,
         ).first()
         if existing:
+            # BR-REV: 删除前冲红 vat_transfer_out 凭证，避免 dangling AccountMove 导致 BS 不平
+            from finance_integration import reverse_journal
+            from utils.period import period_hash
+            reverse_journal(
+                db, account_id, "vat_transfer_out",
+                period_hash(body.period, "vat_xfer"), force=True,
+            )
+            log_op(db, account_id, "delete", "vat_declaration", existing.id,
+                 f"VAT 申报覆盖删除: 期间={body.period}", operator=operator)
             db.delete(existing)
             db.flush()
 

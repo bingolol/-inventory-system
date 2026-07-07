@@ -16,37 +16,13 @@
 
 import time
 import pytest
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from test_helpers import ensure_test_product
-from helpers import get_entity_id
+from helpers import get_entity_id, extract_data, round2, get_stock, make_headers
 
-HEADERS = {"X-Account-ID": "1", "X-Operator": "test"}
+HEADERS = make_headers("test")
 
 _inv_counter = 0
-
-
-def _extract_data(resp_json):
-    """从 AI Gateway 响应中提取 data 字段"""
-    if isinstance(resp_json, dict) and "entity" in resp_json and isinstance(resp_json.get("entity"), dict):
-        ent = resp_json["entity"]
-        if "data" in ent:
-            return ent["data"]
-    if isinstance(resp_json, dict) and "data" in resp_json:
-        return resp_json["data"]
-    return resp_json
-
-
-def round2(v):
-    return Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-
-def get_stock(client, pid):
-    """获取商品库存"""
-    resp = client.get("/api/inventory", params={"page": 1, "page_size": 1000}, headers=HEADERS)
-    for item in resp.json().get("items", []):
-        if item.get("product_id") == pid:
-            return item.get("quantity", 0)
-    return 0
 
 
 @pytest.fixture(scope="module")
@@ -103,7 +79,7 @@ def test_purchase_amount_tax(client, ids):
     assert resp.status_code in (200, 201)
     
     # 获取实际值
-    data = _extract_data(resp.json())
+    data = extract_data(resp.json())
     actual_amount = Decimal(str(data.get("items", [{}])[0].get("total_price", 0)))
     actual_total = Decimal(str(data.get("total_price", 0)))
     
@@ -149,7 +125,7 @@ def test_sale_amount_tax(client, ids):
     assert resp.status_code in (200, 201)
     
     # 获取实际值
-    data = _extract_data(resp.json())
+    data = extract_data(resp.json())
     actual_amount = Decimal(str(data.get("items", [{}])[0].get("total_price", 0)))
     actual_total = Decimal(str(data.get("total_price", 0)))
     
@@ -210,7 +186,7 @@ def test_return(client, ids):
         "items": [{"product_id": ids["pid"], "quantity": RETURN_QTY, "unit_price": 150.00, "tax_rate": 0.01}]
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)
-    sale_id = _extract_data(resp.json()).get("id")
+    sale_id = extract_data(resp.json()).get("id")
     
     # 销售后库存
     stock_after_sale = get_stock(client, ids["pid"])
@@ -261,6 +237,7 @@ def test_invoice(client):
         "invoice_type": "ordinary",
         "amount_with_tax": str(AMOUNT_WITH_TAX),
         "tax_rate": str(TAX_RATE),
+        "tax_amount": str(TAX),
         "counterparty_name": "测试",
         "seller_name": "本公司",
         "buyer_name": "测试",
@@ -271,7 +248,7 @@ def test_invoice(client):
     assert resp.status_code in (200, 201)
 
     # 获取实际值
-    data = _extract_data(resp.json())
+    data = extract_data(resp.json())
     assert data.get("related_order_type") == "sale_order", "销项发票应生成销售单"
     actual_without_tax = round2(Decimal(str(data.get("amount_without_tax", 0))))
     actual_tax = round2(Decimal(str(data.get("tax_amount", 0))))
@@ -308,7 +285,7 @@ def test_expense(client):
     assert resp.status_code in (200, 201)
     
     # 获取实际值
-    data = _extract_data(resp.json())
+    data = extract_data(resp.json())
     actual_amount = Decimal(str(data.get("amount", 0)))
     
     # 验证

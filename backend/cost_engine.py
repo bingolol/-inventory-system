@@ -19,9 +19,26 @@ def weighted_average(total_qty: Decimal, total_value: Decimal, precision: int = 
     出参:
         加权平均单位成本。qty <= 0 时返回 Decimal("0")。
 
-    调用方职责: 入参 total_qty/total_value 由调用方从 StockMove 序列 ∑ 计算，
+    调用方职责: 入参 total_qty/total_value 由调用方从 StockMove 序列 Σ 计算，
     出参可对照 Inventory 缓存或 AccountMove COGS 做独立验证。
     """
     if total_qty <= 0:
         return Decimal("0")
     return (total_value / total_qty).quantize(Decimal("0." + "0" * (precision - 1) + "1"))
+
+
+def straight_line_depreciation(original: Decimal, useful_life: int,
+                               accumulated: Decimal, salvage_rate: Decimal = Decimal("0")) -> Decimal:
+    """年限平均法月折旧/摊销额
+
+    fixed_asset 传 salvage_rate，intangible 默认 0。
+    已满额返回 0。
+    """
+    if useful_life <= 0:
+        return Decimal("0")
+    depreciable = (original * (Decimal("1") - salvage_rate)).quantize(Decimal("0.01"))
+    monthly = (depreciable / useful_life).quantize(Decimal("0.01"))
+    remaining = depreciable - accumulated
+    if remaining <= 0:
+        return Decimal("0")
+    return min(monthly, remaining)

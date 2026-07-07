@@ -21,6 +21,7 @@ from .product_commands import (
     UpdateProduct,
     DeleteProduct,
     AdjustInventory,
+    ReverseInventoryAdjustment,
 )
 from .partner_commands import (
     CreatePartner,
@@ -69,6 +70,8 @@ from .fixed_asset_commands import (
     DepreciateFixedAsset,
     BatchDepreciateFixedAssets,
     DisposeFixedAsset,
+    ReverseDepreciation,
+    ReverseAssetDisposal,
 )
 from .orders import (
     CreateOrder,
