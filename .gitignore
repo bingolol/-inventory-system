@@ -48,8 +48,8 @@ build2/
 dist2/
 *.spec.bak
 
-# Temporary scripts
-_*.py
+# Temporary scripts (only at root level, not in subdirectories)
+/_*.py
 !__init__.py
 fix_*.py
 tmp_*.py
