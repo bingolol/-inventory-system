@@ -1,0 +1,1 @@
+import{a as t}from"./index-pYihD3DN.js";const r=()=>t.get("/tax/pending-declarations"),n=()=>t.get("/tax/declarations"),o=(e,a)=>t.post("/tax/surcharge-declaration",{period:e,urban_construction_tax:a.urban_construction_tax,education_surcharge:a.education_surcharge,local_education_surcharge:a.local_education_surcharge,notes:a.notes||""});export{n as a,o as d,r as g};

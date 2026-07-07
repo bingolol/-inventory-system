@@ -1,0 +1,1 @@
+import{a as e}from"./index-pYihD3DN.js";const s=t=>e.get("/payments",{params:t}),a=t=>e.get(`/payments/${t}`),n=t=>e.post("/payments",t),p=t=>e.post(`/payments/${t}/reverse`),o={getPayments:s,getPayment:a,createPayment:n,reversePayment:p};export{o as p};

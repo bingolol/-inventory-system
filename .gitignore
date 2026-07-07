@@ -9,7 +9,9 @@ venv/
 
 # Node
 node_modules/
-dist/
+
+# 前端构建产物需要提交（生产环境依赖 dist 目录，不能用 dev server）
+!frontend/dist/
 
 # Database
 *.db
@@ -50,7 +52,6 @@ dist2/
 _*.py
 !__init__.py
 fix_*.py
-create_*.py
 tmp_*.py
 debug_test.py
 diag_run.py
