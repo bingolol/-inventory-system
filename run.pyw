@@ -220,7 +220,8 @@ def _kill_port(port):
 def _start_backend():
     """启动后端服务（子进程方式，隐藏窗口，stderr 写入日志文件）"""
     env = os.environ.copy()
-    env["DEV"] = "1"
+    # 只跳过硬约束检查，不设 DEV=1（DEV=1 会触发 uvicorn reload 热重载，
+    # 生产环境 watchfiles 不停扫描会导致卡顿/无限重载）
     env["SKIP_HARD_CONSTRAINTS"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
 
