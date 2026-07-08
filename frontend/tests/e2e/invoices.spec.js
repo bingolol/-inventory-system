@@ -14,20 +14,21 @@ test.describe('发票管理', () => {
     });
 
     test('筛选表单区域正确展示', async ({ page }) => {
-      await expect(page.locator('.filter-form')).toBeVisible();
-      await expect(page.locator('.filter-form').getByText('方向')).toBeVisible();
-      await expect(page.locator('.filter-form').getByText('类型')).toBeVisible();
-      await expect(page.locator('.filter-form').getByText('年份')).toBeVisible();
-      await expect(page.locator('.filter-form').getByText('季度')).toBeVisible();
-      await expect(page.locator('.filter-form').getByText('认证状态')).toBeVisible();
+      const filterBar = page.locator('.filter-bar');
+      await expect(filterBar).toBeVisible();
+      await expect(filterBar.getByText('方向')).toBeVisible();
+      await expect(filterBar.getByText('类型')).toBeVisible();
+      await expect(filterBar.getByText('年份')).toBeVisible();
+      await expect(filterBar.getByText('季度')).toBeVisible();
+      await expect(filterBar.getByText('认证状态')).toBeVisible();
     });
 
     test('税务统计卡片正确展示', async ({ page }) => {
-      await expect(page.locator('.tax-stats')).toBeVisible();
-      await expect(page.locator('text=本季度税务统计')).toBeVisible();
-      await expect(page.locator('text=销项税额')).toBeVisible();
-      await expect(page.locator('text=进项税额')).toBeVisible();
-      await expect(page.locator('text=应纳税额')).toBeVisible();
+      const stats = page.locator('.inv-stats');
+      await expect(stats).toBeVisible();
+      await expect(stats.getByText('销项税额')).toBeVisible();
+      await expect(stats.getByText('进项税额')).toBeVisible();
+      await expect(stats.getByText('应纳税额')).toBeVisible();
     });
   });
 
@@ -58,23 +59,33 @@ test.describe('发票管理', () => {
       await expect(summaryArea).toContainText('税额');
       await expect(summaryArea).toContainText('价税合计');
     });
+
+    test('分页组件正确展示', async ({ page }) => {
+      await expect(page.locator('.el-pagination')).toBeVisible();
+    });
   });
 
   // ========== 筛选功能 ==========
   test.describe('筛选功能', () => {
-    test('按方向筛选发票', async ({ page }) => {
-      const allCount = await page.locator('.el-table__row').count();
-
-      const directionSelect = page.locator('.filter-form .el-form-item:has-text("方向") .el-select');
-      await directionSelect.click();
+    async function selectFirstFilterOption(page, label) {
+      const select = page.locator('.filter-bar .el-form-item:has-text("' + label + '") .el-select').first();
+      await select.click();
       await page.waitForTimeout(500);
 
       const dropdown = page.locator('.el-select-dropdown:visible').last();
       const options = dropdown.locator('li');
       const optionCount = await options.count();
-
       if (optionCount > 0) {
         await options.first().click();
+      }
+      return optionCount;
+    }
+
+    test('按方向筛选发票', async ({ page }) => {
+      const allCount = await page.locator('.el-table__row').count();
+
+      const optionCount = await selectFirstFilterOption(page, '方向');
+      if (optionCount > 0) {
         await page.locator('button:has-text("查询")').click();
         await page.waitForTimeout(1500);
 
@@ -85,16 +96,8 @@ test.describe('发票管理', () => {
     });
 
     test('按类型筛选发票', async ({ page }) => {
-      const typeSelect = page.locator('.filter-form .el-form-item:has-text("类型") .el-select');
-      await typeSelect.click();
-      await page.waitForTimeout(500);
-
-      const dropdown = page.locator('.el-select-dropdown:visible').last();
-      const options = dropdown.locator('li');
-      const optionCount = await options.count();
-
+      const optionCount = await selectFirstFilterOption(page, '类型');
       if (optionCount > 0) {
-        await options.first().click();
         await page.locator('button:has-text("查询")').click();
         await page.waitForTimeout(1500);
 
@@ -104,16 +107,8 @@ test.describe('发票管理', () => {
     });
 
     test('按年份筛选发票', async ({ page }) => {
-      const yearSelect = page.locator('.filter-form .el-form-item:has-text("年份") .el-select');
-      await yearSelect.click();
-      await page.waitForTimeout(500);
-
-      const dropdown = page.locator('.el-select-dropdown:visible').last();
-      const options = dropdown.locator('li');
-      const optionCount = await options.count();
-
+      const optionCount = await selectFirstFilterOption(page, '年份');
       if (optionCount > 0) {
-        await options.first().click();
         await page.locator('button:has-text("查询")').click();
         await page.waitForTimeout(1500);
 
@@ -123,16 +118,8 @@ test.describe('发票管理', () => {
     });
 
     test('按季度筛选发票', async ({ page }) => {
-      const quarterSelect = page.locator('.filter-form .el-form-item:has-text("季度") .el-select');
-      await quarterSelect.click();
-      await page.waitForTimeout(500);
-
-      const dropdown = page.locator('.el-select-dropdown:visible').last();
-      const options = dropdown.locator('li');
-      const optionCount = await options.count();
-
+      const optionCount = await selectFirstFilterOption(page, '季度');
       if (optionCount > 0) {
-        await options.first().click();
         await page.locator('button:has-text("查询")').click();
         await page.waitForTimeout(1500);
 
@@ -142,16 +129,8 @@ test.describe('发票管理', () => {
     });
 
     test('按认证状态筛选发票', async ({ page }) => {
-      const statusSelect = page.locator('.filter-form .el-form-item:has-text("认证状态") .el-select');
-      await statusSelect.click();
-      await page.waitForTimeout(500);
-
-      const dropdown = page.locator('.el-select-dropdown:visible').last();
-      const options = dropdown.locator('li');
-      const optionCount = await options.count();
-
+      const optionCount = await selectFirstFilterOption(page, '认证状态');
       if (optionCount > 0) {
-        await options.first().click();
         await page.locator('button:has-text("查询")').click();
         await page.waitForTimeout(1500);
 
@@ -163,15 +142,7 @@ test.describe('发票管理', () => {
     test('重置筛选恢复全部数据', async ({ page }) => {
       const allCount = await page.locator('.el-table__row').count();
 
-      const directionSelect = page.locator('.filter-form .el-form-item:has-text("方向") .el-select');
-      await directionSelect.click();
-      await page.waitForTimeout(500);
-      const dropdown = page.locator('.el-select-dropdown:visible').last();
-      const options = dropdown.locator('li');
-      const optionCount = await options.count();
-      if (optionCount > 0) {
-        await options.first().click();
-      }
+      const optionCount = await selectFirstFilterOption(page, '方向');
       await page.locator('button:has-text("查询")').click();
       await page.waitForTimeout(1500);
 
@@ -183,23 +154,8 @@ test.describe('发票管理', () => {
     });
 
     test('组合筛选条件', async ({ page }) => {
-      const yearSelect = page.locator('.filter-form .el-form-item:has-text("年份") .el-select');
-      await yearSelect.click();
-      await page.waitForTimeout(500);
-      const dropdown1 = page.locator('.el-select-dropdown:visible').last();
-      const options1 = dropdown1.locator('li');
-      if (await options1.count() > 0) {
-        await options1.first().click();
-      }
-
-      const quarterSelect = page.locator('.filter-form .el-form-item:has-text("季度") .el-select');
-      await quarterSelect.click();
-      await page.waitForTimeout(500);
-      const dropdown2 = page.locator('.el-select-dropdown:visible').last();
-      const options2 = dropdown2.locator('li');
-      if (await options2.count() > 0) {
-        await options2.first().click();
-      }
+      await selectFirstFilterOption(page, '年份');
+      await selectFirstFilterOption(page, '季度');
 
       await page.locator('button:has-text("查询")').click();
       await page.waitForTimeout(1500);
@@ -239,6 +195,43 @@ test.describe('发票管理', () => {
       await page.locator('.el-dialog__footer button:has-text("取消")').click();
 
       await expect(dialog).not.toBeVisible();
+    });
+
+    test('点击遮罩层关闭新增对话框', async ({ page }) => {
+      await page.locator('button:has-text("新增发票")').click();
+
+      const dialog = page.locator('.el-dialog').filter({ hasText: '新增发票' }).first();
+      await expect(dialog).toBeVisible();
+
+      await page.locator('.el-overlay').first().click({ position: { x: 10, y: 10 } });
+      await page.waitForTimeout(500);
+      await expect(dialog).not.toBeVisible();
+    });
+  });
+
+  // ========== 编辑发票 ==========
+  test.describe('编辑发票', () => {
+    test('编辑第一行发票回显数据', async ({ page }) => {
+      const firstRow = page.locator('.el-table__row').first();
+      const count = await firstRow.count();
+      test.skip(count === 0, '列表为空，跳过编辑测试');
+
+      await firstRow.locator('.action-column button:has-text("编辑")').click();
+
+      const dialog = page.locator('.el-dialog').filter({ hasText: '编辑发票' }).first();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.locator('.el-form-item:has-text("发票号码") input')).not.toHaveValue('');
+    });
+  });
+
+  // ========== 操作列 ==========
+  test.describe('操作列', () => {
+    test('操作列至少包含编辑按钮', async ({ page }) => {
+      const firstRow = page.locator('.el-table__row').first();
+      const count = await firstRow.count();
+      test.skip(count === 0, '列表为空，跳过操作列测试');
+
+      await expect(firstRow.locator('.action-column button:has-text("编辑")')).toBeVisible();
     });
   });
 });

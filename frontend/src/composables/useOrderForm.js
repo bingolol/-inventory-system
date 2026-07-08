@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { handleError } from '../utils/errorHandler'
 
 /**
  * 订单表单 composable
@@ -92,7 +93,7 @@ export function useOrderForm(config) {
       ElMessage.success('状态已更新')
       onSuccess?.()
     } catch (e) {
-      ElMessage.error('更新失败')
+      handleError(e, { defaultMsg: '更新失败' })
     }
   }
 
@@ -103,7 +104,7 @@ export function useOrderForm(config) {
       ElMessage.success('已删除')
       onSuccess?.()
     } catch (e) {
-      ElMessage.error('删除失败')
+      handleError(e, { defaultMsg: '删除失败' })
     }
   }
 

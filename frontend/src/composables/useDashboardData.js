@@ -4,21 +4,7 @@ import ordersApi from '../api/orders'
 import productsApi from '../api/products'
 import expensesApi from '../api/expenses'
 import invoicesApi from '../api/invoices'
-
-function getMonthRange(offset = 0) {
-  const d = new Date()
-  d.setMonth(d.getMonth() + offset)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const start = `${y}-${m}-01`
-  const lastDay = new Date(y, d.getMonth() + 1, 0).getDate()
-  const end = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
-  return { start, end, year: y, month: d.getMonth() + 1 }
-}
-
-function getCurrentQuarter() {
-  return Math.ceil((new Date().getMonth() + 1) / 3)
-}
+import { getMonthRange, currentQuarter } from '../utils/date'
 
 export function useDashboardData() {
   const loading = ref(false)
@@ -91,10 +77,10 @@ export function useDashboardData() {
   }
 
   async function loadTax() {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = now.getMonth() + 1
-    const quarter = getCurrentQuarter()
+    const range = getMonthRange()
+    const year = range.year
+    const month = range.month
+    const quarter = currentQuarter()
     const [vatRes, incomeRes] = await Promise.all([
       invoicesApi.getTaxReportMonthly(year, month).catch(() => null),
       invoicesApi.getIncomeTaxReport(year, quarter).catch(() => null)

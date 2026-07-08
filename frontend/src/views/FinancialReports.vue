@@ -39,12 +39,13 @@ import IncomeStatement from '../components/IncomeStatement.vue'
 import OpeningBalanceTab from '../components/OpeningBalanceTab.vue'
 import CWBBXQYKJZZ from '../components/CWBBXQYKJZZ.vue'
 import { handleError } from '../utils/errorHandler'
+import { today, yearStart, currentMonth } from '../utils/date'
 
 const activeTab = ref('income-statement')
-const reportDate = ref(new Date().toISOString().split('T')[0])
-const startDate = ref(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
-const endDate = ref(new Date().toISOString().split('T')[0])
-const monthClosePeriod = ref(new Date().toISOString().slice(0, 7))
+const reportDate = ref(today())
+const startDate = ref(yearStart())
+const endDate = ref(today())
+const monthClosePeriod = ref(currentMonth())
 const monthClosing = ref(false)
 
 const handleTabChange = (tab) => {

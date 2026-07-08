@@ -43,11 +43,12 @@ import OrderListView from '../components/OrderListView.vue'
 import PartnerList from '../components/PartnerList.vue'
 import ordersApi from '../api/orders'
 import partnersApi from '../api/partners'
+import { today } from '../utils/date'
 
 const activeTab = ref('sales')
 
 const saleApi = { create: ordersApi.createSale, update: ordersApi.updateSale, delete: ordersApi.deleteSale, getList: ordersApi.getSales }
-const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null, sale_date: new Date().toISOString().slice(0, 10) }
+const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null, sale_date: today() }
 
 const customersApi = {
   getList: partnersApi.getCustomers,

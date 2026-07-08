@@ -36,10 +36,12 @@ def step4_mar_2026(db, account_id: int):
     print("[3月] 固定资产: 机箱 69.90")
 
     # 费用
-    create_expense(db, account_id, "房租", 1300.00, date(2026, 3, 31), "2026年3月房租")
+    create_expense(db, account_id, "房租", 1300.00, date(2026, 3, 31), "2026年3月房租",
+                   payment_method="private_advance")
     print("[3月] 费用: 房租 1300")
 
-    create_expense(db, account_id, "水电", 120.00, date(2026, 3, 31), "2026年3月水电")
+    create_expense(db, account_id, "水电", 120.00, date(2026, 3, 31), "2026年3月水电",
+                   payment_method="private_advance")
     print("[3月] 费用: 水电 120")
 
     db.flush()

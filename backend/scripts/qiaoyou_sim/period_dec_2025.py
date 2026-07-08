@@ -47,10 +47,12 @@ def step2_dec_2025(db, account_id: int):
     print("[12月] 银行利息: 0.01")
 
     # 费用
-    create_expense(db, account_id, "房租", 1300.00, date(2025, 12, 31), "2025年12月房租")
+    create_expense(db, account_id, "房租", 1300.00, date(2025, 12, 31), "2025年12月房租",
+                   payment_method="private_advance")
     print("[12月] 费用: 房租 1300")
 
-    create_expense(db, account_id, "水电", 120.00, date(2025, 12, 31), "2025年12月水电")
+    create_expense(db, account_id, "水电", 120.00, date(2025, 12, 31), "2025年12月水电",
+                   payment_method="private_advance")
     print("[12月] 费用: 水电 120")
 
     db.flush()

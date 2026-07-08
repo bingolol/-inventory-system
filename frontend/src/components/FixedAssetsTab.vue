@@ -116,6 +116,7 @@ import { formatMoney } from '../utils/format'
 import AccountingTip from './AccountingTip.vue'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../api/index'
+import { today, currentMonth } from '../utils/date'
 
 const list = ref([])
 const loading = ref(false)
@@ -123,16 +124,16 @@ const statusFilter = ref('')
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
-const depreciatePeriod = ref(new Date().toISOString().slice(0, 7))
+const depreciatePeriod = ref(currentMonth())
 const depreciating = ref(false)
 const disposeDialogVisible = ref(false)
 const disposingAsset = ref(null)
-const disposeForm = ref({ disposal_price: 0, disposal_date: new Date().toISOString().slice(0, 10) })
+const disposeForm = ref({ disposal_price: 0, disposal_date: today() })
 
 const defaultForm = () => ({
   asset_code: '', name: '', category: '', original_value: 0,
   salvage_rate: 0.05, useful_life: 12, depreciation_method: '年限平均法',
-  start_date: new Date().toISOString().slice(0, 10),
+  start_date: today(),
   accumulated_depreciation: 0, status: '在用'
 })
 const form = ref(defaultForm())
@@ -187,7 +188,7 @@ async function handleSave() {
 
 function showDispose(row) {
   disposingAsset.value = row
-  disposeForm.value = { disposal_price: 0, disposal_date: new Date().toISOString().slice(0, 10) }
+  disposeForm.value = { disposal_price: 0, disposal_date: today() }
   disposeDialogVisible.value = true
 }
 

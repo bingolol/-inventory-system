@@ -22,29 +22,23 @@
 
     <el-dialog v-model="taxCheckDialogVisible" title="税务核对" width="500px">
       <el-form :model="taxCheckForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--primary);">
-          <div class="fgh"><span class="fgt" style="background:var(--primary-light);color:var(--primary);">核对参数</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:90px;">期间</span><el-date-picker v-model="taxCheckForm.period" type="month" value-format="YYYY-MM" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">营业收入</span><el-input-number v-model="taxCheckForm.sales" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">销项税</span><el-input-number v-model="taxCheckForm.output_vat" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">进项税</span><el-input-number v-model="taxCheckForm.input_vat" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">未交增值税</span><el-input-number v-model="taxCheckForm.unpaid_vat" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">所得税</span><el-input-number v-model="taxCheckForm.income_tax" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">附加税</span><el-input-number v-model="taxCheckForm.surcharge" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:90px;">利润总额</span><el-input-number v-model="taxCheckForm.gross_profit" :precision="2" style="width:100%;" controls-position="right" /></div>
-          </div>
-        </div>
+        <FormGroup title="核对参数" color="primary">
+          <FormField label="期间" label-width="90px"><el-date-picker v-model="taxCheckForm.period" type="month" value-format="YYYY-MM" style="width:100%;" /></FormField>
+          <FormField label="营业收入" label-width="90px"><el-input-number v-model="taxCheckForm.sales" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="销项税" label-width="90px"><el-input-number v-model="taxCheckForm.output_vat" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="进项税" label-width="90px"><el-input-number v-model="taxCheckForm.input_vat" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="未交增值税" label-width="90px"><el-input-number v-model="taxCheckForm.unpaid_vat" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="所得税" label-width="90px"><el-input-number v-model="taxCheckForm.income_tax" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="附加税" label-width="90px"><el-input-number v-model="taxCheckForm.surcharge" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="利润总额" label-width="90px"><el-input-number v-model="taxCheckForm.gross_profit" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+        </FormGroup>
       </el-form>
       <div v-if="taxCheckResult" style="margin:12px 0;">
-        <div class="fg" :style="{ borderLeftColor: taxCheckResult.all_passed ? 'var(--success)' : 'var(--danger)' }">
-          <div class="fgh"><span class="fgt" :style="{ background: taxCheckResult.all_passed ? 'var(--success-light)' : 'var(--danger-light)', color: taxCheckResult.all_passed ? 'var(--success)' : 'var(--danger)' }">{{ taxCheckResult.all_passed ? '全部通过 ✅' : '存在差异 ❌' }}</span></div>
-          <div class="fgb">
-            <div v-for="(detail, key) in taxCheckResult.details" :key="key" class="ff" style="font-size:12px;">
-              <span :style="{ color: detail.pass ? 'var(--success)' : 'var(--danger)' }">{{ key }}: 期望={{ detail.expected }} 实际={{ detail.actual }} {{ detail.pass ? '✅' : '❌' }}</span>
-            </div>
+        <FormGroup :title="taxCheckResult.all_passed ? '全部通过 ✅' : '存在差异 ❌'" :color="taxCheckResult.all_passed ? 'success' : 'danger'">
+          <div v-for="(detail, key) in taxCheckResult.details" :key="key" style="font-size:12px;">
+            <span :style="{ color: detail.pass ? 'var(--success)' : 'var(--danger)' }">{{ key }}: 期望={{ detail.expected }} 实际={{ detail.actual }} {{ detail.pass ? '✅' : '❌' }}</span>
           </div>
-        </div>
+        </FormGroup>
       </div>
       <template #footer><el-button @click="taxCheckDialogVisible=false">关闭</el-button><el-button type="primary" @click="handleTaxCheck" :loading="taxChecking">核对</el-button></template>
     </el-dialog>
@@ -58,13 +52,16 @@ import invoicesApi from '../api/invoices'
 import VATReportSection from '../components/VATReportSection.vue'
 import IncomeTaxReportSection from '../components/IncomeTaxReportSection.vue'
 import AccountingTip from '../components/AccountingTip.vue'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
 import { handleError } from '../utils/errorHandler'
+import { currentMonth } from '../utils/date'
 
 const activeTab = ref('vat')
 const taxCheckDialogVisible = ref(false)
 const taxChecking = ref(false)
 const taxCheckForm = ref({
-  period: new Date().toISOString().slice(0, 7),
+  period: currentMonth(),
   sales: 0, output_vat: 0, input_vat: 0, unpaid_vat: 0,
   income_tax: 0, surcharge: 0, vat_payable: 0, gross_profit: 0
 })
@@ -96,10 +93,4 @@ const handleTaxCheck = async () => {
 
 <style scoped>
 .tax-report-container { padding: 0; }
-.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
 </style>

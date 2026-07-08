@@ -77,11 +77,11 @@ export function useOrderList(config) {
 
   /**
    * 表格合计方法 - 对 total_price 列求和
-   * @param {number} totalColumnIndex - 总价列索引（默认5）
    */
-  function getSummaries(param, totalColumnIndex = 5) {
+  function getSummaries(param) {
     const { columns, data } = param
     const sums = []
+    const totalColumnIndex = columns.findIndex(column => column.property === 'total_price')
     columns.forEach((column, index) => {
       if (index === 0) { sums[index] = '合计'; return }
       if (index === totalColumnIndex) {

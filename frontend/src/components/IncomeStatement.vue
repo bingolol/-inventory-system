@@ -74,10 +74,11 @@ import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { yearStart, today } from '../utils/date'
 
 const props = defineProps({
-  startDate: { type: String, default: () => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0] },
-  endDate: { type: String, default: () => new Date().toISOString().split('T')[0] }
+  startDate: { type: String, default: () => yearStart() },
+  endDate: { type: String, default: () => today() }
 })
 const loading = ref(false)
 const d = ref(null)

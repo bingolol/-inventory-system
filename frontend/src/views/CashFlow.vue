@@ -53,16 +53,13 @@
 
     <el-dialog v-model="dialogVisible" title="新增现金流水" width="500px">
       <el-form :model="cfForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--primary);">
-          <div class="fgh"><span class="fgt" style="background:var(--primary-light);color:var(--primary);">流水信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:70px;">日期</span><el-date-picker v-model="cfForm.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">类型</span><el-select v-model="cfForm.type" style="width:100%"><el-option label="流入" value="inflow" /><el-option label="流出" value="outflow" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">金额</span><el-input-number v-model="cfForm.amount" :precision="2" :min="0" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">分类</span><el-select v-model="cfForm.flow_category" style="width:100%"><el-option v-for="opt in enumsStore.flowCategoryOptions" :key="opt.value" :label="opt.label" :value="opt.value" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">描述</span><el-input v-model="cfForm.description" /></div>
-          </div>
-        </div>
+        <FormGroup title="流水信息" color="primary">
+          <FormField label="日期" label-width="70px"><el-date-picker v-model="cfForm.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="类型" label-width="70px"><el-select v-model="cfForm.type" style="width:100%"><el-option label="流入" value="inflow" /><el-option label="流出" value="outflow" /></el-select></FormField>
+          <FormField label="金额" label-width="70px"><el-input-number v-model="cfForm.amount" :precision="2" :min="0" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="分类" label-width="70px"><el-select v-model="cfForm.flow_category" style="width:100%"><el-option v-for="opt in enumsStore.flowCategoryOptions" :key="opt.value" :label="opt.label" :value="opt.value" /></el-select></FormField>
+          <FormField label="描述" label-width="70px"><el-input v-model="cfForm.description" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="saveCashFlow">保存</el-button></template>
     </el-dialog>
@@ -77,10 +74,13 @@ import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
 import { useEnumsStore } from '../stores/enums'
+import { yearStart, today } from '../utils/date'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
 
 const enumsStore = useEnumsStore()
 
-const q = reactive({ startDate: new Date(new Date().getFullYear(),0,1).toISOString().split('T')[0], endDate: new Date().toISOString().split('T')[0] })
+const q = reactive({ startDate: yearStart(), endDate: today() })
 const d = ref(null)
 const tx = ref([])
 const loading = ref(false)
@@ -112,7 +112,7 @@ const load = async () => {
 }
 
 const showCreateDialog = () => {
-  cfForm.value = { transaction_date: new Date().toISOString().slice(0, 10), type: 'inflow', amount: 0, flow_category: 'operating', description: '' }
+  cfForm.value = { transaction_date: today(), type: 'inflow', amount: 0, flow_category: 'operating', description: '' }
   dialogVisible.value = true
 }
 
@@ -155,10 +155,5 @@ useAccountAwareData(load)
 .bd { background:var(--danger-light); color:var(--danger); }
 .c-success { color:var(--success); }
 .c-danger { color:var(--danger); }
-.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
+
 </style>

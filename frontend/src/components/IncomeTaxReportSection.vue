@@ -89,16 +89,15 @@ import invoicesApi from '../api/invoices'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { currentYear, currentQuarter, generateYears } from '../utils/date'
 
-const getQ = () => Math.ceil((new Date().getMonth() + 1) / 3)
-const queryForm = ref({ year: new Date().getFullYear(), quarter: getQ() })
+const queryForm = ref({ year: currentYear(), quarter: currentQuarter() })
 const years = ref([])
 const r = ref(null)
 const loading = ref(false)
 
 const genYears = () => {
-  const cy = new Date().getFullYear()
-  for (let i = cy - 3; i <= cy; i++) years.value.push(i)
+  years.value = generateYears(-3, 0)
 }
 
 const getReport = async () => {

@@ -39,8 +39,15 @@ function _addPendingRequest(resolve, reject) {
 }
 
 api.interceptors.request.use(config => {
+  if (config._skipAuth) {
+    delete config.headers['Authorization']
+    delete config.headers['X-Account-ID']
+    delete config.headers['X-Operator']
+    return config
+  }
+
   const method = config.method?.toUpperCase() || 'GET'
-  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts']
+  const PUBLIC_ENDPOINTS = ['GET /accounts', 'POST /accounts', 'GET /auth/has-users']
   const isPublic = PUBLIC_ENDPOINTS.includes(`${method} ${config.url}`)
 
   const accountStore = useAccountStore()
@@ -124,7 +131,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const data = await api.post('/auth/refresh', { refresh_token: refreshToken })
+        const data = await api.post('/auth/refresh', { refresh_token: refreshToken }, { _skipAuth: true })
         const newToken = data.access_token
         authStore.accessToken = newToken
         authStore.expiresAt = Date.now() + (data.expires_in || 7200) * 1000
@@ -135,12 +142,12 @@ api.interceptors.response.use(
 
         originalRequest.headers['Authorization'] = `Bearer ${newToken}`
         return api(originalRequest)
-      } catch {
+      } catch (refreshErr) {
         _isRefreshing = false
-        _onRefreshFailed(err)
+        _onRefreshFailed(refreshErr)
         authStore.logout()
         window.location.href = '/login'
-        return Promise.reject(err)
+        return Promise.reject(refreshErr)
       }
     }
 

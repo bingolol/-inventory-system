@@ -1,8 +1,61 @@
 import { test, expect } from '@playwright/test';
 
+const getAuth = async (page) => page.evaluate(() => ({
+  token: localStorage.getItem('auth_access_token'),
+  accountId: localStorage.getItem('auth_account_id')
+}));
+
+const apiHeaders = (auth) => ({
+  'Authorization': `Bearer ${auth.token}`,
+  'X-Account-ID': auth.accountId || '1',
+  'X-Operator': 'user',
+  'Content-Type': 'application/json'
+});
+
+const cleanupPersonalTransactions = async (page) => {
+  const auth = await getAuth(page);
+  const listRes = await page.request.get('http://localhost:8000/api/personal?page=1&page_size=1000', {
+    headers: apiHeaders(auth)
+  });
+  if (!listRes.ok()) return;
+  const listData = await listRes.json();
+  for (const item of listData.items || []) {
+    await page.request.delete(`http://localhost:8000/api/personal/${item.id}`, {
+      headers: apiHeaders(auth)
+    });
+  }
+};
+
+const createPersonalTransaction = async (page, data) => {
+  const auth = await getAuth(page);
+  const res = await page.request.post('http://localhost:8000/api/personal', {
+    headers: apiHeaders(auth),
+    data
+  });
+  if (!res.ok()) {
+    const text = await res.text().catch(() => '');
+    console.error('[Personal] 创建测试数据失败:', res.status(), text);
+  }
+  return res;
+};
+
 test.describe('个人收支', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/personal');
+    await page.waitForTimeout(800);
+
+    // 清理历史测试数据并创建一条干净的测试记录
+    await cleanupPersonalTransactions(page);
+    const today = new Date().toISOString().split('T')[0];
+    await createPersonalTransaction(page, {
+      type: 'expense',
+      amount: 12.5,
+      date: today,
+      category: '餐饮',
+      description: 'E2E测试数据'
+    });
+
+    await page.reload();
     await page.waitForTimeout(800);
     await page.waitForSelector('.el-table__row', { timeout: 10000 });
   });
@@ -22,27 +75,27 @@ test.describe('个人收支', () => {
     });
 
     test('第一行数据包含有效内容', async ({ page }) => {
-      const firstRow = page.locator('.el-table__row:first-child');
+      const firstRow = page.locator('.el-table__row').first();
       const rowText = await firstRow.textContent();
       expect(rowText?.trim().length).toBeGreaterThan(5);
     });
 
     test('金额显示包含货币符号', async ({ page }) => {
-      const firstRow = page.locator('.el-table__row:first-child');
+      const firstRow = page.locator('.el-table__row').first();
       const amountCell = firstRow.locator('td').nth(3);
       const amountText = await amountCell.textContent();
       expect(amountText?.trim()).toMatch(/^[+-]¥[\d,.]+$/);
     });
 
     test('日期格式正确', async ({ page }) => {
-      const firstRow = page.locator('.el-table__row:first-child');
+      const firstRow = page.locator('.el-table__row').first();
       const dateCell = firstRow.locator('td').nth(0);
       const dateText = await dateCell.textContent();
       expect(dateText?.trim()).toMatch(/^\d{4}-\d{2}-\d{2}/);
     });
 
     test('类型标签显示正确', async ({ page }) => {
-      const firstRow = page.locator('.el-table__row:first-child');
+      const firstRow = page.locator('.el-table__row').first();
       const typeCell = firstRow.locator('td').nth(1);
       const typeText = await typeCell.textContent();
       expect(typeText?.trim()).toMatch(/^(收入|支出)$/);
@@ -116,16 +169,31 @@ test.describe('个人收支', () => {
       await datePicker.click();
       await page.waitForTimeout(300);
 
-      const todayButton = page.locator('.el-date-picker__header-label:has-text("今天")');
-      if (await todayButton.isVisible()) {
-        await todayButton.click();
+      // 选择本月1号到今天
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+
+      const startCell = page.locator(`.el-date-table td:has-text("1"):not(.is-disabled):not(.prev-month):not(.next-month)`).first();
+      if (await startCell.isVisible().catch(() => false)) {
+        await startCell.click();
+        await page.waitForTimeout(200);
       }
+
+      const endCell = page.locator(`.el-date-table td:has-text("${day}"):not(.is-disabled):not(.prev-month):not(.next-month)`).first();
+      if (await endCell.isVisible().catch(() => false)) {
+        await endCell.click();
+        await page.waitForTimeout(500);
+      }
+
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
 
       await page.locator('button:has-text("查询")').click();
       await page.waitForTimeout(1000);
 
       const filteredCount = await page.locator('.el-table__row').count();
       expect(filteredCount).toBeGreaterThanOrEqual(0);
+      expect(filteredCount).toBeLessThanOrEqual(allCount);
     });
 
     test('组合筛选收支', async ({ page }) => {
@@ -174,10 +242,10 @@ test.describe('个人收支', () => {
         test.skip(true, '数据不足一页，跳过翻页测试');
         return;
       }
-      const firstRowText = await page.locator('.el-table__row:first-child').textContent();
+      const firstRowText = await page.locator('.el-table__row').first().textContent();
       await page2.click();
       await page.waitForTimeout(1500);
-      const newFirstRowText = await page.locator('.el-table__row:first-child').textContent();
+      const newFirstRowText = await page.locator('.el-table__row').first().textContent();
       expect(newFirstRowText).not.toBe(firstRowText);
     });
 
@@ -220,40 +288,105 @@ test.describe('个人收支', () => {
       const expenseRadio = page.locator('.el-dialog .el-radio-button:has-text("支出")');
       await expect(expenseRadio).toHaveClass(/is-active/);
     });
+
+    test('新增记录成功', async ({ page }) => {
+      const timestamp = Date.now();
+      await page.locator('button:has-text("记一笔")').click();
+      await expect(page.locator('.el-dialog')).toBeVisible();
+
+      const dialog = page.locator('.el-dialog');
+      await dialog.locator('.el-input-number input').fill('88.88');
+      await dialog.locator('.el-select').click();
+      await page.waitForTimeout(300);
+      await page.locator('.el-select-dropdown:visible').last().locator('li').first().click();
+      await dialog.locator('.el-textarea textarea').fill(`新增测试-${timestamp}`);
+
+      await dialog.locator('.el-dialog__footer button:has-text("保存")').click();
+      await expect(page.locator('.el-message--success')).toBeVisible({ timeout: 5000 });
+      await expect(dialog).not.toBeVisible();
+
+      await page.waitForTimeout(800);
+      await expect(page.locator('.el-table__row').first()).toContainText(`新增测试-${timestamp}`);
+    });
   });
 
   // ========== 编辑记录 ==========
   test.describe('编辑记录', () => {
     test('打开编辑对话框', async ({ page }) => {
-      await page.locator('.el-table__row:first-child button:has-text("编辑")').click();
+      await page.locator('.el-table__row').first().locator('button:has-text("编辑")').click();
       await expect(page.locator('.el-dialog')).toBeVisible();
       await expect(page.locator('.el-dialog__title')).toContainText('编辑记录');
     });
 
     test('关闭编辑对话框', async ({ page }) => {
-      await page.locator('.el-table__row:first-child button:has-text("编辑")').click();
+      await page.locator('.el-table__row').first().locator('button:has-text("编辑")').click();
       await expect(page.locator('.el-dialog')).toBeVisible();
 
       await page.locator('.el-dialog__footer button:has-text("取消")').click();
       await expect(page.locator('.el-dialog')).not.toBeVisible();
+    });
+
+    test('编辑记录保存成功', async ({ page }) => {
+      const timestamp = Date.now();
+      await page.locator('.el-table__row').first().locator('button:has-text("编辑")').click();
+
+      const dialog = page.locator('.el-dialog');
+      await expect(dialog).toBeVisible();
+
+      const textarea = dialog.locator('.el-textarea textarea');
+      await textarea.clear();
+      await textarea.fill(`编辑后-${timestamp}`);
+
+      await dialog.locator('.el-dialog__footer button:has-text("保存")').click();
+      await expect(page.locator('.el-message--success')).toBeVisible({ timeout: 5000 });
+      await expect(dialog).not.toBeVisible();
+
+      await page.waitForTimeout(800);
+      await expect(page.locator('.el-table__row').first()).toContainText(`编辑后-${timestamp}`);
     });
   });
 
   // ========== 删除记录 ==========
   test.describe('删除记录', () => {
     test('点击删除按钮显示确认', async ({ page }) => {
-      await page.locator('.el-table__row:first-child button:has-text("删除")').click();
+      await page.locator('.el-table__row').first().locator('button:has-text("删除")').click();
       await expect(page.locator('.el-popconfirm')).toBeVisible();
     });
 
     test('取消删除操作', async ({ page }) => {
-      const firstName = await page.locator('.el-table__row:first-child td').nth(1).textContent();
+      const firstRow = page.locator('.el-table__row').first();
+      const firstDesc = await firstRow.locator('td').nth(4).textContent();
 
-      await page.locator('.el-table__row:first-child button:has-text("删除")').click();
+      await firstRow.locator('button:has-text("删除")').click();
       await expect(page.locator('.el-popconfirm')).toBeVisible();
 
       await page.locator('.el-popconfirm button:has-text("取消")').click();
-      await expect(page.locator('.el-table__row:first-child')).toContainText(firstName?.trim() || '');
+      await expect(firstRow).toContainText(firstDesc?.trim() || '');
+    });
+
+    test('确认删除记录', async ({ page }) => {
+      const timestamp = Date.now();
+      // 先新增一条专门用于删除的记录
+      await page.locator('button:has-text("记一笔")').click();
+      const dialog = page.locator('.el-dialog');
+      await dialog.locator('.el-input-number input').fill('66.66');
+      await dialog.locator('.el-select').click();
+      await page.waitForTimeout(300);
+      await page.locator('.el-select-dropdown:visible').last().locator('li').first().click();
+      await dialog.locator('.el-textarea textarea').fill(`待删除-${timestamp}`);
+      await dialog.locator('.el-dialog__footer button:has-text("保存")').click();
+      await expect(page.locator('.el-message--success')).toBeVisible({ timeout: 5000 });
+      await page.waitForTimeout(800);
+
+      const targetRow = page.locator('.el-table__row').first();
+      await targetRow.locator('button:has-text("删除")').click();
+      await expect(page.locator('.el-popconfirm')).toBeVisible();
+
+      await page.locator('.el-popconfirm button:has-text("确定")').click();
+      await expect(page.locator('.el-message--success')).toBeVisible({ timeout: 5000 });
+
+      await page.waitForTimeout(800);
+      await expect(page.locator('.el-table__body')).not.toContainText(`待删除-${timestamp}`);
     });
   });
 

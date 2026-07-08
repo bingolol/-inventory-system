@@ -9,15 +9,15 @@
       </template>
 
       <div class="filter-bar">
-        <el-date-picker v-model="dateFrom" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" @change="load(1)" style="width:150px;" />
-        <el-date-picker v-model="dateTo" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" @change="load(1)" style="width:150px;" />
-        <el-select v-model="filterType" placeholder="凭证类型" clearable style="width:140px;" @change="load(1)">
+        <el-date-picker v-model="filters.date_from" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" @change="search" style="width:150px;" />
+        <el-date-picker v-model="filters.date_to" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" @change="search" style="width:150px;" />
+        <el-select v-model="filters.move_type" placeholder="凭证类型" clearable style="width:140px;" @change="search">
           <el-option v-for="opt in typeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
-        <el-button type="primary" @click="load(1)">查询</el-button>
+        <el-button type="primary" @click="search">查询</el-button>
       </div>
 
-      <el-table :data="items" stripe v-loading="loading" @row-click="openDetail" class="jm-table">
+      <el-table :data="list" stripe v-loading="loading" @row-click="openDetail" class="jm-table">
         <template #empty><el-empty description="暂无凭证数据" /></template>
         <el-table-column prop="id" label="凭证号" min-width="90" />
         <el-table-column label="凭证类型" min-width="110">
@@ -41,7 +41,7 @@
       </el-table>
 
       <div class="pagination-bar">
-        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="() => load(1)" />
+        <el-pagination v-model:current-page="pagination.page.value" v-model:page-size="pagination.pageSize.value" :total="pagination.total.value" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="pagination.onSizeChange" />
       </div>
     </el-card>
 
@@ -76,15 +76,22 @@ import { getJournalMoves, getJournalMove } from '../api/finance'
 import { formatMoney, formatDate, formatDateTime } from '../utils/format'
 import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { useList } from '../composables/useList.js'
 
-const loading = ref(false)
-const items = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-const dateFrom = ref('')
-const dateTo = ref('')
-const filterType = ref('')
+const { list, loading, filters, pagination, loadData, search } = useList({
+  api: { getList: getJournalMoves },
+  defaultFilters: { date_from: '', date_to: '', move_type: '' },
+  buildParams: (f) => {
+    const params = {}
+    if (f.move_type) params.move_type = f.move_type
+    if (f.date_from) params.date_from = f.date_from
+    if (f.date_to) params.date_to = f.date_to
+    return params
+  },
+  transform: (res) => ({ items: res.items || [], total: res.total || 0 }),
+  onError: (e) => handleError(e, { defaultMsg: '加载凭证列表失败，请检查所选时间范围是否有凭证数据' })
+})
+
 const drawerVisible = ref(false)
 const detail = ref(null)
 
@@ -106,22 +113,6 @@ const typeLabel = (type) => {
   const map = {}
   for (const opt of typeOptions) map[opt.value] = opt.label
   return map[type] || type || '-'
-}
-
-const load = async (p) => {
-  if (p) page.value = p
-  loading.value = true
-  try {
-    const params = { skip: (page.value - 1) * pageSize.value, limit: pageSize.value }
-    if (filterType.value) params.move_type = filterType.value
-    if (dateFrom.value) params.date_from = dateFrom.value
-    if (dateTo.value) params.date_to = dateTo.value
-    const res = await getJournalMoves(params)
-    items.value = res.items || []
-    total.value = res.total || 0
-  } catch (e) {
-    handleError(e, { defaultMsg: '加载凭证列表失败，请检查所选时间范围是否有凭证数据' })
-  } finally { loading.value = false }
 }
 
 const openDetail = async (row) => {
@@ -150,7 +141,7 @@ const detailSummary = ({ columns }) => {
   })
 }
 
-useAccountAwareData(() => load(1))
+useAccountAwareData(() => search())
 </script>
 
 <style scoped>
@@ -160,4 +151,3 @@ useAccountAwareData(() => load(1))
 .jm-detail-row { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .jm-detail-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; min-width: 70px; }
 </style>
-

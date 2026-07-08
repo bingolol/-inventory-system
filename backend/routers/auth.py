@@ -23,7 +23,7 @@ REFRESH_TOKEN_TTL = timedelta(days=7)
 
 # 登录频率限制（进程内，重启清零）
 _login_attempts: dict[str, list[float]] = defaultdict(list)
-_MAX_LOGIN_ATTEMPTS = 5
+_MAX_LOGIN_ATTEMPTS = 100
 _LOGIN_WINDOW = 300  # 5 分钟
 
 

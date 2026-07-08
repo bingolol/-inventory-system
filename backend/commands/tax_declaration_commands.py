@@ -34,6 +34,7 @@ class DeclareVAT(Command):
 class DeclareVATHandler(CommandHandler):
     def handle(self, cmd: DeclareVAT, db: Any) -> Any:
         import models
+        from models import TaxpayerTypeHistory
         from crud.finance import aggregate_vat_invoices
         from crud.finance.tax_declarations import compute_carry_forward
         from policy.entity_profile import build_profile
@@ -70,6 +71,21 @@ class DeclareVATHandler(CommandHandler):
             period_end = datetime(int(parts[0]), int(parts[1]), last_day, 23, 59, 59)
             period_ym = cmd.period
 
+        # 小规模季度申报：检查季度内是否有纳税人类型切换，自动截断
+        if taxpayer_type == "small_scale":
+            transition = db.query(TaxpayerTypeHistory).filter(
+                TaxpayerTypeHistory.account_id == cmd.account_id,
+                TaxpayerTypeHistory.taxpayer_type_l3 == "general",
+                TaxpayerTypeHistory.effective_period > f"{year}-{start_month:02d}",
+                TaxpayerTypeHistory.effective_period <= period_ym,
+            ).order_by(TaxpayerTypeHistory.effective_period).first()
+            if transition:
+                yr, mo = int(transition.effective_period[:4]), int(transition.effective_period[5:7])
+                prev_mo = 12 if mo == 1 else mo - 1
+                prev_yr = yr - 1 if mo == 1 else yr
+                last_day = calendar.monthrange(prev_yr, prev_mo)[1]
+                period_end = datetime(prev_yr, prev_mo, last_day, 23, 59, 59)
+
         # 查是否已存在
         existing = db.query(VATDeclaration).filter(
             VATDeclaration.account_id == cmd.account_id,
@@ -83,7 +99,7 @@ class DeclareVATHandler(CommandHandler):
 
         # 锁定快照：读取当前 VAT 数据
         agg = aggregate_vat_invoices(db, cmd.account_id, period_start, period_end)
-        profile = build_profile(account)
+        profile = build_profile(account, ref_date=period_start.date())
         carry_forward = compute_carry_forward(db, account, period_start)
         vat_result = policy_vat(
             profile=profile,

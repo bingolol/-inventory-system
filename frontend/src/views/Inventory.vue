@@ -2,9 +2,8 @@
   <div>
     <el-card shadow="never">
       <template #header>
-        <div class="card-header">
-          <span class="page-title">库存管理</span>
-          <div class="card-header-actions">
+        <PageHeader title="库存管理">
+          <template #actions>
             <el-dropdown>
               <el-button><el-icon><Download /></el-icon> 导出</el-button>
               <template #dropdown>
@@ -14,20 +13,19 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-          </div>
-        </div>
+          </template>
+        </PageHeader>
       </template>
-      <div class="filter-bar">
-        <el-input v-model="searchKeyword" placeholder="搜索商品名称/编码" clearable style="width:220px" @clear="loadData" @keyup.enter="loadData">
+      <FilterBar @search="loadData" @reset="resetFilters">
+        <el-input v-model="filters.search" placeholder="搜索商品名称/编码" clearable style="width:220px" @clear="loadData" @keyup.enter="loadData">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="categoryFilter" placeholder="分类筛选" clearable style="width:140px" @change="loadData">
+        <el-select v-model="filters.category" placeholder="分类筛选" clearable style="width:140px" @change="loadData">
           <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
         </el-select>
-        <el-switch v-model="alertOnly" active-text="仅显示预警" @change="loadData" />
-        <el-button type="primary" @click="loadData"><el-icon><Search /></el-icon> 查询</el-button>
-      </div>
-      <el-table :data="list" stripe style="width:100%">
+        <el-switch v-model="filters.alert_only" active-text="仅显示预警" @change="loadData" />
+      </FilterBar>
+      <el-table :data="list" v-loading="loading" stripe style="width:100%">
         <el-table-column prop="product_sku" label="编码" min-width="110" />
         <el-table-column prop="product_name" label="商品名称" min-width="140" />
         <el-table-column prop="product_category" label="分类" min-width="100" />
@@ -42,9 +40,9 @@
         <el-table-column prop="min_stock" label="预警线" min-width="80" />
         <el-table-column label="预警" min-width="70">
           <template #default="{ row }">
-            <span class="status-badge danger" v-if="row.quantity < 0">负库存</span>
-            <span class="status-badge warning" v-else-if="row.is_alert">不足</span>
-            <span class="status-badge success" v-else>正常</span>
+            <StatusTag v-if="row.quantity < 0" status="negative" color="danger" label="负库存" />
+            <StatusTag v-else-if="row.is_alert" status="alert" color="warning" label="不足" />
+            <StatusTag v-else status="normal" color="success" label="正常" />
           </template>
         </el-table-column>
         <el-table-column prop="purchase_price" label="进价" min-width="110" align="right">
@@ -58,12 +56,12 @@
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="showAdjust(row)">盘点</el-button>
+            <ActionColumn :actions="[{ key: 'adjust', label: '盘点' }]" @click="(key) => { if (key === 'adjust') showAdjust(row) }" />
           </template>
         </el-table-column>
       </el-table>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
-        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="loadData" />
+      <div class="pagination-bar">
+        <el-pagination v-model:current-page="pagination.page.value" v-model:page-size="pagination.pageSize.value" :total="pagination.total.value" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadData" @size-change="pagination.onSizeChange" />
       </div>
     </el-card>
 
@@ -103,33 +101,36 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Download, Search } from '@element-plus/icons-vue'
 import productsApi from '../api/products'
 import exportApi from '../api/export'
 import { formatMoney } from '../utils/format'
 import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { useList } from '../composables/useList'
+import PageHeader from '../components/PageHeader.vue'
+import StatusTag from '../components/StatusTag.vue'
+import FilterBar from '../components/FilterBar.vue'
+import ActionColumn from '../components/ActionColumn.vue'
 
-const list = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-const alertOnly = ref(false)
-const searchKeyword = ref('')
-const categoryFilter = ref('')
+const { list, loading, filters, pagination, loadData, reset } = useList({
+  api: productsApi,
+  method: 'getInventory',
+  defaultFilters: { search: '', category: '', alert_only: false },
+  buildParams: (f) => {
+    const params = { alert_only: f.alert_only }
+    if (f.search) params.search = f.search
+    if (f.category) params.category = f.category
+    return params
+  },
+  onError: (e) => handleError(e, { defaultMsg: '加载库存数据失败，请检查网络连接' })
+})
+
+const resetFilters = () => reset()
+
 const categories = ref([])
 const adjustVisible = ref(false)
 const adjustForm = ref({ product_id: null, product_name: '', current_quantity: 0, quantity: 0, reason: '' })
-
-const loadData = async () => {
-  try {
-    const params = { page: page.value, page_size: pageSize.value, alert_only: alertOnly.value }
-    if (searchKeyword.value) params.search = searchKeyword.value
-    if (categoryFilter.value) params.category = categoryFilter.value
-    const res = await productsApi.getInventory(params)
-    total.value = res.total
-    list.value = res.items
-  } catch (e) { handleError(e, { defaultMsg: '加载库存数据失败，请检查网络连接' }) }
-}
 
 const showAdjust = (row) => {
   adjustForm.value = {
@@ -157,9 +158,9 @@ const loadCategories = async () => {
 
 const exportData = async (format) => {
   try {
-    const params = { alert_only: alertOnly.value }
-    if (searchKeyword.value) params.search = searchKeyword.value
-    if (categoryFilter.value) params.category = categoryFilter.value
+    const params = { alert_only: filters.value.alert_only }
+    if (filters.value.search) params.search = filters.value.search
+    if (filters.value.category) params.category = filters.value.category
     await exportApi.exportFile('inventory', format, params)
   } catch (e) { handleError(e, { defaultMsg: '导出失败，请检查文件权限和磁盘空间' }) }
 }

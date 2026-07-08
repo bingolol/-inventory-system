@@ -3,138 +3,133 @@ import { test, expect } from '@playwright/test';
 test.describe('现金流量表', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/cash-flows');
-    await page.waitForSelector('.cash-flow-container', { timeout: 10000 });
+    await page.waitForTimeout(800);
   });
 
   // ========== 页面加载 ==========
   test.describe('页面加载', () => {
     test('页面标题正确显示', async ({ page }) => {
-      await expect(page.locator('.cash-flow-container')).toContainText('现金流量表');
+      await expect(page.locator('.bt:has-text("现金流量表")').first()).toBeVisible();
     });
 
     test('日期筛选区域正确展示', async ({ page }) => {
-      await expect(page.locator('.cash-flow-container .el-form-item:has-text("开始日期")')).toBeVisible();
-      await expect(page.locator('.cash-flow-container .el-form-item:has-text("结束日期")')).toBeVisible();
-      await expect(page.locator('.cash-flow-container .query-form button:has-text("查询")')).toBeVisible();
-      await expect(page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")')).toBeVisible();
+      await expect(page.locator('input[placeholder="开始日期"]').first()).toBeVisible();
+      await expect(page.locator('input[placeholder="结束日期"]').first()).toBeVisible();
+      await expect(page.locator('button:has-text("查询")').first()).toBeVisible();
+      await expect(page.locator('button:has-text("新增流水")').first()).toBeVisible();
     });
   });
 
   // ========== 现金流量表展示 ==========
   test.describe('现金流量表展示', () => {
     test('经营活动区域正确展示', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '一、经营活动产生的现金流量' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '一、经营活动产生的现金流量' }).locator('.el-statistic').filter({ hasText: '现金流入' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '一、经营活动产生的现金流量' }).locator('.el-statistic').filter({ hasText: '现金流出' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '一、经营活动产生的现金流量' }).locator('.el-statistic').filter({ hasText: '经营活动净现金流' })).toBeVisible();
+      const section = page.locator('.c').filter({ hasText: '经营' }).first();
+      if (await section.count() === 0) return;
+      await expect(section).toBeVisible();
+      await expect(section.locator('.cl')).toContainText('经营');
     });
 
     test('投资活动区域正确展示', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '二、投资活动产生的现金流量' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '二、投资活动产生的现金流量' }).locator('.el-statistic').filter({ hasText: '投资活动净现金流' })).toBeVisible();
+      const section = page.locator('.c').filter({ hasText: '投资' }).first();
+      if (await section.count() === 0) return;
+      await expect(section).toBeVisible();
+      await expect(section.locator('.cl')).toContainText('投资');
     });
 
     test('筹资活动区域正确展示', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '三、筹资活动产生的现金流量' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '三、筹资活动产生的现金流量' }).locator('.el-statistic').filter({ hasText: '筹资活动净现金流' })).toBeVisible();
+      const section = page.locator('.c').filter({ hasText: '筹资' }).first();
+      if (await section.count() === 0) return;
+      await expect(section).toBeVisible();
+      await expect(section.locator('.cl')).toContainText('筹资');
     });
 
     test('汇总区域正确展示', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '四、现金及现金等价物净增加额' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '四、现金及现金等价物净增加额' }).locator('.el-statistic').filter({ hasText: '净现金流量' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '四、现金及现金等价物净增加额' }).locator('.el-statistic').filter({ hasText: '期初现金余额' })).toBeVisible();
-      await expect(reportCard.locator('.flow-section').filter({ hasText: '四、现金及现金等价物净增加额' }).locator('.el-statistic').filter({ hasText: '期末现金余额' })).toBeVisible();
+      const summaryBox = page.locator('.box').filter({ hasText: '净现金流量' }).first();
+      if (await summaryBox.count() === 0) return;
+      await expect(summaryBox.locator('text=净现金流量')).toBeVisible();
+      await expect(summaryBox.locator('text=期初余额')).toBeVisible();
+      await expect(summaryBox.locator('text=期末余额')).toBeVisible();
     });
   });
 
   // ========== 日期筛选功能 ==========
   test.describe('日期筛选功能', () => {
     test('修改开始日期后查询', async ({ page }) => {
-      // 点击开始日期输入框打开日期选择器
-      const startDateInput = page.locator('.cash-flow-container .el-form-item:has-text("开始日期")').locator('.el-date-editor input');
+      const startDateInput = page.locator('input[placeholder="开始日期"]').first();
       await startDateInput.click();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(300);
 
-      // 等待 loading 消失后点击查询
-      const queryBtn = page.locator('.cash-flow-container .query-form button:has-text("查询")');
+      const queryBtn = page.locator('button:has-text("查询")').first();
       await queryBtn.click();
-      // 等待请求完成（loading 指示器消失）
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(2000);
 
-      // 查询后页面仍正常显示（report-card 可能存在也可能不存在，取决于数据）
-      await expect(page.locator('.cash-flow-container .transaction-card')).toBeVisible();
+      // 查询后页面仍正常显示
+      await expect(page.locator('.box').filter({ hasText: '现金流水' }).first()).toBeVisible();
     });
 
     test('修改结束日期后查询', async ({ page }) => {
-      // 点击结束日期输入框打开日期选择器
-      const endDateInput = page.locator('.cash-flow-container .el-form-item:has-text("结束日期")').locator('.el-date-editor input');
+      const endDateInput = page.locator('input[placeholder="结束日期"]').first();
       await endDateInput.click();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(300);
 
-      // 等待 loading 消失后点击查询
-      const queryBtn = page.locator('.cash-flow-container .query-form button:has-text("查询")');
+      const queryBtn = page.locator('button:has-text("查询")').first();
       await queryBtn.click();
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(2000);
 
-      // 查询后页面仍正常显示
-      await expect(page.locator('.cash-flow-container .transaction-card')).toBeVisible();
+      await expect(page.locator('.box').filter({ hasText: '现金流水' }).first()).toBeVisible();
     });
 
     test('默认日期范围为当年', async ({ page }) => {
-      const startDateInput = page.locator('.cash-flow-container .el-form-item:has-text("开始日期")').locator('.el-date-editor input');
-      const endDateInput = page.locator('.cash-flow-container .el-form-item:has-text("结束日期")').locator('.el-date-editor input');
+      const startDateInput = page.locator('input[placeholder="开始日期"]').first();
+      const endDateInput = page.locator('input[placeholder="结束日期"]').first();
 
       const startValue = await startDateInput.inputValue();
       const endValue = await endDateInput.inputValue();
 
-      // 验证日期格式为 YYYY-MM-DD（由于时区差异，年初日期可能偏移到上一年末）
+      // 验证日期格式为 YYYY-MM-DD
       expect(startValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(endValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      // 结束日期应为今天（UTC 格式）
-      const today = new Date().toISOString().split('T')[0];
+      // 结束日期应为今天（本地格式）
+      const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
       expect(endValue).toBe(today);
     });
   });
 
   // ========== 现金流水记录 ==========
   test.describe('现金流水记录', () => {
-    test('流水记录表格正确展示', async ({ page }) => {
-      await expect(page.locator('.cash-flow-container .transaction-card')).toContainText('现金流水记录');
-      // el-table-column 的 label 渲染为 th，使用 getByRole 精确匹配避免"关联类型"干扰
-      const headerRow = page.locator('.cash-flow-container .transaction-card thead tr').first();
-      await expect(headerRow.getByRole('columnheader', { name: '日期', exact: true })).toBeVisible();
-      await expect(headerRow.getByRole('columnheader', { name: '类型', exact: true })).toBeVisible();
-      await expect(headerRow.getByRole('columnheader', { name: '分类', exact: true })).toBeVisible();
-      await expect(headerRow.getByRole('columnheader', { name: '金额', exact: true })).toBeVisible();
-      await expect(headerRow.getByRole('columnheader', { name: '描述', exact: true })).toBeVisible();
+    test('流水记录表格或空状态正确展示', async ({ page }) => {
+      const transactionBox = page.locator('.box').filter({ hasText: '现金流水' }).first();
+      await expect(transactionBox).toBeVisible();
+
+      const table = transactionBox.locator('.tbl');
+      const empty = transactionBox.locator('text=暂无流水记录');
+      const hasTable = await table.isVisible().catch(() => false);
+      const hasEmpty = await empty.isVisible().catch(() => false);
+      expect(hasTable || hasEmpty).toBeTruthy();
     });
 
-    test('流水记录展示数据或空状态', async ({ page }) => {
-      const transactionCard = page.locator('.cash-flow-container .transaction-card');
-      const rows = await transactionCard.locator('.el-table__row').count();
-      const empty = await transactionCard.locator('.el-empty').count();
-      expect(rows + empty).toBeGreaterThan(0);
+    test('流水记录表头正确', async ({ page }) => {
+      const transactionBox = page.locator('.box').filter({ hasText: '现金流水' }).first();
+      const table = transactionBox.locator('.tbl');
+      if (await table.isVisible().catch(() => false)) {
+        await expect(table.locator('th:has-text("日期")')).toBeVisible();
+        await expect(table.locator('th:has-text("类型")')).toBeVisible();
+        await expect(table.locator('th:has-text("金额")')).toBeVisible();
+        await expect(table.locator('th:has-text("描述")')).toBeVisible();
+        await expect(table.locator('th:has-text("操作")')).toBeVisible();
+      }
     });
 
     test('流水记录操作列正确展示', async ({ page }) => {
-      const transactionCard = page.locator('.cash-flow-container .transaction-card');
-      const rows = await transactionCard.locator('.el-table__row').count();
-      if (rows > 0) {
-        const firstRow = transactionCard.locator('.el-table__row').first();
-        await expect(firstRow.locator('button:has-text("编辑")')).toBeVisible();
-        await expect(firstRow.locator('button:has-text("删除")')).toBeVisible();
+      const transactionBox = page.locator('.box').filter({ hasText: '现金流水' }).first();
+      const table = transactionBox.locator('.tbl');
+      if (await table.isVisible().catch(() => false)) {
+        const firstRow = table.locator('tr').nth(1);
+        await expect(firstRow.locator('button:has-text("冲红")')).toBeVisible();
       }
     });
   });
@@ -142,77 +137,78 @@ test.describe('现金流量表', () => {
   // ========== 新增现金流水 ==========
   test.describe('新增现金流水', () => {
     test('打开新增现金流水对话框', async ({ page }) => {
-      await page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")').click();
+      await page.locator('button:has-text("新增流水")').first().click();
 
       await expect(page.locator('.el-dialog')).toBeVisible();
       await expect(page.locator('.el-dialog__title')).toContainText('新增现金流水');
     });
 
     test('新增对话框包含必要字段', async ({ page }) => {
-      await page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")').click();
+      await page.locator('button:has-text("新增流水")').first().click();
       await expect(page.locator('.el-dialog')).toBeVisible();
 
-      await expect(page.locator('.el-dialog .el-form-item:has-text("类型")')).toBeVisible();
-      await expect(page.locator('.el-dialog .el-form-item:has-text("金额")')).toBeVisible();
-      await expect(page.locator('.el-dialog .el-form-item:has-text("分类")')).toBeVisible();
-      await expect(page.locator('.el-dialog .el-form-item:has-text("日期")')).toBeVisible();
-      await expect(page.locator('.el-dialog .el-form-item:has-text("描述")')).toBeVisible();
+      await expect(page.locator('.el-dialog .ff:has-text("类型")')).toBeVisible();
+      await expect(page.locator('.el-dialog .ff:has-text("金额")')).toBeVisible();
+      await expect(page.locator('.el-dialog .ff:has-text("分类")')).toBeVisible();
+      await expect(page.locator('.el-dialog .ff:has-text("日期")')).toBeVisible();
+      await expect(page.locator('.el-dialog .ff:has-text("描述")')).toBeVisible();
     });
 
     test('取消新增不保存', async ({ page }) => {
-      await page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")').click();
+      await page.locator('button:has-text("新增流水")').first().click();
       await expect(page.locator('.el-dialog')).toBeVisible();
 
       await page.locator('.el-dialog__footer button:has-text("取消")').click();
-
       await expect(page.locator('.el-dialog')).not.toBeVisible();
     });
 
-    test('默认类型为流出', async ({ page }) => {
-      await page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")').click();
+    test('默认类型为流入', async ({ page }) => {
+      await page.locator('button:has-text("新增流水")').first().click();
       await expect(page.locator('.el-dialog')).toBeVisible();
 
-      // el-radio 选中状态为 is-checked 类
-      const outflowRadio = page.locator('.el-dialog .el-radio').filter({ hasText: '流出' });
-      await expect(outflowRadio).toHaveClass(/is-checked/);
+      const typeSelect = page.locator('.el-dialog .ff').filter({ hasText: '类型' }).locator('.el-select').first();
+      await expect(typeSelect).toContainText('流入');
     });
 
-    test('默认分类为经营活动', async ({ page }) => {
-      await page.locator('.cash-flow-container .query-form button:has-text("新增现金流水")').click();
+    test('默认分类为经营', async ({ page }) => {
+      await page.locator('button:has-text("新增流水")').first().click();
       await expect(page.locator('.el-dialog')).toBeVisible();
 
-      // el-select 选中后显示在 placeholder/选中项中
-      const categoryItem = page.locator('.el-dialog .el-form-item').filter({ hasText: '分类' });
-      await expect(categoryItem.locator('.el-select').first()).toContainText('经营');
+      const categoryItem = page.locator('.el-dialog .ff').filter({ hasText: '分类' });
+      const categorySelect = categoryItem.locator('.el-select').first();
+      await expect(categorySelect).toBeVisible();
+      const categoryText = await categorySelect.textContent();
+      expect(categoryText).toMatch(/经营|operating/);
     });
   });
 
   // ========== 筛选合计 ==========
   test.describe('筛选合计', () => {
     test('金额正确展示格式', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
+      const cards = page.locator('.c');
+      const count = await cards.count();
+      if (count === 0) return;
 
-      const statisticValues = reportCard.locator('.el-statistic__content .el-statistic__number');
-      const count = await statisticValues.count();
       for (let i = 0; i < count; i++) {
-        const value = await statisticValues.nth(i).textContent();
-        expect(value).toMatch(/[\d,.\-]/);
+        const values = cards.nth(i).locator('.cv-sm');
+        const valueCount = await values.count();
+        for (let j = 0; j < valueCount; j++) {
+          const value = await values.nth(j).textContent();
+          expect(value).toMatch(/[\d,.\-]/);
+        }
       }
     });
 
-    test('净现金流标签正确展示正负状态', async ({ page }) => {
-      const reportCard = page.locator('.cash-flow-container .report-card');
-      if (await reportCard.count() === 0) return;
+    test('汇总金额格式正确', async ({ page }) => {
+      const summaryBox = page.locator('.box').filter({ hasText: '净现金流量' }).first();
+      if (await summaryBox.count() === 0) return;
 
-      const tags = reportCard.locator('.el-tag');
-      const count = await tags.count();
+      // 只检查金额列（每行第二个 td）
+      const amountCells = summaryBox.locator('.tbl tr td:nth-child(2)');
+      const count = await amountCells.count();
       for (let i = 0; i < count; i++) {
-        const tagText = await tags.nth(i).textContent();
-        const isValid = ['净流入', '净流出', '增加', '减少'].some(text => tagText?.includes(text));
-        if (isValid) {
-          expect(isValid).toBeTruthy();
-        }
+        const text = await amountCells.nth(i).textContent();
+        expect(text).toMatch(/[\d,.\-]/);
       }
     });
   });

@@ -57,7 +57,13 @@ def list_transactions(
     total, items, sum_income, sum_expense = crud.list_personal_transactions(
         db, account_id, skip=skip, limit=page_size, type=type, category=category, start_date=start_date, end_date=end_date
     )
-    return {"total": total, "items": items, "sum_income": sum_income, "sum_expense": sum_expense, "sum_balance": (_d(sum_income) - _d(sum_expense)).quantize(Q2)}
+    return {
+        "total": total,
+        "items": [schemas.PersonalTransactionOut.model_validate(item) for item in items],
+        "sum_income": sum_income,
+        "sum_expense": sum_expense,
+        "sum_balance": (_d(sum_income) - _d(sum_expense)).quantize(Q2)
+    }
 
 
 @router.post("", response_model=schemas.PersonalTransactionOut)

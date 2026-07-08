@@ -93,19 +93,19 @@ import invoicesApi from '../api/invoices'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { currentYear, currentQuarter, generateYears, currentMonth } from '../utils/date'
 
 const router = useRouter()
 
 const reportType = ref('quarterly')
-const queryForm = ref({ year: new Date().getFullYear(), quarter: Math.floor((new Date().getMonth() + 3) / 3) })
-const monthlyForm = ref({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 })
+const queryForm = ref({ year: currentYear(), quarter: currentQuarter() })
+const monthlyForm = ref({ year: currentYear(), month: Number(currentMonth().split('-')[1]) })
 const years = ref([])
 const taxReport = ref(null)
 const loading = ref(false)
 
-const generateYears = () => {
-  const cy = new Date().getFullYear()
-  for (let i = cy - 2; i <= cy + 2; i++) years.value.push(i)
+const buildYears = () => {
+  years.value = generateYears(-2, 2)
 }
 
 const tableData = computed(() => {
@@ -166,7 +166,7 @@ const fetchData = () => {
   if (reportType.value === 'quarterly') getTaxReport(); else getMonthlyTaxReport()
 }
 
-generateYears()
+buildYears()
 useAccountAwareData(fetchData)
 </script>
 

@@ -62,8 +62,9 @@ import financeApi from '../api/finance'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { today } from '../utils/date'
 
-const props = defineProps({ date: { type: String, default: () => new Date().toISOString().split('T')[0] } })
+const props = defineProps({ date: { type: String, default: () => today() } })
 const loading = ref(false)
 const d = ref(null)
 const reportDate = ref(props.date)

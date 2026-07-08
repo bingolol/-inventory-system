@@ -25,9 +25,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { getPendingDeclarations } from '../api/taxDeclaration'
-const now = new Date()
-const year = now.getFullYear(); const month = now.getMonth() + 1; const day = now.getDate()
-const quarter = Math.ceil(month / 3); const weekday = now.getDay()
+import { today, currentQuarter } from '../utils/date'
+const [year, month, day] = today().split('-').map(Number)
+const quarter = currentQuarter(); const weekday = new Date().getDay()
 
 const qs = (quarter - 1) * 3 + 1
 const currentDateLabel = computed(() => `${year}年${month}月${day}日`)

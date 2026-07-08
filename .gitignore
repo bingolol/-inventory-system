@@ -73,6 +73,7 @@ frontend/test-report.html
 frontend/test-results/
 frontend/e2e-*.png
 frontend/debug-*.png
+frontend/tests/e2e/.auth/
 
 # PyInstaller
 build/

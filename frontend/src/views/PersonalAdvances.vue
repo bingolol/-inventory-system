@@ -1,21 +1,20 @@
 <template>
   <div>
-    <div class="row">
-      <div class="c3"><div class="stat-mini"><span class="stat-mini-label">总垫付</span><span class="stat-mini-value" style="color:var(--primary);">{{ formatMoney(totals.total_amount) }}</span></div></div>
-      <div class="c3"><div class="stat-mini"><span class="stat-mini-label">已偿还</span><span class="stat-mini-value" style="color:var(--success);">{{ formatMoney(totals.paid_amount) }}</span></div></div>
-      <div class="c3"><div class="stat-mini"><span class="stat-mini-label">未还余额</span><span class="stat-mini-value" style="color:var(--danger);">{{ formatMoney(totals.remaining_amount) }}</span></div></div>
-    </div>
+    <StatCards :items="[
+      { label: '总垫付', value: formatMoney(totals.total_amount), color: 'primary' },
+      { label: '已偿还', value: formatMoney(totals.paid_amount), color: 'success' },
+      { label: '未还余额', value: formatMoney(totals.remaining_amount), color: 'danger' }
+    ]" />
 
     <el-card shadow="never">
       <template #header>
-        <div class="card-header">
-          <span class="page-title">个人垫付管理</span>
-          <div class="card-header-actions">
+        <PageHeader title="个人垫付管理">
+          <template #actions>
             <el-button type="primary" @click="openCreateDialog">
               <el-icon><Plus /></el-icon> 新增垫付
             </el-button>
-          </div>
-        </div>
+          </template>
+        </PageHeader>
       </template>
       <div class="filter-bar" style="margin-bottom:12px;">
         <el-input v-model="filterForm.advancer_name" placeholder="垫付人姓名" clearable style="width:160px;" />
@@ -64,13 +63,15 @@
         </el-table-column>
         <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="openRepayDialog(row)" :disabled="row.is_reversed || row.remaining_amount <= 0">偿还</el-button>
-            <el-button size="small" link type="info" @click="viewRepayments(row)">偿还记录</el-button>
-            <el-popconfirm title="确定冲红此垫付单？（须先冲红所有偿还记录）" @confirm="handleReverseAdvance(row)">
-              <template #reference>
-                <el-button size="small" link type="danger" :disabled="row.is_reversed">冲红</el-button>
-              </template>
-            </el-popconfirm>
+            <ActionColumn :actions="[
+              { key: 'repay', label: '偿还', disabled: row.is_reversed || row.remaining_amount <= 0 },
+              { key: 'repayments', label: '偿还记录', type: 'info' },
+              { key: 'reverse', label: '冲红', type: 'danger', confirm: '确定冲红此垫付单？（须先冲红所有偿还记录）', disabled: row.is_reversed }
+            ]" @click="(key) => {
+              if (key === 'repay') openRepayDialog(row)
+              else if (key === 'repayments') viewRepayments(row)
+              else if (key === 'reverse') handleReverseAdvance(row)
+            }" />
           </template>
         </el-table-column>
       </el-table>
@@ -79,21 +80,17 @@
     <!-- 创建垫付对话框 -->
     <el-dialog v-model="createDialogVisible" title="新增个人垫付" width="540px">
       <el-form :model="createForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--primary);">
-          <div class="fgh"><span class="fgt" style="background:var(--primary-light);color:var(--primary);">垫付信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl">垫付人</span><el-input v-model="createForm.advancer_name" placeholder="如 老板张三" /></div>
-            <div class="ff"><span class="fl">金额</span><el-input v-model.number="createForm.amount" type="number" /></div>
-            <div class="ff"><span class="fl">垫付日期</span><el-date-picker v-model="createForm.advance_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff">
-              <span class="fl">用途（借方科目）</span>
-              <el-select v-model="createForm.debit_account_code" style="width:100%;">
-                <el-option v-for="o in debitAccountOptions" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
-            </div>
-            <div class="ff"><span class="fl">说明</span><el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="用途说明（可选）" /></div>
-          </div>
-        </div>
+        <FormGroup title="垫付信息" color="primary">
+          <FormField label="垫付人" label-width="90px"><el-input v-model="createForm.advancer_name" placeholder="如 老板张三" /></FormField>
+          <FormField label="金额" label-width="90px"><el-input v-model.number="createForm.amount" type="number" /></FormField>
+          <FormField label="垫付日期" label-width="90px"><el-date-picker v-model="createForm.advance_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="用途（借方科目）" label-width="90px">
+            <el-select v-model="createForm.debit_account_code" style="width:100%;">
+              <el-option v-for="o in debitAccountOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+          </FormField>
+          <FormField label="说明" label-width="90px"><el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="用途说明（可选）" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible=false">取消</el-button>
@@ -104,22 +101,18 @@
     <!-- 偿还对话框 -->
     <el-dialog v-model="repayDialogVisible" :title="`偿还垫付单 ${repayTarget?.advance_no || ''}`" width="500px">
       <el-form :model="repayForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--success);">
-          <div class="fgh"><span class="fgt" style="background:#e8f5e9;color:#2e7d32;">偿还信息</span></div>
-          <div class="fgb">
-            <div class="info-line">垫付人: <b>{{ repayTarget?.advancer_name }}</b></div>
-            <div class="info-line">总额: {{ formatMoney(repayTarget?.amount) }}　已还: {{ formatMoney(repayTarget?.paid_amount) }}　未还: <span style="color:var(--danger);">{{ formatMoney(repayTarget?.remaining_amount) }}</span></div>
-            <div class="ff"><span class="fl">偿还金额</span><el-input v-model.number="repayForm.amount" type="number" /></div>
-            <div class="ff"><span class="fl">偿还日期</span><el-date-picker v-model="repayForm.repayment_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff">
-              <span class="fl">支付方式</span>
-              <el-select v-model="repayForm.bank_account_id" placeholder="选择银行账户（留空=现金）" clearable style="width:100%;">
-                <el-option v-for="b in bankAccounts" :key="b.id" :label="`${b.bank_name} (${formatMoney(b.balance)})`" :value="b.id" />
-              </el-select>
-            </div>
-            <div class="ff"><span class="fl">说明</span><el-input v-model="repayForm.description" type="textarea" :rows="2" /></div>
-          </div>
-        </div>
+        <FormGroup title="偿还信息" color="success">
+          <div class="info-line">垫付人: <b>{{ repayTarget?.advancer_name }}</b></div>
+          <div class="info-line">总额: {{ formatMoney(repayTarget?.amount) }}　已还: {{ formatMoney(repayTarget?.paid_amount) }}　未还: <span style="color:var(--danger);">{{ formatMoney(repayTarget?.remaining_amount) }}</span></div>
+          <FormField label="偿还金额" label-width="90px"><el-input v-model.number="repayForm.amount" type="number" /></FormField>
+          <FormField label="偿还日期" label-width="90px"><el-date-picker v-model="repayForm.repayment_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="支付方式" label-width="90px">
+            <el-select v-model="repayForm.bank_account_id" placeholder="选择银行账户（留空=现金）" clearable style="width:100%;">
+              <el-option v-for="b in bankAccounts" :key="b.id" :label="`${b.bank_name} (${formatMoney(b.balance)})`" :value="b.id" />
+            </el-select>
+          </FormField>
+          <FormField label="说明" label-width="90px"><el-input v-model="repayForm.description" type="textarea" :rows="2" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer>
         <el-button @click="repayDialogVisible=false">取消</el-button>
@@ -145,11 +138,7 @@
         </el-table-column>
         <el-table-column label="操作" width="80" align="center">
           <template #default="{ row }">
-            <el-popconfirm title="确定冲红此偿还记录？" @confirm="handleReverseRepayment(row)">
-              <template #reference>
-                <el-button size="small" link type="danger" :disabled="row.is_reversed">冲红</el-button>
-              </template>
-            </el-popconfirm>
+            <ActionColumn :actions="[{ key: 'reverse', label: '冲红', type: 'danger', confirm: '确定冲红此偿还记录？', disabled: row.is_reversed }]" @click="(key) => { if (key === 'reverse') handleReverseRepayment(row) }" />
           </template>
         </el-table-column>
       </el-table>
@@ -161,11 +150,17 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import StatCards from '../components/StatCards.vue'
+import PageHeader from '../components/PageHeader.vue'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
+import ActionColumn from '../components/ActionColumn.vue'
 import advancesApi from '../api/personalAdvances'
 import bankAccountsApi from '../api/bankAccounts'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { today } from '../utils/date'
 
 const advances = ref([])
 const loading = ref(false)
@@ -229,7 +224,7 @@ const openCreateDialog = () => {
   createForm.value = {
     advancer_name: '',
     amount: 0,
-    advance_date: new Date().toISOString().slice(0, 10),
+    advance_date: today(),
     debit_account_code: '6601',
     description: '',
   }
@@ -252,7 +247,7 @@ const openRepayDialog = async (row) => {
   repayTarget.value = row
   repayForm.value = {
     amount: row.remaining_amount,
-    repayment_date: new Date().toISOString().slice(0, 10),
+    repayment_date: today(),
     bank_account_id: null,
     description: '',
   }
@@ -313,18 +308,6 @@ useAccountAwareData(loadList)
 </script>
 
 <style scoped>
-.row { display:flex; gap:16px; margin-bottom:20px; }
-.c3 { flex:1; }
-.stat-mini { background:var(--bg-card); border:1px solid var(--border-light); border-left:4px solid var(--primary); border-radius:12px; padding:16px 20px; }
-.stat-mini-label { display:block; font-size:13px; color:var(--text-secondary); font-weight:500; margin-bottom:4px; }
-.stat-mini-value { font-size:24px; font-weight:700; letter-spacing:-0.5px; }
-
-.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; min-width:90px; }
 .info-line { font-size:13px; color:var(--text-regular); margin-bottom:4px; }
 .reversed-tag { color: var(--text-secondary); text-decoration: line-through; }
 .money { font-variant-numeric: tabular-nums; }

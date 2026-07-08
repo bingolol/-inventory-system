@@ -29,7 +29,7 @@
           <td :style="{ color:t.transaction_type==='inflow'?'var(--success)':'var(--danger)', fontWeight:600 }">{{ t.transaction_type==='inflow'?'+':'-' }}{{ formatMoney(t.amount) }}</td>
           <td style="font-family:'Consolas','Monaco',monospace;">{{ formatMoney(t.balance_after) }}</td>
           <td style="color:var(--text-secondary);">{{ t.description||'-' }}</td>
-          <td><el-popconfirm title="确定冲红？" @confirm="handleReverseTx(t)"><template #reference><el-button size="small" link type="danger">冲红</el-button></template></el-popconfirm></td>
+          <td><ActionColumn :actions="[{ key: 'reverse', label: '冲红', type: 'danger', confirm: '确定冲红？' }]" @click="(key) => { if (key === 'reverse') handleReverseTx(t) }" /></td>
         </tr>
       </table>
       <div v-else style="padding:24px 0;text-align:center;color:var(--text-placeholder);font-size:13px;">暂无流水记录</div>
@@ -40,8 +40,13 @@
         <div v-for="acc in accounts" :key="acc.id" style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-elevated);border-radius:6px;">
           <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:var(--text-primary);">{{ acc.bank_name }}</div><div style="font-size:12px;color:var(--text-secondary);">{{ maskAccount(acc.account_number) }}</div></div>
           <div style="font-size:16px;font-weight:700;">{{ formatMoney(acc.balance) }}</div>
-          <el-button size="small" link type="primary" @click="editAccount(acc)">编辑</el-button>
-          <el-popconfirm title="确定删除？" @confirm="deleteAccount(acc.id)"><template #reference><el-button size="small" link type="danger">删除</el-button></template></el-popconfirm>
+          <ActionColumn :actions="[
+            { key: 'edit', label: '编辑' },
+            { key: 'delete', label: '删除', type: 'danger', confirm: '确定删除？' }
+          ]" @click="(key) => {
+            if (key === 'edit') editAccount(acc)
+            else if (key === 'delete') deleteAccount(acc.id)
+          }" />
         </div>
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:12px;border:2px dashed var(--border-lighter);border-radius:8px;cursor:pointer;color:var(--text-secondary);font-size:13px;" @click="openCreateAccount">+ 添加银行账户</div>
       </div>
@@ -49,15 +54,12 @@
 
     <el-dialog v-model="accountDialogVisible" :title="editingAccountId?'编辑银行账户':'新增银行账户'" width="460px">
       <el-form :model="accountForm" :rules="accountRules" ref="accountFormRef" label-width="0">
-        <div class="fg" style="border-left-color:var(--primary);">
-          <div class="fgh"><span class="fgt" style="background:var(--primary-light);color:var(--primary);">账户信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:70px;">银行名称</span><el-input v-model="accountForm.bank_name" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">账号</span><el-input v-model="accountForm.account_number" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">余额</span><el-input-number v-model="accountForm.balance" :precision="2" :min="0" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:70px;">描述</span><el-input v-model="accountForm.description" /></div>
-          </div>
-        </div>
+        <FormGroup title="账户信息" color="primary">
+          <FormField label="银行名称" label-width="70px"><el-input v-model="accountForm.bank_name" /></FormField>
+          <FormField label="账号" label-width="70px"><el-input v-model="accountForm.account_number" /></FormField>
+          <FormField label="余额" label-width="70px"><el-input-number v-model="accountForm.balance" :precision="2" :min="0" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="描述" label-width="70px"><el-input v-model="accountForm.description" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer><el-button @click="accountDialogVisible=false">取消</el-button><el-button type="primary" @click="saveAccount">{{ editingAccountId?'保存':'创建' }}</el-button></template>
     </el-dialog>
@@ -72,6 +74,9 @@ import bankTxApi from '../api/bankTransactions'
 import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
+import ActionColumn from '../components/ActionColumn.vue'
 
 const loading = ref(false)
 const accounts = ref([])
@@ -87,7 +92,10 @@ const accountRules = { bank_name:[{required:true,message:'请输入银行名称'
 const currentAccount = computed(() => accounts.value.find(a => a.id === currentAccountId.value))
 const periodInflow = computed(() => transactions.value.filter(t => t.transaction_type==='inflow').reduce((s,t) => s+Number(t.amount||0),0))
 const periodOutflow = computed(() => transactions.value.filter(t => t.transaction_type==='outflow').reduce((s,t) => s+Number(t.amount||0),0))
-const maskAccount = (num) => num ? (num.length>4 ? '****'+num.slice(-4) : num) : ''
+const maskAccount = (num) => {
+  const s = String(num ?? '')
+  return s.length > 4 ? '****' + s.slice(-4) : s
+}
 
 const loadAccounts = async () => {
   try { const r = await bankAccountsApi.getBankAccounts(); accounts.value = r.items||[]; if (!currentAccountId.value && accounts.value.length) currentAccountId.value = accounts.value[0].id }
@@ -148,13 +156,6 @@ useAccountAwareData(async () => { await loadAccounts(); if (currentAccountId.val
 .bg { display:inline-block; padding:1px 8px; border-radius:4px; font-size:11px; font-weight:500; }
 .bs { background:var(--success-light); color:var(--success); }
 .bd { background:var(--danger-light); color:var(--danger); }
-
-.fg { background:var(--bg-elevated); border:1px solid var(--border-lighter); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
 
 .c-success { color:var(--success); }
 .c-danger { color:var(--danger); }

@@ -65,8 +65,8 @@ async def get_invoices(
     year: Optional[int] = None,
     quarter: Optional[int] = None,
     certification_status: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id)
 ):
@@ -97,7 +97,8 @@ async def get_invoices(
         query = query.filter(Invoice.certification_status_l3 == certification_status)
     
     total = query.count()
-    invoices = query.offset(skip).limit(limit).all()
+    skip = (page - 1) * page_size
+    invoices = query.offset(skip).limit(page_size).all()
     
     invoice_outs = [_invoice_to_out(inv) for inv in invoices]
     return PaginatedResponse(total=total, items=invoice_outs)

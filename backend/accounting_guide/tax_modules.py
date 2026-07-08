@@ -49,6 +49,30 @@ def build_module_vat(db: Session, account_id: int, start_date: datetime, end_dat
     }
 
 
+def build_module_surcharge(vat_payable: float, surcharge_halved: bool):
+    """附加税 = 城建税 7% + 教育费附加 3% + 地方教育附加 2%，附在增值税之上。"""
+    full_rate = Decimal("0.12")
+    effective_rate = full_rate / 2 if surcharge_halved else full_rate
+
+    base = Decimal(str(vat_payable or 0))
+    total = (base * effective_rate).quantize(Q2)
+    breakdown = [
+        {"name": "城市建设维护税", "rate": "7%", "amount": float((base * Decimal("0.07") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "《城市维护建设税法》"},
+        {"name": "教育费附加", "rate": "3%", "amount": float((base * Decimal("0.03") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "《征收教育费附加暂行规定》"},
+        {"name": "地方教育附加", "rate": "2%", "amount": float((base * Decimal("0.02") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "财税〔2011〕13号"},
+    ]
+
+    return {
+        "vat_payable": float(base),
+        "breakdown": breakdown,
+        "total": float(total),
+        "full_rate": f"{float(full_rate) * 100:.0f}%",
+        "effective_rate": f"{float(effective_rate) * 100:.1f}%",
+        "is_halved": surcharge_halved,
+        "reduction_note": "您是小型微利企业/个体工商户/小规模纳税人，享受六税两费减半征收。" if surcharge_halved else "按法定税率全额征收。",
+    }
+
+
 def build_module_income_tax(db: Session, account_id: int, start_date: datetime, end_date: datetime, account):
     is_data = generate_income_statement(
         db, account_id,

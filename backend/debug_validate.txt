@@ -1,0 +1,39 @@
+DEBUG_FILE=C:\Users\Administrator\Desktop\inventory-system\backend\debug_validate.txt
+Python 3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]
+================================================================================
+  提交 VAT 声明 + 附加税声明
+================================================================================
+
+--- 2025-Q4 (small_scale) ---
+  VAT: skip (期间 2025-Q4 的 VAT 已申报（ID=1），如需覆盖请使用 force 参数)
+  Surcharge: total=0.69, posted=no_change
+
+--- 2026-Q1 (small_scale) ---
+  VAT: skip (期间 2026-Q1 的 VAT 已申报（ID=2），如需覆盖请使用 force 参数)
+  Surcharge: total=2.50, posted=no_change
+
+--- 2026-Q2 (small_scale) ---
+  VAT: skip (期间 2026-Q2 的 VAT 已申报（ID=3），如需覆盖请使用 force 参数)
+  Surcharge: total=1.46, posted=no_change
+
+--- 2026-06 (general) ---
+  VAT: skip (期间 2026-06 的 VAT 已申报（ID=4），如需覆盖请使用 force 参数)
+  Surcharge: total=43.26, posted=no_change
+
+[Done] All declarations submitted
+
+================================================================================
+  三层架构验证 (P3 + P1 + P2)
+================================================================================
+[P3] JournalRule: 72 moves, 0 violations
+[P1] Global balance: 0 violations
+[P1] Equation 2026-06-30: 0 violations
+[P1] Equation 2025-12-31: 0 violations
+[P2] BS: total=36 matched=19 mismatched=0
+[P2] IS: total=19 matched=14 mismatched=0
+
+PASS
+
+[BS] assets=41159.26 le=41159.26 diff=0.00 balanced=True
+[IS] revenue=31887.14 cogs=0.00 surcharge=47.22 net_profit=21802.68
+[Cross] re_end=-22283.87 re_begin=-481.19 delta=-21802.68 np=21802.68 match=False

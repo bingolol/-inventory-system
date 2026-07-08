@@ -461,9 +461,10 @@ import { ref, onMounted } from 'vue'
 import accountingGuideApi from '../api/accountingGuide'
 import { formatMoney } from '../utils/format'
 import { handleError } from '../utils/errorHandler'
+import { currentYear, currentQuarter, generateYears } from '../utils/date'
 
-const year = ref(new Date().getFullYear())
-const quarter = ref(Math.ceil((new Date().getMonth() + 1) / 3))
+const year = ref(currentYear())
+const quarter = ref(currentQuarter())
 const years = ref([])
 const data = ref(null)
 const loading = ref(false)
@@ -484,8 +485,7 @@ const modules = [
 const fmt = (v) => formatMoney(v)
 
 const genYears = () => {
-  const cy = new Date().getFullYear()
-  for (let i = cy - 3; i <= cy; i++) years.value.push(i)
+  years.value = generateYears(-3, 0)
 }
 
 const query = async () => {

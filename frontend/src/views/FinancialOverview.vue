@@ -82,10 +82,11 @@ import { formatMoney, formatDate } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
 import KpiCard from '../components/KpiCard.vue'
+import { today, monthStart, currentQuarter } from '../utils/date'
 
 const router = useRouter()
 const loading = ref(false)
-const reportDate = ref(new Date().toISOString().split('T')[0])
+const reportDate = ref(today())
 const summary = ref(null)
 const income = ref(null)
 const cashFlow = ref(null)
@@ -97,9 +98,7 @@ const expList = ref([])
 
 function getRange() {
   const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  return { start: `${y}-${m}-01`, end: reportDate.value, month: d.getMonth() + 1, year: y }
+  return { start: monthStart(), end: reportDate.value, month: d.getMonth() + 1, year: d.getFullYear() }
 }
 
 const bs = computed(() => summary.value?.balance_sheet)
@@ -125,7 +124,7 @@ const health = computed(() => {
 async function loadAll() {
   loading.value = true
   const r = getRange()
-  const q = Math.ceil((new Date().getMonth() + 1) / 3)
+  const q = currentQuarter()
   try {
     const [s, inc, cf, inv, al, vat, it, ex] = await Promise.all([
       financeApi.getFinancialSummary(reportDate.value).catch(() => null),

@@ -88,8 +88,9 @@ import { formatMoney } from '../utils/format'
 import { handleError } from '../utils/errorHandler'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import TaxTemplatePreview from './TaxTemplatePreview.vue'
+import { today } from '../utils/date'
 
-const props = defineProps({ date: { type: String, default: () => new Date().toISOString().split('T')[0] } })
+const props = defineProps({ date: { type: String, default: () => today() } })
 
 const loading = ref(false)
 const exporting = ref(false)

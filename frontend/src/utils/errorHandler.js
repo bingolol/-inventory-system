@@ -50,7 +50,10 @@ const ACTION_HANDLERS = {
     const firstField = errorInfo.data?.field
     if (firstField) {
       setTimeout(() => {
-        document.querySelector(`[prop="${firstField}"]`)?.scrollIntoView({ behavior: 'smooth' })
+        const el = document.querySelector(
+          `.el-form-item[data-prop="${firstField}"], .el-form-item[prop="${firstField}"], [name="${firstField}"]`
+        )
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 100)
     }
   },

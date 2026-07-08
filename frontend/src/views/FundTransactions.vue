@@ -1,23 +1,24 @@
 <template>
   <div>
-    <div class="row">
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">{{ mode==='receipt'?'本月收款':'本月付款' }}</span><span class="stat-mini-value" :style="{color:mode==='receipt'?'var(--success)':'var(--danger)'}">{{ formatMoney(monthTotal) }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">筛选合计</span><span class="stat-mini-value" style="color:var(--primary);">{{ formatMoney(totalAmount) }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">记录数</span><span class="stat-mini-value">{{ items.length }} 笔</span></div></div>
-    </div>
+    <StatCards :items="[
+      { label: mode==='receipt'?'本月收款':'本月付款', value: formatMoney(monthTotal), color: mode==='receipt'?'success':'danger' },
+      { label: '筛选合计', value: formatMoney(totalAmount), color: 'primary' },
+      { label: '记录数', value: items.length + ' 笔' }
+    ]" />
 
     <el-card shadow="never">
       <template #header>
-        <div class="card-header">
-          <span class="page-title">资金流水</span>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <el-radio-group v-model="mode" @change="onModeChange">
-              <el-radio value="receipt">收款</el-radio>
-              <el-radio value="payment">付款</el-radio>
-            </el-radio-group>
-            <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新增{{ mode==='receipt'?'收款':'付款' }}</el-button>
-          </div>
-        </div>
+        <PageHeader title="资金流水">
+          <template #actions>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <el-radio-group v-model="mode" @change="onModeChange">
+                <el-radio value="receipt">收款</el-radio>
+                <el-radio value="payment">付款</el-radio>
+              </el-radio-group>
+              <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新增{{ mode==='receipt'?'收款':'付款' }}</el-button>
+            </div>
+          </template>
+        </PageHeader>
       </template>
       <el-table :data="items" stripe style="width:100%" v-loading="loading">
         <template #empty><el-empty :description="`暂无${mode==='receipt'?'收款':'付款'}记录`" /></template>
@@ -31,7 +32,7 @@
           <template #default="{ row }"><span class="money" :style="{color:mode==='receipt'?'var(--success)':'var(--danger)'}">{{ mode==='receipt'?'+':'-' }}{{ formatMoney(row.amount) }}</span></template>
         </el-table-column>
         <el-table-column :prop="mode==='receipt'?'receipt_method':'payment_method'" label="方式" min-width="80" align="center">
-          <template #default="{ row }"><span class="status-badge" :class="(mode==='receipt'?row.receipt_method:row.payment_method)==='company'?'primary':'warning'">{{ (mode==='receipt'?row.receipt_method:row.payment_method)==='company'?'公司账户':'个人垫付' }}</span></template>
+          <template #default="{ row }"><StatusTag :status="mode==='receipt'?row.receipt_method:row.payment_method" :type="mode==='receipt'?'receipt_method':'payment_method'" /></template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="200" />
         <el-table-column prop="created_at" label="创建时间" min-width="130">
@@ -39,9 +40,9 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-popconfirm :title="`确定冲红此${mode==='receipt'?'收款':'付款'}？`" @confirm="handleReverse(row)">
-              <template #reference><el-button size="small" link type="danger">冲红</el-button></template>
-            </el-popconfirm>
+            <ActionColumn :actions="[
+              { key: 'reverse', label: '冲红', type: 'danger', confirm: `确定冲红此${mode==='receipt'?'收款':'付款'}？` }
+            ]" @click="(key) => { if (key === 'reverse') handleReverse(row) }" />
           </template>
         </el-table-column>
       </el-table>
@@ -49,20 +50,17 @@
 
     <el-dialog v-model="dialogVisible" :title="`新增${mode==='receipt'?'收款':'付款'}`" width="500px">
       <el-form :model="form" label-width="0">
-        <div class="fg" :style="{borderLeftColor:mode==='receipt'?'var(--success)':'var(--danger)'}">
-          <div class="fgh"><span class="fgt" :style="mode==='receipt'?{background:'var(--success-light)',color:'var(--success)'}:{background:'var(--danger-light)',color:'var(--danger)'}">{{ mode==='receipt'?'收款':'付款' }}信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:80px;">{{ mode==='receipt'?'收款':'付款' }}日期</span><el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">{{ mode==='receipt'?'收款':'付款' }}金额</span><el-input v-model.number="form.amount" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">{{ mode==='receipt'?'收款':'付款' }}类型</span><el-select v-model="form.entity_type" style="width:100%">
-              <el-option v-for="opt in entityTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-            </el-select></div>
-            <div class="ff" v-if="showRelatedSelect"><span class="fl" style="min-width:80px;">关联单据</span><el-select v-model="form.related_entity_id" filterable style="width:100%" :placeholder="`选择${relatedLabel}`"><el-option v-for="ref in references" :key="ref.id" :label="ref.label" :value="ref.id" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">结算方式</span><el-select v-model="form.method" style="width:100%"><el-option label="公司账户" value="company" /><el-option label="个人垫付" value="private_advance" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">银行账户</span><el-select v-model="form.bank_account_id" clearable style="width:100%" placeholder="选择银行账户（可选）"><el-option v-for="ba in bankAccounts" :key="ba.id" :label="ba.bank_name" :value="ba.id" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">描述</span><el-input v-model="form.description" /></div>
-          </div>
-        </div>
+        <FormGroup :title="`${mode==='receipt'?'收款':'付款'}信息`" :color="mode==='receipt'?'success':'danger'">
+          <FormField :label="`${mode==='receipt'?'收款':'付款'}日期`" label-width="80px"><el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%;" /></FormField>
+          <FormField :label="`${mode==='receipt'?'收款':'付款'}金额`" label-width="80px"><el-input v-model.number="form.amount" /></FormField>
+          <FormField :label="`${mode==='receipt'?'收款':'付款'}类型`" label-width="80px"><el-select v-model="form.entity_type" style="width:100%" @change="form.related_entity_id = null">
+            <el-option v-for="opt in entityTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select></FormField>
+          <FormField label="关联单据" label-width="80px" v-if="showRelatedSelect"><el-select v-model="form.related_entity_id" filterable style="width:100%" :placeholder="`选择${relatedLabel}`"><el-option v-for="ref in references" :key="ref.key" :label="ref.label" :value="ref.id" /></el-select></FormField>
+          <FormField label="结算方式" label-width="80px"><el-select v-model="form.method" style="width:100%"><el-option label="公司账户" value="company" /><el-option label="个人垫付" value="private_advance" /></el-select></FormField>
+          <FormField label="银行账户" label-width="80px"><el-select v-model="form.bank_account_id" clearable style="width:100%" placeholder="选择银行账户（可选）"><el-option v-for="ba in bankAccounts" :key="ba.id" :label="ba.bank_name" :value="ba.id" /></el-select></FormField>
+          <FormField label="描述" label-width="80px"><el-input v-model="form.description" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
     </el-dialog>
@@ -74,6 +72,12 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import StatCards from '../components/StatCards.vue'
+import PageHeader from '../components/PageHeader.vue'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
+import StatusTag from '../components/StatusTag.vue'
+import ActionColumn from '../components/ActionColumn.vue'
 import receiptsApi from '../api/receipts'
 import paymentsApi from '../api/payments'
 import ordersApi from '../api/orders'
@@ -82,11 +86,14 @@ import bankAccountsApi from '../api/bankAccounts'
 import { formatMoney, formatDate, formatDateTime } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { nowLocal, isSameMonth } from '../utils/date'
 
 const route = useRoute()
 const mode = ref(route.query.tab === 'payment' ? 'payment' : 'receipt')
 const items = ref([])
-const references = ref([])
+const saleReferences = ref([])
+const purchaseReferences = ref([])
+const expenseReferences = ref([])
 const bankAccounts = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -94,7 +101,7 @@ const form = ref(createEmptyForm())
 
 function createEmptyForm() {
   return {
-    date: new Date().toISOString().replace('Z', ''),
+    date: nowLocal(),
     amount: 0,
     entity_type: mode.value === 'receipt' ? 'sale' : 'purchase',
     related_entity_id: null,
@@ -119,6 +126,13 @@ const dateField = computed(() => mode.value === 'receipt' ? 'receipt_date' : 'pa
 const typeField = computed(() => mode.value === 'receipt' ? 'receipt_type' : 'payment_type')
 const methodField = computed(() => mode.value === 'receipt' ? 'receipt_method' : 'payment_method')
 
+const references = computed(() => {
+  if (mode.value === 'receipt') return saleReferences.value
+  if (form.value.entity_type === 'purchase') return purchaseReferences.value
+  if (form.value.entity_type === 'expense') return expenseReferences.value
+  return []
+})
+
 const showRelatedSelect = computed(() => {
   return mode.value === 'receipt' || ['purchase', 'expense'].includes(form.value.entity_type)
 })
@@ -132,12 +146,9 @@ const relatedLabel = computed(() => {
 
 const totalAmount = computed(() => items.value.reduce((s, e) => s + (Number(e.amount) || 0), 0))
 const monthTotal = computed(() => {
-  const n = new Date()
   return items.value.filter(e => {
     const d = mode.value === 'receipt' ? e.receipt_date : e.payment_date
-    if (!d) return false
-    const dt = new Date(d)
-    return !isNaN(dt.getTime()) && dt.getMonth() === n.getMonth() && dt.getFullYear() === n.getFullYear()
+    return isSameMonth(d)
   }).reduce((s, e) => s + (Number(e.amount) || 0), 0)
 })
 
@@ -155,16 +166,14 @@ const loadReferences = async () => {
   try {
     if (mode.value === 'receipt') {
       const r = await ordersApi.getSales({ limit: 200, status: 'completed' })
-      references.value = (r?.items || []).filter(o => o.payment_status === 'unpaid').map(o => ({ id: o.id, label: `${o.order_no} - ¥${o.total_price}` }))
+      saleReferences.value = (r?.items || []).filter(o => o.payment_status === 'unpaid').map(o => ({ id: o.id, key: `sale-${o.id}`, label: `${o.order_no} - ¥${o.total_price}` }))
     } else {
       const [poR, expR] = await Promise.all([
         ordersApi.getPurchases({ limit: 200, status: 'completed' }),
         expensesApi.getExpenses({ limit: 200 })
       ])
-      references.value = [
-        ...(poR?.items || []).filter(o => o.payment_status === 'unpaid').map(o => ({ id: o.id, label: `${o.order_no} - ¥${o.total_price}` })),
-        ...(expR?.items || []).filter(e => e.payment_status === 'unpaid').map(e => ({ id: e.id, label: `${e.category} - ¥${e.amount}` }))
-      ]
+      purchaseReferences.value = (poR?.items || []).filter(o => o.payment_status === 'unpaid').map(o => ({ id: o.id, key: `purchase-${o.id}`, label: `${o.order_no} - ¥${o.total_price}` }))
+      expenseReferences.value = (expR?.items || []).filter(e => e.payment_status === 'unpaid').map(e => ({ id: e.id, key: `expense-${e.id}`, label: `${e.category} - ¥${e.amount}` }))
     }
     const baR = await bankAccountsApi.getBankAccounts()
     bankAccounts.value = baR?.items || []
@@ -184,6 +193,11 @@ const openCreateDialog = () => {
 
 const save = async () => {
   try {
+    if (['purchase', 'expense'].includes(form.value.entity_type) && !form.value.related_entity_id) {
+      ElMessage.warning('请选择关联单据')
+      return
+    }
+
     const payload = {
       [dateField.value]: form.value.date,
       amount: form.value.amount,
@@ -204,6 +218,10 @@ const save = async () => {
         payload.related_entity_id = form.value.related_entity_id
       } else if (form.value.entity_type === 'tax') {
         payload.related_entity_type = 'tax_payable'
+        payload.related_entity_id = form.value.related_entity_id || 0
+      } else if (form.value.entity_type === 'salary') {
+        payload.related_entity_type = 'expense'
+        payload.related_entity_id = form.value.related_entity_id || 0
       }
     }
     if (mode.value === 'receipt') {
@@ -233,15 +251,5 @@ useAccountAwareData(() => { loadItems() })
 </script>
 
 <style scoped>
-.row { display:flex; gap:16px; margin-bottom:20px; }
-.c4 { flex:1; }
-.stat-mini { background:var(--bg-card); border:1px solid var(--border-light); border-left:4px solid var(--primary); border-radius:12px; padding:16px 20px; }
-.stat-mini-label { display:block; font-size:13px; color:var(--text-secondary); font-weight:500; margin-bottom:4px; }
-.stat-mini-value { font-size:26px; font-weight:700; letter-spacing:-0.5px; }
-.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
+/* 样式已集中到 global.css */
 </style>

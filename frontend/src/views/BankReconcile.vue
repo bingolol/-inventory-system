@@ -1,10 +1,10 @@
 <template>
   <div v-loading="loading">
-    <div class="row">
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">对账期间</span><span class="stat-mini-value" style="font-size:18px;color:var(--primary);">{{ period }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">调节表状态</span><span class="stat-mini-value" :style="{ color: statusColor }">{{ reconciliation?.status || '-' }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">是否平衡</span><span class="stat-mini-value" :style="{ color: reconciliation?.balanced ? 'var(--success)' : 'var(--danger)' }">{{ reconciliation?.balanced ? '平衡 ✅' : '不平衡 ❌' }}</span></div></div>
-    </div>
+    <StatCards :items="[
+      { label: '对账期间', value: period, color: 'primary' },
+      { label: '调节表状态', value: reconciliation?.status || '-', color: statusColor },
+      { label: '是否平衡', value: reconciliation?.balanced ? '平衡 ✅' : '不平衡 ❌', color: reconciliation?.balanced ? 'success' : 'danger' }
+    ]" />
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
       <el-date-picker v-model="period" type="month" value-format="YYYY-MM" style="width:160px;" placeholder="选择月份" @change="loadReconciliation" />
@@ -34,7 +34,7 @@
           <td>{{ item.item_type }}</td>
           <td style="font-weight:600;">¥{{ formatMoney(item.amount) }}</td>
           <td><span class="bg" :class="item.direction==='in'?'bs':'bd'">{{ item.direction==='in'?'加':'减' }}</span></td>
-          <td><span class="status-badge" :class="item.resolved?'success':'warning'">{{ item.resolved?'已处理':'待处理' }}</span></td>
+          <td><StatusTag :status="item.resolved?'resolved':'pending'" :color="item.resolved?'success':'warning'" :label="item.resolved?'已处理':'待处理'" /></td>
           <td style="color:var(--text-secondary);">{{ item.notes||'-' }}</td>
         </tr>
       </table>
@@ -42,42 +42,33 @@
 
     <el-dialog v-model="importDialogVisible" title="导入银行对账单" width="520px">
       <el-form :model="stmtForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--primary);">
-          <div class="fgh"><span class="fgt" style="background:var(--primary-light);color:var(--primary);">对账单信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:80px;">开始日期</span><el-date-picker v-model="stmtForm.period_start" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">结束日期</span><el-date-picker v-model="stmtForm.period_end" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">期初余额</span><el-input-number v-model="stmtForm.opening_balance" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">期末余额</span><el-input-number v-model="stmtForm.closing_balance" :precision="2" style="width:100%;" controls-position="right" /></div>
+        <FormGroup title="对账单信息" color="primary">
+          <FormField label="开始日期" label-width="80px"><el-date-picker v-model="stmtForm.period_start" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="结束日期" label-width="80px"><el-date-picker v-model="stmtForm.period_end" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="期初余额" label-width="80px"><el-input-number v-model="stmtForm.opening_balance" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="期末余额" label-width="80px"><el-input-number v-model="stmtForm.closing_balance" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+        </FormGroup>
+        <FormGroup title="对账单明细" color="success" style="margin-top:12px;">
+          <div v-for="(line, idx) in stmtForm.lines" :key="line._key" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+            <el-date-picker v-model="line.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:130px;" />
+            <el-input-number v-model="line.amount" :precision="2" style="width:130px;" controls-position="right" />
+            <el-input v-model="line.description" placeholder="描述" style="flex:1;" />
+            <el-button size="small" type="danger" link @click="stmtForm.lines.splice(idx, 1)">×</el-button>
           </div>
-        </div>
-        <div class="fg" style="border-left-color:var(--success);margin-top:12px;">
-          <div class="fgh"><span class="fgt" style="background:var(--success-light);color:var(--success);">对账单明细</span></div>
-          <div class="fgb">
-            <div v-for="(line, idx) in stmtForm.lines" :key="line._key" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
-              <el-date-picker v-model="line.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:130px;" />
-              <el-input-number v-model="line.amount" :precision="2" style="width:130px;" controls-position="right" />
-              <el-input v-model="line.description" placeholder="描述" style="flex:1;" />
-              <el-button size="small" type="danger" link @click="stmtForm.lines.splice(idx, 1)">×</el-button>
-            </div>
-            <el-button size="small" @click="stmtForm.lines.push({_key: newLineKey(), transaction_date:'',amount:0,description:''})">+ 添加一行</el-button>
-          </div>
-        </div>
+          <el-button size="small" @click="stmtForm.lines.push({_key: newLineKey(), transaction_date:'',amount:0,description:''})">+ 添加一行</el-button>
+        </FormGroup>
       </el-form>
       <template #footer><el-button @click="importDialogVisible=false">取消</el-button><el-button type="primary" @click="handleImport" :loading="importing">导入</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="bankEntryDialogVisible" title="银行手续费/利息直录" width="460px">
       <el-form :model="bankEntryForm" label-width="0">
-        <div class="fg" style="border-left-color:var(--warning);">
-          <div class="fgh"><span class="fgt" style="background:var(--warning-light);color:var(--warning);">录入信息</span></div>
-          <div class="fgb">
-            <div class="ff"><span class="fl" style="min-width:80px;">类型</span><el-select v-model="bankEntryForm.entry_type" style="width:100%"><el-option label="利息收入" value="interest_income" /><el-option label="银行手续费" value="bank_fee" /></el-select></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">金额</span><el-input-number v-model="bankEntryForm.amount" :precision="2" style="width:100%;" controls-position="right" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">日期</span><el-date-picker v-model="bankEntryForm.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></div>
-            <div class="ff"><span class="fl" style="min-width:80px;">描述</span><el-input v-model="bankEntryForm.description" /></div>
-          </div>
-        </div>
+        <FormGroup title="录入信息" color="warning">
+          <FormField label="类型" label-width="80px"><el-select v-model="bankEntryForm.entry_type" style="width:100%"><el-option label="利息收入" value="interest_income" /><el-option label="银行手续费" value="bank_fee" /></el-select></FormField>
+          <FormField label="金额" label-width="80px"><el-input-number v-model="bankEntryForm.amount" :precision="2" style="width:100%;" controls-position="right" /></FormField>
+          <FormField label="日期" label-width="80px"><el-date-picker v-model="bankEntryForm.transaction_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></FormField>
+          <FormField label="描述" label-width="80px"><el-input v-model="bankEntryForm.description" /></FormField>
+        </FormGroup>
       </el-form>
       <template #footer><el-button @click="bankEntryDialogVisible=false">取消</el-button><el-button type="primary" @click="handleBankEntry" :loading="bankEntering">录入</el-button></template>
     </el-dialog>
@@ -87,16 +78,21 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import StatCards from '../components/StatCards.vue'
+import FormGroup from '../components/FormGroup.vue'
+import FormField from '../components/FormField.vue'
+import StatusTag from '../components/StatusTag.vue'
 import bankReconcileApi from '../api/bankReconcile'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { currentMonth, today, periodRange } from '../utils/date'
 
 let lineKey = 0
 function newLineKey() { return ++lineKey }
 
 const loading = ref(false)
-const period = ref(new Date().toISOString().slice(0, 7))
+const period = ref(currentMonth())
 const reconciliation = ref(null)
 const statementImported = ref(false)
 const importDialogVisible = ref(false)
@@ -111,15 +107,15 @@ const stmtForm = ref({
 })
 
 const bankEntryForm = ref({
-  entry_type: 'bank_fee', amount: 0, transaction_date: new Date().toISOString().slice(0, 10), description: ''
+  entry_type: 'bank_fee', amount: 0, transaction_date: today(), description: ''
 })
 
 const statusColor = computed(() => {
-  if (!reconciliation.value) return 'var(--text-placeholder)'
+  if (!reconciliation.value) return 'text-placeholder'
   const s = reconciliation.value.status
-  if (s === 'confirmed') return 'var(--success)'
-  if (s === 'pending') return 'var(--warning)'
-  return 'var(--primary)'
+  if (s === 'confirmed') return 'success'
+  if (s === 'pending') return 'warning'
+  return 'primary'
 })
 
 const loadReconciliation = async () => {
@@ -144,10 +140,10 @@ const loadReconciliation = async () => {
 }
 
 const showImportDialog = () => {
-  const ym = period.value ? period.value.split('-') : []
+  const { start, end } = periodRange(period.value)
   stmtForm.value = {
-    period_start: ym.length ? `${ym[0]}-${ym[1]}-01` : '',
-    period_end: ym.length ? new Date(Number(ym[0]), Number(ym[1]), 0).toISOString().slice(0, 10) : '',
+    period_start: start,
+    period_end: end,
     opening_balance: 0, closing_balance: 0,
     lines: []
   }
@@ -197,7 +193,7 @@ const handleConfirm = async () => {
 const showBankEntryDialog = () => {
   bankEntryForm.value = {
     entry_type: 'bank_fee', amount: 0,
-    transaction_date: new Date().toISOString().slice(0, 10), description: ''
+    transaction_date: today(), description: ''
   }
   bankEntryDialogVisible.value = true
 }
@@ -217,11 +213,6 @@ useAccountAwareData(loadReconciliation)
 </script>
 
 <style scoped>
-.row { display:flex; gap:16px; margin-bottom:20px; }
-.c4 { flex:1; }
-.stat-mini { background:var(--bg-card); border:1px solid var(--border-light); border-left:4px solid var(--primary); border-radius:12px; padding:16px 20px; }
-.stat-mini-label { display:block; font-size:13px; color:var(--text-secondary); font-weight:500; margin-bottom:4px; }
-.stat-mini-value { font-size:26px; font-weight:700; letter-spacing:-0.5px; }
 .box { background:var(--bg-card); border:1px solid var(--border-lighter); border-radius:10px; padding:16px; }
 .bh { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
 .bt { font-size:13px; font-weight:600; color:var(--text-primary); }
@@ -229,12 +220,6 @@ useAccountAwareData(loadReconciliation)
 .tbl th { text-align:left; padding:8px 10px; font-size:11px; font-weight:600; color:var(--text-secondary); border-bottom:1px solid var(--border-lighter); }
 .tbl td { padding:8px 10px; font-size:13px; color:var(--text-regular); border-bottom:1px solid var(--bg-elevated); }
 .tbl tr:last-child td { border:none; }
-.fg { background:var(--bg-elevated); border:1px solid var(--border-light); border-left:4px solid; border-radius:12px; overflow:hidden; }
-.fgh { padding:12px 16px 4px; }
-.fgt { display:inline-block; padding:2px 12px; border-radius:9999px; font-size:12px; font-weight:600; }
-.fgb { padding:4px 16px 12px; display:flex; flex-direction:column; gap:10px; }
-.ff { display:flex; align-items:center; gap:12px; }
-.fl { font-size:13px; color:var(--text-regular); flex-shrink:0; }
 .bg { display:inline-block; padding:1px 8px; border-radius:4px; font-size:11px; font-weight:500; }
 .bs { background:var(--success-light); color:var(--success); }
 .bd { background:var(--danger-light); color:var(--danger); }

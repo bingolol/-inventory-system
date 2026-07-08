@@ -1,0 +1,1 @@
+import{U as t,a}from"./index-WfBBHmJf.js";const p=()=>a.post("/backup/hot"),s=()=>a.get("/backup/list"),c=o=>`${t}/backup/download/${o}`,u={hotBackup:p,listBackups:s,getBackupDownloadUrl:c};export{u as b};

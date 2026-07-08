@@ -171,6 +171,7 @@ import { resolveImageUrl, handleError } from '../api/index'
 import ImageUpload from '../components/ImageUpload.vue'
 import { useEnumsStore } from '../stores/enums'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { today } from '../utils/date'
 
 use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -293,8 +294,7 @@ const showDialog = (row) => {
     }
   } else {
     editingId.value = null
-    const today = new Date().toISOString().slice(0, 10)
-    form.value = { type: 'expense', amount: 0, category: '', date: today, description: '', image_url: '' }
+    form.value = { type: 'expense', amount: 0, category: '', date: today(), description: '', image_url: '' }
   }
   dialogVisible.value = true
 }

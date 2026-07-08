@@ -697,7 +697,6 @@ body {
 .stat-card.clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .stat-card.active { background: var(--primary-light); border-color: var(--primary); box-shadow: 0 2px 8px var(--primary-glow); }
 
-/* ── 表单分组卡片 ── */
 .form-group {
   background: var(--bg-card);
   border: 1px solid var(--border-lighter);
@@ -720,6 +719,57 @@ body {
 .form-group-body { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .form-field { display: flex; align-items: center; gap: 12px; }
 .form-label { font-size: 13px; color: var(--text-regular); flex-shrink: 0; min-width: 70px; }
+
+/* ── mini 统计卡片（列表页顶部）── */
+.stat-mini {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+}
+.stat-mini-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.stat-mini-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+.stat-mini-value.is-small {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* ── 表单分组（.fg 系列，兼容旧用法）── */
+.fg {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.fgh { padding: 12px 16px 4px; }
+.fgt {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.fgb { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.ff { display: flex; align-items: center; gap: 12px; }
+.fl { font-size: 13px; color: var(--text-regular); flex-shrink: 0; min-width: 70px; }
 
 /* ── 弹出菜单 ── */
 .el-menu--popup {

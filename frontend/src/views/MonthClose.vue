@@ -1,20 +1,19 @@
 <template>
   <div>
-    <div class="row">
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">月结期间</span><span class="stat-mini-value" style="font-size:22px;color:var(--primary);">{{ period }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">月结状态</span><span class="stat-mini-value" :style="{ color: closedMonths.includes(period) ? 'var(--text-placeholder)' : 'var(--warning)' }">{{ closedMonths.includes(period) ? '已月结' : '未月结' }}</span></div></div>
-      <div class="c4"><div class="stat-mini"><span class="stat-mini-label">操作</span><span style="font-size:13px;color:var(--text-secondary);display:block;margin-top:8px;">月结后数据锁定，不可逆</span></div></div>
-    </div>
+    <StatCards :items="[
+      { label: '月结期间', value: period, color: 'primary' },
+      { label: '月结状态', value: closedMonths.includes(period) ? '已月结' : '未月结', color: closedMonths.includes(period) ? undefined : 'warning' },
+      { label: '操作', value: '月结后数据锁定，不可逆', valueClass: 'is-small' }
+    ]" />
 
     <el-card shadow="never">
       <template #header>
-        <div class="card-header">
-          <span class="page-title">期末处理</span>
-          <div class="card-header-actions">
+        <PageHeader title="期末处理">
+          <template #actions>
             <el-date-picker v-model="period" type="month" value-format="YYYY-MM" style="width:160px;" placeholder="选择月份" @change="checkStatus" />
             <el-button type="danger" @click="handleMonthClose" :loading="monthClosing" :disabled="closedMonths.includes(period)">执行月结</el-button>
-          </div>
-        </div>
+          </template>
+        </PageHeader>
       </template>
 
       <div class="info-box">
@@ -44,12 +43,15 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import StatCards from '../components/StatCards.vue'
+import PageHeader from '../components/PageHeader.vue'
 import financeApi from '../api/finance'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { currentMonth } from '../utils/date'
 
-const period = ref(new Date().toISOString().slice(0, 7))
+const period = ref(currentMonth())
 const monthClosing = ref(false)
 const closedMonths = ref([])
 const lastResult = ref(null)
@@ -84,12 +86,6 @@ const handleMonthClose = async () => {
 </script>
 
 <style scoped>
-.row { display:flex; gap:16px; margin-bottom:20px; }
-.c4 { flex:1; }
-.stat-mini { background:var(--bg-card); border:1px solid var(--border-light); border-left:4px solid var(--primary); border-radius:12px; padding:16px 20px; }
-.stat-mini-label { display:block; font-size:13px; color:var(--text-secondary); font-weight:500; margin-bottom:4px; }
-.stat-mini-value { font-size:26px; font-weight:700; letter-spacing:-0.5px; }
-
 .info-box { background:var(--bg-elevated); border:1px solid var(--border-lighter); border-radius:12px; padding:20px; margin-bottom:16px; }
 .info-title { font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:12px; }
 .info-steps { display:flex; flex-direction:column; gap:8px; }

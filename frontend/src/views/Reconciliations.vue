@@ -102,8 +102,8 @@ import commonApi from '../api/common'
 import { formatMoney } from '../utils/format'
 import { handleError } from '../api/index'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
+import { getMonthRange } from '../utils/date'
 
-const loading = ref(false)
 const drawerVisible = ref(false)
 
 const filter = reactive({
@@ -173,11 +173,9 @@ const onRowClick = (row) => {
 
 // 默认本月
 const setDefaultDates = () => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  filter.start_date = `${y}-${m}-01`
-  filter.end_date = `${y}-${m}-${new Date(y, now.getMonth() + 1, 0).getDate()}`
+  const { start, end } = getMonthRange()
+  filter.start_date = start
+  filter.end_date = end
 }
 
 setDefaultDates()

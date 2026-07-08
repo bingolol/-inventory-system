@@ -90,6 +90,7 @@ import financeApi from '../api/finance'
 import { formatMoney } from '../utils/format'
 import { useAccountAwareData } from '../composables/useAccountAwareData'
 import { handleError } from '../utils/errorHandler'
+import { today } from '../utils/date'
 
 const formRef = ref(null)
 const saving = ref(false)
@@ -98,7 +99,7 @@ const historyList = ref([])
 const historyLoading = ref(false)
 
 const defaultForm = () => ({
-  date: new Date().toISOString().split('T')[0],
+  date: today(),
   cash_balance: 0, bank_balance: 0, accounts_receivable: 0, inventory_value: 0,
   fixed_assets_original: 0, accumulated_depreciation: 0, intangible_assets_original: 0, accumulated_amortization: 0,
   accounts_payable: 0, tax_payable: 0,
