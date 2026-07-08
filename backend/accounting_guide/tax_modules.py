@@ -11,6 +11,11 @@ from policy.policy_engine import (
     calculate_vat as policy_vat,
     calculate_income_tax as policy_income_tax,
 )
+from policy.surcharge_facts import load_surcharge_facts
+from policy.vat_facts import (
+    VAT_SMALL_SCALE_QUARTERLY_EXEMPTION,
+    VAT_SMALL_SCALE_REDUCED_RATE,
+)
 from utils import _d, Q2
 
 
@@ -29,7 +34,7 @@ def build_module_vat(db: Session, account_id: int, start_date: datetime, end_dat
     total_revenue = agg["output_total"].quantize(Q2)
     ordinary_rev = agg["ordinary_revenue"].quantize(Q2)
     special_rev = agg["special_revenue"].quantize(Q2)
-    exemption_threshold = 300000
+    exemption_threshold = float(VAT_SMALL_SCALE_QUARTERLY_EXEMPTION.value)
     is_under = float(total_revenue) <= exemption_threshold
 
     return {
@@ -40,7 +45,7 @@ def build_module_vat(db: Session, account_id: int, start_date: datetime, end_dat
         "ordinary_revenue": float(ordinary_rev),
         "ordinary_tax": float(vat_result.tax_payable_gross.quantize(Q2)),
         "special_revenue": float(special_rev),
-        "special_tax_rate": 0.01 if profile.vat_type == "small_scale" else None,
+        "special_tax_rate": float(VAT_SMALL_SCALE_REDUCED_RATE.value) if profile.vat_type == "small_scale" else None,
         "vat_payable": float(vat_result.tax_payable.quantize(Q2)),
         "reduction_item": vat_result.reduction_item,
         "input_tax": float(agg["input_tax"].quantize(Q2)),
@@ -50,16 +55,26 @@ def build_module_vat(db: Session, account_id: int, start_date: datetime, end_dat
 
 
 def build_module_surcharge(vat_payable: float, surcharge_halved: bool):
-    """附加税 = 城建税 7% + 教育费附加 3% + 地方教育附加 2%，附在增值税之上。"""
-    full_rate = Decimal("0.12")
-    effective_rate = full_rate / 2 if surcharge_halved else full_rate
+    """附加税 = 城建税 + 教育费附加 + 地方教育附加，附在增值税之上。
+
+    税率从 policy/surcharge_facts.py 事实源读取，禁止硬编码。
+    """
+    facts = load_surcharge_facts()
+    full_rate = facts.total_rate
+    halving = facts.halving_factor if surcharge_halved else Decimal("1")
+    effective_rate = full_rate * halving
 
     base = Decimal(str(vat_payable or 0))
     total = (base * effective_rate).quantize(Q2)
+
+    def _item(name: str, rate: Decimal, law: str) -> dict:
+        amount = (base * rate * halving).quantize(Q2)
+        return {"name": name, "rate": f"{float(rate) * 100:.0f}%", "amount": float(amount), "law": law}
+
     breakdown = [
-        {"name": "城市建设维护税", "rate": "7%", "amount": float((base * Decimal("0.07") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "《城市维护建设税法》"},
-        {"name": "教育费附加", "rate": "3%", "amount": float((base * Decimal("0.03") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "《征收教育费附加暂行规定》"},
-        {"name": "地方教育附加", "rate": "2%", "amount": float((base * Decimal("0.02") * (Decimal("0.5") if surcharge_halved else Decimal("1"))).quantize(Q2)), "law": "财税〔2011〕13号"},
+        _item("城市建设维护税", facts.urban_construction_tax_rate, "《城市维护建设税法》"),
+        _item("教育费附加", facts.education_surcharge_rate, "《征收教育费附加暂行规定》"),
+        _item("地方教育附加", facts.local_education_surcharge_rate, "财税〔2011〕13号"),
     ]
 
     return {

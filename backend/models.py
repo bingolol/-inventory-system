@@ -263,7 +263,7 @@ class PurchaseItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
     quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
     unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
-    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.13'), comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
     total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
     notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
 
@@ -306,7 +306,7 @@ class SaleItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
     quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
     unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
-    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 税率: 0.01/0.03/0.06/0.09/0.13", info={"tier":"L1","source":"external"})
     total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
     unit_cost_l2 = Column(Numeric(14, 6), default=Decimal('0'), comment="[L2-计算] 出库时锁定的移动加权平均成本快照", info={"tier":"L2","source":"engine"})
     notes = Column(Text, default="", comment="备注（合并行追踪 cost_id 用）")
@@ -451,7 +451,7 @@ class InvoiceItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, comment="商品ID")
     quantity_l1 = Column(Integer, nullable=False, comment="[L1-外部] 数量", info={"tier":"L1","source":"external"})
     unit_price_l1 = Column(Numeric(12, 6), nullable=False, comment="[L1-外部] 单价", info={"tier":"L1","source":"external"})
-    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, default=Decimal('0.01'), comment="[L1-外部] 税率", info={"tier":"L1","source":"external"})
+    tax_rate_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 税率", info={"tier":"L1","source":"external"})
     total_price_l1 = Column(Numeric(12, 2), nullable=False, comment="[L1-外部] 小计", info={"tier":"L1","source":"external"})
 
     invoice = relationship("Invoice", back_populates="items")

@@ -186,6 +186,7 @@ def update_asset_with_invoice(
             operator=operator,
             asset_id=asset_id,
             original_value=data.original_value,
+            tax_amount=data.tax_amount,
             name=data.name,
             category=data.category,
             salvage_rate=data.salvage_rate,

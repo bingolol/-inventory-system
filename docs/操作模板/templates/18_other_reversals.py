@@ -37,7 +37,7 @@ def reverse_expense_pending(expense_id):
 
     ⚠️ 后端不接受 body，红冲日期取当前日期。
     """
-    return post_pending(f"/api/expenses/{expense_id}/reverse")
+    return post_pending(f"/api/expenses/{expense_id}/reverse", {})
 
 
 def reverse_receipt_pending(receipt_id):
@@ -50,7 +50,7 @@ def reverse_receipt_pending(receipt_id):
 
     ⚠️ 后端不接受 body，红冲日期取当前日期。
     """
-    return post_pending(f"/api/receipts/{receipt_id}/reverse")
+    return post_pending(f"/api/receipts/{receipt_id}/reverse", {})
 
 
 def reverse_payment_pending(payment_id):
@@ -63,7 +63,7 @@ def reverse_payment_pending(payment_id):
 
     ⚠️ 后端不接受 body，红冲日期取当前日期。
     """
-    return post_pending(f"/api/payments/{payment_id}/reverse")
+    return post_pending(f"/api/payments/{payment_id}/reverse", {})
 
 
 # === 端到端示例 ===

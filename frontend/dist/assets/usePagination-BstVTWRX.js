@@ -1,1 +1,0 @@
-import{h as o}from"./index-WfBBHmJf.js";function p(s={}){const{defaultPageSize:l=20,onPageChange:t}=s,e=o(1),n=o(l),a=o(0);return{page:e,pageSize:n,total:a,totalPages:()=>Math.ceil(a.value/n.value)||1,onCurrentChange:()=>{t==null||t()},onSizeChange:()=>{e.value=1,t==null||t()},resetPage:()=>{e.value=1},setTotal:r=>{a.value=r}}}export{p as u};

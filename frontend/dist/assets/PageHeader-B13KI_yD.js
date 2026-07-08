@@ -1,1 +1,0 @@
-import{b as a,c as r,d as e,t as o,W as c}from"./index-WfBBHmJf.js";const i={class:"card-header"},n={class:"page-title"},d={class:"card-header-actions"},p={__name:"PageHeader",props:{title:{type:String,required:!0}},setup(t){return(s,l)=>(a(),r("div",i,[e("span",n,o(t.title),1),e("div",d,[c(s.$slots,"actions")])]))}};export{p as _};

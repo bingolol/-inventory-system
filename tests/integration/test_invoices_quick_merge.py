@@ -64,7 +64,7 @@ class TestQuickMergeFixedAsset:
         # 嵌套返回固定资产信息
         assert data["fixed_asset"]["id"] > 0
         assert data["fixed_asset"]["asset_code"] == asset_code
-        # 原值 = 发票含税金额
+        # 本测试账本是 small_scale 纳税人，进项税不可抵扣，资产原值 = 含税金额
         assert data["fixed_asset"]["original_value"] == "11300.00"
 
     def test_quick_with_fixed_asset_persisted(self, client):
@@ -77,6 +77,7 @@ class TestQuickMergeFixedAsset:
         payload["fixed_asset"] = {
             "asset_code": asset_code,
             "asset_name": "持久化测试设备",
+            "salvage_rate": "0.05",
             "useful_life": 36,
             "start_date": "2026-06-01",
         }

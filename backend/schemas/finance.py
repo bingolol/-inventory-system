@@ -4,6 +4,8 @@ from datetime import datetime
 from decimal import Decimal
 
 from schemas.invoice import InvoiceOut
+from policy.vat_facts import VAT_SMALL_SCALE_SYNDICATED_RATE
+from policy.income_tax_facts import INCOME_TAX_STATUTORY_RATE
 
 
 # ── Opening Balance (期初余额) ──
@@ -74,7 +76,7 @@ class FixedAssetBase(BaseModel):
     name: str = Field(..., max_length=100, description="资产名称")
     category: Optional[str] = Field(None, max_length=50, description="资产类别")
     original_value: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2, description="原值")
-    salvage_rate: Decimal = Field(default=Decimal('0.05'), ge=0, le=1, max_digits=5, decimal_places=2, description="残值率")
+    salvage_rate: Decimal = Field(..., ge=0, le=1, max_digits=5, decimal_places=2, description="残值率（L3 政策配置，必填）")
     useful_life: int = Field(..., gt=0, description="使用寿命(月)")
     depreciation_method: str = Field(default="年限平均法", description="折旧方法")
     start_date: str = Field(..., description="开始折旧日期(YYYY-MM-DD)")
@@ -102,6 +104,8 @@ class FixedAssetUpdate(BaseModel):
 class FixedAssetWithInvoiceUpdate(BaseModel):
     """固定资产更新（联动发票）"""
     original_value: Optional[Decimal] = Field(None, gt=0, max_digits=12, decimal_places=2)
+    tax_amount: Optional[Decimal] = Field(None, ge=0, max_digits=12, decimal_places=2,
+        description="税额（更新原值时必填，系统不推导）")
     name: Optional[str] = None
     category: Optional[str] = None
     salvage_rate: Optional[Decimal] = None
@@ -210,7 +214,7 @@ class VATDeclaration(BaseModel):
     period_end: str
     # 一、计税依据
     total_revenue: Decimal = Decimal('0')  # 应税不含税销售额
-    tax_rate: Decimal = Decimal('0.03')    # 征收率
+    tax_rate: Decimal = VAT_SMALL_SCALE_SYNDICATED_RATE.value    # 征收率（从政策事实源取值）
     tax_reduction: Decimal = Decimal('0')  # 减免税额
     # 二、税款计算
     tax_payable: Decimal = Decimal('0')    # 应纳税额
@@ -270,7 +274,7 @@ class IncomeTaxPrepayment(BaseModel):
     # 七、实际利润额
     actual_profit: Decimal = Decimal('0')      # 实际利润额 = 利润总额 + 特定业务 - 免税 - 减计 - 加计扣除 - 减免
     # 八、税率
-    tax_rate: Decimal = Decimal('0.25')        # 税率
+    tax_rate: Decimal = INCOME_TAX_STATUTORY_RATE.value        # 税率（从政策事实源取值）
     # 九、应纳所得税额
     tax_payable: Decimal = Decimal('0')        # 应纳所得税额 = 实际利润额 × 税率
     # 十、减：减免所得税额

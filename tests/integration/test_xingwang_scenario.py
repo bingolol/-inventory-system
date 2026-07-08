@@ -162,9 +162,9 @@ class TestXingWangQ1:
         r = c.post("/api/purchases", json={
             "supplier_id": s["supplier_id"],
             "items": [
-                {"product_id": s["products"]["BT"], "quantity": 100, "unit_price": 100},
-                {"product_id": s["products"]["PB"], "quantity": 200, "unit_price": 80},
-                {"product_id": s["products"]["CB"], "quantity": 500, "unit_price": 10},
+                {"product_id": s["products"]["BT"], "quantity": 100, "unit_price": 100, "tax_rate": 0.01},
+                {"product_id": s["products"]["PB"], "quantity": 200, "unit_price": 80, "tax_rate": 0.01},
+                {"product_id": s["products"]["CB"], "quantity": 500, "unit_price": 10, "tax_rate": 0.01},
             ],
             "payment_method": "company",
             "purchase_date": "2026-01-05T10:00:00",
@@ -190,8 +190,8 @@ class TestXingWangQ1:
             "sale_date": "2026-01-15",
             "customer_id": s["customer_id"],
             "items": [
-                {"product_id": s["products"]["BT"], "quantity": 50, "unit_price": 180},
-                {"product_id": s["products"]["PB"], "quantity": 80, "unit_price": 120},
+                {"product_id": s["products"]["BT"], "quantity": 50, "unit_price": 180, "tax_rate": 0.01},
+                {"product_id": s["products"]["PB"], "quantity": 80, "unit_price": 120, "tax_rate": 0.01},
             ],
             "deduct_inventory": True,
             "payment_status": "unpaid",
@@ -207,7 +207,7 @@ class TestXingWangQ1:
             "sale_date": "2026-01-15",
             "customer_id": None,
             "items": [
-                {"product_id": s["products"]["CB"], "quantity": 100, "unit_price": 25},
+                {"product_id": s["products"]["CB"], "quantity": 100, "unit_price": 25, "tax_rate": 0.01},
             ],
             "deduct_inventory": True,
             "payment_status": "paid",

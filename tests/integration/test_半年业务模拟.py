@@ -71,7 +71,7 @@ def created_data(client):
     resp = client.post("/api/fixed-assets", json={
         "asset_code": f"FA-{UNIQUE}",
         "name": f"模拟设备-{UNIQUE}", "category": "电子设备",
-        "original_value": 10000.00, "useful_life": 36,
+        "original_value": 10000.00, "salvage_rate": 0.05, "useful_life": 36,
         "start_date": "2026-01-01", "depreciation_method": "年限平均法"
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建固定资产失败: {resp.text}"

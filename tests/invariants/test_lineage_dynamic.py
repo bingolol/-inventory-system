@@ -115,7 +115,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_purchase_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 5, "unit_price": Decimal("80")}],
+            items=[{"product_id": pid, "quantity": 5, "unit_price": Decimal("80"),
+                    "tax_rate": Decimal("0.01")}],
             purchase_date=PURCHASE_DATE, supplier_id=sid,
         )
 
@@ -153,7 +154,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_purchase_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 2, "unit_price": Decimal("100")}],
+            items=[{"product_id": pid, "quantity": 2, "unit_price": Decimal("100"),
+                    "tax_rate": Decimal("0.01")}],
             purchase_date=PURCHASE_DATE, supplier_id=sid,
         )
 

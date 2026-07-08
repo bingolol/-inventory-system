@@ -65,7 +65,7 @@ class FixedAssetBlock(BaseModel):
     asset_code: str = Field(..., max_length=50)
     asset_name: str = Field(..., max_length=100)
     category: Optional[str] = None
-    salvage_rate: Decimal = Field(default=Decimal('0.05'), ge=0, le=1)
+    salvage_rate: Decimal = Field(..., ge=0, le=1, description="残值率（L3 政策配置，必填）")
     useful_life: int = Field(..., gt=0)
     depreciation_method: str = Field(default="年限平均法")
     start_date: str  # YYYY-MM-DD
@@ -160,7 +160,7 @@ class InvoiceWithFixedAssetCreate(BaseModel):
     asset_code: str = Field(..., max_length=50)
     asset_name: str = Field(..., max_length=100)
     category: Optional[str] = None
-    salvage_rate: Decimal = Field(default=Decimal('0.05'), ge=0, le=1)
+    salvage_rate: Decimal = Field(..., ge=0, le=1, description="残值率（L3 政策配置，必填）")
     useful_life: int = Field(..., gt=0)
     depreciation_method: str = Field(default="年限平均法")
     start_date: str  # YYYY-MM-DD

@@ -180,6 +180,7 @@ async def quick_create_invoice(
                     invoice_type=invoice.invoice_type,
                     tax_rate=invoice.tax_rate,
                     amount_with_tax=invoice.amount_with_tax,
+                    tax_amount=tax_amount,
                     counterparty_name=invoice.counterparty_name,
                     seller_name=invoice.seller_name,
                     buyer_name=invoice.buyer_name,

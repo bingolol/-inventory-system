@@ -249,7 +249,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     retained_earnings = (opening_retained_earnings
                          + current_year_profit
                          + retained_earnings_prev).quantize(Q2)
-    total_equity = (paid_in_capital + retained_earnings).quantize(Q2)
+    total_equity = (paid_in_capital + retained_earnings + period_profit).quantize(Q2)
 
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable

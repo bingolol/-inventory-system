@@ -80,7 +80,7 @@ def check_as01(db: Session, context: dict) -> List[RuleViolation]:
     if report_date and account_id:
         from crud.finance.balance_sheet import generate_balance_sheet
         try:
-            bs = generate_balance_sheet(db, account_id=account_id, end_date=report_date)
+            bs = generate_balance_sheet(db, account_id, report_date)
             total_assets = Decimal(str(bs.get("total_assets", 0)))
             total_liabilities = Decimal(str(bs.get("total_liabilities", 0)))
             total_equity = Decimal(str(bs.get("total_equity", 0)))
@@ -175,8 +175,8 @@ def check_as03(db: Session, context: dict) -> List[RuleViolation]:
             return violations
         moves = db.query(StockMove).filter(StockMove.product_id == product_id).all()
         sum_total = sum(
-            (Decimal(str(m.total_cost_l2 or 0)) if Decimal(str(m.quantity_l1 or 0)) > 0
-             else -Decimal(str(m.total_cost_l2 or 0)))
+            (abs(Decimal(str(m.total_cost_l2 or 0))) if Decimal(str(m.quantity_l1 or 0)) > 0
+             else -abs(Decimal(str(m.total_cost_l2 or 0))))
             for m in moves
         )
         diff = (inv.total_value_l4 or Decimal("0")) - sum_total
@@ -284,7 +284,7 @@ def check_as05(db: Session, context: dict) -> List[RuleViolation]:
 
             # 月折旧额公式校验(若 useful_life > 0)
             if useful_life > 0:
-                expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life * 12))).quantize(Q2)
+                expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life))).quantize(Q2)
                 from models import FixedAssetDepreciation
                 latest = db.query(FixedAssetDepreciation).filter(
                     FixedAssetDepreciation.asset_id == asset_id
@@ -325,7 +325,7 @@ def check_as05(db: Session, context: dict) -> List[RuleViolation]:
 
             # 月摊销额公式校验
             if useful_life > 0:
-                expected_monthly = (original / Decimal(str(useful_life * 12))).quantize(Q2)
+                expected_monthly = (original / Decimal(str(useful_life))).quantize(Q2)
                 from models import IntangibleAssetAmortization
                 latest = db.query(IntangibleAssetAmortization).filter(
                     IntangibleAssetAmortization.asset_id == intangible_asset_id

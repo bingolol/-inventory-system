@@ -2,56 +2,38 @@
 GOLDEN TEST 001v2 — 全业务闭环，逐行对照《小企业会计准则》
 
 每条期望值后标注 【依据：§章-节/条】，引号内为准则原文。
-"""
 
-import sys, os, pytest, tempfile, uuid
+【准则覆盖】§1.3 存货成本, §5.1 销售收入, §7.1 营业成本, §31 折旧, §84 报表
+【AS规则】 AS-01 借贷平衡, AS-03 库存一致, AS-05 折旧公式
+"""
+import pytest
 from decimal import Decimal
 
 pytestmark = pytest.mark.golden
-TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(TESTS_DIR, '..', '..', 'backend'))
-sys.path.insert(0, TESTS_DIR)
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from main import app
-from database import Base, get_db
-import database
-import models
-from models_finance import AccountMove, AccountMoveLine, LedgerAccount, Ledger
-from utils import _d
+from database import get_db, Base, init_db
+import database, models
+from models import StockMove, Inventory
+from helpers import (
+    make_engine, _ledger_balance, _credit_balance, _get_id,
+)
+from policy.vat_facts import VAT_GENERAL_DEFAULT_RATE
+from policy.income_tax_facts import INCOME_TAX_SMALL_MICRO_EFFECTIVE_RATE
 
-UNIQUE = "GLDv2"
-DB = tempfile.gettempdir()
-TEST_DB = os.path.join(DB, f"test_golden_v2_{uuid.uuid4().hex[:8]}.db")
-_engine = create_engine(f"sqlite:///{TEST_DB}", connect_args={"check_same_thread": False})
-_SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+_engine, _SessionLocal = make_engine()
 ACCT_ID = 1
 HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "golden_test"}
 
-def _db():
-    return _SessionLocal()
-
-def _ledger_balance(db, code):
-    la = db.query(LedgerAccount).filter(LedgerAccount.code == code).first()
-    if not la:
-        return Decimal("0")
-    total = Decimal("0")
-    for line in db.query(AccountMoveLine).filter(AccountMoveLine.ledger_account_id == la.id).all():
-        total += _d(line.debit_l2) - _d(line.credit_l2)
-    return total
-
-def _credit_balance(db, code):
-    return -_ledger_balance(db, code)
-
+def _db(): return _SessionLocal()
 
 # ═══════════════════════════════════════════════════════
 # L1 原始凭证 — 外部事实，不依赖系统
 # ═══════════════════════════════════════════════════════
 QTY_BUY = 10
 UNIT_COST = Decimal("100")
-TAX_RATE = Decimal("0.10")
+# §1.3: 一般纳税人销售货物适用 13% 税率 (L3 政策: vat_facts.py)
+TAX_RATE = VAT_GENERAL_DEFAULT_RATE.value
 
 QTY_SELL = 5
 UNIT_PRICE = Decimal("200")
@@ -59,53 +41,54 @@ UNIT_PRICE = Decimal("200")
 EXPENSE = Decimal("100")
 
 ASSET_COST = Decimal("2000")
-ASSET_YEARS = 5
+ASSET_MONTHS = 60  # 60月=5年
 ASSET_START = "2025-12-01"
 
-# 【依据：§二/2.1 折旧公式】
-# "月折旧额 = 原值 × (1 - 残值率) ÷ 使用年限 ÷ 12"
-ASSET_MONTHLY = (ASSET_COST / Decimal(str(ASSET_YEARS * 12))).quantize(Decimal("0.01"))
+# 【依据：§31 折旧公式】
+# "月折旧额 = 原值 × (1 - 残值率) ÷ 使用月数"
+ASSET_MONTHLY = (ASSET_COST / Decimal(str(ASSET_MONTHS))).quantize(Decimal("0.01"))
 
 # ═══════════════════════════════════════════════════════
 # L2 独立会计师手工帐
 # ═══════════════════════════════════════════════════════
 
-# 采购 【依据：§一/1.3 存货成本】
+# 采购 【依据：§1.3 存货成本】
 # "外购存货成本 = 购买价款 + 相关税费"
-AMT = QTY_BUY * UNIT_COST                     # 1000
-TAX = (AMT * TAX_RATE).quantize(Decimal("0.01"))  # 100
-TOTAL = AMT + TAX                               # 1100
+AMT = QTY_BUY * UNIT_COST                     # §1.3: 1000
+TAX = (AMT * TAX_RATE).quantize(Decimal("0.01"))  # §1.3: 130
+TOTAL = AMT + TAX                               # §1.3: 1130
 
-# 销售 COGS 【依据：§二/2.1 加权平均】
+# 销售 COGS 【依据：§7.1 加权平均】
 # 成本 = 移动加权平均 × 数量 = 100 × 5
-COGS = UNIT_COST * QTY_SELL                    # 500
+COGS = UNIT_COST * QTY_SELL                    # §7.1: 500
 
-# 销售收入 【依据：§五/5.1 第五十九条】
+# 销售收入 【依据：§5.1 第五十九条】
 # "发货时确认收入"
-REVENUE = QTY_SELL * UNIT_PRICE                 # 1000
-OUTPUT_TAX = (REVENUE * TAX_RATE).quantize(Decimal("0.01"))  # 100
-AR = REVENUE + OUTPUT_TAX                       # 1100
+REVENUE = QTY_SELL * UNIT_PRICE                 # §5.1: 1000
+OUTPUT_TAX = (REVENUE * TAX_RATE).quantize(Decimal("0.01"))  # §5.1: 130
+AR = REVENUE + OUTPUT_TAX                       # §5.1: 1130
 
-# 利润 【依据：§七/7.1 第七十一条】
+# 利润 【依据：§7.1 第七十一条】
 # "利润总额 = 营业收入 - 营业成本 - 管理费用 - 财务费用 - 销售费用"
-GROSS = REVENUE - COGS                          # 500
-TOTAL_EXPENSE = EXPENSE + ASSET_MONTHLY         # 133.33
-NET_PROFIT = (GROSS - TOTAL_EXPENSE).quantize(Decimal("0.01"))  # 约366.67
+GROSS = REVENUE - COGS                          # §7.1: 500
+TOTAL_EXPENSE = EXPENSE + ASSET_MONTHLY         # §6.1 §31: 133.33
+PROFIT_BEFORE_TAX = (GROSS - TOTAL_EXPENSE).quantize(Decimal("0.01"))  # §7.1: 366.67
+# §7.1: 小微企业实际所得税负 5% (L3 政策: income_tax_facts.py, 20%×25%)
+INCOME_TAX = (PROFIT_BEFORE_TAX * INCOME_TAX_SMALL_MICRO_EFFECTIVE_RATE.value).quantize(Decimal("0.01"))  # 18.33
+NET_PROFIT = (PROFIT_BEFORE_TAX - INCOME_TAX).quantize(Decimal("0.01"))  # §7.1: 348.34
 
-# 期末银行 【依据：§二/2.1 银行存款】
+# 期末银行 【依据：§6.1 银行存款】
 BANK_OPEN = Decimal("10000")
-BANK_END = (BANK_OPEN - TOTAL + AR - EXPENSE).quantize(Decimal("0.01"))  # 9900
+BANK_END = (BANK_OPEN - TOTAL + AR - EXPENSE).quantize(Decimal("0.01"))  # §6.1: 9900
 
-# 期末库存 【依据：§二/2.1 存货】
-END_QTY = QTY_BUY - QTY_SELL                    # 5
-END_INV = UNIT_COST * END_QTY                   # 500
+# 期末库存 【依据：§1.3 存货】
+END_QTY = QTY_BUY - QTY_SELL                    # §1.3: 5
+END_INV = UNIT_COST * END_QTY                   # §1.3: 500
 
-
-@pytest.fixture
-def client():
-    with TestClient(app) as c:
-        c.headers.update({"X-Operator": "user"})
-        yield c
+# 资产负债表 §84
+TOTAL_ASSETS = BANK_END + END_INV + ASSET_COST - ASSET_MONTHLY  # §84: 12366.67
+TOTAL_LIABILITIES = ASSET_COST + INCOME_TAX  # §84: 2018.33
+TOTAL_EQUITY = BANK_OPEN + NET_PROFIT  # §84: 10348.34
 
 
 class TestGolden001v2:
@@ -115,7 +98,6 @@ class TestGolden001v2:
         monkeypatch.setattr(database, '_engine', _engine)
         monkeypatch.setattr(database, 'SessionLocal', _SessionLocal)
         Base.metadata.create_all(bind=_engine)
-        from database import init_db
         init_db()
         from factories import ensure_default_account
         db = _SessionLocal()
@@ -142,7 +124,7 @@ class TestGolden001v2:
         c = client
         s = {}
 
-        # ── 期初建账 【§四/4.1 第五十六条】 "所有者权益包括实收资本"
+        # ── 期初建账 【§84】 "所有者权益包括实收资本"
         r = c.post("/api/bank-accounts", json={
             "bank_name": "准则银行", "account_number": "KJ2201", "balance": 0}, headers=HEADERS)
         assert r.status_code == 200
@@ -172,8 +154,8 @@ class TestGolden001v2:
         r = c.post("/api/customers", json={"name": "准则客户"}, headers=HEADERS)
         s["cus_id"] = r.json().get("entity", r.json()).get("entity_id")
 
-        # ═══ 1. 采购入库 ═══
-        # 【§一/1.3】 "外购存货成本 = 购买价款 + 相关税费"
+        # ═══ 1. 采购入库 §1.3 ═══
+        # "外购存货成本 = 购买价款 + 相关税费"
         # 一般纳税人进项抵扣: cost = 不含税金额, tax 单列 (222102)
         r = c.post("/api/purchases", json={
             "supplier_id": s["sup_id"],
@@ -186,24 +168,44 @@ class TestGolden001v2:
 
         db = _db()
         try:
-            # 【§二/2.1】 库存价值 = 不含税金额
+            # §1.3 库存价值 = 不含税金额
             assert _ledger_balance(db, "1405") == AMT, \
                 f"§1.3库存入账: 期望{AMT}, 实际{_ledger_balance(db, '1405')}"
 
-            # 进项税额 = 不含税金额 × 税率
+            # §1.3 进项税额 = 不含税金额 × 税率
             input_tax = _ledger_balance(db, "222102")
             assert input_tax == TAX, \
                 f"§1.3进项税额: 期望{TAX}, 实际{input_tax}"
 
-            # 应付账款 = 价税合计
+            # §1.3 应付账款 = 价税合计
             ap = _credit_balance(db, "2202")
             assert ap == TOTAL, \
                 f"§1.3应付账款: 期望{TOTAL}, 实际{ap}"
+
+            # L3: StockMove 真相源
+            sm = db.query(StockMove).filter(
+                StockMove.source_type == "purchase_order",
+                StockMove.source_id == s["po"],
+            ).first()
+            assert sm is not None, "采购无 StockMove"
+            assert sm.quantity_l1 == QTY_BUY, f"采购数量 {sm.quantity_l1} != {QTY_BUY}"
+            assert sm.unit_cost_l2 == UNIT_COST, f"采购单位成本 {sm.unit_cost_l2} != {UNIT_COST}"
+            assert sm.total_cost_l2 == AMT, f"采购总成本 {sm.total_cost_l2} != {AMT}"
+            inv = db.query(Inventory).filter(Inventory.product_id == s["pid"]).first()
+            assert inv is not None, "采购后无 Inventory 缓存"
+            assert inv.quantity_l4 == QTY_BUY, f"库存数量 {inv.quantity_l4} != {QTY_BUY}"
+            assert inv.average_cost_l4 == UNIT_COST, f"库存均价 {inv.average_cost_l4} != {UNIT_COST}"
+
+            # AS-03: 库存账面=StockMove求和
+            from rules import enforce_rules
+            try:
+                enforce_rules(db, ["AS-03"], {"product_id": s["pid"]})
+            except Exception as e:
+                pytest.fail(f"AS-03 库存一致校验失败(采购后): {e}")
         finally:
             db.close()
 
-        # ═══ 2. 采购付款 ═══
-        # 【§二/2.1 银行存款】 支付时冲应付
+        # ═══ 2. 采购付款 §6.1 ═══
         r = c.post("/api/payments", json={
             "payment_type": "purchase", "related_entity_type": "purchase_order",
             "related_entity_id": s["po"], "amount": float(TOTAL),
@@ -213,13 +215,13 @@ class TestGolden001v2:
 
         db = _db()
         try:
-            assert _credit_balance(db, "2202") == Decimal("0"), "付款后应付清零"
+            assert _credit_balance(db, "2202") == Decimal("0"), "§6.1 付款后应付清零"
         finally:
             db.close()
 
-        # ═══ 3. 销售出库 ═══
-        # 【§五/5.1 第五十九条】 "发货时确认收入"
-        # 【§七/7.1 第七十一条】 "营业成本"即出库成本
+        # ═══ 3. 销售出库 §5.1 §7.1 ═══
+        # "发货时确认收入" §5.1
+        # "营业成本"即出库成本 §7.1
         r = c.post("/api/sales", json={
             "customer_id": s["cus_id"],
             "items": [{"product_id": s["pid"], "quantity": QTY_SELL,
@@ -231,23 +233,49 @@ class TestGolden001v2:
 
         db = _db()
         try:
-            # 出库成本 = 移动加权平均 × 数量
+            # §7.1 出库成本 = 移动加权平均 × 数量
             cogs_actual = _ledger_balance(db, "6401")
-            # 库存减少
+            # §1.3 库存减少
             inv_val = _ledger_balance(db, "1405")
-            # 收入确认
+            # §5.1 收入确认
             rev_actual = -_ledger_balance(db, "6001")
-            # 销项税额
+            # §5.1 销项税额
             out_tax = -_ledger_balance(db, "222101")
-            # 应收账款
+            # §5.1 应收账款
             ar = _ledger_balance(db, "1122")
 
-            print(f"  成本={cogs_actual}(期{COGS}) 库存={inv_val}(期{END_INV})")
-            print(f"  收入={rev_actual}(期{REVENUE}) 销项={out_tax}(期{OUTPUT_TAX}) 应收={ar}(期{AR})")
+            assert cogs_actual == COGS, f"§7.1销售成本: 期望{COGS}, 实际{cogs_actual}"
+            assert inv_val == END_INV, f"§1.3销售后库存: 期望{END_INV}, 实际{inv_val}"
+            assert rev_actual == REVENUE, f"§5.1销售收入: 期望{REVENUE}, 实际{rev_actual}"
+            assert out_tax == OUTPUT_TAX, f"§5.1销项税额: 期望{OUTPUT_TAX}, 实际{out_tax}"
+            assert ar == AR, f"§5.1应收账款: 期望{AR}, 实际{ar}"
+
+            # L3: StockMove 真相源
+            sm = db.query(StockMove).filter(
+                StockMove.source_type == "sale_order",
+                StockMove.source_id == s["so"],
+            ).first()
+            assert sm is not None, "销售无 StockMove"
+            assert sm.quantity_l1 == -QTY_SELL, f"销售数量 {sm.quantity_l1} != -{QTY_SELL}"
+            assert sm.unit_cost_l2 == UNIT_COST, f"销售单位成本 {sm.unit_cost_l2} != {UNIT_COST}"
+            assert sm.total_cost_l2 == COGS, f"销售总成本 {sm.total_cost_l2} != {COGS}"
+            inv = db.query(Inventory).filter(Inventory.product_id == s["pid"]).first()
+            assert inv is not None, "销售后无 Inventory 缓存"
+            assert inv.quantity_l4 == END_QTY, f"库存数量 {inv.quantity_l4} != {END_QTY}"
+            assert inv.total_value_l4 == END_INV, f"库存价值 {inv.total_value_l4} != {END_INV}"
+
+            # AS-03: 库存一致
+            from rules import enforce_rules
+            try:
+                enforce_rules(db, ["AS-03"], {"product_id": s["pid"]})
+            except Exception as e:
+                pytest.fail(f"AS-03 库存一致校验失败(销售后): {e}")
+
+            print(f"  成本={cogs_actual} 库存={inv_val} 收入={rev_actual} 销项={out_tax} 应收={ar}")
         finally:
             db.close()
 
-        # ═══ 4. 收款 ═══
+        # ═══ 4. 收款 §5.1 ═══
         r = c.post("/api/receipts", json={
             "receipt_type": "sale", "related_entity_type": "sale_order",
             "related_entity_id": s["so"], "amount": float(AR),
@@ -257,11 +285,11 @@ class TestGolden001v2:
 
         db = _db()
         try:
-            assert _ledger_balance(db, "1122") == Decimal("0"), "收款后应收清零"
+            assert _ledger_balance(db, "1122") == Decimal("0"), "§5.1 收款后应收清零"
         finally:
             db.close()
 
-        # ═══ 5. 费用 【§六/6.1 第六十六条】 ═══
+        # ═══ 5. 费用 §6.1 ═══
         # "管理费用(6601) = 行政管理部门发生的费用"
         r = c.post("/api/expenses", json={
             "category": "办公用品", "functional_category": "管理费用",
@@ -285,36 +313,56 @@ class TestGolden001v2:
         finally:
             db.close()
 
-        # ═══ 6. 固定资产 【§二/2.1 折旧公式】 ═══
-        # "月折旧额 = 原值 × (1 - 残值率) ÷ 使用年限 ÷ 12"
-        # "当月增加当月不计提，下月起计提" (§第三十一条)
+        # ═══ 6. 固定资产 §31 ═══
+        # "月折旧额 = 原值 × (1 - 残值率) ÷ 使用月数"
+        # "当月增加当月不计提，下月起计提" (§31)
         r = c.post("/api/fixed-assets", json={
             "asset_code": "KJ-FA01", "name": "准则设备", "category": "机器设备",
             "original_value": float(ASSET_COST), "salvage_rate": 0,
-            "useful_life": ASSET_YEARS, "depreciation_method": "年限平均法",
+            "useful_life": ASSET_MONTHS, "depreciation_method": "年限平均法",
             "start_date": ASSET_START,  # 上月，本月可提
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
+        fa_id = _get_id(r, "fixed_asset")
 
-        # ═══ 7. 月结 ═══
+        # ═══ 7. 月结 §7.1 §84 ═══
         r = c.post("/api/finance/month-close", json={"period": "2026-01"}, headers=HEADERS)
         assert r.status_code == 200, r.text
 
         db = _db()
         try:
-            # 折旧验证
+            # §31 折旧验证
             depr = abs(_ledger_balance(db, "1602"))
             print(f"  折旧={depr} (期{ASSET_MONTHLY})")
             assert abs(depr - ASSET_MONTHLY) <= Decimal("0.02"), \
                 f"§31折旧公式: 期望{ASSET_MONTHLY}, 实际{depr}"
 
-            # 损益结转后归零
-            assert abs(_ledger_balance(db, "6001")) <= Decimal("0.01"), "结转后收入=0"
-            assert abs(_ledger_balance(db, "6401")) <= Decimal("0.01"), "结转后成本=0"
+            # §84 损益结转后归零
+            assert abs(_ledger_balance(db, "6001")) <= Decimal("0.01"), "§84结转后收入=0"
+            assert abs(_ledger_balance(db, "6401")) <= Decimal("0.01"), "§84结转后成本=0"
+            assert abs(_ledger_balance(db, "6601")) <= Decimal("0.01"), "§84结转后费用=0"
+            assert abs(_ledger_balance(db, "6801")) <= Decimal("0.01"), "§84结转后所得税费用=0"
+
+            # §7.1 4103 本年利润 = 税后净利润
+            profit_4103 = _credit_balance(db, "4103")
+            assert abs(profit_4103 - NET_PROFIT) <= Decimal("0.05"), \
+                f"§7.1本年利润(4103): 期望{NET_PROFIT}, 实际{profit_4103}"
+
+            # §7.1 应交所得税
+            tax_payable = _credit_balance(db, "222105")
+            assert abs(tax_payable - INCOME_TAX) <= Decimal("0.05"), \
+                f"§7.1应交所得税(222105): 期望{INCOME_TAX}, 实际{tax_payable}"
+
+            # AS-05: 折旧公式校验
+            from rules import enforce_rules
+            try:
+                enforce_rules(db, ["AS-05"], {"asset_id": fa_id})
+            except Exception as e:
+                pytest.fail(f"AS-05 折旧公式校验失败: {e}")
         finally:
             db.close()
 
-        # ═══ 8. 报表 【§九/9.1 第八十四条】 ═══
+        # ═══ 8. 报表 §84 ═══
         # "小企业财务报表包括资产负债表、利润表、现金流量表"
         r = c.get("/api/financial-reports/balance-sheet?date=2026-01-31", headers=HEADERS)
         assert r.status_code == 200, r.text
@@ -325,9 +373,34 @@ class TestGolden001v2:
         assert r.status_code == 200, r.text
         pl = r.json()
 
-        # BS平衡: A = L + E
+        # §84 BS平衡: A = L + E
         diff = abs(Decimal(str(bs["total_assets"])) - Decimal(str(bs["total_liabilities_and_equity"])))
         assert diff <= Decimal("0.05"), f"§84 BS不平衡 diff={diff}"
+
+        # L3: 报表科目与独立会计师手算值对照
+        assert abs(Decimal(str(bs["monetary_funds"])) - BANK_END) <= Decimal("0.05"), \
+            f"§84货币资金: 实际{bs['monetary_funds']} != 期望{BANK_END}"
+        assert abs(Decimal(str(bs["inventory"])) - END_INV) <= Decimal("0.05"), \
+            f"§84存货: 实际{bs['inventory']} != 期望{END_INV}"
+        assert abs(Decimal(str(bs["fixed_assets_net"])) - (ASSET_COST - ASSET_MONTHLY)) <= Decimal("0.05"), \
+            f"§84固定资产净值: 实际{bs['fixed_assets_net']} != 期望{ASSET_COST - ASSET_MONTHLY}"
+        assert abs(Decimal(str(bs["total_liabilities"])) - TOTAL_LIABILITIES) <= Decimal("0.05"), \
+            f"§84负债合计: 实际{bs['total_liabilities']} != 期望{TOTAL_LIABILITIES}"
+        assert abs(Decimal(str(bs["paid_in_capital"])) - BANK_OPEN) <= Decimal("0.05"), \
+            f"§84实收资本: 实际{bs['paid_in_capital']} != 期望{BANK_OPEN}"
+        assert abs(Decimal(str(bs["retained_earnings"])) - NET_PROFIT) <= Decimal("0.05"), \
+            f"§84留存收益: 实际{bs['retained_earnings']} != 期望{NET_PROFIT}"
+        assert abs(Decimal(str(bs["total_assets"])) - TOTAL_ASSETS) <= Decimal("0.05"), \
+            f"§84资产合计: 实际{bs['total_assets']} != 期望{TOTAL_ASSETS}"
+
+        assert abs(Decimal(str(pl["revenue"])) - REVENUE) <= Decimal("0.05"), \
+            f"§84营业收入: 实际{pl['revenue']} != 期望{REVENUE}"
+        assert abs(Decimal(str(pl["cost_of_goods_sold"])) - COGS) <= Decimal("0.05"), \
+            f"§84营业成本: 实际{pl['cost_of_goods_sold']} != 期望{COGS}"
+        assert abs(Decimal(str(pl["income_tax_expense"])) - INCOME_TAX) <= Decimal("0.05"), \
+            f"§84所得税费用: 实际{pl['income_tax_expense']} != 期望{INCOME_TAX}"
+        assert abs(Decimal(str(pl["net_profit"])) - NET_PROFIT) <= Decimal("0.05"), \
+            f"§84净利润: 实际{pl['net_profit']} != 期望{NET_PROFIT}"
 
         print(f"  BS: 资产={bs['total_assets']}, L+E={bs['total_liabilities_and_equity']}, diff={diff}")
         print(f"  IS: revenue={pl.get('revenue')}, cogs={pl.get('cost_of_goods_sold')}, net={pl.get('net_profit')}")
@@ -337,6 +410,8 @@ class TestGolden001v2:
         db = _db()
         try:
             enforce_rules(db, ["AS-01"], {"account_id": ACCT_ID})
+        except Exception as e:
+            pytest.fail(f"AS-01 校验失败: {e}")
         finally:
             db.close()
 

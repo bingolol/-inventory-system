@@ -32,7 +32,7 @@ def _purchase_stock(client, pid, qty=50):
     resp = client.post("/api/purchases", json={
         "supplier_id": sid, "payment_method": "company", "payment_status": "unpaid",
         "purchase_date": "2026-06-01",
-        "items": [{"product_id": pid, "quantity": qty, "unit_price": 50}],
+        "items": [{"product_id": pid, "quantity": qty, "unit_price": 50, "tax_rate": 0.13}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
 

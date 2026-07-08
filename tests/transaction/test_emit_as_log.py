@@ -67,7 +67,7 @@ class TestEmitAsLogSingleWrite:
         order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
             supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 3, "unit_price": 10}],
+            items=[{"product_id": p.id, "quantity": 3, "unit_price": 10, "tax_rate": 0.13}],
         ), db)
 
         logs = _logs_since(db, before, "purchase_order", order.id)
@@ -104,7 +104,7 @@ class TestEmitAsLogSingleWrite:
         order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
             supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 1, "unit_price": 10}],
+            items=[{"product_id": p.id, "quantity": 1, "unit_price": 10, "tax_rate": 0.13}],
         ), db)
         before = _max_log_id(db)
 

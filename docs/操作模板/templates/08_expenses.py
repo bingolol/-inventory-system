@@ -5,7 +5,9 @@
 费用创建后默认 payment_status=unpaid，要付款用本模板的 pay_expense()。
 """
 import sys
-sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板")
+import os
+_DOCS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _DOCS_DIR)
 from _client import post, get, extract_id
 
 

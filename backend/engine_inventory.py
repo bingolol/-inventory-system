@@ -355,7 +355,7 @@ class InventoryEngine:
             inv.total_value_l4 = (old_value - rev_cost).quantize(Q2)
         else:
             inv.quantity_l4 += quantity
-            inv.total_value_l4 = (old_value + rev_cost).quantize(Q2)
+            inv.total_value_l4 = (old_value - rev_cost).quantize(Q2)
         new_qty = Decimal(str(inv.quantity_l4))
         inv.average_cost_l4 = weighted_average(new_qty, Decimal(str(inv.total_value_l4)))
         self.db.flush()

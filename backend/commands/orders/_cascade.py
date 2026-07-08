@@ -11,7 +11,6 @@ import models
 from enums import OrderStatus, InvoiceType
 from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
-from policy.vat_facts import VAT_SMALL_SCALE_REDUCED_RATE
 from policy.entity_profile import build_profile
 from lineage import reads, writes, TIER_L1, TIER_L3
 

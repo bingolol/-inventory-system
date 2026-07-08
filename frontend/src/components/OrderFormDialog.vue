@@ -37,11 +37,7 @@
       <!-- 税率 -->
       <el-form-item v-if="showTaxRate && (!isEdit || showTaxRateOnEdit)" label="税率">
         <el-select v-model="form.tax_rate" style="width:100%">
-          <el-option label="0%" :value="0" />
-          <el-option label="3%" :value="0.03" />
-          <el-option label="6%" :value="0.06" />
-          <el-option label="9%" :value="0.09" />
-          <el-option label="13%" :value="0.13" />
+          <el-option v-for="opt in TAX_RATE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </el-form-item>
 
@@ -123,6 +119,7 @@
 import ImageUpload from './ImageUpload.vue'
 import OrderItemEditor from './OrderItemEditor.vue'
 import { useEnumsStore } from '../stores/enums'
+import { TAX_RATE_OPTIONS } from '../constants/taxRates'
 
 const enumsStore = useEnumsStore()
 

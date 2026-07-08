@@ -80,6 +80,7 @@ def return_sale_order(db, account_id, operator, order_id, return_date, reason, i
     cost_return = Decimal("0")
     eng = InventoryEngine(db)
     return_id = int(time.time() * 1000)
+    total_revenue_ret = Decimal("0")
 
     for ret in items:
         pid = ret['product_id']
@@ -118,17 +119,19 @@ def return_sale_order(db, account_id, operator, order_id, return_date, reason, i
                 data={"product_id": pid, "quantity": str(denom), "msg": "退货时商品数量为0或负数"})
         ratio = qty_ret / denom
         revenue_ret = line_total * ratio
-        total_with_tax_ret += revenue_ret
+        total_revenue_ret += revenue_ret
 
-    total_with_tax_ret = total_with_tax_ret.quantize(Q2)
+    total_revenue_ret = total_revenue_ret.quantize(Q2)
     order_tax = Decimal(str(order.tax_amount_l1 or 0))
     order_total = Decimal(str(order.total_price_l1 or 0))
-    if order_tax and order_total and order_total != Decimal('0'):
-        tax_ratio = total_with_tax_ret / order_total
+    order_revenue = order_total - order_tax  # 不含税营收
+    if order_tax and order_revenue and order_revenue != Decimal('0'):
+        tax_ratio = total_revenue_ret / order_revenue
         tax_amount_ret = (order_tax * tax_ratio).quantize(Q2)
     else:
         tax_amount_ret = Decimal('0')
-    total_without_tax_ret = without_tax_from(total_with_tax_ret, tax_amount_ret)
+    total_with_tax_ret = total_revenue_ret + tax_amount_ret
+    total_without_tax_ret = total_revenue_ret
     cost_return = cost_return.quantize(Q2)
 
     post_journal(db, account_id, "sale_return", {
@@ -288,7 +291,7 @@ def update_sale_items(db, account_id, operator, order_id, items, total_price=Non
             'product_id': it['product_id'],
             'quantity': it['quantity'],
             'unit_price': it['unit_price'],
-            'tax_rate': it.get('tax_rate', VAT_SMALL_SCALE_REDUCED_RATE.value),
+            'tax_rate': it['tax_rate'],
             'total_price': line_total,
         })
         total += line_total

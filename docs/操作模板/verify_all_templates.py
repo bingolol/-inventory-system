@@ -11,8 +11,12 @@
 """
 import sys
 import time
-sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板")
-sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板\templates")
+import os
+
+_DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATES_DIR = os.path.join(_DOCS_DIR, "templates")
+sys.path.insert(0, _DOCS_DIR)
+sys.path.insert(0, _TEMPLATES_DIR)
 from _client import (post, get, put, extract_id, set_account, ping,
                      post_pending, confirm, cancel_pending,
                      is_ok, extract_data, format_for_user)
@@ -134,7 +138,8 @@ inv_in = t06.create_input_invoice_quick(
     purchase_order_action="auto_create",
 )
 INV_IN_ID = extract_id(inv_in)
-check("06 create_input_invoice_quick auto_create", INV_IN_ID > 0)
+print(f"   进项发票响应: {inv_in}")
+check("06 create_input_invoice_quick auto_create", INV_IN_ID and INV_IN_ID > 0)
 
 if INV_IN_ID:
     cer = t06.certify_invoice(INV_IN_ID)
@@ -161,7 +166,8 @@ inv_out = t07.create_output_invoice_quick(
     sale_order_action="auto_create",
 )
 INV_OUT_ID = extract_id(inv_out)
-check("07 销项发票+服务商品 auto_create", INV_OUT_ID > 0,
+print(f"   销项发票响应: {inv_out}")
+check("07 销项发票+服务商品 auto_create", INV_OUT_ID and INV_OUT_ID > 0,
       f"返回: {format_for_user(inv_out, '销项发票')[:200]}")
 
 if INV_OUT_ID:
@@ -213,7 +219,8 @@ fa = t10.create_fixed_asset_via_invoice(
     category="office_equipment",
 )
 FA_ID = extract_data(fa).get("fixed_asset", {}).get("id") or extract_id(fa)
-check("10 create_fixed_asset_via_invoice", FA_ID > 0,
+print(f"   固定资产响应: {fa}")
+check("10 create_fixed_asset_via_invoice", FA_ID and FA_ID > 0,
       f"返回: {format_for_user(fa, '固定资产')[:200]}")
 
 fa_list = t10.list_fixed_assets(status="在用")
@@ -239,6 +246,7 @@ so_for_rc = t07.create_sale_order(
     customer_id=CUS_ID,
     items=[{"product_id": REAL_ID, "quantity": 2, "unit_price": 1300.00}],
     sale_date="2026-06-22",
+    tax_rate=0.13,
 )
 SO_RC_ID = extract_id(so_for_rc)
 check("11 前置：create_sale_order", SO_RC_ID > 0)
@@ -260,6 +268,7 @@ po_for_pay = t06.create_purchase_order(
     supplier_id=SUP_ID,
     items=[{"product_id": REAL_ID, "quantity": 5, "unit_price": 1000.00}],
     purchase_date="2026-06-25",
+    tax_rate=0.13,
 )
 PO_PAY_ID = extract_id(po_for_pay)
 check("12 前置：create_purchase_order", PO_PAY_ID > 0)
@@ -314,47 +323,12 @@ if REC_ID:
     check("14 confirm_bank_reconciliation", is_ok(conf))
 
 
-print("\n=== 15 月结 ===")
-if REC_ID:
-    mc = t15.run_month_close(period="2026-06")
-    check("15 run_month_close", is_ok(mc) or "结账" in str(mc),
-          f"返回: {format_for_user(mc, '月结')[:200]}")
-
-
-print("\n=== 19 报表 ===")
-bs = t19.get_balance_sheet("2026-06-30")
-bs_data = bs if isinstance(bs, dict) else {}
-diff = bs_data.get("diff")
-check("19 BS diff=0", diff == 0, f"diff={diff}")
-
-trial = t19.get_trial_balance("2026-06-30")
-trial_data = trial if isinstance(trial, dict) else {}
-check("19 试算 balanced=True", trial_data.get("balanced") is True,
-      f"balanced={trial_data.get('balanced')}")
-
-
-print("\n=== 20 税务 ===")
-tax_q = t20.get_quarterly_tax_report(year=2026, quarter=2)
-check("20 季度增值税报表", isinstance(tax_q, dict) and "output_tax" in tax_q,
-      f"返回: {str(tax_q)[:200]}")
-
-tax_m = t20.get_monthly_tax_report(year=2026, month=6)
-check("20 月度增值税报表", isinstance(tax_m, dict) and "output_tax" in tax_m,
-      f"返回: {str(tax_m)[:200]}")
-
-tax_check = t20.check_tax_consistency(
-    period="2026-06", sales=2000, output_vat=120, input_vat=1300,
-    unpaid_vat=0, income_tax=0, surcharge=0, vat_payable=0, gross_profit=2000,
-)
-check("20 税务核对", isinstance(tax_check, dict),
-      f"返回: {str(tax_check)[:200]}")
-
-
 print("\n=== 16 销售退货（危险操作三步走）===")
 so_for_ret = t07.create_sale_order(
     customer_id=CUS_ID,
     items=[{"product_id": REAL_ID, "quantity": 3, "unit_price": 1300.00}],
     sale_date="2026-06-26",
+    tax_rate=0.13,
 )
 SO_RET_ID = extract_id(so_for_ret)
 if SO_RET_ID:
@@ -379,11 +353,27 @@ po_for_ret = t06.create_purchase_order(
     supplier_id=SUP_ID,
     items=[{"product_id": REAL_ID, "quantity": 50, "unit_price": 1000.00}],
     purchase_date="2026-06-26",
+    tax_rate=0.13,
 )
 PO_RET_ID = extract_id(po_for_ret)
 check("17 前置：create_purchase_order", PO_RET_ID > 0)
 
 if PO_RET_ID:
+    inv_for_ret = t06.create_input_invoice_quick(
+        invoice_no=f"IN20260626001_{RUN_TAG}",
+        invoice_type="special",
+        tax_rate=0.13,
+        amount_with_tax=56500.00,
+        counterparty_name="供应商甲",
+        seller_name="供应商甲",
+        buyer_name="本公司",
+        issue_date="2026-06-26",
+        items=[{"product_id": REAL_ID, "quantity": 50, "unit_price": 1000.00, "tax_rate": 0.13}],
+        purchase_order_action="link_existing",
+        related_order_id=PO_RET_ID,
+    )
+    check("17 前置：为采购单录入进项发票", is_ok(inv_for_ret))
+
     pending = t17.purchase_return_pending(
         purchase_order_id=PO_RET_ID,
         return_date="2026-06-27",
@@ -413,6 +403,55 @@ if EXP_REV_ID:
         check("18 reverse_expense 三步走确认", is_ok(result))
     else:
         check("18 reverse_expense pending", False, f"未拿到 token: {pending}")
+
+
+print("\n=== 15 月结 ===")
+if REC_ID:
+    mc = t15.run_month_close(period="2026-06")
+    check("15 run_month_close", is_ok(mc) or "结账" in str(mc),
+          f"返回: {format_for_user(mc, '月结')[:200]}")
+
+
+print("\n=== 19 报表 ===")
+bs = t19.get_balance_sheet("2026-06-30")
+print(f"   BS 原始响应: {bs}")
+bs_data = extract_data(bs) or {}
+print(f"   BS 解析后: {bs_data}")
+
+# --- L3 诊断：关键科目余额 ---
+print("\n   [L3 关键科目余额]")
+chart = get("/api/finance/accounts/chart")
+key_codes = ["1001", "1002", "1122", "1405", "1601", "1602", "2202", "222101", "222102", "222103", "4103", "4104", "6001", "6401", "6601", "6602", "6603", "6701"]
+for item in chart.get("items", []):
+    if item.get("code") in key_codes:
+        print(f"      {item['code']} {item['name']}: {item.get('balance')}")
+
+diff = bs_data.get("diff")
+if diff is None and "total_assets" in bs_data and "total_liabilities_and_equity" in bs_data:
+    diff = round(bs_data["total_assets"] - bs_data["total_liabilities_and_equity"], 2)
+check("19 BS diff=0", diff == 0, f"diff={diff}")
+
+trial = t19.get_trial_balance("2026-06-30")
+trial_data = extract_data(trial) or {}
+check("19 试算 balanced=True", trial_data.get("balanced") is True,
+      f"balanced={trial_data.get('balanced')}")
+
+
+print("\n=== 20 税务 ===")
+tax_q = t20.get_quarterly_tax_report(year=2026, quarter=2)
+check("20 季度增值税报表", isinstance(tax_q, dict) and "output_tax" in tax_q,
+      f"返回: {str(tax_q)[:200]}")
+
+tax_m = t20.get_monthly_tax_report(year=2026, month=6)
+check("20 月度增值税报表", isinstance(tax_m, dict) and "output_tax" in tax_m,
+      f"返回: {str(tax_m)[:200]}")
+
+tax_check = t20.check_tax_consistency(
+    period="2026-06", sales=2000, output_vat=120, input_vat=1300,
+    unpaid_vat=0, income_tax=0, surcharge=0, vat_payable=0, gross_profit=2000,
+)
+check("20 税务核对", isinstance(tax_check, dict),
+      f"返回: {str(tax_check)[:200]}")
 
 
 print("\n" + "=" * 60)

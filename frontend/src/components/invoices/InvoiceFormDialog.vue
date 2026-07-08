@@ -41,11 +41,7 @@
       </el-form-item>
       <el-form-item label="税率" required>
         <el-select v-model.number="invoiceForm.tax_rate" placeholder="请选择税率">
-          <el-option label="1%" :value="0.01" />
-          <el-option label="3%" :value="0.03" />
-          <el-option label="6%" :value="0.06" />
-          <el-option label="9%" :value="0.09" />
-          <el-option label="13%" :value="0.13" />
+          <el-option v-for="opt in TAX_RATE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
       </el-form-item>
       <el-form-item label="PDF上传">
@@ -88,6 +84,7 @@ import { calculateInvoiceAmounts } from '../../utils/invoiceCalc'
 import ImageUpload from '../ImageUpload.vue'
 import { useEnumsStore } from '../../stores/enums'
 import { useAccountStore } from '../../stores/account'
+import { TAX_RATE_OPTIONS } from '../../constants/taxRates'
 
 const props = defineProps({
   modelValue: { type: Boolean, required: true },

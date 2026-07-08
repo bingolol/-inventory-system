@@ -1,0 +1,1 @@
+import{a as s}from"./index-D157Kh3g.js";const n=e=>s.get("/expenses",{params:e}),t=e=>s.post("/expenses",e),x=(e,p)=>s.put(`/expenses/${e}`,p),o=e=>s.delete(`/expenses/${e}`),r=e=>s.post(`/expenses/${e}/reverse`),a={getExpenses:n,createExpense:t,updateExpense:x,deleteExpense:o,reverseExpense:r};export{a as e};

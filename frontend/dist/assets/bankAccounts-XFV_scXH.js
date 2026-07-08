@@ -1,0 +1,1 @@
+import{a as t}from"./index-D157Kh3g.js";const a=()=>t.get("/bank-accounts"),o=c=>t.post("/bank-accounts",c),s=(c,n)=>t.put(`/bank-accounts/${c}`,n),e=c=>t.delete(`/bank-accounts/${c}`),k={getBankAccounts:a,createBankAccount:o,updateBankAccount:s,deleteBankAccount:e};export{k as b};

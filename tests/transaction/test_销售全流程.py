@@ -78,7 +78,7 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "notes": "自定义日期测试",
             "sale_date": "2025-03-15T10:30:00",
-            "items": [{"product_id": ids["pid"], "quantity": 1, "unit_price": 100}],
+            "items": [{"product_id": ids["pid"], "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
         data = resp.json().get("data", resp.json())
@@ -103,8 +103,8 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "sale_date": "2026-01-15T10:00:00",
             "items": [
-                {"product_id": ids["pid"], "quantity": 2, "unit_price": 100},
-                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200},
+                {"product_id": ids["pid"], "quantity": 2, "unit_price": 100, "tax_rate": 0.13},
+                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -117,8 +117,8 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 5000,
             "sale_date": "2026-01-15T10:00:00", "items": [
-                {"product_id": ids["pid"], "quantity": 12, "unit_price": 0},
-                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0},
+                {"product_id": ids["pid"], "quantity": 12, "unit_price": 0, "tax_rate": 0.13},
+                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -131,8 +131,8 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 5000,
             "sale_date": "2026-01-15T10:00:00", "items": [
-                {"product_id": ids["pid"], "quantity": 12, "unit_price": 200},
-                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0},
+                {"product_id": ids["pid"], "quantity": 12, "unit_price": 200, "tax_rate": 0.13},
+                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -145,8 +145,8 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 360,
             "sale_date": "2026-01-15T10:00:00", "items": [
-                {"product_id": ids["pid"], "quantity": 2, "unit_price": 100},
-                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200},
+                {"product_id": ids["pid"], "quantity": 2, "unit_price": 100, "tax_rate": 0.13},
+                {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -159,7 +159,7 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 10,
             "sale_date": "2026-01-15T10:00:00",
-            "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 0}],
+            "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 0, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
         entity_id = get_entity_id(resp.json())
@@ -177,8 +177,8 @@ class Test创建销售单:
             "payment_status": "unpaid",
             "sale_date": "2026-06-01",
             "items": [
-                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
-                {"product_id": ids["pid"], "quantity": 3, "unit_price": 200},
+                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100, "tax_rate": 0.13},
+                {"product_id": ids["pid"], "quantity": 3, "unit_price": 200, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 422, f"应返回 422，实为 {resp.status_code}: {resp.text}"
@@ -189,8 +189,8 @@ class Test创建销售单:
             "supplier_id": ids["sid"], "payment_method": "company",
             "payment_status": "unpaid",
             "items": [
-                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
-                {"product_id": ids["pid"], "quantity": 3, "unit_price": 200},
+                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100, "tax_rate": 0.13},
+                {"product_id": ids["pid"], "quantity": 3, "unit_price": 200, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 422, f"应返回 422，实为 {resp.status_code}: {resp.text}"
@@ -201,8 +201,8 @@ class Test创建销售单:
             "customer_id": ids["cid"], "deduct_inventory": False,
             "payment_status": "unpaid", "sale_date": "2026-01-15T10:00:00",
             "items": [
-                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100},
-                {"product_id": ids["pid2"], "quantity": 3, "unit_price": 200},
+                {"product_id": ids["pid"], "quantity": 5, "unit_price": 100, "tax_rate": 0.13},
+                {"product_id": ids["pid2"], "quantity": 3, "unit_price": 200, "tax_rate": 0.13},
             ],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -398,7 +398,7 @@ class Test取消恢复销售单:
         resp = client.post("/api/sales", json={
             "customer_id": ids["cid"], "deduct_inventory": True,
             "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
-            "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20}],
+            "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"销售创建失败: {resp.text}"
         sale_id = get_entity_id(resp.json())
@@ -422,7 +422,7 @@ class Test取消恢复销售单:
         resp = client.post("/api/sales", json={
             "customer_id": ids["cid"], "deduct_inventory": True,
             "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
-            "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 20}],
+            "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200
         sale_id = get_entity_id(resp.json())
@@ -444,7 +444,7 @@ class Test取消恢复销售单:
         resp = client.post("/api/sales", json={
             "customer_id": ids["cid"], "deduct_inventory": True,
             "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
-            "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20}],
+            "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200
         sale_id = get_entity_id(resp.json())

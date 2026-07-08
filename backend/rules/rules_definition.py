@@ -134,7 +134,7 @@ Rule(
     invariants=[
         "固定资产: 当月增加,下月提折旧",
         "无形资产: 当月增加,当月摊销;处置当月不再摊销",
-        "月折旧额 = original_value_l1 × (1 - salvage_rate_l3) ÷ (useful_life_l3 × 12)",
+        "月折旧额 = original_value_l1 × (1 - salvage_rate_l3) ÷ useful_life_l3 (useful_life_l3 为月数)",
         "累计折旧上限 = original_value_l1 × (1 - salvage_rate_l3)",
     ],
     prohibited=[

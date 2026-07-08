@@ -19,7 +19,6 @@ from utils import Q2
 from engine_inventory import InventoryEngine
 from engine_finance import FinanceEngine
 from lineage import reads, writes, TIER_L1, TIER_L3
-from policy.vat_facts import VAT_SMALL_SCALE_REDUCED_RATE
 
 
 def return_purchase_order(db, account_id, operator, order_id, return_date, reason, items):
@@ -243,8 +242,6 @@ def update_purchase_items(db, account_id, operator, order_id, items, supplier_id
             setattr(order, k, v)
     new_status = order.status
 
-    account = db.get(models.Account, account_id)
-    default_tax_rate = FinanceEngine._vat_rate(account)
     total = Decimal('0')
     calculated_data = []
     for it in items:
@@ -257,7 +254,7 @@ def update_purchase_items(db, account_id, operator, order_id, items, supplier_id
             product_id=it['product_id'],
             quantity_l1=it['quantity'],
             unit_price_l1=it['unit_price'],
-            tax_rate_l1=it.get('tax_rate', default_tax_rate),
+            tax_rate_l1=it['tax_rate'],
             total_price_l1=line_total,
         )
         db.add(new_item)
@@ -269,7 +266,7 @@ def update_purchase_items(db, account_id, operator, order_id, items, supplier_id
                 unit_price=it['unit_price'],
                 source_type="purchase_order",
                 source_id=order.id,
-                tax_rate=it.get('tax_rate'),
+                tax_rate=it['tax_rate'],
                 operator=operator,
             )
             calculated_data.append(calc)

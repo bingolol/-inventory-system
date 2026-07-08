@@ -26,7 +26,6 @@ from events import emit
 from rules import enforce_rules
 from utils import _d, Q2
 from lineage import reads, writes, TIER_L1, TIER_L2, TIER_L3
-from policy.vat_facts import VAT_SMALL_SCALE_REDUCED_RATE
 
 
 class OrderLifecycle:
@@ -127,7 +126,7 @@ class OrderLifecycle:
             if not product:
                 raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it["product_id"]})
             line_total = (_d(it["quantity"]) * _d(it["unit_price"])).quantize(Q2)
-            tax_rate = it.get("tax_rate", VAT_SMALL_SCALE_REDUCED_RATE.value)
+            tax_rate = it["tax_rate"]
             item_tax = (line_total * _d(tax_rate)).quantize(Q2) if enable_vat else Decimal("0")
             items_data.append({
                 "product_id": it["product_id"],
@@ -285,7 +284,6 @@ class OrderLifecycle:
         db.flush()
 
         account = db.get(models.Account, account_id)
-        default_tax_rate = FinanceEngine._vat_rate(account)
         enable_vat = FinanceEngine._vat_deduction(account)
         total = Decimal("0")
         total_tax = Decimal("0")
@@ -295,7 +293,7 @@ class OrderLifecycle:
             if not product:
                 raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it["product_id"]})
             line_total = (_d(it["quantity"]) * _d(it["unit_price"])).quantize(Q2)
-            tax_rate = it.get("tax_rate", default_tax_rate)
+            tax_rate = it["tax_rate"]
             item_tax = (line_total * _d(tax_rate)).quantize(Q2) if enable_vat else Decimal("0")
             item = models.PurchaseItem(
                 order_id=order.id,
@@ -314,7 +312,7 @@ class OrderLifecycle:
                     unit_price=it["unit_price"],
                     source_type="purchase_order",
                     source_id=order.id,
-                    tax_rate=it.get("tax_rate"),
+                    tax_rate=it["tax_rate"],
                     operator=operator,
                 )
                 calculated_data.append(calc)

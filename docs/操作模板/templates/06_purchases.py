@@ -4,8 +4,22 @@
 所有发票录入走 POST /api/invoices/quick。
 """
 import sys
-sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板")
+import os
+from decimal import Decimal, ROUND_HALF_UP
+
+_DOCS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _DOCS_DIR)
 from _client import post, get, extract_id
+
+
+def _calc_invoice_amounts(amount_with_tax, tax_rate):
+    """根据价税合计和税率计算不含税金额与税额（BR-27：税额外部输入，模板内推导仅做示例）。"""
+    q2 = Decimal("0.01")
+    total = Decimal(str(amount_with_tax))
+    rate = Decimal(str(tax_rate))
+    without_tax = (total / (Decimal("1") + rate)).quantize(q2, rounding=ROUND_HALF_UP)
+    tax = (total - without_tax).quantize(q2, rounding=ROUND_HALF_UP)
+    return float(without_tax), float(tax)
 
 
 # === 进项发票（快捷录入，自动算税额） ===
@@ -38,12 +52,14 @@ def create_input_invoice_quick(invoice_no, invoice_type, tax_rate,
         related_order_id: 关联采购单 ID（link_existing 时必填）
         notes: 备注
     """
+    _, tax_amount = _calc_invoice_amounts(amount_with_tax, tax_rate)
     body = {
         "invoice_no": invoice_no,
         "direction": "in",
         "invoice_type": invoice_type,
         "tax_rate": tax_rate,
         "amount_with_tax": amount_with_tax,
+        "tax_amount": tax_amount,
         "counterparty_name": counterparty_name,
         "seller_name": seller_name,
         "buyer_name": buyer_name,
@@ -58,18 +74,23 @@ def create_input_invoice_quick(invoice_no, invoice_type, tax_rate,
 
 # === 采购单（独立创建，用于 link_existing 模式） ===
 
-def create_purchase_order(supplier_id, items, purchase_date, notes=None):
+def create_purchase_order(supplier_id, items, purchase_date, tax_rate, notes=None):
     """单独创建采购单（不绑定发票，后续发票用 link_existing 关联）。
 
     参数：
         supplier_id: 供应商 ID
         items: [{"product_id": 1, "quantity": 10, "unit_price": 1000.00}, ...]
         purchase_date: "YYYY-MM-DD"
+        tax_rate: 税率（如 0.13），必填，系统采购侧无默认值
         notes: 备注
     """
+    items_with_tax = [
+        {**it, "tax_rate": tax_rate} if "tax_rate" not in it else it
+        for it in items
+    ]
     body = {
         "supplier_id": supplier_id,
-        "items": items,
+        "items": items_with_tax,
         "purchase_date": purchase_date,
     }
     if notes: body["notes"] = notes
@@ -158,6 +179,7 @@ if __name__ == "__main__":
         supplier_id=SUP_ID,
         items=[{"product_id": PROD_ID, "quantity": 5, "unit_price": 1000.00}],
         purchase_date="2026-06-16",
+        tax_rate=0.13,
     )
     po_id = extract_id(po)
     inv2 = create_input_invoice_quick(

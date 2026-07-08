@@ -31,7 +31,7 @@ class IntangibleAssetEngine(BaseAssetEngine):
         original = Decimal(str(asset.original_value_l1))
         useful_life = int(asset.useful_life_l3)
         accumulated = Decimal(str(asset.accumulated_amortization_l4 or 0))
-        return straight_line_depreciation(original, useful_life, accumulated)
+        return straight_line_depreciation(original, useful_life, accumulated, Decimal("0"))
 
     @writes("IntangibleAssetAmortization.amount_l2", tier=TIER_L2, source="engine")
     @writes("IntangibleAssetAmortization.accumulated_before_l2", tier=TIER_L2, source="engine")

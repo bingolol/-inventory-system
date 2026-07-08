@@ -53,7 +53,7 @@ def _create_asset(db, **overrides):
         category="机器设备",
         original_value_l1=Decimal("120000"),
         salvage_rate_l3=Decimal("0.05"),
-        useful_life_l3=5,  # 5年
+        useful_life_l3=60,  # 60月=5年 (L3政策: useful_life 以月为单位)
         depreciation_method_l3="年限平均法",
         start_date_l1=date(2025, 1, 1),
         accumulated_depreciation_l4=Decimal("0"),
@@ -76,7 +76,7 @@ class TestMonthlyDepreciationCalculation:
 
     def test_straight_line_partial_year(self, db, account, accts):
         asset = _create_asset(db, original_value_l1=Decimal("60000"),
-                              salvage_rate_l3=Decimal("0"), useful_life_l3=3,
+                              salvage_rate_l3=Decimal("0"), useful_life_l3=36,  # 36月=3年
                               asset_code="FA-TEST-002")
         eng = FixedAssetEngine(db, account_id=1)
         result = eng.calculate_monthly(asset)
@@ -145,7 +145,7 @@ class TestBatchDepreciate:
         _create_asset(db, asset_code="FA-001")
         _create_asset(db, asset_code="FA-002",
                       original_value_l1=Decimal("60000"),
-                      useful_life_l3=36)
+                      useful_life_l3=36)  # 36月=3年
         eng = FixedAssetEngine(db, account_id=1)
         results = eng.batch_depreciate(period="2025-06")
         assert len(results) == 2

@@ -147,6 +147,7 @@ def test_invoice_amount_equals_asset_original_value(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商A",
         "seller_name": "供应商A",
         "buyer_name": "测试公司",
@@ -156,6 +157,7 @@ def test_invoice_amount_equals_asset_original_value(client):
         "fixed_asset": {
             "asset_code": "FA-001",
             "asset_name": "测试设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -183,6 +185,7 @@ def test_invoice_amounts_auto_calculated_and_balanced(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 22600,
+        "tax_amount": 2600,
         "counterparty_name": "供应商B",
         "seller_name": "供应商B",
         "buyer_name": "测试公司",
@@ -192,6 +195,7 @@ def test_invoice_amounts_auto_calculated_and_balanced(client):
         "fixed_asset": {
             "asset_code": "FA-002",
             "asset_name": "测试设备B",
+            "salvage_rate": 0.05,
             "useful_life": 120,
             "start_date": "2026-06-19"
         }
@@ -223,6 +227,7 @@ def test_rollback_on_duplicate_invoice(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商C",
         "seller_name": "供应商C",
         "buyer_name": "测试公司",
@@ -232,12 +237,13 @@ def test_rollback_on_duplicate_invoice(client):
         "fixed_asset": {
             "asset_code": "FA-ROLLBACK",
             "asset_name": "设备C",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
     }
     response1 = client.post("/api/invoices/quick", json=body1, headers={"X-Account-ID": "1"})
-    assert response1.status_code == 200
+    assert response1.status_code == 200, response1.text
 
     body2 = {
         "invoice_no": "FA-INV-ROLLBACK",
@@ -245,6 +251,7 @@ def test_rollback_on_duplicate_invoice(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 5650,
+        "tax_amount": 650,
         "counterparty_name": "供应商D",
         "seller_name": "供应商D",
         "buyer_name": "测试公司",
@@ -254,12 +261,13 @@ def test_rollback_on_duplicate_invoice(client):
         "fixed_asset": {
             "asset_code": "FA-ROLLBACK-2",
             "asset_name": "设备D",
+            "salvage_rate": 0.05,
             "useful_life": 36,
             "start_date": "2026-06-19"
         }
     }
     response2 = client.post("/api/invoices/quick", json=body2, headers={"X-Account-ID": "1"})
-    assert response2.status_code == 409
+    assert response2.status_code == 409, response2.text
 
     invoice_list = client.get("/api/invoices", headers={"X-Account-ID": "1"})
     assert invoice_list.status_code == 200
@@ -284,6 +292,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商E",
         "seller_name": "供应商E",
         "buyer_name": "测试公司",
@@ -293,6 +302,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "fixed_asset": {
             "asset_code": "FA-DUP",
             "asset_name": "设备E",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -304,6 +314,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 5650,
+        "tax_amount": 650,
         "counterparty_name": "供应商F",
         "seller_name": "供应商F",
         "buyer_name": "测试公司",
@@ -313,6 +324,7 @@ def test_duplicate_invoice_number_returns_structured_error(client):
         "fixed_asset": {
             "asset_code": "FA-DUP-2",
             "asset_name": "设备F",
+            "salvage_rate": 0.05,
             "useful_life": 36,
             "start_date": "2026-06-19"
         }
@@ -337,6 +349,7 @@ def test_response_contains_complete_invoice_and_asset_info(client):
         "invoice_type": "special",
         "tax_rate": 0.09,
         "amount_with_tax": 10900,
+        "tax_amount": 900,
         "counterparty_name": "供应商G",
         "seller_name": "供应商G",
         "buyer_name": "测试公司",
@@ -396,6 +409,7 @@ def test_update_invoice_amount_syncs_asset(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商H",
         "seller_name": "供应商H",
         "buyer_name": "测试公司",
@@ -405,6 +419,7 @@ def test_update_invoice_amount_syncs_asset(client):
         "fixed_asset": {
             "asset_code": "FA-UPD",
             "asset_name": "待更新设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -428,10 +443,10 @@ def test_update_invoice_amount_syncs_asset(client):
     assert asset["original_value"] == 22600.0
 
 
-# ── Behavior 7: 删除发票 → 关联资产自动删除（High）──
+# ── Behavior 7: 冲红发票 → 原发票标记为已冲红，资产保留（High）──
 
-def test_delete_invoice_cascades_to_asset(client):
-    """删除发票时，关联的固定资产自动删除"""
+def test_reverse_invoice_keeps_asset(client):
+    """冲红发票时，原发票标记为已冲红，关联固定资产保留"""
     pid = _create_product(client)
     body = {
         "invoice_no": "FA-INV-DEL",
@@ -439,6 +454,7 @@ def test_delete_invoice_cascades_to_asset(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商I",
         "seller_name": "供应商I",
         "buyer_name": "测试公司",
@@ -448,24 +464,24 @@ def test_delete_invoice_cascades_to_asset(client):
         "fixed_asset": {
             "asset_code": "FA-DEL",
             "asset_name": "待删除设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
     }
     create_resp = client.post("/api/invoices/quick", json=body, headers={"X-Account-ID": "1"})
-    assert create_resp.status_code == 200
+    assert create_resp.status_code == 200, create_resp.text
     cr_data = _extract_data(create_resp.json())
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
-    delete_resp = client.delete(f"/api/invoices/{invoice_id}", headers={"X-Account-ID": "1"})
-    print("DELETE invoice resp:", delete_resp.status_code, delete_resp.text[:300])
-    assert delete_resp.status_code == 200
+    reverse_resp = client.post(f"/api/invoices/{invoice_id}/reverse", json={"reason": "测试冲红"}, headers={"X-Account-ID": "1"})
+    assert reverse_resp.status_code == 200
 
+    # 冲红后会生成红字发票
     invoice_list = client.get("/api/invoices", headers={"X-Account-ID": "1"})
     assert invoice_list.status_code == 200
-    invoices = invoice_list.json()["items"]
-    assert not any(inv["id"] == invoice_id for inv in invoices)
+    assert any(i.get("invoice_no", "").startswith("H-") for i in invoice_list.json()["items"])
 
     asset_list = client.get("/api/fixed-assets", headers={"X-Account-ID": "1"})
     assert asset_list.status_code == 200
@@ -485,6 +501,7 @@ def test_update_asset_syncs_invoice_amount(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商J",
         "seller_name": "供应商J",
         "buyer_name": "测试公司",
@@ -494,6 +511,7 @@ def test_update_asset_syncs_invoice_amount(client):
         "fixed_asset": {
             "asset_code": "FA-SYNC",
             "asset_name": "同步设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -528,6 +546,7 @@ def test_delete_asset_clears_invoice_link(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商K",
         "seller_name": "供应商K",
         "buyer_name": "测试公司",
@@ -537,6 +556,7 @@ def test_delete_asset_clears_invoice_link(client):
         "fixed_asset": {
             "asset_code": "FA-CLEAR",
             "asset_name": "待清空设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -564,15 +584,9 @@ def test_delete_asset_clears_invoice_link(client):
 # ═══════════════════════════════════════════════════════════
 
 @pytest.mark.golden
-def test_invoice_calculation_uses_accounting_engine(client):
-    """验证发票金额计算使用 AccountingEngine，结果与直接调用一致"""
+def test_invoice_amounts_match_external_input(client):
+    """验证发票不含税金额/税额/价税合计与外部输入一致"""
     pid = _create_product(client)
-    engine = AccountingEngine()
-
-    expected = engine.calculate_invoice_amounts(
-        amount_with_tax=Decimal('11300'),
-        tax_rate=Decimal('0.13')
-    )
 
     response = client.post("/api/invoices/quick", json={
         "invoice_no": "FA-INV-ENGINE",
@@ -580,6 +594,7 @@ def test_invoice_calculation_uses_accounting_engine(client):
         "invoice_type": "ordinary",
         "tax_rate": 0.13,
         "amount_with_tax": 11300,
+        "tax_amount": 1300,
         "counterparty_name": "供应商L",
         "seller_name": "供应商L",
         "buyer_name": "测试公司",
@@ -589,6 +604,7 @@ def test_invoice_calculation_uses_accounting_engine(client):
         "fixed_asset": {
             "asset_code": "FA-ENGINE",
             "asset_name": "引擎测试设备",
+            "salvage_rate": 0.05,
             "useful_life": 60,
             "start_date": "2026-06-19"
         }
@@ -597,6 +613,6 @@ def test_invoice_calculation_uses_accounting_engine(client):
     assert response.status_code == 200
     inv = _extract_data(response.json())
 
-    assert Decimal(str(inv["amount_without_tax"])) == expected.amount_without_tax
-    assert Decimal(str(inv["tax_amount"])) == expected.tax_amount
-    assert Decimal(str(inv["amount_with_tax"])) == expected.amount_with_tax
+    assert Decimal(str(inv["amount_without_tax"])) == Decimal("10000")
+    assert Decimal(str(inv["tax_amount"])) == Decimal("1300")
+    assert Decimal(str(inv["amount_with_tax"])) == Decimal("11300")

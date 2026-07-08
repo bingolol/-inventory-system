@@ -34,7 +34,7 @@ def run_bank_reconcile(period):
     参数：
         period: 对账期间 "YYYY-MM"（如 "2026-06"）
     """
-    return post(f"/api/bank/reconcile?period={period}")
+    return post(f"/api/bank/reconcile?period={period}", {})
 
 
 def get_bank_reconciliation(period):

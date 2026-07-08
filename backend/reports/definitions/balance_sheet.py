@@ -155,14 +155,17 @@ BALANCE_SHEET = [
     ),
 
     # ── 应交税费 ──
+    # 应交增值税以总账为真相源：销项/进项/转出/未交等科目净额。
+    # 发票口径仅用于 reconciliation 对账，不作为报表主取值，
+    # 否则未开票销售（如现金散客销售）的销项税会被遗漏，导致 BS 不平衡。
+    # 使用 side=None 取净额(d-c)再 *sign，确保退货红冲（对边分录）正确抵消。
     Field("_vat_net", None,
-        source=DualSource(
-            primary=INVOICE_TAX_NET(),
-            secondary=LEDGER_COMPOSITE(parts=[
-                Part(codes=["222101", "222103", "222107"], side="credit", sign=+1),
-                Part(codes=["222102", "222106"], side="debit", sign=-1),
-            ]),
-        ),
+        source=LEDGER_COMPOSITE(parts=[
+            # 销项税等：净贷方余额 = c-d = -(d-c)
+            Part(codes=["222101", "222103", "222107"], side=None, sign=-1),
+            # 进项税等：净借方余额取负 = -(d-c)
+            Part(codes=["222102", "222106"], side=None, sign=-1),
+        ]),
     ),
     Field("vat_payable", "应交增值税",
         source=SUM_FIELDS(["_vat_net"]),

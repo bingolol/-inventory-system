@@ -148,6 +148,7 @@ class BankReconcileEngine:
 
         # ── 未达账项 ----
         self._create_unmatched_items(rec, stmt_lines, matched_stmt_ids, bank_txns, matched_tx_ids)
+        self.db.flush()
 
         # ── 费用扫描 ----
         self._scan_fees(rec, stmt_lines, matched_stmt_ids)
@@ -455,6 +456,8 @@ class BankReconcileEngine:
         self.db.flush()
         # 重算调节后余额（已冲销项需要从 balanced 计算中移除）
         if rec:
+            cutoff = datetime.combine(self.period_end, datetime.max.time())
+            rec.book_balance_l4 = self._read_book_balance(cutoff)
             self._recalc_balances(rec)
         return generated
 

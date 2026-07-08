@@ -13,11 +13,25 @@
   拿到 product_id 后，在销项发票的 items 中使用它。
 """
 import sys
-sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板")
+import os
+from decimal import Decimal, ROUND_HALF_UP
+
+_DOCS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _DOCS_DIR)
 from _client import post, get, extract_id
 
 
-# === 销项发票（快捷录入，自动算税额） ===
+def _calc_invoice_amounts(amount_with_tax, tax_rate):
+    """根据价税合计和税率计算不含税金额与税额（BR-27：税额外部输入，模板内推导仅做示例）。"""
+    q2 = Decimal("0.01")
+    total = Decimal(str(amount_with_tax))
+    rate = Decimal(str(tax_rate))
+    without_tax = (total / (Decimal("1") + rate)).quantize(q2, rounding=ROUND_HALF_UP)
+    tax = (total - without_tax).quantize(q2, rounding=ROUND_HALF_UP)
+    return float(without_tax), float(tax)
+
+
+# === 销项发票（快捷录入，税额由模板按发票推导） ===
 
 def create_output_invoice_quick(invoice_no, invoice_type, tax_rate,
                                 amount_with_tax, counterparty_name,
@@ -26,9 +40,9 @@ def create_output_invoice_quick(invoice_no, invoice_type, tax_rate,
                                 related_order_id=None, notes=None):
     """创建销项发票（走 /api/invoices/quick）。
 
-    系统自动：
-    - 按 amount_with_tax / (1+tax_rate) 算不含税金额 + 税额
-    - 根据 sale_order_action 处理销售单：
+    模板内按 amount_with_tax / (1+tax_rate) 推导税额并填入 tax_amount；
+    实际业务中 tax_amount 应由外部提供（BR-27）。
+    根据 sale_order_action 处理销售单：
         * "auto_create"：用 items 自动建销售单 + 出库 + 结转成本
         * "link_existing"：关联 related_order_id 指定的销售单（必填 related_order_id）
 
@@ -36,7 +50,7 @@ def create_output_invoice_quick(invoice_no, invoice_type, tax_rate,
         invoice_no: 发票号
         invoice_type: "special"（专票）或 "ordinary"（普票）
         tax_rate: 税率（如 0.13）
-        amount_with_tax: 价税合计（不含税/税额系统自动算）
+        amount_with_tax: 价税合计
         counterparty_name: 交易对方名称（如客户名）
         seller_name: 销方名称（一般填本公司名）
         buyer_name: 购方名称（一般填客户名）
@@ -47,12 +61,14 @@ def create_output_invoice_quick(invoice_no, invoice_type, tax_rate,
         related_order_id: 关联销售单 ID（link_existing 时必填）
         notes: 备注
     """
+    _, tax_amount = _calc_invoice_amounts(amount_with_tax, tax_rate)
     body = {
         "invoice_no": invoice_no,
         "direction": "out",
         "invoice_type": invoice_type,
         "tax_rate": tax_rate,
         "amount_with_tax": amount_with_tax,
+        "tax_amount": tax_amount,
         "counterparty_name": counterparty_name,
         "seller_name": seller_name,
         "buyer_name": buyer_name,
@@ -67,18 +83,23 @@ def create_output_invoice_quick(invoice_no, invoice_type, tax_rate,
 
 # === 销售单（独立创建，用于 link_existing 模式） ===
 
-def create_sale_order(customer_id, items, sale_date, notes=None):
+def create_sale_order(customer_id, items, sale_date, tax_rate, notes=None):
     """单独创建销售单（不绑定发票，后续发票用 link_existing 关联）。
 
     参数：
         customer_id: 客户 ID
         items: [{"product_id": 1, "quantity": 5, "unit_price": 1500.00}, ...]
         sale_date: "YYYY-MM-DD"
+        tax_rate: 税率（如 0.13），必填，系统销售侧无默认值
         notes: 备注
     """
+    items_with_tax = [
+        {**it, "tax_rate": tax_rate} if "tax_rate" not in it else it
+        for it in items
+    ]
     body = {
         "customer_id": customer_id,
-        "items": items,
+        "items": items_with_tax,
         "sale_date": sale_date,
     }
     if notes: body["notes"] = notes
@@ -159,6 +180,7 @@ if __name__ == "__main__":
         customer_id=CUS_ID,
         items=[{"product_id": PROD_ID, "quantity": 2, "unit_price": 1300.00}],
         sale_date="2026-06-21",
+        tax_rate=0.13,
     )
     so_id = extract_id(so)
     inv2 = create_output_invoice_quick(

@@ -7,9 +7,20 @@
 - 处置：危险操作，需用户确认
 """
 import sys
+from decimal import Decimal, ROUND_HALF_UP
 sys.path.insert(0, r"C:\Users\Administrator\Desktop\-inventory-system\docs\操作模板")
 from _client import (post, get, extract_id,
                      post_pending, confirm, cancel_pending)
+
+
+def _calc_invoice_amounts(amount_with_tax, tax_rate):
+    """根据价税合计和税率计算不含税金额与税额（BR-27：税额外部输入，模板内推导仅做示例）。"""
+    q2 = Decimal("0.01")
+    total = Decimal(str(amount_with_tax))
+    rate = Decimal(str(tax_rate))
+    without_tax = (total / (Decimal("1") + rate)).quantize(q2, rounding=ROUND_HALF_UP)
+    tax = (total - without_tax).quantize(q2, rounding=ROUND_HALF_UP)
+    return float(without_tax), float(tax)
 
 
 # === 购入方式 A：发票 + 固定资产（原子事务，推荐） ===
@@ -58,12 +69,14 @@ def create_fixed_asset_via_invoice(invoice_no, amount_with_tax, tax_rate,
             "unit_price": unit_price,
             "tax_rate": tax_rate,
         }]
+    _, tax_amount = _calc_invoice_amounts(amount_with_tax, tax_rate)
     body = {
         "invoice_no": invoice_no,
         "direction": "in",
         "invoice_type": invoice_type,
         "tax_rate": tax_rate,
         "amount_with_tax": amount_with_tax,
+        "tax_amount": tax_amount,
         "counterparty_name": counterparty_name,
         "seller_name": seller_name,
         "buyer_name": buyer_name,
@@ -165,7 +178,7 @@ def dispose_fixed_asset_pending(asset_id, disposal_date, disposal_price,
     }
     if bank_account_id:
         params["bank_account_id"] = bank_account_id
-    return post_pending(f"/api/fixed-assets/{asset_id}/dispose?{urlencode(params)}")
+    return post_pending(f"/api/fixed-assets/{asset_id}/dispose?{urlencode(params)}", {})
 
 
 # === 端到端示例 ===

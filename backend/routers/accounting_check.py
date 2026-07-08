@@ -8,6 +8,7 @@ from typing import Optional
 
 from database import get_db
 from account_dep import get_account_id
+import models
 from accounting_engine import AccountingEngine, AccountingError, AccountingErrorCode
 from utils import _d
 from policy.entity_profile import EntityProfile
@@ -56,12 +57,21 @@ def check_invoice_amounts(
 def check_depreciation(
     method: str = Query(..., description="折旧方法: 直线法/双倍余额递减法/年数总和法"),
     original_value: Decimal = Query(..., description="原值"),
-    salvage_rate: Decimal = Query(default=Decimal("0.05"), description="残值率"),
+    salvage_rate: Optional[Decimal] = Query(default=None, description="残值率（不传则从账本固定资产配置读取）"),
     useful_life: int = Query(..., gt=0, description="使用寿命(月)"),
     months_used: int = Query(..., gt=0, description="已使用月数"),
     account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
 ):
     """检查固定资产折旧计算是否正确"""
+    # 残值率默认从 L3 政策配置读取（取该账本第一个固定资产的配置）
+    if salvage_rate is None:
+        fa = db.query(models.FixedAsset).filter(
+            models.FixedAsset.account_id == account_id,
+        ).first()
+        salvage_rate = fa.salvage_rate_l3 if fa and fa.salvage_rate_l3 is not None else Decimal("0.05")
+    else:
+        salvage_rate = Decimal(str(salvage_rate))
     violations = []
 
     if useful_life <= 0:
@@ -216,13 +226,18 @@ def check_balance_sheet(
 @router.get("/vat")
 def check_vat(
     total_revenue: Decimal = Query(..., description="不含税销售额"),
-    taxpayer_type: str = Query(default="general", description="纳税人类型: small_scale/general"),
+    taxpayer_type: Optional[str] = Query(default=None, description="纳税人类型: small_scale/general（不传则从账本配置读取）"),
     input_tax: Decimal = Query(default=Decimal("0"), description="进项税额（一般纳税人）"),
     output_tax: Optional[Decimal] = Query(default=None, description="销项税额（一般纳税人必填，取自发票明细汇总）"),
     account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
 ):
     """检查增值税计算是否正确"""
     try:
+        # 纳税人类型默认从 L3 政策配置读取
+        if taxpayer_type is None:
+            account = db.query(models.Account).filter(models.Account.id == account_id).first()
+            taxpayer_type = account.taxpayer_type_l3 if account and account.taxpayer_type_l3 else "small_scale"
         if taxpayer_type not in ("small_scale", "general"):
             raise AccountingError(
                 code=AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID,
@@ -267,11 +282,21 @@ def check_vat(
 @router.get("/income-tax")
 def check_income_tax(
     profit: Decimal = Query(..., description="利润总额"),
-    taxpayer_type: str = Query(default="small_micro", description="纳税人类型: small_micro/general"),
+    taxpayer_type: Optional[str] = Query(default=None, description="纳税人类型: small_micro/general（不传则从账本配置读取）"),
     account_id: int = Depends(get_account_id),
+    db: Session = Depends(get_db),
 ):
     """检查所得税计算是否正确"""
     try:
+        # 纳税人类型默认从 L3 政策配置读取
+        if taxpayer_type is None:
+            account = db.query(models.Account).filter(models.Account.id == account_id).first()
+            if account:
+                taxpayer_type = "small_micro" if account.taxpayer_type_l3 == "small_scale" else "general"
+                if account.type == "personal":
+                    taxpayer_type = "personal"
+            else:
+                taxpayer_type = "small_micro"
         profile = EntityProfile(
             vat_type="" if taxpayer_type == "personal" else "general",
             income_type="personal" if taxpayer_type == "personal"

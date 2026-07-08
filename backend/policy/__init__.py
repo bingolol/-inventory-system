@@ -1,6 +1,6 @@
 """政策引擎 — 五层架构根治税率散落
 
-层 1：政策事实源（vat_facts / income_tax_facts）
+层 1：政策事实源（vat_facts / income_tax_facts / surcharge_facts）
 层 2：主体画像（entity_profile）
 层 3：政策引擎（policy_engine）
 层 4：申报表映射器（declaration_mapper）
@@ -40,6 +40,16 @@ from policy.policy_engine import (
     VATResult,
     IncomeTaxResult,
 )
+from policy.surcharge_facts import (
+    URBAN_CONSTRUCTION_TAX_RATE_CITY,
+    URBAN_CONSTRUCTION_TAX_RATE_COUNTY,
+    URBAN_CONSTRUCTION_TAX_RATE_OTHER,
+    EDUCATION_SURCHARGE_RATE,
+    LOCAL_EDUCATION_SURCHARGE_RATE,
+    SURCHARGE_HALVING_FACTOR,
+    SURCHARGE_TOTAL_RATE,
+    load_surcharge_facts,
+)
 from policy.declaration_mapper import (
     map_vat_to_main_form,
     map_income_tax_to_prepayment_form,
@@ -59,6 +69,11 @@ __all__ = [
     # Policy engine
     "PolicyEngine", "calculate_vat", "calculate_income_tax",
     "VATResult", "IncomeTaxResult",
+    # Surcharge facts
+    "URBAN_CONSTRUCTION_TAX_RATE_CITY", "URBAN_CONSTRUCTION_TAX_RATE_COUNTY",
+    "URBAN_CONSTRUCTION_TAX_RATE_OTHER", "EDUCATION_SURCHARGE_RATE",
+    "LOCAL_EDUCATION_SURCHARGE_RATE", "SURCHARGE_HALVING_FACTOR",
+    "SURCHARGE_TOTAL_RATE", "load_surcharge_facts",
     # Declaration mapper
     "map_vat_to_main_form", "map_income_tax_to_prepayment_form",
 ]

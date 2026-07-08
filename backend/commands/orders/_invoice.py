@@ -20,7 +20,7 @@ from crud.base import log_op
 from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
 from lineage import reads, writes, TIER_L1, TIER_L3
-from policy.vat_facts import VAT_SMALL_SCALE_REDUCED_RATE
+
 from policy.entity_profile import build_profile
 from crud.invoice_linkage import validate_link_target
 from rules import enforce_rules
@@ -134,7 +134,7 @@ class CreateInvoiceHandler(CommandHandler):
                 product_id=it['product_id'],
                 quantity_l1=it['quantity'],
                 unit_price_l1=it['unit_price'],
-                tax_rate_l1=it.get('tax_rate', cmd.tax_rate),
+                tax_rate_l1=it['tax_rate'],
                 total_price_l1=line_total,
             )
             db.add(inv_item)
@@ -311,6 +311,7 @@ class CreateInvoiceWithFixedAsset(Command):
     invoice_type: str = "ordinary"
     tax_rate: Any = None
     amount_with_tax: Any = None
+    tax_amount: Any = None
     counterparty_name: str = ""
     seller_name: str = ""
     buyer_name: str = ""
@@ -342,13 +343,15 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
     @writes("Invoice.amount_with_tax_l1", tier=TIER_L1, source="external")
     @writes("Invoice.issue_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: CreateInvoiceWithFixedAsset, db: Any) -> Any:
-        amounts = _engine.calculate_invoice_amounts(
-            amount_with_tax=to_decimal(cmd.amount_with_tax),
-            tax_rate=to_decimal(cmd.tax_rate)
+        # BR-27: tax_amount 为外部输入（发票上的实际税额），系统不推导
+        amount_with_tax = to_decimal(cmd.amount_with_tax)
+        tax_amount = to_decimal(cmd.tax_amount)
+        amount_without_tax = (amount_with_tax - tax_amount).quantize(Q2)
+        _engine.validate_invoice_amounts(
+            amount_without_tax=amount_without_tax,
+            tax_amount=tax_amount,
+            amount_with_tax=amount_with_tax,
         )
-        amount_without_tax = amounts.amount_without_tax
-        tax_amount = amounts.tax_amount
-        amount_with_tax = amounts.amount_with_tax
 
         issue_date = datetime.strptime(cmd.issue_date, "%Y-%m-%d").date()
         start_date = datetime.strptime(cmd.start_date, "%Y-%m-%d").date()
@@ -379,7 +382,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
                 product_id=it['product_id'],
                 quantity_l1=it['quantity'],
                 unit_price_l1=it['unit_price'],
-                tax_rate_l1=it.get('tax_rate', cmd.tax_rate),
+                tax_rate_l1=it['tax_rate'],
                 total_price_l1=line_total,
             )
             db.add(inv_item)
@@ -403,7 +406,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             name=cmd.asset_name,
             category=cmd.category,
             original_value_l1=asset_original_value,
-            salvage_rate_l3=to_decimal(cmd.salvage_rate) if cmd.salvage_rate else Decimal('0.05'),
+            salvage_rate_l3=to_decimal(cmd.salvage_rate) if cmd.salvage_rate is not None else Decimal('0.05'),
             useful_life_l3=cmd.useful_life,
             depreciation_method_l3=cmd.depreciation_method,
             start_date_l1=start_date,
@@ -542,6 +545,7 @@ class ReverseInvoiceHandler(CommandHandler):
 class UpdateAssetWithInvoice(Command):
     asset_id: int = 0
     original_value: Any = None
+    tax_amount: Any = None
     name: Optional[str] = None
     category: Optional[str] = None
     salvage_rate: Any = None
@@ -574,13 +578,27 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
             old_value = to_decimal(asset.original_value_l1)
             asset.original_value_l1 = original_value
             if invoice:
-                amounts = _engine.calculate_invoice_amounts(
-                    amount_with_tax=original_value,
-                    tax_rate=invoice.tax_rate_l1
+                # BR-27: tax_amount 为外部输入。更新原值时优先使用传入的 tax_amount，
+                # 若未传则按发票税率从含税金额反算税额（价税分离）。
+                amount_with_tax = original_value
+                if cmd.tax_amount is not None:
+                    tax_amount = to_decimal(cmd.tax_amount)
+                    amount_without_tax = (amount_with_tax - tax_amount).quantize(Q2)
+                elif invoice.tax_rate_l1 and to_decimal(invoice.tax_rate_l1) > 0:
+                    tax_rate = to_decimal(invoice.tax_rate_l1)
+                    amount_without_tax = (amount_with_tax / (Decimal("1") + tax_rate)).quantize(Q2)
+                    tax_amount = (amount_with_tax - amount_without_tax).quantize(Q2)
+                else:
+                    tax_amount = Decimal("0")
+                    amount_without_tax = amount_with_tax
+                _engine.validate_invoice_amounts(
+                    amount_without_tax=amount_without_tax,
+                    tax_amount=tax_amount,
+                    amount_with_tax=amount_with_tax,
                 )
-                invoice.amount_without_tax_l1 = amounts.amount_without_tax
-                invoice.tax_amount_l1 = amounts.tax_amount
-                invoice.amount_with_tax_l1 = amounts.amount_with_tax
+                invoice.amount_without_tax_l1 = amount_without_tax
+                invoice.tax_amount_l1 = tax_amount
+                invoice.amount_with_tax_l1 = amount_with_tax
                 if original_value != old_value:
                     from finance_integration import reverse_journal, post_journal
                     from engine_finance import FinanceEngine
@@ -588,7 +606,7 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                     acct_conf = fe._account_config()
                     enable_vat_deduction = acct_conf["enable_vat_deduction"] and invoice.invoice_type == InvoiceType.SPECIAL
                     acct_conf["enable_vat_deduction"] = enable_vat_deduction
-                    new_asset_value = amounts.amount_with_tax if not enable_vat_deduction else amounts.amount_without_tax
+                    new_asset_value = amount_with_tax if not enable_vat_deduction else amount_without_tax
                     reverse_journal(db, cmd.account_id, "fixed_asset_purchase", asset.id, force=True)
                     if asset.original_value_l1 != new_asset_value:
                         asset.original_value_l1 = new_asset_value
@@ -602,8 +620,8 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                             supplier_id = supplier.id
                     post_journal(db, cmd.account_id, "fixed_asset_purchase", {
                         "original_value": new_asset_value,
-                        "tax_amount": amounts.tax_amount if enable_vat_deduction else Decimal("0"),
-                        "amount_with_tax": amounts.amount_with_tax,
+                        "tax_amount": tax_amount if enable_vat_deduction else Decimal("0"),
+                        "amount_with_tax": amount_with_tax,
                         "asset_id": asset.id,
                         "partner_id": supplier_id,
                         "date": _date_iso(invoice.issue_date_l1),
