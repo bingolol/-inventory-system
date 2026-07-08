@@ -8,6 +8,7 @@ from models import Payment
 from schemas.payment import PaymentCreate, PaymentOut
 from schemas import PaginatedResponse
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 from crud.finance import list_payments, get_payment
@@ -19,13 +20,12 @@ router = APIRouter()
 
 @router.get("", response_model=PaginatedResponse)
 def get_payments(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    pag: Pagination = Depends(),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db),
 ):
     """获取付款记录列表"""
-    items = list_payments(db, account_id, skip=skip, limit=limit)
+    items = list_payments(db, account_id, skip=pag.skip, limit=pag.limit)
     total = len(items)
     return PaginatedResponse(total=total, items=[PaymentOut.model_validate(p) for p in items])
 
@@ -37,10 +37,7 @@ def get_payment_by_id(
     db: Session = Depends(get_db),
 ):
     """获取单条付款记录"""
-    p = get_payment(db, account_id, payment_id)
-    if not p:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"payment_id": payment_id})
-    return PaymentOut.model_validate(p)
+    return PaymentOut.model_validate(get_payment(db, account_id, payment_id))
 
 
 @router.post("")

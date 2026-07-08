@@ -8,6 +8,7 @@ from database import get_db
 from models import Expense
 from schemas import ExpenseCreate, ExpenseUpdate, PaginatedResponse
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
 from enums import EXPENSE_CATEGORIES
 import crud
 from crud.invoice_linkage import bulk_has_invoice
@@ -22,8 +23,7 @@ router = APIRouter()
 async def get_expenses(
     category: Optional[str] = None,
     year: Optional[int] = None,
-    skip: int = 0,
-    limit: int = 100,
+    pag: Pagination = Depends(),
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id)
 ):
@@ -38,7 +38,7 @@ async def get_expenses(
         query = query.filter(Expense.expense_date_l1 >= start_date, Expense.expense_date_l1 < end_date)
     
     total = query.count()
-    expenses = query.offset(skip).limit(limit).all()
+    expenses = query.offset(pag.skip).limit(pag.limit).all()
     
     # 批量派生查询:哪些费用有发票关联(单一真相源,取代 ORM has_invoice 列)
     invoiced_ids = bulk_has_invoice(db, account_id, "expense", [e.id for e in expenses])

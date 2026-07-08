@@ -13,14 +13,16 @@ from decimal import Decimal
 from database import get_db
 from schemas import FixedAssetCreate, FixedAssetUpdate, FixedAssetOut, FixedAssetWithInvoiceUpdate, PaginatedResponse
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
 import crud
 from uow import unit_of_work
-from commands.base import dispatch
+from commands.base import dispatch, dispatch_safe
 from commands.fixed_asset_commands import (
     DepreciateFixedAsset,
     BatchDepreciateFixedAssets,
     DisposeFixedAsset,
 )
+from finance_integration import post_journal
 
 router = APIRouter()
 
@@ -47,15 +49,14 @@ def _to_out(asset) -> FixedAssetOut:
 @router.get("", response_model=PaginatedResponse)
 def list_fixed_assets(
     status: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    pag: Pagination = Depends(),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db),
 ):
     """获取固定资产列表，支持按状态筛选"""
     assets = crud.list_fixed_assets(db, account_id, status=status)
     total = len(assets)
-    paged = assets[skip: skip + limit]
+    paged = assets[pag.skip: pag.skip + pag.limit]
     return PaginatedResponse(total=total, items=[_to_out(a) for a in paged])
 
 
@@ -69,6 +70,13 @@ def create_fixed_asset(
     """创建固定资产"""
     with unit_of_work(db):
         asset = crud.create_fixed_asset(db, account_id, data, operator=operator)
+        post_journal(db, account_id, "fixed_asset_purchase", {
+            "asset_id": asset.id,
+            "original_value": data.original_value,
+            "date": data.start_date,
+            "source_model": "fixed_asset",
+            "source_id": asset.id,
+        })
     db.refresh(asset)
     return _to_out(asset)
 
@@ -172,24 +180,21 @@ def update_asset_with_invoice(
     """更新固定资产（联动发票）"""
     from commands.orders import UpdateAssetWithInvoice
 
-    try:
-        with unit_of_work(db):
-            cmd = UpdateAssetWithInvoice(
-                account_id=account_id,
-                operator=operator,
-                asset_id=asset_id,
-                original_value=data.original_value,
-                name=data.name,
-                category=data.category,
-                salvage_rate=data.salvage_rate,
-                useful_life=data.useful_life,
-                depreciation_method=data.depreciation_method,
-                start_date=data.start_date,
-                status=data.status,
-            )
-            result = dispatch(cmd, db)
-    except ValueError:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新固定资产失败，请检查输入数据"})
+    with unit_of_work(db):
+        cmd = UpdateAssetWithInvoice(
+            account_id=account_id,
+            operator=operator,
+            asset_id=asset_id,
+            original_value=data.original_value,
+            name=data.name,
+            category=data.category,
+            salvage_rate=data.salvage_rate,
+            useful_life=data.useful_life,
+            depreciation_method=data.depreciation_method,
+            start_date=data.start_date,
+            status=data.status,
+        )
+        result = dispatch_safe(cmd, db, "更新固定资产失败，请检查输入数据")
 
     asset = result["asset"]
     invoice = result["invoice"]

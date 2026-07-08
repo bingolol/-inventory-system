@@ -14,22 +14,11 @@ import models
 import schemas
 
 from accounting_engine import _d
-from utils import Q2
+from utils import Q2, get_or_404
+from utils.sequencer import next_advance_no
 
-
-def generate_advance_no(db: Session, account_id: int) -> str:
-    """生成垫付单号：PA-YYYY-NNNN（账本内年度递增）
-
-    与 _generate_order_no 不同，垫付单号采用更稳定的年度递增格式，
-    便于人工核对与对账。
-    """
-    year = datetime.now().year
-    pattern = f"PA-{year}-%"
-    count = db.query(models.PersonalAdvance).filter(
-        models.PersonalAdvance.account_id == account_id,
-        models.PersonalAdvance.advance_no.like(pattern)
-    ).count()
-    return f"PA-{year}-{count + 1:04d}"
+# 保持对外兼容的别名
+generate_advance_no = next_advance_no
 
 
 def list_personal_advances(
@@ -53,7 +42,7 @@ def list_personal_advances(
     if start_date:
         q = q.filter(models.PersonalAdvance.advance_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PersonalAdvance.advance_date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.PersonalAdvance.advance_date_l1 <= end_date)
     # 已冲红单据默认仍然展示（便于审计追溯），由前端标识
     total = q.count()
     items = q.order_by(models.PersonalAdvance.advance_date_l1.desc()).offset(skip).limit(limit).all()
@@ -61,11 +50,8 @@ def list_personal_advances(
 
 
 def get_personal_advance(db: Session, account_id: int, advance_id: int):
-    """获取单笔垫付单（含多租户过滤）"""
-    return db.query(models.PersonalAdvance).filter(
-        models.PersonalAdvance.account_id == account_id,
-        models.PersonalAdvance.id == advance_id,
-    ).first()
+    """获取单笔垫付单（含多租户过滤），不存在则抛 BusinessError"""
+    return get_or_404(db, models.PersonalAdvance, advance_id, account_id)
 
 
 def list_repayments_by_advance(db: Session, account_id: int, advance_id: int):
@@ -77,11 +63,8 @@ def list_repayments_by_advance(db: Session, account_id: int, advance_id: int):
 
 
 def get_repayment(db: Session, account_id: int, repayment_id: int):
-    """获取单笔偿还记录"""
-    return db.query(models.PersonalAdvanceRepayment).filter(
-        models.PersonalAdvanceRepayment.account_id == account_id,
-        models.PersonalAdvanceRepayment.id == repayment_id,
-    ).first()
+    """获取单笔偿还记录，不存在则抛 BusinessError"""
+    return get_or_404(db, models.PersonalAdvanceRepayment, repayment_id, account_id)
 
 
 def get_personal_advance_summary(db: Session, account_id: int):

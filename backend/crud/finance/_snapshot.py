@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 import models
 from utils import _d
 from models_finance import Ledger, LedgerAccount, AccountMove, AccountMoveLine
+from errors import BusinessError, ErrorCode
 
 from .opening_balances import get_latest_opening_balance
 from ._ledger_helpers import PNL_CLOSE_MODELS, INTERNAL_TRANSFER_MODELS
@@ -81,7 +82,7 @@ class LedgerSnapshot:
 
         acct = db.query(models.Account).filter(models.Account.id == account_id).first()
         if not acct:
-            raise ValueError(f"账本不存在: account_id={account_id}")
+            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "账本", "order_id": account_id})
 
         ledger = db.query(Ledger).filter(Ledger.code == acct.code).first()
         self._ledger = ledger

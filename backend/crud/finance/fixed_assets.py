@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session
 
 import models, schemas
 from ..base import log_op
+from utils import get_or_404
 from lineage import writes, TIER_L3
 
 @writes("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
 @writes("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
 @writes("FixedAsset.depreciation_method_l3", tier=TIER_L3, source="policy")
 def create_fixed_asset(db: Session, account_id: int, data: schemas.FixedAssetCreate, operator: str = "user"):
-    """创建固定资产（含会计凭证：借:1601 贷:2202）"""
+    """创建固定资产"""
     asset = models.FixedAsset(
         account_id=account_id,
         asset_code=data.asset_code,
@@ -27,23 +28,12 @@ def create_fixed_asset(db: Session, account_id: int, data: schemas.FixedAssetCre
     )
     db.add(asset)
     db.flush()
-    from finance_integration import post_journal
-    post_journal(db, account_id, "fixed_asset_purchase", {
-        "asset_id": asset.id,
-        "original_value": data.original_value,
-        "date": data.start_date,
-        "source_model": "fixed_asset",
-        "source_id": asset.id,
-    })
     log_op(db, account_id, "create", "fixed_asset", asset.id, f"创建固定资产: {data.name}", operator=operator)
     return asset
 
 
 def get_fixed_asset(db: Session, account_id: int, asset_id: int):
-    return db.query(models.FixedAsset).filter(
-        models.FixedAsset.account_id == account_id,
-        models.FixedAsset.id == asset_id
-    ).first()
+    return get_or_404(db, models.FixedAsset, asset_id, account_id)
 
 
 def list_fixed_assets(db: Session, account_id: int, status: str = None):

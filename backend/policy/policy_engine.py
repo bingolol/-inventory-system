@@ -13,6 +13,7 @@ from typing import Optional
 from policy.vat_facts import load_vat_facts
 from policy.income_tax_facts import load_income_tax_facts
 from policy.entity_profile import EntityProfile
+from errors import BusinessError, ErrorCode
 from utils import _d, Q2
 
 logger = logging.getLogger("inventory")
@@ -55,11 +56,11 @@ def calculate_vat(
     input_tax = _d(input_tax)
 
     if profile.vat_type not in ("small_scale", "general"):
-        raise ValueError(f"无效的增值税纳税人类型: {profile.vat_type}")
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"无效的增值税纳税人类型: {profile.vat_type}")
 
     if profile.vat_type == "general":
         if output_tax is None:
-            raise ValueError("一般纳税人必须提供 output_tax（销项税额）")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="一般纳税人必须提供 output_tax（销项税额）")
 
         tax_payable_gross = _d(output_tax).quantize(Q2, rounding=ROUND_HALF_UP)
         tax_rate = (

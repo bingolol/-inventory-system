@@ -74,3 +74,17 @@ def dispatch(cmd: Command, db: Any) -> Any:
 def get_registered_commands() -> Dict[Type[Command], Type[CommandHandler]]:
     """返回注册表浅拷贝（调试用）"""
     return dict(_registry)
+
+
+def dispatch_safe(cmd: Command, db: Any, error_msg: str = "") -> Any:
+    """执行 dispatch 并用 BusinessError 包装 ValueError
+
+    消除 16 个路由中重复的 try/except ValueError 包装器。
+    """
+    try:
+        return dispatch(cmd, db)
+    except ValueError as e:
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=error_msg or str(e),
+        )

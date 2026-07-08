@@ -15,6 +15,8 @@ from finance_integration import get_ledger_id
 from engine_ledger import LedgerEngine
 from engine_receivable import ReceivableEngine
 from account_dep import get_account_id
+from dependencies import Pagination
+from schemas import PaginatedResponse
 from errors import BusinessError, ErrorCode
 
 
@@ -130,8 +132,7 @@ def get_journal_moves(
     date_to: Optional[str] = Query(None, description="截止日期 YYYY-MM-DD"),
     move_type: Optional[str] = Query(None, description="凭证类型: sale_order/purchase_order/receipt/payment/expense"),
     state: Optional[str] = Query(None, description="状态: draft/posted"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    pag: Pagination = Depends(),
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id),
 ):
@@ -154,12 +155,12 @@ def get_journal_moves(
     total = query.count()
     moves = query.order_by(
         AccountMove.date_l1.desc(), AccountMove.id.desc()
-    ).offset(skip).limit(limit).all()
+    ).offset(pag.skip).limit(pag.limit).all()
 
-    return {
-        "total": total,
-        "items": [AccountMoveSummary.model_validate(m) for m in moves],
-    }
+    return PaginatedResponse(
+        total=total,
+        items=[AccountMoveSummary.model_validate(m) for m in moves],
+    )
 
 
 @router.get("/journal/moves/{move_id}")

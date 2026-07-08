@@ -26,7 +26,7 @@ def list_personal_transactions(db: Session, account_id: int, skip: int = 0, limi
     if start_date:
         q = q.filter(models.PersonalTransaction.date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PersonalTransaction.date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.PersonalTransaction.date_l1 <= end_date)
     total = q.count()
     sum_income = q.filter(models.PersonalTransaction.type == "income").with_entities(sqlfunc.sum(models.PersonalTransaction.amount_l1)).scalar()
     sum_income = sum_income if sum_income is not None else 0
@@ -49,7 +49,7 @@ def get_personal_category_summary(db: Session, account_id: int, type: str = None
     if start_date:
         q = q.filter(models.PersonalTransaction.date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PersonalTransaction.date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.PersonalTransaction.date_l1 <= end_date)
     results = q.group_by(models.PersonalTransaction.category).order_by(sqlfunc.sum(models.PersonalTransaction.amount_l1).desc()).all()
     return [{"category": r[0] or "未分类", "total": _d(r[1]).quantize(Q2)} for r in results]
 

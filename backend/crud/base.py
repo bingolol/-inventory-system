@@ -5,22 +5,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 import models
 from errors import BusinessError, ErrorCode
+from utils.sequencer import next_order_no as gen_order_no
+from utils.sequencer import next_advance_no, next_invoice_no
 
 logger = logging.getLogger("inventory")
-
-
-def gen_order_no(db, prefix, business_date=None):
-    """生成订单号：{中文前缀}{年}—{月}-{日}-{时}:{分}-{序号}，如 CG2026—2-17-20:01-01"""
-    prefix_map = {"PO": "CG", "PL": "RG", "SO": "XS", "PS": "XS"}
-    cn_prefix = prefix_map.get(prefix, prefix)
-
-    dt = business_date or datetime.now()
-    date_part = f"{dt.year}—{dt.month}-{dt.day}"
-    time_part = f"{dt.hour:02d}:{dt.minute:02d}"
-    pattern = f"{cn_prefix}{dt.year}—{dt.month}-{dt.day}-{dt.hour:02d}:{dt.minute:02d}-%"
-    model = models.PurchaseOrder if prefix in ("PO", "PL") else models.SaleOrder
-    count = db.query(model).filter(model.order_no.like(pattern)).count()
-    return f"{cn_prefix}{date_part}-{time_part}-{count + 1:02d}"
 
 
 def log_op(db, account_id, operation, entity_type, entity_id, detail="", operator="user"):

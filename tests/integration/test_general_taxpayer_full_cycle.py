@@ -568,19 +568,19 @@ class TestGeneralTaxpayerFullCycle:
         # 应交税费在月结前为 0（销项/进项分别在 222101/222102），月结后才转入 222107
         # 此处不直接断言 tax_payable，避免与 tax-report 口径混淆
 
-        # 净利润 = 未分配利润变动
+        # 月结前：净利 = 当期损益（P&L 科目未结转至 4103 本年利润，留存收益不变）
+        # total_equity = paid_in_capital + retained_earnings + period_profit
+        period_profit_from_bs = (
+            Decimal(str(bs["total_equity"]))
+            - Decimal(str(bs["paid_in_capital"]))
+            - Decimal(str(bs["retained_earnings"]))
+        )
+        assert abs(Decimal(str(pl["net_profit"])) - period_profit_from_bs) <= Decimal("0.01"), \
+            f"净利润({pl['net_profit']}) != 当期损益({period_profit_from_bs})"
+
+        # AS-01：全月凭证借贷平衡
         db = _db()
         try:
-            opening_re = Decimal("0")
-            ob = db.query(OpeningBalance).filter(OpeningBalance.account_id == ACCT_ID).first()
-            if ob:
-                opening_re = Decimal(str(ob.retained_earnings_l1 or 0))
-            ending_re = Decimal(str(bs["retained_earnings"]))
-            delta_re = ending_re - opening_re
-            assert abs(Decimal(str(pl["net_profit"])) - delta_re) <= Decimal("0.01"), \
-                f"净利润({pl['net_profit']}) ≠ 未分配利润变动({delta_re})"
-
-            # AS-01：全月凭证借贷平衡
             enforce_rules(db, ["AS-01"], {"account_id": ACCT_ID})
         finally:
             db.close()

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
+from schemas import PaginatedResponse, ProductOut
 import schemas, crud
 from commands import dispatch, CreateProduct, UpdateProduct, DeleteProduct, AdjustInventory
 from uow import unit_of_work
@@ -12,9 +14,8 @@ router = APIRouter()
 
 
 @router.get("")
-def list_products(page: int = 1, page_size: int = 20, search: str = None, sku: str = None, category: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    skip = (page - 1) * page_size
-    total, items = crud.list_products(db, account_id, skip=skip, limit=page_size, search=search, sku=sku, category=category)
+def list_products(pag: Pagination = Depends(), search: str = None, sku: str = None, category: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+    total, items = crud.list_products(db, account_id, skip=pag.skip, limit=pag.limit, search=search, sku=sku, category=category)
     result = []
     for p in items:
         inv = p.inventory
@@ -25,7 +26,7 @@ def list_products(page: int = 1, page_size: int = 20, search: str = None, sku: s
             created_at=p.created_at, updated_at=p.updated_at,
             current_stock=inv.quantity_l4 if inv else 0
         ))
-    return {"total": total, "items": result}
+    return PaginatedResponse(total=total, items=result)
 
 
 @router.post("")
@@ -82,8 +83,6 @@ def list_categories(account_id: int = Depends(get_account_id), db: Session = Dep
 @router.get("/{product_id}", response_model=schemas.ProductOut)
 def get_product(product_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     p = crud.get_product(db, account_id, product_id)
-    if not p:
-        raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})
     inv = p.inventory
     return schemas.ProductOut(
         id=p.id, name=p.name, sku=p.sku, category=p.category,

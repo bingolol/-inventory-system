@@ -45,7 +45,7 @@ def _startup():
     # 启动时强制跑，ERROR/测试失败 → sys.exit(1) 拒绝启动
     _run_truth_source_hard_constraints()
     # ── 清理过期 confirm token ──
-    from confirm_middleware import confirm_store
+    from middleware.confirm_middleware import confirm_store
     confirm_store.cleanup_expired()
     # ── EventBus 初始化 ──
     from middleware import register_middleware
@@ -96,7 +96,7 @@ app.add_middleware(
 #   1. AIGatewayMiddleware：白名单校验入口合法性
 #   2. WritePermissionMiddleware：给已放行的写请求设 SecureSession 令牌
 #   3. ConfirmMiddleware：对危险写操作做二次确认
-from confirm_middleware import ConfirmMiddleware
+from middleware.confirm_middleware import ConfirmMiddleware
 from middleware.write_permission import WritePermissionMiddleware
 from middleware.readonly_middleware import ReadonlyMiddleware
 from ai_gateway import AIGatewayMiddleware

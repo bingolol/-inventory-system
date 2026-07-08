@@ -122,6 +122,84 @@ def _to_datetime(d, end_of_day=False):
 
 
 # ──────────────────────────────────────────────────────────────
+# 辅助: dry_run / 跨期警告 / 已月结校验 (批次 1 共享)
+# ──────────────────────────────────────────────────────────────
+def _check_business_date(biz_date, tool_name: str) -> tuple[bool, list]:
+    """检查业务日期是否跨期或所在月份已月结。
+
+    返回: (is_period_closed, warnings)
+        is_period_closed: True 表示该月份已月结, 写操作应被拒绝
+        warnings: 跨期警告列表 (该月份未月结但早于当前月份)
+    """
+    if not biz_date:
+        return False, []
+    if isinstance(biz_date, str):
+        biz_date = _parse_date(biz_date)
+    if not biz_date:
+        return False, []
+
+    today = date.today()
+    warnings = []
+
+    # 跨期: 业务日期早于当前月份的 1 号
+    if biz_date < today.replace(day=1):
+        warnings.append(
+            f"业务日期 {biz_date.isoformat()} 属于已过去月份, "
+            f"如该月已月结, 补录会让报表和申报数据不一致。建议走调整凭证。"
+        )
+
+    # 查该月份是否已月结 (PeriodClose 是否已执行)
+    is_closed = False
+    def _check_closed(db, aid):
+        from models_finance import AccountMove
+        from sqlalchemy import extract
+        # 月份已月结的标志: 该月有 source_model='period_close' 的已过账凭证
+        cnt = db.query(AccountMove).filter(
+            AccountMove.source_model == "period_close",
+            AccountMove.state == "posted",
+            extract("year", AccountMove.date_l1) == biz_date.year,
+            extract("month", AccountMove.date_l1) == biz_date.month,
+        ).count()
+        return cnt > 0
+
+    try:
+        is_closed = tool_dispatcher.run_readonly(_check_closed)
+    except Exception:
+        # 查询失败不阻塞, 只记 warning
+        warnings.append("无法确认该月份是否已月结, 请用户手动核实。")
+
+    if is_closed:
+        warnings.append(
+            f"{biz_date.strftime('%Y-%m')} 已月结 (损益已结转), "
+            f"补录会让该月报表失真。如确需补录, 请走调整凭证或反月结流程。"
+        )
+
+    return is_closed, warnings
+
+
+def _make_dry_run_result(operation: str, amount_with_tax=None, tax_amount=None,
+                         amount_without_tax=None, extra: dict = None,
+                         accounting_hint: str = "") -> dict:
+    """构造 dry_run 预演结果 (不写库)。"""
+    out = {
+        "ok": True,
+        "dry_run": True,
+        "operation": operation,
+        "message": "dry_run=True, 未实际写库。确认无误后重调本 tool 并传 dry_run=False。",
+        "accounting_hint": accounting_hint,
+    }
+    if amount_with_tax is not None:
+        out["amount_with_tax"] = float(amount_with_tax)
+    if tax_amount is not None:
+        out["tax_amount"] = float(tax_amount)
+    if amount_without_tax is not None:
+        out["amount_without_tax"] = float(amount_without_tax)
+    if extra:
+        out.update(extra)
+    return out
+
+
+# ──────────────────────────────────────────────────────────────
 # 辅助: 安全序列化
 # ──────────────────────────────────────────────────────────────
 def _safe_serialize(obj: Any, _depth: int = 0) -> Any:
@@ -250,12 +328,14 @@ def setup_basic_data(arguments: dict) -> dict:
 
 
 def list_products(arguments: dict) -> dict:
-    """列出当前账本所有商品。"""
+    """列出当前账本所有商品, 支持名称模糊搜索。"""
+    name_like = arguments.get("name_like")
     def _query(db, aid):
         import models
-        items = db.query(models.Product).filter(
-            models.Product.account_id == aid
-        ).order_by(models.Product.id.asc()).all()
+        q = db.query(models.Product).filter(models.Product.account_id == aid)
+        if name_like:
+            q = q.filter(models.Product.name.ilike(f"%{name_like}%"))
+        items = q.order_by(models.Product.id.asc()).all()
         return [{
             "id": p.id, "name": p.name, "sku": p.sku,
             "category": p.category, "unit": p.unit,
@@ -266,23 +346,27 @@ def list_products(arguments: dict) -> dict:
 
 
 def list_customers(arguments: dict) -> dict:
-    """列出当前账本所有客户。"""
+    """列出当前账本所有客户, 支持名称模糊搜索。"""
+    name_like = arguments.get("name_like")
     def _query(db, aid):
         import models
-        items = db.query(models.Customer).filter(
-            models.Customer.account_id == aid
-        ).order_by(models.Customer.id.asc()).all()
+        q = db.query(models.Customer).filter(models.Customer.account_id == aid)
+        if name_like:
+            q = q.filter(models.Customer.name.ilike(f"%{name_like}%"))
+        items = q.order_by(models.Customer.id.asc()).all()
         return [{"id": c.id, "name": c.name} for c in items]
     return {"ok": True, "customers": tool_dispatcher.run_readonly(_query)}
 
 
 def list_suppliers(arguments: dict) -> dict:
-    """列出当前账本所有供应商。"""
+    """列出当前账本所有供应商, 支持名称模糊搜索。"""
+    name_like = arguments.get("name_like")
     def _query(db, aid):
         import models
-        items = db.query(models.Supplier).filter(
-            models.Supplier.account_id == aid
-        ).order_by(models.Supplier.id.asc()).all()
+        q = db.query(models.Supplier).filter(models.Supplier.account_id == aid)
+        if name_like:
+            q = q.filter(models.Supplier.name.ilike(f"%{name_like}%"))
+        items = q.order_by(models.Supplier.id.asc()).all()
         return [{"id": s.id, "name": s.name} for s in items]
     return {"ok": True, "suppliers": tool_dispatcher.run_readonly(_query)}
 
@@ -330,6 +414,7 @@ def create_sale_order_with_invoice(arguments: dict) -> dict:
         raise BusinessError(code=None, message="items 不能为空")
 
     sale_date = _parse_date(sale_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
 
     # 价税分离 (与 sim 一致)
     amount_with_tax = sum(
@@ -338,6 +423,37 @@ def create_sale_order_with_invoice(arguments: dict) -> dict:
     ).quantize(Q2, rounding=ROUND_HALF_UP)
     tax_rate = Decimal(str(items[0]["tax_rate"]))
     amount_without_tax, tax_amount = _split_amounts(amount_with_tax, tax_rate)
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(sale_date, "create_sale_order_with_invoice")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"业务日期 {sale_date.isoformat()} 所在月份已月结, 禁止直接补录。请走调整凭证或反月结流程。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录, 需要走调整凭证。"},
+        )
+
+    # dry_run: 只返回金额预演, 不写库
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_sale_order_with_invoice",
+            amount_with_tax=amount_with_tax,
+            amount_without_tax=amount_without_tax,
+            tax_amount=tax_amount,
+            extra={
+                "customer_name": customer_name,
+                "sale_date": sale_date.isoformat(),
+                "items_count": len(items),
+                "tax_rate": float(tax_rate),
+                "invoice_type": arguments.get("invoice_type", "ordinary"),
+                "warnings": date_warnings,
+            },
+            accounting_hint=(
+                "会计影响: 借:应收账款 贷:主营业务收入+应交税费-销项税额。"
+                "实物商品 (track_inventory=True) 还会: 借:主营业务成本 贷:库存商品 (按 unit_cost 加权平均)。"
+                "服务类商品 (track_inventory=False) 不结转成本。"
+            ),
+        )
 
     # 发票号唯一 (与 sim 一致)
     invoice_no = f"INV-OUT-{sale_date.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
@@ -377,12 +493,14 @@ def create_sale_order_with_invoice(arguments: dict) -> dict:
         "invoice_id": invoice_id,
         "sale_order_id": sale_order_id,
         "amount_with_tax": float(amount_with_tax),
+        "amount_without_tax": float(amount_without_tax),
         "tax_amount": float(tax_amount),
+        "warnings": date_warnings,
         "accounting_hint": (
             "发票驱动: 先开发票自动生成销售单。"
-            "会计影响: 借:应收账款 贷:主营业务收入+应交税费-销项税额; "
-            "同时借:主营业务成本 贷:库存商品 (实物商品, 按 unit_cost 加权平均)。"
-            "铁律: COGS 必须用 SaleItem.unit_cost (锁定成本), 禁止用 Product.purchase_price。"
+            "会计影响: 借:应收账款 贷:主营业务收入+应交税费-销项税额。"
+            "实物商品还会: 借:主营业务成本 贷:库存商品 (按 unit_cost 加权平均); "
+            "服务类商品不结转成本。"
         ),
     }
 
@@ -418,6 +536,7 @@ def create_purchase_order_with_invoice(arguments: dict) -> dict:
         raise BusinessError(code=None, message="items 不能为空")
 
     purchase_date = _parse_date(purchase_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
 
     amount_with_tax = sum(
         Decimal(str(it["quantity"])) * Decimal(str(it["unit_price"]))
@@ -425,6 +544,34 @@ def create_purchase_order_with_invoice(arguments: dict) -> dict:
     ).quantize(Q2, rounding=ROUND_HALF_UP)
     tax_rate = Decimal(str(items[0]["tax_rate"]))
     amount_without_tax, tax_amount = _split_amounts(amount_with_tax, tax_rate)
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(purchase_date, "create_purchase_order_with_invoice")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"业务日期 {purchase_date.isoformat()} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录, 需要走调整凭证。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_purchase_order_with_invoice",
+            amount_with_tax=amount_with_tax,
+            amount_without_tax=amount_without_tax,
+            tax_amount=tax_amount,
+            extra={
+                "supplier_name": supplier_name,
+                "purchase_date": purchase_date.isoformat(),
+                "items_count": len(items),
+                "tax_rate": float(tax_rate),
+                "warnings": date_warnings,
+            },
+            accounting_hint=(
+                "会计影响: 借:库存商品 借:应交税费-进项税额 贷:应付账款。"
+                "小规模纳税人进项税不可抵扣, 含税全额入库存成本。"
+            ),
+        )
 
     invoice_no = f"INV-IN-{purchase_date.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
 
@@ -463,7 +610,9 @@ def create_purchase_order_with_invoice(arguments: dict) -> dict:
         "invoice_id": invoice_id,
         "purchase_order_id": purchase_order_id,
         "amount_with_tax": float(amount_with_tax),
+        "amount_without_tax": float(amount_without_tax),
         "tax_amount": float(tax_amount),
+        "warnings": date_warnings,
         "accounting_hint": (
             "发票驱动: 先开发票自动生成采购单。"
             "会计影响: 借:库存商品 借:应交税费-进项税额 贷:应付账款。"
@@ -504,12 +653,36 @@ def create_receipt(arguments: dict) -> dict:
         raise BusinessError(code=None, message="payment_date 必填 (YYYY-MM-DD)")
 
     payment_date = _to_datetime(payment_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
+    amt = Decimal(str(amount))
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(payment_date_str, "create_receipt")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"收款日期 {payment_date_str} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_receipt",
+            amount_with_tax=amt,
+            extra={
+                "sale_order_id": sale_order_id,
+                "payment_date": payment_date_str,
+                "bank_account_id": arguments.get("bank_account_id"),
+                "warnings": date_warnings,
+            },
+            accounting_hint="客户收款: 借:1002 银行存款 贷:1122 应收账款。",
+        )
 
     data = ReceiptCreate(
         receipt_type="sale",
         related_entity_type="sale_order",
         related_entity_id=sale_order_id,
-        amount=Decimal(str(amount)),
+        amount=amt,
         receipt_method="company",
         receipt_date=payment_date,
         bank_account_id=arguments.get("bank_account_id"),
@@ -521,7 +694,118 @@ def create_receipt(arguments: dict) -> dict:
         "ok": True,
         "operation": "create_receipt",
         "result": _safe_serialize(result),
+        "amount": float(amt),
+        "warnings": date_warnings,
         "accounting_hint": "客户收款: 借:1002 银行存款 贷:1122 应收账款。",
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# 9b. 付款: create_payment (付给供应商/发工资/缴税)
+# ══════════════════════════════════════════════════════════════
+def create_payment(arguments: dict) -> dict:
+    """付款给供应商 / 发工资 / 缴税 (银行流出)。
+
+    对应 commands.cash_commands.CreatePayment。
+    会计影响: 借:2202 应付账款(采购/费用) / 2211 应付职工薪酬(工资) / 2221 应交税费(缴税)
+              贷:1002 银行存款。
+    发工资时 withholding_tax_amount 为代扣个税, 实发=amount, 应发=amount+withholding_tax_amount。
+
+    参数:
+        payment_type: str  付款类型 (expense/purchase/salary/tax)
+        related_entity_type: str  关联实体类型 (expense/purchase_order/tax_payable)
+        related_entity_id: int  关联实体 ID
+        amount: float  付款金额 (实发, >0)
+        payment_date: str  付款日期 (YYYY-MM-DD)
+        bank_account_id: int  银行账户 ID (可选, 默认取首个)
+        withholding_tax_amount: float  代扣个税 (仅 salary, 默认 0)
+        description: str  描述
+        dry_run: bool  仅预演, 不写库
+    """
+    from commands.cash_commands import CreatePayment
+    from schemas.payment import PaymentCreate
+
+    payment_type = arguments.get("payment_type")
+    related_entity_type = arguments.get("related_entity_type")
+    related_entity_id = arguments.get("related_entity_id")
+    amount = arguments.get("amount")
+    payment_date_str = arguments.get("payment_date")
+
+    if not payment_type or payment_type not in ("expense", "purchase", "salary", "tax"):
+        raise BusinessError(code=None, message="payment_type 必填且必须是 expense/purchase/salary/tax")
+    if not related_entity_type:
+        raise BusinessError(code=None, message="related_entity_type 必填 (expense/purchase_order/tax_payable)")
+    if not related_entity_id:
+        raise BusinessError(code=None, message="related_entity_id 必填")
+    if amount is None or amount <= 0:
+        raise BusinessError(code=None, message="amount 必填且必须 > 0")
+    if not payment_date_str:
+        raise BusinessError(code=None, message="payment_date 必填 (YYYY-MM-DD)")
+
+    payment_date = _to_datetime(payment_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
+    amt = Decimal(str(amount))
+    withholding = Decimal(str(arguments.get("withholding_tax_amount", 0) or 0))
+
+    # salary 才能用 withholding_tax_amount
+    if withholding > 0 and payment_type != "salary":
+        raise BusinessError(
+            code=None,
+            message=f"withholding_tax_amount 仅 payment_type=salary 可用, 当前 payment_type={payment_type}",
+        )
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(payment_date_str, "create_payment")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"付款日期 {payment_date_str} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录。"},
+        )
+
+    # 会计科目映射 (借方)
+    debit_code_map = {"expense": "2202", "purchase": "2202", "salary": "2211", "tax": "2221"}
+    debit_code = debit_code_map.get(payment_type, "2202")
+    hint = f"付款: 借:{debit_code} 贷:1002 银行存款。"
+    if payment_type == "salary" and withholding > 0:
+        hint += f" 代扣个税 {float(withholding)} (应发={float(amt)+float(withholding)}, 实发={float(amt)})。"
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_payment",
+            amount_with_tax=amt,
+            extra={
+                "payment_type": payment_type,
+                "related_entity_type": related_entity_type,
+                "related_entity_id": related_entity_id,
+                "payment_date": payment_date_str,
+                "bank_account_id": arguments.get("bank_account_id"),
+                "withholding_tax_amount": float(withholding),
+                "warnings": date_warnings,
+            },
+            accounting_hint=hint,
+        )
+
+    data = PaymentCreate(
+        payment_type=payment_type,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        amount=amt,
+        withholding_tax_amount=withholding,
+        payment_method="company",
+        payment_date=payment_date,
+        bank_account_id=arguments.get("bank_account_id"),
+        description=arguments.get("description", ""),
+    )
+
+    result = tool_dispatcher.execute_command(CreatePayment, data=data)
+    return {
+        "ok": True,
+        "operation": "create_payment",
+        "result": _safe_serialize(result),
+        "amount": float(amt),
+        "warnings": date_warnings,
+        "accounting_hint": hint,
     }
 
 
@@ -558,11 +842,39 @@ def create_expense(arguments: dict) -> dict:
         raise BusinessError(code=None, message="expense_date 必填 (YYYY-MM-DD)")
 
     expense_date = _to_datetime(expense_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
+    amt = Decimal(str(amount))
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(expense_date_str, "create_expense")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"费用日期 {expense_date_str} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_expense",
+            amount_with_tax=amt,
+            extra={
+                "category": category,
+                "expense_date": expense_date_str,
+                "functional_category": arguments.get("functional_category", "管理费用"),
+                "payment_method": arguments.get("payment_method", "company"),
+                "warnings": date_warnings,
+            },
+            accounting_hint=(
+                "费用入账: 借:6601 管理费用 (或 6602 销售/6603 财务) "
+                "贷:2202 应付账款 (公司采购) / 2241 其他应付款 (个人垫付)。"
+            ),
+        )
 
     expense = ExpenseCreate(
         category=category,
         functional_category=arguments.get("functional_category", "管理费用"),
-        amount=Decimal(str(amount)),
+        amount=amt,
         expense_date=expense_date,
         payment_method=arguments.get("payment_method", "company"),
         description=arguments.get("description", ""),
@@ -573,6 +885,8 @@ def create_expense(arguments: dict) -> dict:
         "ok": True,
         "operation": "create_expense",
         "result": _safe_serialize(result),
+        "amount": float(amt),
+        "warnings": date_warnings,
         "accounting_hint": (
             "费用入账: 借:6601 管理费用 (或 6602 销售/6603 财务) "
             "贷:2202 应付账款 (公司采购) / 2241 其他应付款 (个人垫付 private_advance)。"
@@ -613,6 +927,36 @@ def create_bank_entry(arguments: dict) -> dict:
     if not transaction_date_str:
         raise BusinessError(code=None, message="transaction_date 必填 (YYYY-MM-DD)")
 
+    dry_run = bool(arguments.get("dry_run", False))
+    amt = Decimal(str(amount))
+
+    # 跨期 / 已月结校验
+    is_closed, date_warnings = _check_business_date(transaction_date_str, "create_bank_entry")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"交易日期 {transaction_date_str} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录。"},
+        )
+
+    hint = (
+        "银行扣款: 借:6603 财务费用 贷:1002 银行存款。"
+        if entry_type == "bank_fee"
+        else "利息收入: 借:1002 银行存款 贷:6603 财务费用 (冲减财务费用, 不进 6301 营业外收入)。"
+    )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_bank_entry",
+            amount_with_tax=amt,
+            extra={
+                "entry_type": entry_type,
+                "transaction_date": transaction_date_str,
+                "warnings": date_warnings,
+            },
+            accounting_hint=hint,
+        )
+
     result = tool_dispatcher.execute_command(
         CreateBankEntry,
         entry_type=entry_type,
@@ -621,15 +965,12 @@ def create_bank_entry(arguments: dict) -> dict:
         description=arguments.get("description", ""),
         bank_account_id=arguments.get("bank_account_id"),
     )
-    hint = (
-        "银行扣款: 借:6603 财务费用 贷:1002 银行存款。"
-        if entry_type == "bank_fee"
-        else "利息收入: 借:1002 银行存款 贷:6603 财务费用 (冲减财务费用, 不进 6301 营业外收入)。"
-    )
     return {
         "ok": True,
         "operation": "create_bank_entry",
         "result": _safe_serialize(result),
+        "amount": float(amt),
+        "warnings": date_warnings,
         "accounting_hint": hint,
     }
 
@@ -669,14 +1010,43 @@ def create_fixed_asset(arguments: dict) -> dict:
 
     purchase_date = _parse_date(purchase_date_str)
     asset_code = f"FA-{purchase_date.strftime('%Y%m%d')}-{name[:6]}"
+    dry_run = bool(arguments.get("dry_run", False))
+    cost_dec = Decimal(str(cost))
+    salvage_rate = Decimal(str(arguments.get("salvage_rate", 0.05)))
+    useful_life = arguments.get("useful_life", 60)
+
+    # 跨期 / 已月结校验 (固定资产采购日期影响应付账款, 不直接结转损益, 但仍需警告)
+    is_closed, date_warnings = _check_business_date(purchase_date_str, "create_fixed_asset")
+
+    monthly_depr = ((cost_dec * (Decimal("1") - salvage_rate)) / Decimal(str(useful_life))).quantize(Q2, rounding=ROUND_HALF_UP)
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_fixed_asset",
+            amount_with_tax=cost_dec,
+            extra={
+                "name": name,
+                "purchase_date": purchase_date_str,
+                "asset_code": asset_code,
+                "category": arguments.get("category", "电子设备"),
+                "salvage_rate": float(salvage_rate),
+                "useful_life": useful_life,
+                "monthly_depreciation": float(monthly_depr),
+                "warnings": date_warnings,
+            },
+            accounting_hint=(
+                "固定资产入账: 借:1601 固定资产 贷:2202 应付账款 / 2241 其他应付款。"
+                f"次月起按月计提折旧: 借:6601/6602 贷:1602 累计折旧 (每月 {float(monthly_depr):.2f} 元)。"
+            ),
+        )
 
     data = FixedAssetCreate(
         asset_code=asset_code,
         name=name,
         category=arguments.get("category", "电子设备"),
-        original_value=Decimal(str(cost)),
-        salvage_rate=Decimal(str(arguments.get("salvage_rate", 0.05))),
-        useful_life=arguments.get("useful_life", 60),
+        original_value=cost_dec,
+        salvage_rate=salvage_rate,
+        useful_life=useful_life,
         depreciation_method="年限平均法",
         start_date=purchase_date_str,
         status="在用",
@@ -694,10 +1064,13 @@ def create_fixed_asset(arguments: dict) -> dict:
             "ok": True,
             "operation": "create_fixed_asset",
             "result": _safe_serialize(asset),
+            "amount": float(cost_dec),
+            "monthly_depreciation": float(monthly_depr),
+            "warnings": date_warnings,
             "accounting_hint": (
                 "固定资产入账: 借:1601 固定资产 贷:2202 应付账款 (公司采购) / "
                 "2241 其他应付款 (个人垫付 private_advance)。"
-                "次月起按月计提折旧: 借:6601/6602 管理费用/销售费用 贷:1602 累计折旧。"
+                f"次月起按月计提折旧: 借:6601/6602 管理费用/销售费用 贷:1602 累计折旧 (每月 {float(monthly_depr):.2f} 元)。"
             ),
         }
     except Exception:
@@ -717,12 +1090,76 @@ def batch_depreciate(arguments: dict) -> dict:
 
     参数:
         period: str  目标月份 (YYYY-MM)
+        dry_run: bool  仅预演 (返回哪些资产会折旧+每月折旧金额), 不写库
     """
     from commands.fixed_asset_commands import BatchDepreciateFixedAssets
 
     period = arguments.get("period")
     if not period:
         raise BusinessError(code=None, message="period 必填 (YYYY-MM)")
+    # 校验 period 格式 (YYYY-MM)
+    _validate_period_by_taxpayer(period, tool_name="month_end_close")
+    dry_run = bool(arguments.get("dry_run", False))
+
+    # 检查目标月份是否已月结 (复用 month_end_close 的逻辑)
+    def _check_closed(db, aid):
+        from models_finance import AccountMove
+        from sqlalchemy import extract
+        year_part, month_part = period.split("-")
+        cnt = db.query(AccountMove).filter(
+            AccountMove.source_model == "period_close",
+            AccountMove.state == "posted",
+            extract("year", AccountMove.date_l1) == int(year_part),
+            extract("month", AccountMove.date_l1) == int(month_part),
+        ).count()
+        return cnt > 0
+
+    already_closed = False
+    try:
+        already_closed = tool_dispatcher.run_readonly(_check_closed)
+    except Exception:
+        pass
+
+    if already_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"{period} 已月结, 重复折旧会让报表错乱。",
+            data={"user_message": f"{period} 已经月结过了, 不能重复折旧。"},
+        )
+
+    # dry_run: 预览哪些资产会折旧 + 每月折旧金额
+    if dry_run:
+        def _preview(db, aid):
+            import models
+            from decimal import Decimal, ROUND_HALF_UP
+            assets = db.query(models.FixedAsset).filter(
+                models.FixedAsset.account_id == aid,
+                models.FixedAsset.status == "在用",
+            ).all()
+            preview = []
+            total = Decimal("0")
+            for a in assets:
+                monthly = (Decimal(str(a.original_value_l1)) * (Decimal("1") - Decimal(str(a.salvage_rate_l3)))
+                           / Decimal(str(a.useful_life_l3))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                preview.append({
+                    "id": a.id, "name": a.name,
+                    "original_value": float(a.original_value_l1),
+                    "monthly_depreciation": float(monthly),
+                })
+                total += monthly
+            return {"assets": preview, "total": float(total), "count": len(preview)}
+
+        preview_data = tool_dispatcher.run_readonly(_preview)
+        return _make_dry_run_result(
+            operation="batch_depreciate",
+            extra={
+                "period": period,
+                "already_closed": already_closed,
+                "preview": preview_data,
+                "warnings": ([f"{period} 已月结, 实际折旧会被拒绝。"] if already_closed else []),
+            },
+            accounting_hint=f"月度折旧计提: {preview_data['count']} 个资产, 合计 {preview_data['total']:.2f}。",
+        )
 
     result = tool_dispatcher.execute_command(BatchDepreciateFixedAssets, period=period)
     return {
@@ -758,6 +1195,48 @@ def declare_vat(arguments: dict) -> dict:
     taxpayer_type = _validate_period_by_taxpayer(period, tool_name="declare_vat")
     if arguments.get("taxpayer_type"):
         taxpayer_type = arguments["taxpayer_type"]
+    dry_run = bool(arguments.get("dry_run", False))
+
+    # 重复申报校验: 同一 period 不能重复申报 VAT
+    def _check_existing_vat(db, aid):
+        from models_finance import VATDeclaration
+        existing = db.query(VATDeclaration).filter(
+            VATDeclaration.account_id == aid,
+            VATDeclaration.period == period,
+        ).first()
+        if existing:
+            return {
+                "id": existing.id,
+                "total_revenue": float(existing.total_revenue or 0),
+                "vat_payable": float(existing.vat_payable or 0),
+            }
+        return None
+
+    existing_vat = tool_dispatcher.run_readonly(_check_existing_vat)
+    if existing_vat and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"period={period} 已存在 VAT 申报记录 (id={existing_vat['id']}, "
+                    f"应纳增值税={existing_vat['vat_payable']:.2f})。禁止重复申报。"
+                    f"如需重新申报, 请先 reverse 旧申报。",
+            data={
+                "existing_declaration": existing_vat,
+                "user_message": f"{period} 已经申报过增值税了, 不能重复申报。要先撤销旧申报才能重新申报。",
+            },
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="declare_vat",
+            extra={
+                "period": period,
+                "taxpayer_type": taxpayer_type,
+                "existing_declaration": existing_vat,
+                "warnings": ([f"{period} 已存在 VAT 申报 (id={existing_vat['id']}), 实际申报会被拒绝。"]
+                             if existing_vat else []),
+            },
+            accounting_hint="VAT 申报会生成应交税费凭证, 不可重复申报。",
+        )
 
     result = tool_dispatcher.execute_command(
         DeclareVAT,
@@ -808,11 +1287,116 @@ def declare_surcharge(arguments: dict) -> dict:
     urban = arguments.get("urban_construction_tax")
     edu = arguments.get("education_surcharge")
     local_edu = arguments.get("local_education_surcharge")
-    if urban is None or edu is None or local_edu is None:
+    dry_run = bool(arguments.get("dry_run", False))
+
+    # 重复申报校验: 同一 period 不能重复申报附加税
+    def _check_existing_surcharge(db, aid):
+        from models_finance import SurchargeDeclaration
+        existing = db.query(SurchargeDeclaration).filter(
+            SurchargeDeclaration.account_id == aid,
+            SurchargeDeclaration.period == period,
+        ).first()
+        if existing:
+            return {
+                "id": existing.id,
+                "urban": float(existing.urban_construction_tax or 0),
+                "edu": float(existing.education_surcharge or 0),
+                "local_edu": float(existing.local_education_surcharge or 0),
+            }
+        return None
+
+    existing_sg = tool_dispatcher.run_readonly(_check_existing_surcharge)
+    if existing_sg and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"period={period} 已存在附加税申报记录 (id={existing_sg['id']})。禁止重复申报。"
+                    f"如需重新申报, 请先 reverse 旧申报。",
+            data={
+                "existing_declaration": existing_sg,
+                "user_message": f"{period} 已经申报过附加税了, 不能重复申报。要先撤销旧申报才能重新申报。",
+            },
+        )
+
+    # 算 suggested_amounts 供用户参考 (不强制使用, 最终以用户输入为准)
+    def _calc_suggested(db, aid):
+        from models_finance import VATDeclaration
+        from policy.vat_facts import load_vat_facts
+        import models
+        acc = db.query(models.Account).filter(models.Account.id == aid).first()
+        surcharge_halved = bool(acc.surcharge_halved) if acc else False
+        # 查当期 VAT 申报的 vat_payable
+        vat = db.query(VATDeclaration).filter(
+            VATDeclaration.account_id == aid,
+            VATDeclaration.period == period,
+        ).first()
+        if not vat:
+            return None
+        vat_payable = Decimal(str(vat.vat_payable or 0))
+        if vat_payable <= 0:
+            return {"urban": 0, "edu": 0, "local_edu": 0, "vat_payable": float(vat_payable),
+                    "note": "VAT 应纳为 0 或负数 (留抵), 无附加税可计提。"}
+        facts = load_vat_facts(date.today())
+        urban_rate = Decimal("0.07") * (Decimal("0.5") if surcharge_halved else Decimal("1"))
+        # 教育附加/地方教育附加: 小规模季度销售额 ≤30 万免征; 一般纳税人不享受
+        taxpayer_type = acc.taxpayer_type_l3 if acc else "small_scale"
+        # 查季度合计销售额判断是否免征
+        if "Q" in period:
+            q_periods = [period]
+        else:
+            year_str, m_str = period.split("-")
+            month = int(m_str)
+            q_num = (month - 1) // 3 + 1
+            q_periods = [f"{year_str}-Q{q_num}"] if taxpayer_type == "small_scale" else [period]
+        q_vats = db.query(VATDeclaration).filter(
+            VATDeclaration.account_id == aid,
+            VATDeclaration.period.in_(q_periods),
+        ).all()
+        quarterly_revenue = sum((Decimal(str(v.total_revenue or 0)) for v in q_vats), Decimal("0"))
+        exempt_threshold = Decimal(str(facts.small_scale_quarterly_exemption))
+        edu_exempt = (taxpayer_type == "small_scale" and quarterly_revenue <= exempt_threshold)
+        edu_rate = Decimal("0") if edu_exempt else Decimal("0.03")
+        local_edu_rate = Decimal("0") if edu_exempt else Decimal("0.02")
+        return {
+            "urban": float((vat_payable * urban_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "edu": float((vat_payable * edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "local_edu": float((vat_payable * local_edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "vat_payable": float(vat_payable),
+            "quarterly_revenue": float(quarterly_revenue),
+            "edu_exempt": edu_exempt,
+            "surcharge_halved": surcharge_halved,
+            "note": "公式参考值, 实际金额以税务局申报表为准。"
+        }
+
+    try:
+        suggested = tool_dispatcher.run_readonly(_calc_suggested)
+    except Exception:
+        suggested = None
+
+    # 金额校验 (实际申报时三个金额必须齐全)
+    if not dry_run and (urban is None or edu is None or local_edu is None):
         raise BusinessError(
             code=None,
             message="附加税是 L1 用户输入: urban_construction_tax / education_surcharge / "
-                    "local_education_surcharge 三个金额必须由用户提供 (从税务局申报表抄录)",
+                    "local_education_surcharge 三个金额必须由用户提供 (从税务局申报表抄录)。"
+                    f"参考值 (公式计算, 非强制): {suggested}",
+            data={"suggested_amounts": suggested},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="declare_surcharge",
+            extra={
+                "period": period,
+                "user_input": {"urban": urban, "edu": edu, "local_edu": local_edu},
+                "suggested_amounts": suggested,
+                "existing_declaration": existing_sg,
+                "warnings": ([f"{period} 已存在附加税申报 (id={existing_sg['id']}), 实际申报会被拒绝。"]
+                             if existing_sg else []),
+            },
+            accounting_hint=(
+                "附加税申报 (L1 用户输入): 借:6403 税金及附加 贷:222101/222102/222110。"
+                "建议把 suggested_amounts 给用户参考, 最终金额以用户从税务局申报表抄录的为准。"
+            ),
         )
 
     result = tool_dispatcher.execute_command(
@@ -828,6 +1412,7 @@ def declare_surcharge(arguments: dict) -> dict:
         "operation": "declare_surcharge",
         "period": period,
         "result": _safe_serialize(result),
+        "suggested_amounts": suggested,
         "accounting_hint": (
             "附加税申报 (L1 用户输入): 借:6403 税金及附加 贷:222101/222102/222110。"
             "金额来自用户从税务局申报表抄录的实际申报值, 不是系统派生。"
@@ -855,6 +1440,61 @@ def month_end_close(arguments: dict) -> dict:
     period = arguments.get("period")
     # 校验 period 格式 (月结总是 YYYY-MM)
     _validate_period_by_taxpayer(period, tool_name="month_end_close")
+    dry_run = bool(arguments.get("dry_run", False))
+    # require_confirm: 月结是不可逆写操作, 默认要求用户确认 (传 require_confirm=False 可跳过)
+    require_confirm = arguments.get("require_confirm", True)
+
+    # 检查目标月份是否已月结
+    def _check_closed(db, aid):
+        from models_finance import AccountMove
+        from sqlalchemy import extract
+        year_part, month_part = period.split("-")
+        cnt = db.query(AccountMove).filter(
+            AccountMove.source_model == "period_close",
+            AccountMove.state == "posted",
+            extract("year", AccountMove.date_l1) == int(year_part),
+            extract("month", AccountMove.date_l1) == int(month_part),
+        ).count()
+        return cnt > 0
+
+    already_closed = False
+    try:
+        already_closed = tool_dispatcher.run_readonly(_check_closed)
+    except Exception:
+        pass
+
+    if already_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"{period} 已月结, 重复月结会重复结转损益导致报表错乱。",
+            data={"user_message": f"{period} 已经月结过了, 不能重复月结。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="month_end_close",
+            extra={
+                "period": period,
+                "already_closed": already_closed,
+                "warnings": ([f"{period} 已月结, 实际月结会被拒绝。"] if already_closed
+                             else ["月结会执行 5 步, 生成凭证不可逆。执行前请确认用户已授权。"]),
+            },
+            accounting_hint=(
+                "月结 5 步: (1) 折旧/摊销 (2) 增值税+附加税+所得税计提 "
+                "(3) 损益结转 4103 (4) 12月年结 4103→4104 (5) 税务核对 8 项。"
+            ),
+        )
+
+    if require_confirm:
+        raise BusinessError(
+            code=None,
+            message=f"月结 {period} 是不可逆写操作, 会生成凭证并结转损益。"
+                    f"请用户明确确认后, 重传 require_confirm=False 执行。",
+            data={
+                "user_message": f"月结 {period} 不可撤销, 确认要执行吗? 用户确认后请重传 require_confirm=False。",
+                "require_confirm": True,
+            },
+        )
 
     result = tool_dispatcher.execute_command(
         MonthEndClose,
@@ -908,7 +1548,16 @@ def get_balance_sheet(arguments: dict) -> dict:
         sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
         engine = ReportEngine()
         result = engine.execute(BALANCE_SHEET, sn, trace=True, source_mode="invoice")
-        out = {"ok": True, "date": date_str, "account_id": account_id, "balance_sheet": result}
+        # summary: 挑 6-8 个关键数字给 agent 讲给用户
+        values = _extract_values(result)
+        summary_keys = [
+            "total_assets", "total_liabilities", "total_equity",
+            "cash", "inventory", "accounts_receivable", "accounts_payable",
+            "retained_earnings", "vat_payable",
+        ]
+        summary = {k: values.get(k, 0) for k in summary_keys if k in values}
+        out = {"ok": True, "date": date_str, "account_id": account_id,
+               "summary": summary, "balance_sheet": result}
         if reconcile:
             recon = ReportReconciliation(db, sn, report_type="balance_sheet")
             recon_values = _extract_values(result)
@@ -953,7 +1602,16 @@ def get_income_statement(arguments: dict) -> dict:
         sn = LedgerSnapshot(db, account_id, bs_cutoff=ed, period_start=sd, period_end=ed)
         engine = ReportEngine()
         result = engine.execute(INCOME_STATEMENT, sn, trace=True)
-        out = {"ok": True, "start_date": start_str, "end_date": end_str, "account_id": account_id, "income_statement": result}
+        # summary: 关键数字
+        values = _extract_values(result)
+        summary_keys = [
+            "operating_revenue", "operating_cost", "gross_profit",
+            "operating_expenses", "operating_profit", "non_operating_income",
+            "non_operating_expenses", "profit_before_tax", "income_tax", "net_profit",
+        ]
+        summary = {k: values.get(k, 0) for k in summary_keys if k in values}
+        out = {"ok": True, "start_date": start_str, "end_date": end_str,
+               "account_id": account_id, "summary": summary, "income_statement": result}
         if reconcile:
             recon = ReportReconciliation(db, sn, report_type="income_statement")
             recon_values = _extract_values(result)
@@ -1234,6 +1892,134 @@ def list_journal_entries(arguments: dict) -> dict:
 # ══════════════════════════════════════════════════════════════
 # 23-26. 红冲 (写操作, agent 引导用户修正错误时用)
 # ══════════════════════════════════════════════════════════════
+def _check_reverse_status(entity_type: str, entity_id: int) -> dict:
+    """reverse 前检查原单状态, 返回需要警告的信息。
+
+    检查项:
+    - 原单是否已红冲 (is_reversed=True)
+    - 是否有关联的未红冲单据 (如发票有收款未红冲)
+    - 是否已申报 VAT (发票红冲后需重新申报)
+
+    返回: {"already_reversed": bool, "warnings": list, "original": dict}
+    """
+    def _check(db, aid):
+        import models
+        from models_finance import VATDeclaration, SurchargeDeclaration, AccountMove
+        from sqlalchemy import extract
+        warnings = []
+        already_reversed = False
+        original = {}
+        original_date = None  # 原单业务日期, 用于月结检查
+
+        if entity_type == "invoice":
+            inv = db.query(models.Invoice).filter(
+                models.Invoice.id == entity_id
+            ).first()
+            if not inv:
+                raise BusinessError(code=None, message=f"发票 id={entity_id} 不存在")
+            already_reversed = bool(inv.is_reversed)
+            original_date = inv.issue_date_l1
+            original = {
+                "id": inv.id, "direction": inv.direction,
+                "amount_with_tax": float(inv.amount_with_tax_l1 or 0),
+                "is_reversed": already_reversed,
+                "counterparty_name": inv.counterparty_name,
+                "date": original_date.isoformat() if original_date else None,
+            }
+            if already_reversed:
+                warnings.append(f"发票 id={entity_id} 已红冲过, 重复红冲无效。")
+            # 检查关联收款 (sale_order 的 receipts)
+            if inv.direction == "out" and inv.related_order_id:
+                receipts = db.query(models.Receipt).filter(
+                    models.Receipt.related_entity_type == "sale_order",
+                    models.Receipt.related_entity_id == inv.related_order_id,
+                    models.Receipt.is_reversed == False,
+                ).all()
+                if receipts:
+                    r_ids = [r.id for r in receipts]
+                    warnings.append(
+                        f"该销售发票关联 {len(receipts)} 笔未红冲的收款 (id={r_ids})。"
+                        f"红冲发票不会自动红冲收款, 应先 reverse_receipt 再 reverse_invoice, "
+                        f"否则应收账款和银行存款会对不上。"
+                    )
+            # 检查是否已申报 VAT
+            issue_period = None
+            if inv.issue_date_l1:
+                m = inv.issue_date_l1.month
+                y = inv.issue_date_l1.year
+                # 推算申报 period (小规模按季, 一般按月)
+                acc = db.query(models.Account).filter(models.Account.id == aid).first()
+                if acc and acc.taxpayer_type_l3 == "small_scale":
+                    q = (m - 1) // 3 + 1
+                    issue_period = f"{y}-Q{q}"
+                else:
+                    issue_period = f"{y}-{m:02d}"
+            if issue_period:
+                vat_decl = db.query(VATDeclaration).filter(
+                    VATDeclaration.account_id == aid,
+                    VATDeclaration.period == issue_period,
+                ).first()
+                if vat_decl:
+                    warnings.append(
+                        f"该发票所属期间 {issue_period} 已申报 VAT (declaration_id={vat_decl.id})。"
+                        f"红冲后需重新申报 VAT。"
+                    )
+
+        elif entity_type == "expense":
+            exp = db.query(models.Expense).filter(
+                models.Expense.id == entity_id
+            ).first()
+            if not exp:
+                raise BusinessError(code=None, message=f"费用 id={entity_id} 不存在")
+            already_reversed = bool(exp.is_reversed)
+            original_date = exp.expense_date_l1 if hasattr(exp, "expense_date_l1") else None
+            original = {
+                "id": exp.id, "category": exp.category,
+                "amount": float(exp.amount_l3 or 0) if hasattr(exp, "amount_l3") else float(exp.amount or 0),
+                "is_reversed": already_reversed,
+                "date": original_date.isoformat() if original_date else None,
+            }
+            if already_reversed:
+                warnings.append(f"费用 id={entity_id} 已红冲过, 重复红冲无效。")
+
+        elif entity_type in ("receipt", "payment"):
+            cls = models.Receipt if entity_type == "receipt" else models.Payment
+            date_field = "receipt_date_l1" if entity_type == "receipt" else "payment_date_l1"
+            obj = db.query(cls).filter(cls.id == entity_id).first()
+            if not obj:
+                raise BusinessError(code=None, message=f"{entity_type} id={entity_id} 不存在")
+            already_reversed = bool(obj.is_reversed)
+            original_date = getattr(obj, date_field, None)
+            original = {
+                "id": obj.id, "amount": float(obj.amount or 0),
+                "is_reversed": already_reversed,
+                "date": original_date.isoformat() if original_date else None,
+            }
+            if already_reversed:
+                warnings.append(f"{entity_type} id={entity_id} 已红冲过, 重复红冲无效。")
+
+        # 原单月份已月结检查 (warning, 不阻塞)
+        if original_date and not already_reversed:
+            try:
+                cnt = db.query(AccountMove).filter(
+                    AccountMove.source_model == "period_close",
+                    AccountMove.state == "posted",
+                    extract("year", AccountMove.date_l1) == original_date.year,
+                    extract("month", AccountMove.date_l1) == original_date.month,
+                ).count()
+                if cnt > 0:
+                    warnings.append(
+                        f"原单日期 {original_date.strftime('%Y-%m')} 所在月份已月结, "
+                        f"红冲会让该月报表失真。如确需纠正, 建议走调整凭证。"
+                    )
+            except Exception:
+                pass
+
+        return {"already_reversed": already_reversed, "warnings": warnings, "original": original}
+
+    return tool_dispatcher.run_readonly(_check)
+
+
 def reverse_invoice(arguments: dict) -> dict:
     """红字发票冲红 (写操作, 危险)。
 
@@ -1244,13 +2030,36 @@ def reverse_invoice(arguments: dict) -> dict:
     参数:
         invoice_id: int  原发票 ID
         reason: str  冲红原因 (会记入审计日志)
+        dry_run: bool  仅检查原单状态, 不实际红冲
     """
     from commands.orders import ReverseInvoice
 
     invoice_id = arguments.get("invoice_id")
     if not invoice_id:
         raise BusinessError(code=None, message="invoice_id 必填")
+    dry_run = bool(arguments.get("dry_run", False))
 
+    # 原单状态校验
+    status = _check_reverse_status("invoice", invoice_id)
+    if status["already_reversed"] and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"发票 id={invoice_id} 已红冲过, 重复红冲无效。",
+            data={"original": status["original"], "user_message": "这张发票已经红冲过了, 不能重复红冲。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="reverse_invoice",
+            extra={
+                "invoice_id": invoice_id,
+                "original": status["original"],
+                "warnings": status["warnings"],
+            },
+            accounting_hint="红字发票冲红 (dry_run 未执行): 原发票 is_reversed=True, 生成红字发票。",
+        )
+
+    # 有未红冲收款的警告 (不阻塞, 让 agent 决定)
     result = tool_dispatcher.execute_command(
         ReverseInvoice,
         invoice_id=invoice_id,
@@ -1261,9 +2070,11 @@ def reverse_invoice(arguments: dict) -> dict:
         "operation": "reverse_invoice",
         "invoice_id": invoice_id,
         "result": _safe_serialize(result),
+        "warnings": status["warnings"],
         "accounting_hint": (
             "红字发票冲红: 原发票 is_reversed=True, 生成红字发票 (金额取负)。"
             "级联冲红关联 expense 凭证。已申报 VAT 的需重新申报。"
+            "注意: 不会自动红冲关联收款, 需手动调 reverse_receipt。"
         ),
     }
 
@@ -1278,12 +2089,29 @@ def reverse_expense(arguments: dict) -> dict:
     参数:
         expense_id: int  原费用 ID
         reason: str  冲红原因 (记入 notes, Command 本身无 reason 字段)
+        dry_run: bool  仅检查原单状态, 不实际红冲
     """
     from commands.cash_commands import ReverseExpense
 
     expense_id = arguments.get("expense_id")
     if not expense_id:
         raise BusinessError(code=None, message="expense_id 必填")
+    dry_run = bool(arguments.get("dry_run", False))
+
+    status = _check_reverse_status("expense", expense_id)
+    if status["already_reversed"] and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"费用 id={expense_id} 已红冲过, 重复红冲无效。",
+            data={"original": status["original"], "user_message": "这笔费用已经红冲过了, 不能重复红冲。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="reverse_expense",
+            extra={"expense_id": expense_id, "original": status["original"], "warnings": status["warnings"]},
+            accounting_hint="费用冲红 (dry_run 未执行)。",
+        )
 
     result = tool_dispatcher.execute_command(
         ReverseExpense,
@@ -1295,6 +2123,7 @@ def reverse_expense(arguments: dict) -> dict:
         "expense_id": expense_id,
         "reason": arguments.get("reason", ""),
         "result": _safe_serialize(result),
+        "warnings": status["warnings"],
         "accounting_hint": (
             "费用冲红: expense.is_reversed=True, 生成反向凭证冲红原 6601/2202 分录。"
         ),
@@ -1310,12 +2139,29 @@ def reverse_receipt(arguments: dict) -> dict:
     参数:
         receipt_id: int  原收款 ID
         reason: str  冲红原因
+        dry_run: bool  仅检查原单状态, 不实际红冲
     """
     from commands.cash_commands import ReverseReceipt
 
     receipt_id = arguments.get("receipt_id")
     if not receipt_id:
         raise BusinessError(code=None, message="receipt_id 必填")
+    dry_run = bool(arguments.get("dry_run", False))
+
+    status = _check_reverse_status("receipt", receipt_id)
+    if status["already_reversed"] and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"收款 id={receipt_id} 已红冲过, 重复红冲无效。",
+            data={"original": status["original"], "user_message": "这笔收款已经红冲过了, 不能重复红冲。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="reverse_receipt",
+            extra={"receipt_id": receipt_id, "original": status["original"], "warnings": status["warnings"]},
+            accounting_hint="收款冲红 (dry_run 未执行)。",
+        )
 
     result = tool_dispatcher.execute_command(
         ReverseReceipt,
@@ -1327,6 +2173,7 @@ def reverse_receipt(arguments: dict) -> dict:
         "receipt_id": receipt_id,
         "reason": arguments.get("reason", ""),
         "result": _safe_serialize(result),
+        "warnings": status["warnings"],
         "accounting_hint": (
             "收款冲红: 生成负数 Receipt + 反向银行流水 + 红冲 1002/1122 凭证, "
             "关联销售单 payment_status 重置为 unpaid。"
@@ -1343,12 +2190,29 @@ def reverse_payment(arguments: dict) -> dict:
     参数:
         payment_id: int  原付款 ID
         reason: str  冲红原因
+        dry_run: bool  仅检查原单状态, 不实际红冲
     """
     from commands.cash_commands import ReversePayment
 
     payment_id = arguments.get("payment_id")
     if not payment_id:
         raise BusinessError(code=None, message="payment_id 必填")
+    dry_run = bool(arguments.get("dry_run", False))
+
+    status = _check_reverse_status("payment", payment_id)
+    if status["already_reversed"] and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"付款 id={payment_id} 已红冲过, 重复红冲无效。",
+            data={"original": status["original"], "user_message": "这笔付款已经红冲过了, 不能重复红冲。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="reverse_payment",
+            extra={"payment_id": payment_id, "original": status["original"], "warnings": status["warnings"]},
+            accounting_hint="付款冲红 (dry_run 未执行)。",
+        )
 
     result = tool_dispatcher.execute_command(
         ReversePayment,
@@ -1360,6 +2224,7 @@ def reverse_payment(arguments: dict) -> dict:
         "payment_id": payment_id,
         "reason": arguments.get("reason", ""),
         "result": _safe_serialize(result),
+        "warnings": status["warnings"],
         "accounting_hint": (
             "付款冲红: 生成负数 Payment + 反向银行流水 + 红冲凭证, "
             "关联采购单 payment_status 重置。"
@@ -1462,6 +2327,139 @@ def add_bank_account(arguments: dict) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
+# 31-32. 操作历史与撤销 (P3: 多轮对话上下文恢复)
+# ══════════════════════════════════════════════════════════════
+def list_recent_operations(arguments: dict) -> dict:
+    """列出最近 N 条写操作 (按时间倒序), 帮 agent 定位「刚才那笔」。
+
+    用户说「刚才那笔销售」「昨天那笔费用」「撤销上一步」时用。
+    返回每条操作的 id / 类型 / 金额 / 时间 / 是否可撤销。
+    """
+    limit = min(int(arguments.get("limit", 10)), 50)
+    operation_type = arguments.get("operation_type")  # 可选过滤: invoice/receipt/expense/payment
+
+    def _query(db, aid):
+        from models_finance import AccountMove
+        import models
+        results = []
+
+        # 发票 (销项+进项)
+        if not operation_type or operation_type == "invoice":
+            invs = db.query(models.Invoice).filter(
+                models.Invoice.account_id == aid,
+                models.Invoice.is_reversed == False,
+            ).order_by(models.Invoice.id.desc()).limit(limit).all()
+            for inv in invs:
+                results.append({
+                    "type": "invoice",
+                    "id": inv.id,
+                    "direction": inv.direction,
+                    "amount_with_tax": float(inv.amount_with_tax_l1 or 0),
+                    "date": inv.issue_date_l1.isoformat() if inv.issue_date_l1 else None,
+                    "counterparty": inv.counterparty_name,
+                    "can_undo": True,
+                    "undo_tool": "reverse_invoice",
+                    "undo_param": "invoice_id",
+                })
+
+        # 收款
+        if not operation_type or operation_type == "receipt":
+            receipts = db.query(models.Receipt).filter(
+                models.Receipt.account_id == aid,
+                models.Receipt.is_reversed == False,
+            ).order_by(models.Receipt.id.desc()).limit(limit).all()
+            for r in receipts:
+                results.append({
+                    "type": "receipt",
+                    "id": r.id,
+                    "amount": float(r.amount or 0),
+                    "date": r.receipt_date_l1.isoformat() if r.receipt_date_l1 else None,
+                    "can_undo": True,
+                    "undo_tool": "reverse_receipt",
+                    "undo_param": "receipt_id",
+                })
+
+        # 付款
+        if not operation_type or operation_type == "payment":
+            payments = db.query(models.Payment).filter(
+                models.Payment.account_id == aid,
+                models.Payment.is_reversed == False,
+            ).order_by(models.Payment.id.desc()).limit(limit).all()
+            for p in payments:
+                results.append({
+                    "type": "payment",
+                    "id": p.id,
+                    "amount": float(p.amount_l1 or 0) if hasattr(p, "amount_l1") else float(p.amount or 0),
+                    "payment_type": getattr(p, "payment_type", None),
+                    "date": p.payment_date_l1.isoformat() if p.payment_date_l1 else None,
+                    "can_undo": True,
+                    "undo_tool": "reverse_payment",
+                    "undo_param": "payment_id",
+                })
+
+        # 费用
+        if not operation_type or operation_type == "expense":
+            exps = db.query(models.Expense).filter(
+                models.Expense.account_id == aid,
+                models.Expense.is_reversed == False,
+            ).order_by(models.Expense.id.desc()).limit(limit).all()
+            for e in exps:
+                amt = float(e.amount_l3 or 0) if hasattr(e, "amount_l3") else float(e.amount or 0)
+                exp_date = getattr(e, "expense_date_l1", None) or getattr(e, "expense_date", None)
+                results.append({
+                    "type": "expense",
+                    "id": e.id,
+                    "amount": amt,
+                    "category": e.category,
+                    "date": exp_date.isoformat() if exp_date else None,
+                    "can_undo": True,
+                    "undo_tool": "reverse_expense",
+                    "undo_param": "expense_id",
+                })
+
+        # 按 id 倒序合并 (id 越大越新)
+        results.sort(key=lambda x: x["id"], reverse=True)
+        return results[:limit]
+
+    return {"ok": True, "operations": tool_dispatcher.run_readonly(_query)}
+
+
+def undo_last_operation(arguments: dict) -> dict:
+    """撤销最近一笔写操作 (自动判断类型并调对应 reverse tool)。
+
+    用户说「撤销刚才那笔」「录错了想撤销」时用。
+    先 list_recent_operations 取最近一笔, 再调对应 reverse tool。
+    """
+    dry_run = bool(arguments.get("dry_run", False))
+
+    # 先查最近一笔
+    recent = list_recent_operations({"limit": 1})
+    ops = recent.get("operations", [])
+    if not ops:
+        raise BusinessError(code=None, message="没有可撤销的最近操作")
+
+    target = ops[0]
+    if dry_run:
+        return _make_dry_run_result(
+            operation="undo_last_operation",
+            extra={
+                "target": target,
+                "warnings": ["dry_run 未实际撤销。确认后重调 dry_run=False 执行。"],
+            },
+            accounting_hint=f"将调用 {target['undo_tool']}({target['undo_param']}={target['id']}) 撤销。",
+        )
+
+    # 调对应 reverse tool
+    undo_tool = target["undo_tool"]
+    undo_param = target["undo_param"]
+    handler = TOOL_HANDLERS.get(undo_tool)
+    if not handler:
+        raise BusinessError(code=None, message=f"找不到 undo tool: {undo_tool}")
+
+    return handler({undo_param: target["id"], "reason": "undo_last_operation 自动撤销"})
+
+
+# ══════════════════════════════════════════════════════════════
 # Tool 清单 (供 server.py 注册)
 # ══════════════════════════════════════════════════════════════
 TOOL_TEMPLATES = [
@@ -1519,18 +2517,33 @@ TOOL_TEMPLATES = [
     },
     {
         "name": "list_products",
-        "description": "列出当前账本所有商品 (含 track_inventory 标志)。",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": "列出当前账本所有商品 (含 track_inventory 标志)。支持 name_like 模糊搜索。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name_like": {"type": "string", "description": "名称模糊匹配 (如 '服务' 匹配 '信息系统服务')"},
+            },
+        },
     },
     {
         "name": "list_customers",
-        "description": "列出当前账本所有客户。",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": "列出当前账本所有客户。支持 name_like 模糊搜索。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name_like": {"type": "string", "description": "名称模糊匹配 (如 '联通' 匹配 '中国联通宜宾分公司')"},
+            },
+        },
     },
     {
         "name": "list_suppliers",
-        "description": "列出当前账本所有供应商。",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": "列出当前账本所有供应商。支持 name_like 模糊搜索。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name_like": {"type": "string", "description": "名称模糊匹配"},
+            },
+        },
     },
     {
         "name": "list_bank_accounts",
@@ -1541,32 +2554,36 @@ TOOL_TEMPLATES = [
     {
         "name": "create_sale_order_with_invoice",
         "description": (
-            "创建销售单 (发票驱动: 先开发票自动生成销售单)。"
-            "调用路径: CreateInvoice(direction='out', sale_order_action='auto_create')。"
-            "会计影响: 借:应收账款 贷:主营业务收入+应交税费-销项税额; "
-            "同时借:主营业务成本 贷:库存商品 (实物商品, 按 unit_cost 加权平均)。"
-            "铁律: 发票是销项税真相源; COGS 必须用 SaleItem.unit_cost。"
+            "用户说「我卖了一笔货」「开张销售单」「录入销售」时用本 tool。"
+            "发票驱动: 先创建销项发票, 自动生成销售单。"
+            "agent 只需传含税单价和税率, server 自动算不含税金额和税额。"
+            "返回: invoice_id, sale_order_id, amount_with_tax, tax_amount, accounting_hint。"
+            "必填参数来源: customer_name 从 list_customers 查, product_id 从 list_products 查。"
+            "用户不确定时传 dry_run=True 可预演金额和会计影响, 不写库。"
+            "会计影响: 借:应收账款 贷:主营业务收入+销项税额; "
+            "实物商品还会 借:主营业务成本 贷:库存商品 (按 unit_cost 加权平均); 服务类商品不结转成本。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_name": {"type": "string"},
+                "customer_name": {"type": "string", "description": "客户名称 (从 list_customers 查)"},
                 "sale_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "items": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "product_id": {"type": "integer"},
-                            "quantity": {"type": "number"},
+                            "product_id": {"type": "integer", "description": "商品 ID (从 list_products 查)"},
+                            "quantity": {"type": "number", "description": "数量"},
                             "unit_price": {"type": "number", "description": "含税单价"},
-                            "tax_rate": {"type": "string", "description": "如 0.01 / 0.06"},
+                            "tax_rate": {"type": "number", "description": "税率数字 (如 0.01 / 0.06 / 0.13), 用户说 6% 传 0.06"},
                             "notes": {"type": "string"},
                         },
                     },
                 },
-                "invoice_type": {"type": "string", "default": "ordinary"},
+                "invoice_type": {"type": "string", "default": "ordinary", "description": "ordinary 普票 / special 专票"},
                 "notes": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False, "description": "True 仅预演金额, 不写库"},
             },
             "required": ["customer_name", "sale_date", "items"],
         },
@@ -1574,50 +2591,96 @@ TOOL_TEMPLATES = [
     {
         "name": "create_receipt",
         "description": (
-            "客户收款 (银行流入)。"
-            "会计影响: 借:1002 银行存款 贷:1122 应收账款。"
+            "用户说「客户付款了」「收到了款」「录入收款」时用本 tool。"
+            "银行流入: 借:银行存款 贷:应收账款。"
+            "必填参数 sale_order_id: 之前 create_sale_order_with_invoice 返回的, 或从 get_sale_order 查。"
+            "必填参数 bank_account_id: 从 list_bank_accounts 查, 不传默认取首个。"
+            "支持 dry_run 预演。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "sale_order_id": {"type": "integer"},
-                "amount": {"type": "number"},
+                "sale_order_id": {"type": "integer", "description": "关联销售单 ID"},
+                "amount": {"type": "number", "description": "收款金额"},
                 "payment_date": {"type": "string", "description": "YYYY-MM-DD"},
-                "bank_account_id": {"type": "integer"},
+                "bank_account_id": {"type": "integer", "description": "银行账户 ID (从 list_bank_accounts 查)"},
                 "description": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["sale_order_id", "amount", "payment_date"],
+        },
+    },
+    {
+        "name": "create_payment",
+        "description": (
+            "用户说「付了供应商款」「付钱」「发工资」「缴税」时用本 tool。"
+            "银行流出: 借:应付账款/应付职工薪酬/应交税费 贷:银行存款。"
+            "payment_type=expense 付费用 (related_entity_type=expense); "
+            "payment_type=purchase 付采购款 (related_entity_type=purchase_order); "
+            "payment_type=salary 发工资 (related_entity_type=expense, 可带 withholding_tax_amount 代扣个税); "
+            "payment_type=tax 缴税 (related_entity_type=tax_payable)。"
+            "必填参数 bank_account_id: 从 list_bank_accounts 查, 不传默认取首个。"
+            "支持 dry_run 预演。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "payment_type": {
+                    "type": "string",
+                    "enum": ["expense", "purchase", "salary", "tax"],
+                    "description": "expense 付费用 / purchase 付采购 / salary 发工资 / tax 缴税",
+                },
+                "related_entity_type": {
+                    "type": "string",
+                    "description": "关联实体类型: expense / purchase_order / tax_payable",
+                },
+                "related_entity_id": {"type": "integer", "description": "关联实体 ID"},
+                "amount": {"type": "number", "description": "付款金额 (实发, >0)"},
+                "payment_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "bank_account_id": {"type": "integer", "description": "银行账户 ID (从 list_bank_accounts 查)"},
+                "withholding_tax_amount": {
+                    "type": "number",
+                    "default": 0,
+                    "description": "代扣个税 (仅 payment_type=salary 可用, 实发=amount, 应发=amount+withholding_tax_amount)",
+                },
+                "description": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["payment_type", "related_entity_type", "related_entity_id", "amount", "payment_date"],
         },
     },
     # ── 4. 采购 ──
     {
         "name": "create_purchase_order_with_invoice",
         "description": (
-            "创建采购单 (发票驱动: 先开发票自动生成采购单)。"
-            "调用路径: CreateInvoice(direction='in', purchase_order_action='auto_create')。"
-            "会计影响: 借:库存商品 借:应交税费-进项税额 贷:应付账款。"
+            "用户说「我进了一批货」「采购」「录入采购单」时用本 tool。"
+            "发票驱动: 先创建进项发票, 自动生成采购单。"
+            "会计影响: 借:库存商品+进项税额 贷:应付账款。"
             "小规模纳税人进项税不可抵扣, 含税全额入库存成本。"
+            "必填参数 supplier_name 从 list_suppliers 查, product_id 从 list_products 查。"
+            "支持 dry_run 预演。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "supplier_name": {"type": "string"},
+                "supplier_name": {"type": "string", "description": "供应商名称 (从 list_suppliers 查)"},
                 "purchase_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "items": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "product_id": {"type": "integer"},
+                            "product_id": {"type": "integer", "description": "商品 ID"},
                             "quantity": {"type": "number"},
                             "unit_price": {"type": "number", "description": "含税单价"},
-                            "tax_rate": {"type": "string"},
+                            "tax_rate": {"type": "number", "description": "税率数字, 用户说 13% 传 0.13"},
                             "notes": {"type": "string"},
                         },
                     },
                 },
                 "invoice_type": {"type": "string", "default": "ordinary"},
                 "notes": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["supplier_name", "purchase_date", "items"],
         },
@@ -1626,9 +2689,10 @@ TOOL_TEMPLATES = [
     {
         "name": "create_expense",
         "description": (
-            "创建费用 (房租/水电/工资等)。"
-            "会计影响: 借:6601 管理费用 贷:2202 应付账款 / 2241 其他应付款 (个人垫付)。"
-            "铁律: 已过账 Expense 禁止直接删除, 必须通过 ReverseExpense 强制冲红。"
+            "用户说「付了房租」「水电费」「工资」「录入费用」时用本 tool。"
+            "会计影响: 借:管理费用 贷:应付账款 (公司付款) / 其他应付款 (个人垫付)。"
+            "铁律: 已过账费用禁止删除, 必须通过 reverse_expense 冲红。"
+            "支持 dry_run 预演。"
         ),
         "inputSchema": {
             "type": "object",
@@ -1638,7 +2702,8 @@ TOOL_TEMPLATES = [
                 "expense_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "description": {"type": "string"},
                 "functional_category": {"type": "string", "enum": ["管理费用", "销售费用", "财务费用"], "default": "管理费用"},
-                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company"},
+                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company", "description": "company 公司付款 / private_advance 个人垫付"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["category", "amount", "expense_date"],
         },
@@ -1647,18 +2712,20 @@ TOOL_TEMPLATES = [
     {
         "name": "create_bank_entry",
         "description": (
-            "银行扣款或利息收入。"
-            "bank_fee: 借:6603 财务费用 贷:1002 银行存款; "
-            "interest_income: 借:1002 银行存款 贷:6603 财务费用 (冲减财务费用, 不进 6301)。"
+            "用户说「银行扣了手续费」「收到利息」「银行流水」时用本 tool。"
+            "bank_fee: 借:财务费用 贷:银行存款 (银行扣款); "
+            "interest_income: 借:银行存款 贷:财务费用 (利息收入, 冲减财务费用, 不进营业外收入)。"
+            "支持 dry_run 预演。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "entry_type": {"type": "string", "enum": ["bank_fee", "interest_income"]},
+                "entry_type": {"type": "string", "enum": ["bank_fee", "interest_income"], "description": "bank_fee 银行扣款 / interest_income 利息收入"},
                 "amount": {"type": "number"},
                 "transaction_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "description": {"type": "string"},
                 "bank_account_id": {"type": "integer"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["entry_type", "amount", "transaction_date"],
         },
@@ -1667,20 +2734,22 @@ TOOL_TEMPLATES = [
     {
         "name": "create_fixed_asset",
         "description": (
-            "创建固定资产。"
-            "会计影响: 借:1601 固定资产 贷:2202 应付账款 / 2241 其他应付款 (个人垫付)。"
-            "次月起按月计提折旧: 借:6601/6602 贷:1602 累计折旧。"
+            "用户说「买了一台电脑」「录入固定资产」「设备入账」时用本 tool。"
+            "会计影响: 借:固定资产 贷:应付账款。"
+            "次月起按月计提折旧: 借:管理费用 贷:累计折旧 (每月金额 = 原值×(1-残值率)÷使用寿命)。"
+            "支持 dry_run 预演 (会返回 monthly_depreciation 字段)。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string"},
-                "cost": {"type": "number"},
+                "name": {"type": "string", "description": "资产名称"},
+                "cost": {"type": "number", "description": "原值"},
                 "purchase_date": {"type": "string", "description": "YYYY-MM-DD"},
-                "useful_life": {"type": "integer", "default": 60, "description": "使用寿命(月)"},
-                "salvage_rate": {"type": "number", "default": 0.05},
+                "useful_life": {"type": "integer", "default": 60, "description": "使用寿命(月), 电脑默认 60"},
+                "salvage_rate": {"type": "number", "default": 0.05, "description": "残值率 5%"},
                 "category": {"type": "string", "default": "电子设备"},
                 "notes": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["name", "cost", "purchase_date"],
         },
@@ -1688,13 +2757,15 @@ TOOL_TEMPLATES = [
     {
         "name": "batch_depreciate",
         "description": (
-            "批量计提折旧。"
-            "会计影响: 借:6601/6602 管理费用/销售费用 贷:1602 累计折旧。"
+            "用户说「计提折旧」「本月折旧」时用本 tool。月结第 1 步会自动调用。"
+            "会计影响: 借:管理费用/销售费用 贷:累计折旧。"
+            "已月结月份禁止重复折旧。支持 dry_run 预演 (返回哪些资产会折旧+每月折旧金额)。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "period": {"type": "string", "description": "YYYY-MM"},
+                "dry_run": {"type": "boolean", "default": False, "description": "True 返回折旧预览, 不写库"},
             },
             "required": ["period"],
         },
@@ -1703,9 +2774,11 @@ TOOL_TEMPLATES = [
     {
         "name": "declare_vat",
         "description": (
-            "提交增值税申报。"
-            "期间格式: 小规模 YYYY-QQ (按季), 一般纳税人 YYYY-MM (按月)。"
-            "发票是销项税真相源, 申报金额 = 发票汇总税额。"
+            "用户说「申报增值税」「报税」「交 VAT」时用本 tool。"
+            "申报金额 = 发票汇总税额 (销项-进项), 不是 agent 自己算。"
+            "期间格式: 小规模 YYYY-QQ (按季, 如 2026-Q2) / 一般纳税人 YYYY-MM (按月, 如 2026-06)。"
+            "重复申报会被拒绝 (同 period 只能申报一次)。"
+            "支持 dry_run 预演 (会返回 existing_declaration 检查是否已申报)。"
             "小规模季度销售额 ≤30 万普票免征, 6% 减按 1% 征收 (2023-2027 政策)。"
         ),
         "inputSchema": {
@@ -1713,6 +2786,7 @@ TOOL_TEMPLATES = [
             "properties": {
                 "period": {"type": "string", "description": "小规模 YYYY-QQ / 一般纳税人 YYYY-MM"},
                 "taxpayer_type": {"type": "string", "enum": ["small_scale", "general"], "description": "空则从 Account 读取"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["period"],
         },
@@ -1720,10 +2794,10 @@ TOOL_TEMPLATES = [
     {
         "name": "declare_surcharge",
         "description": (
-            "提交附加税申报 (城建税/教育费附加/地方教育附加)。"
-            "附加税是 L1 用户输入: 三个金额必须由用户从税务局申报表抄录, 不是系统派生。"
-            "月结时 engine_tax.calculate_surcharges 会自动计提附加税凭证 (L3 派生)。"
-            "附加税随增值税申报周期: 小规模按季, 一般纳税人按月。"
+            "用户说「申报附加税」「城建税怎么交」「教育费附加」时用本 tool。"
+            "重要: 附加税是 L1 用户输入, 三个金额必须由用户从税务局申报表抄录, 不是系统派生!"
+            "建议先 dry_run=True 拿 suggested_amounts (公式参考值) 给用户看, 用户确认后再正式申报。"
+            "重复申报会被拒绝。"
         ),
         "inputSchema": {
             "type": "object",
@@ -1733,24 +2807,30 @@ TOOL_TEMPLATES = [
                 "education_surcharge": {"type": "number", "description": "教育费附加金额"},
                 "local_education_surcharge": {"type": "number", "description": "地方教育附加金额"},
                 "notes": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False, "description": "True 返回 suggested_amounts 供用户参考"},
             },
-            "required": ["period", "urban_construction_tax", "education_surcharge", "local_education_surcharge"],
+            "required": ["period"],
         },
     },
     # ── 9. 月结 ──
     {
         "name": "month_end_close",
         "description": (
-            "月结 (折旧→算税→结转损益→年结→税务核对, 5 步自动执行)。"
-            "12 月会额外执行年结 (4103 → 4104 未分配利润)。"
-            "铁律: 已过账凭证禁止删除, 错误必须走红冲流程。"
-            "危险等级: 高 (会生成大量凭证)。"
+            "用户说「月结」「结账」「月末处理」时用本 tool。"
+            "5 步自动执行: 折旧→算税→结转损益→年结(仅12月)→税务核对。"
+            "危险等级: 高 (会生成大量凭证, 不可逆)。"
+            "默认 require_confirm=True 会先抛 BusinessError 让 agent 问用户确认, "
+            "用户确认后重传 require_confirm=False 执行。"
+            "重复月结会被拒绝 (同月份只能月结一次)。"
+            "支持 dry_run 预演 (检查是否已月结)。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "period": {"type": "string", "description": "YYYY-MM"},
                 "taxpayer_type": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+                "require_confirm": {"type": "boolean", "default": True, "description": "默认 True 先确认, False 直接执行"},
             },
             "required": ["period"],
         },
@@ -1854,15 +2934,20 @@ TOOL_TEMPLATES = [
     {
         "name": "reverse_invoice",
         "description": (
-            "红字发票冲红 (写操作, 危险)。"
-            "会级联冲红关联的 expense 凭证, 标记原发票 is_reversed=True。"
-            "铁律: 已申报 VAT 的发票冲红后, 必须重新申报 VAT。"
+            "用户说「那张发票作废」「红冲发票」「销售取消了」时用本 tool。"
+            "红字发票冲红: 标记原发票 is_reversed=True, 生成红字发票 (金额取负)。"
+            "会级联冲红关联的 expense 凭证, 但不会自动红冲关联收款! "
+            "若该销售已收款, 必须先 reverse_receipt 再 reverse_invoice, 否则应收和银行存款对不上。"
+            "若该发票已申报 VAT, 红冲后必须重新申报 VAT。"
+            "已红冲过的发票会被拒绝, 重复红冲无效。"
+            "支持 dry_run 预查原单状态和警告。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "invoice_id": {"type": "integer"},
+                "invoice_id": {"type": "integer", "description": "原发票 ID (从 list_invoices 查)"},
                 "reason": {"type": "string", "description": "冲红原因 (记入审计日志)"},
+                "dry_run": {"type": "boolean", "default": False, "description": "True 仅检查原单状态, 不实际红冲"},
             },
             "required": ["invoice_id"],
         },
@@ -1870,14 +2955,17 @@ TOOL_TEMPLATES = [
     {
         "name": "reverse_expense",
         "description": (
-            "费用冲红 (写操作, 危险)。"
-            "铁律: 已过账 Expense 禁止直接删除, 必须通过本 tool 冲红。"
+            "用户说「那笔费用录错了」「红冲费用」「费用作废」时用本 tool。"
+            "已过账费用禁止直接删除, 必须通过本 tool 冲红。"
+            "已红冲过的费用会被拒绝, 重复红冲无效。"
+            "支持 dry_run 预查。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "expense_id": {"type": "integer"},
                 "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["expense_id"],
         },
@@ -1885,14 +2973,16 @@ TOOL_TEMPLATES = [
     {
         "name": "reverse_receipt",
         "description": (
-            "收款冲红 (写操作, 危险)。"
-            "生成负数 Receipt + 反向银行流水 + 红冲凭证 + 销售单 payment_status 重置。"
+            "用户说「那笔收款录错了」「红冲收款」「客户退款」时用本 tool。"
+            "生成负数 Receipt + 反向银行流水 + 红冲凭证 + 销售单 payment_status 重置为 unpaid。"
+            "已红冲过的收款会被拒绝。支持 dry_run 预查。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "receipt_id": {"type": "integer"},
                 "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["receipt_id"],
         },
@@ -1900,14 +2990,16 @@ TOOL_TEMPLATES = [
     {
         "name": "reverse_payment",
         "description": (
-            "付款冲红 (写操作, 危险)。"
+            "用户说「那笔付款录错了」「红冲付款」「供应商退款」时用本 tool。"
             "生成负数 Payment + 反向银行流水 + 红冲凭证 + 采购单 payment_status 重置。"
+            "已红冲过的付款会被拒绝。支持 dry_run 预查。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "payment_id": {"type": "integer"},
                 "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["payment_id"],
         },
@@ -1962,6 +3054,45 @@ TOOL_TEMPLATES = [
             "required": ["bank_name"],
         },
     },
+    # ── 14. 上下文恢复 ──
+    {
+        "name": "list_recent_operations",
+        "description": (
+            "用户说「刚才那笔」「最近录了什么」「撤销上一步」时用本 tool。"
+            "列出最近 N 条写操作 (按 id 倒序), 每条返回 type/id/amount/date/can_undo/undo_tool。"
+            "无副作用, 可随时调。可选 operation_type 过滤 (invoice/receipt/expense)。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 10, "description": "返回条数, 最大 50"},
+                "operation_type": {
+                    "type": "string",
+                    "enum": ["invoice", "receipt", "payment", "expense"],
+                    "description": "可选, 只列指定类型的操作",
+                },
+            },
+        },
+    },
+    {
+        "name": "undo_last_operation",
+        "description": (
+            "用户说「撤销刚才那笔」「录错了想撤销」时用本 tool。"
+            "自动 list_recent_operations(limit=1) 取最近一笔, 调对应 reverse_* tool 撤销。"
+            "建议先传 dry_run=True 预查要撤销哪笔, 用户确认后再 dry_run=False 执行。"
+            "危险: 不可逆, 会生成红字凭证。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "True 时只返回 target 不实际撤销",
+                },
+            },
+        },
+    },
 ]
 
 # Tool 名 → 实现函数映射
@@ -1974,6 +3105,7 @@ TOOL_HANDLERS = {
     "list_bank_accounts": list_bank_accounts,
     "create_sale_order_with_invoice": create_sale_order_with_invoice,
     "create_receipt": create_receipt,
+    "create_payment": create_payment,
     "create_purchase_order_with_invoice": create_purchase_order_with_invoice,
     "create_expense": create_expense,
     "create_bank_entry": create_bank_entry,
@@ -1999,4 +3131,7 @@ TOOL_HANDLERS = {
     "add_customer": add_customer,
     "add_supplier": add_supplier,
     "add_bank_account": add_bank_account,
+    # P4 补全: 上下文恢复
+    "list_recent_operations": list_recent_operations,
+    "undo_last_operation": undo_last_operation,
 }

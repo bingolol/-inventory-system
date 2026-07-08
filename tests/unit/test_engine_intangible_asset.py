@@ -50,7 +50,7 @@ def _create_asset(db, **overrides):
         name="测试软件",
         category="软件",
         original_value_l1=Decimal("120000"),
-        useful_life_l3=60,
+        useful_life_l3=5,
         start_date_l1=date(2025, 1, 1),
         accumulated_amortization_l4=Decimal("0"),
         status="使用中",
@@ -139,7 +139,7 @@ class TestBatchAmortize:
 
     def test_batch_processes_all_active(self, db, account, accts):
         _create_asset(db, asset_code="IA-001")
-        _create_asset(db, asset_code="IA-002", original_value_l1=Decimal("60000"), useful_life_l3=36)
+        _create_asset(db, asset_code="IA-002", original_value_l1=Decimal("60000"), useful_life_l3=3)
         eng = IntangibleAssetEngine(db, account_id=1)
         results = eng.batch_amortize(period="2025-06")
         assert len(results) == 2

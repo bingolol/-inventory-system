@@ -88,14 +88,14 @@ class TestJournalMoves:
 
     def test_pagination(self, client):
         resp = client.get("/api/finance/journal/moves",
-                          params={"skip": 0, "limit": 5},
+                          params={"page": 1, "page_size": 5},
                           headers=HEADERS)
         assert resp.status_code == 200
         assert len(resp.json()["items"]) <= 5
 
     def test_move_detail_has_lines_with_account_codes(self, client):
         resp = client.get("/api/finance/journal/moves",
-                          params={"move_type": "sale_order", "limit": 1},
+                          params={"move_type": "sale_order", "page_size": 1},
                           headers=HEADERS)
         if resp.json()["total"] == 0:
             pytest.skip("No sale moves to test detail")

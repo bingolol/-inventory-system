@@ -21,12 +21,10 @@ from utils.period import period_bounds
 from cost_engine import straight_line_depreciation
 from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
+from engine_asset_base import BaseAssetEngine
 
 
-class IntangibleAssetEngine:
-    def __init__(self, db: Session, account_id: int):
-        self.db = db
-        self.account_id = account_id
+class IntangibleAssetEngine(BaseAssetEngine):
 
     @reads("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
     def calculate_monthly(self, asset: models.IntangibleAsset) -> Decimal:

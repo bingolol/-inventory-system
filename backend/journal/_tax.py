@@ -2,6 +2,7 @@
 from decimal import Decimal
 from datetime import datetime, date
 from accounting_engine import AccountingError, AccountingErrorCode
+from errors import BusinessError, ErrorCode
 from models import Product, StockMove
 from models_finance import LedgerAccount, AccountMove, AccountMoveLine
 from . import TAX_SURCHARGE_EXPENSE_TO_PAYABLE
@@ -21,7 +22,7 @@ def _build_tax_surcharge(self, source):
             # expense_code 形如 "640302"，对应 payable_code "222110"
             payable_code = TAX_SURCHARGE_EXPENSE_TO_PAYABLE.get(expense_code)
             if not payable_code:
-                raise ValueError(f"附加税明细科目 {expense_code} 未配置对应应交科目")
+                raise BusinessError(code=ErrorCode.RULE_VIOLATION, message=f"附加税明细科目 {expense_code} 未配置对应应交科目")
             lines.append({"account_code": expense_code, "debit": amount, "credit": Decimal("0")})
             lines.append({"account_code": payable_code, "debit": Decimal("0"), "credit": amount})
         if not lines:

@@ -1,5 +1,8 @@
+from typing import TypeVar, Generic
 from pydantic import BaseModel
 from decimal import Decimal
+
+T = TypeVar("T")
 
 
 class ReportOverview(BaseModel):
@@ -15,9 +18,9 @@ class ReportOverview(BaseModel):
     low_stock_count: int
 
 
-class PaginatedResponse(BaseModel):
+class PaginatedResponse(BaseModel, Generic[T]):
     total: int
-    items: list
+    items: list[T]
 
 
 class PersonalSummary(BaseModel):

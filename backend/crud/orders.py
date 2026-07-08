@@ -1,7 +1,7 @@
 """采购单 + 销售单 CRUD（含事务包裹和金额精度）
 
 ⚠️ 写操作警告：本模块禁止新增写操作函数。
-所有写操作必须通过 Command 层（commands/purchase_commands.py / sale_commands.py）执行，
+所有写操作必须通过 Command 层执行，
 以确保状态机校验和 EventBus 集成不被绕过。
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 import models
 
 from .base import gen_order_no, log_op, get_or_create_inventory
-from utils import to_decimal, Q2
+from utils import to_decimal, Q2, get_or_404
 from enums import OrderType
 
 logger = logging.getLogger("inventory")
@@ -72,7 +72,7 @@ def list_purchase_orders(db: Session, account_id: int, skip: int = 0, limit: int
     if start_date:
         q = q.filter(models.PurchaseOrder.purchase_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PurchaseOrder.purchase_date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.PurchaseOrder.purchase_date_l1 <= end_date)
     if status:
         q = q.filter(models.PurchaseOrder.status == status)
     if keyword:
@@ -86,10 +86,7 @@ def list_purchase_orders(db: Session, account_id: int, skip: int = 0, limit: int
 
 
 def get_purchase_order(db: Session, account_id: int, order_id: int):
-    return db.query(models.PurchaseOrder).filter(
-        models.PurchaseOrder.account_id == account_id,
-        models.PurchaseOrder.id == order_id
-    ).first()
+    return get_or_404(db, models.PurchaseOrder, order_id, account_id)
 
 
 # ── 销售单（只读） ──
@@ -101,7 +98,7 @@ def list_sale_orders(db: Session, account_id: int, skip: int = 0, limit: int = 1
     if start_date:
         q = q.filter(models.SaleOrder.sale_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.SaleOrder.sale_date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.SaleOrder.sale_date_l1 <= end_date)
     if status:
         q = q.filter(models.SaleOrder.status == status)
     total = q.count()
@@ -110,7 +107,4 @@ def list_sale_orders(db: Session, account_id: int, skip: int = 0, limit: int = 1
 
 
 def get_sale_order(db: Session, account_id: int, order_id: int):
-    return db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.id == order_id
-    ).first()
+    return get_or_404(db, models.SaleOrder, order_id, account_id)

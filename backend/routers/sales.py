@@ -4,8 +4,11 @@ from database import get_db
 from models import SaleOrder
 from errors import BusinessError, ErrorCode
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination, DateRange
+from utils import get_or_404
 from image_utils import delete_old_image
 import schemas, crud
+from schemas import PaginatedResponse
 from uow import unit_of_work
 from commands.base import dispatch
 from commands.orders import (
@@ -52,15 +55,14 @@ def _build_sale_out(order, invoiced: bool = False):
 
 
 @router.get("")
-def list_sales(page: int = 1, page_size: int = 20, start_date: str = None, end_date: str = None, status: str = None, order_type: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    skip = (page - 1) * page_size
-    total, orders = crud.list_sale_orders(db, account_id, skip=skip, limit=page_size, start_date=start_date, end_date=end_date, status=status, order_type=order_type)
+def list_sales(pag: Pagination = Depends(), date_range: DateRange = Depends(), status: str = None, order_type: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+    total, orders = crud.list_sale_orders(db, account_id, skip=pag.skip, limit=pag.limit, start_date=date_range.start, end_date=date_range.end, status=status, order_type=order_type)
     # 批量派生查询:哪些销售单有发票关联(单一真相源)
     invoiced_ids = bulk_has_invoice(db, account_id, "sale_order", [o.id for o in orders])
     result = []
     for order in orders:
         result.append(_build_sale_out(order, invoiced=(order.id in invoiced_ids)))
-    return {"total": total, "items": result}
+    return PaginatedResponse(total=total, items=result)
 
 
 @router.post("")
@@ -276,12 +278,7 @@ def return_sale(
 
 @router.delete("/{sale_id}")
 def delete_sale(sale_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
-    order = db.query(SaleOrder).filter(
-        SaleOrder.id == sale_id,
-        SaleOrder.account_id == account_id
-    ).first()
-    if not order:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "销售单", "order_id": sale_id})
+    order = get_or_404(db, SaleOrder, sale_id, account_id)
     if order.image_url:
         delete_old_image(order.image_url)
     with unit_of_work(db):

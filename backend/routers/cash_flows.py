@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
+from utils import get_or_404
 from database import get_db
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination, DateRange
+from schemas import PaginatedResponse
 import schemas, crud
 from uow import unit_of_work
-from commands.base import dispatch
+from commands.base import dispatch, dispatch_safe
 from commands.finance_commands import (
     CreateCashFlowTransaction, UpdateCashFlowTransaction, DeleteCashFlowTransaction,
 )
@@ -50,9 +53,7 @@ def create_cash_transaction(
                 related_entity_type=getattr(data, 'related_entity_type', None),
                 related_entity_id=getattr(data, 'related_entity_id', None),
             )
-            tx = dispatch(cmd, db)
-    except ValueError:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建现金流水失败，请检查输入数据"})
+            tx = dispatch_safe(cmd, db, "创建现金流水失败，请检查输入数据")
     except Exception:
         raise BusinessError(code=ErrorCode.INTERNAL_ERROR, data={"details": "创建现金流水失败"})
     db.refresh(tx)
@@ -61,16 +62,14 @@ def create_cash_transaction(
 
 @router.get("/transactions")
 def list_cash_transactions(
-    skip: int = 0,
-    limit: int = 100,
-    start_date: str = Query(None, description="开始日期 (YYYY-MM-DD)"),
-    end_date: str = Query(None, description="结束日期 (YYYY-MM-DD)"),
+    pag: Pagination = Depends(),
+    date_range: DateRange = Depends(),
     flow_category: str = Query(None, description="现金流量分类"),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db)
 ):
-    total, items = crud.list_cash_flow_transactions(db, account_id, skip, limit, start_date, end_date, flow_category)
-    return {"total": total, "items": items}
+    total, items = crud.list_cash_flow_transactions(db, account_id, pag.skip, pag.limit, date_range.start, date_range.end, flow_category)
+    return PaginatedResponse(total=total, items=items)
 
 
 @router.put("/transactions/{transaction_id}", response_model=schemas.CashFlowTransactionOut)
@@ -113,12 +112,7 @@ def reverse_cash_transaction(
     """红冲现金流水：冲红总账凭证 + 标记为已冲红（不物理删除，保留审计轨迹）"""
     import models
     with unit_of_work(db):
-        transaction = db.query(models.CashFlowTransaction).filter(
-            models.CashFlowTransaction.id == transaction_id,
-            models.CashFlowTransaction.account_id == account_id,
-        ).first()
-        if not transaction:
-            raise BusinessError(code=ErrorCode.CASH_FLOW_NOT_FOUND, data={"transaction_id": transaction_id})
+        transaction = get_or_404(db, models.CashFlowTransaction, transaction_id, account_id)
 
         if transaction.is_reversed:
             raise BusinessError(

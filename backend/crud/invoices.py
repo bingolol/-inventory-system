@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 import models
+from utils import get_or_404
 
 logger = logging.getLogger("inventory")
 
@@ -33,7 +34,4 @@ def list_invoices(db: Session, account_id: int, skip: int = 0, limit: int = 100,
 
 
 def get_invoice(db: Session, account_id: int, invoice_id: int):
-    return db.query(models.Invoice).filter(
-        models.Invoice.account_id == account_id,
-        models.Invoice.id == invoice_id
-    ).first()
+    return get_or_404(db, models.Invoice, invoice_id, account_id)

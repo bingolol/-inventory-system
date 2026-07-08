@@ -3,6 +3,8 @@ from errors import BusinessError, ErrorCode, ActionType
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
+from schemas import PaginatedResponse
 import schemas, crud
 from commands import dispatch, CreatePartner, UpdatePartner, DeletePartner
 from uow import unit_of_work
@@ -12,10 +14,9 @@ router = APIRouter()
 
 
 @router.get("")
-def list_customers(page: int = 1, page_size: int = 20, search: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    skip = (page - 1) * page_size
-    total, items = crud.list_customers(db, account_id, skip=skip, limit=page_size, search=search)
-    return {"total": total, "items": items}
+def list_customers(pag: Pagination = Depends(), search: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+    total, items = crud.list_customers(db, account_id, skip=pag.skip, limit=pag.limit, search=search)
+    return PaginatedResponse(total=total, items=[schemas.CustomerOut.model_validate(c) for c in items])
 
 
 @router.post("")
@@ -46,10 +47,7 @@ def create_customer(data: schemas.CustomerCreate, account_id: int = Depends(get_
 
 @router.get("/{customer_id}", response_model=schemas.CustomerOut)
 def get_customer(customer_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    c = crud.get_customer(db, account_id, customer_id)
-    if not c:
-        raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": customer_id})
-    return c
+    return crud.get_customer(db, account_id, customer_id)
 
 
 @router.put("/{customer_id}")

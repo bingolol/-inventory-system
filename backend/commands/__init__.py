@@ -1,6 +1,6 @@
 """commands — 命令模式包"""
 
-from .base import Command, CommandHandler, register, dispatch, get_registered_commands
+from .base import Command, CommandHandler, register, dispatch, dispatch_safe, get_registered_commands
 
 # 导入各命令模块以触发 @register 装饰器注册
 from . import orders  # noqa: F401

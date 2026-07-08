@@ -10,8 +10,7 @@ import models
 from finance_integration import post_journal, reverse_journal
 from operation_result import EntityType
 from utils import Q2
-from utils.price import without_tax_from
-# price tools moved to command layer — engines read tax from entities
+# BR-27: 税额是实体字段，引擎只读不推导
 from errors import BusinessError, ErrorCode
 from enums import OrderStatus
 from lineage import reads, TIER_L3
@@ -70,7 +69,7 @@ class FinanceEngine:
 
         total_with_tax = Decimal(str(order.total_price_l1 or 0))
         tax_amount = Decimal(str(order.tax_amount_l1 or 0))
-        total_without_tax = without_tax_from(total_with_tax, tax_amount)
+        total_without_tax = (total_with_tax - tax_amount).quantize(Q2)
 
         source = {
             "partner_id": order.supplier_id or 0,
@@ -93,7 +92,7 @@ class FinanceEngine:
 
         total_with_tax = Decimal(str(order.total_price_l1 or 0))
         tax_amount = Decimal(str(order.tax_amount_l1 or 0))
-        total_without_tax = without_tax_from(total_with_tax, tax_amount)
+        total_without_tax = (total_with_tax - tax_amount).quantize(Q2)
         source = {
             "partner_id": order.customer_id or 0,
             "total_with_tax": total_with_tax,

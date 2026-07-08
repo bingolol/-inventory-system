@@ -79,7 +79,7 @@ __all__ = [
     # invoice
     "InvoiceBase", "InvoiceCreate", "InvoiceUpdate", "InvoiceOut",
     "InvoiceQuickCreate", "InvoiceList", "InvoiceWithFixedAssetCreate",
-    "InvoiceWithFixedAssetCreate", "FixedAssetBlock",
+    "FixedAssetBlock",
     # expense
     "ExpenseBase", "ExpenseCreate", "ExpenseUpdate", "ExpenseOut",
     # personal

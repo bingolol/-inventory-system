@@ -3,12 +3,12 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 import models
+from utils import get_or_404
+
+
 def get_opening_balance(db: Session, account_id: int, opening_balance_id: int):
-    return db.query(models.OpeningBalance).filter(
-        models.OpeningBalance.account_id == account_id,
-        models.OpeningBalance.id == opening_balance_id,
-        models.OpeningBalance.is_reversed == False,
-    ).first()
+    return get_or_404(db, models.OpeningBalance, opening_balance_id, account_id,
+                      extra_filters=[models.OpeningBalance.is_reversed == False])
 
 
 def get_opening_balance_by_date(db: Session, account_id: int, date: str):

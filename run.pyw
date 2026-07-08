@@ -11,11 +11,28 @@
 
 import sys
 import os
+
+# ── 关键：pythonw.exe 下 sys.stdout/stderr 为 None，任何库内部 print/write 都会静默崩溃 ──
+# 必须在所有其他导入（urllib、subprocess、logging 等）之前重定向到 devnull
+# 参考：https://cloud.tencent.com/developer/ask/sof/102015830
+if sys.platform == "win32" and os.path.basename(sys.executable).lower() == "pythonw.exe":
+    _devnull = open(os.devnull, "w")
+    sys.stdout = _devnull
+    sys.stderr = _devnull
+
 import time
 import socket
 import threading
 import subprocess
 import urllib.request
+import atexit
+import signal
+
+# ── 全局后端进程引用（供 atexit / 信号处理兜底清理）──
+_backend_proc = None
+
+# ── 全局唯一实例互斥体句柄（保持引用，防止 GC 释放导致锁失效）──
+_mutex_handle = None
 
 # ── 路径配置 ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +40,8 @@ BACKEND_DIR = os.path.join(BASE_DIR, "backend")
 ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
 PORT = 8000
 HEALTH_URL = f"http://127.0.0.1:{PORT}/api/health"
-LOG_FILE = os.path.join(BACKEND_DIR, "launcher.log")
+LOG_FILE = os.path.join(BACKEND_DIR, "launcher.log")        # 启动器自身日志
+BACKEND_OUT_FILE = os.path.join(BACKEND_DIR, "backend_stdout.log")  # 后端 stdout/stderr（进度监控读取此文件）
 
 # 后端子进程用 python.exe（不是 pythonw.exe），避免 stdout/stderr=None 导致崩溃
 _pythonw = sys.executable
@@ -42,12 +60,44 @@ COLOR_ERROR = "#ff6b6b"
 
 
 def _log(msg):
-    """写入启动器日志"""
+    """写入启动器日志（独立文件，避免与后端 stdout 文件锁冲突）"""
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
     except Exception:
         pass
+
+
+def _acquire_single_instance_lock():
+    """尝试获取全局唯一实例锁（Windows 命名互斥体）。
+
+    利用 kernel32.CreateMutexW 创建系统级命名互斥体：
+    - 首次调用：创建互斥体，返回 handle
+    - 已有实例：GetLastError 返回 ERROR_ALREADY_EXISTS，返回 None
+
+    互斥体是内核对象，进程崩溃时 OS 自动释放，不会死锁。
+    调用方必须将返回的 handle 保存在全局变量中，
+    否则 Python GC 回收 handle 会导致互斥体提前释放。
+    """
+    global _mutex_handle
+    if sys.platform != "win32":
+        return True  # 非 Windows 暂不限制
+
+    import ctypes
+
+    ERROR_ALREADY_EXISTS = 183
+    kernel32 = ctypes.windll.kernel32
+
+    mutex_name = "Global\\进销存管理系统_桌面客户端_SingleInstance"
+    handle = kernel32.CreateMutexW(None, False, mutex_name)
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        _log("检测到已有实例在运行（命名互斥体已存在）")
+        return None
+
+    _mutex_handle = handle  # 保活，防止 GC 释放
+    _log(f"已获取全局唯一实例锁, handle={handle}")
+    return handle
 
 
 class SplashWindow:
@@ -120,7 +170,7 @@ class SplashWindow:
         )
         self.status_label.pack(pady=(0, 12))
 
-        # ── 进度条 ──
+        # ── 进度条（按阶段递进，非无限滚动）──
         style = ttk.Style()
         style.theme_use("clam")
         style.configure(
@@ -134,9 +184,18 @@ class SplashWindow:
         )
         self.progress = ttk.Progressbar(
             main, style="Custom.Horizontal.TProgressbar",
-            mode="indeterminate", length=360,
+            mode="determinate", length=360, maximum=100,
         )
-        self.progress.pack(pady=(0, 15))
+        self.progress.pack(pady=(0, 6))
+
+        # ── 阶段指示器 ──
+        self.stage_var = tk.StringVar(value="")
+        self.stage_label = tk.Label(
+            main, textvariable=self.stage_var,
+            font=("Microsoft YaHei UI", 8),
+            bg=COLOR_BG, fg=COLOR_TEXT_DIM,
+        )
+        self.stage_label.pack(pady=(0, 15))
 
         # ── 底部 ──
         tk.Label(
@@ -167,12 +226,18 @@ class SplashWindow:
                 self.status_label.config(fg=color)
         self.root.after(0, _do)
 
+    def update_progress(self, pct, stage_text=""):
+        """线程安全更新进度条和阶段文本"""
+        def _do():
+            self.progress['value'] = pct
+            self.stage_var.set(stage_text)
+        self.root.after(0, _do)
+
     def close(self):
         """关闭启动画面"""
         self.root.after(0, self.root.destroy)
 
     def run_mainloop(self):
-        self.progress.start(12)
         self.root.mainloop()
 
 
@@ -217,17 +282,52 @@ def _kill_port(port):
         pass
 
 
+def _terminate_process_tree(pid):
+    """终止进程树（包括所有子进程），确保后端彻底退出"""
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        _log(f"进程树已终止, PID={pid}")
+    except Exception as e:
+        _log(f"终止进程树失败 PID={pid}: {e}")
+
+
+def _cleanup_backend():
+    """清理后端进程 — 窗口关闭后调用，atexit 兜底"""
+    global _backend_proc
+    if _backend_proc is not None:
+        rc = _backend_proc.poll()
+        if rc is None:  # 进程仍在运行
+            _log(f"正在终止后端进程 PID={_backend_proc.pid}...")
+            _terminate_process_tree(_backend_proc.pid)
+            try:
+                _backend_proc.wait(timeout=5)
+            except Exception:
+                pass
+        else:
+            _log(f"后端进程已自行退出, returncode={rc}")
+        _backend_proc = None
+
+
 def _start_backend():
-    """启动后端服务（子进程方式，隐藏窗口，stderr 写入日志文件）"""
+    """启动后端服务（子进程方式，隐藏窗口，stderr 写入日志文件）
+
+    不使用 DETACHED_PROCESS — 后端进程生命周期由启动器管理，
+    窗口关闭时自动终止，atexit + 信号处理双重兜底。
+    """
     env = os.environ.copy()
     # 只跳过硬约束检查，不设 DEV=1（DEV=1 会触发 uvicorn reload 热重载，
     # 生产环境 watchfiles 不停扫描会导致卡顿/无限重载）
     env["SKIP_HARD_CONSTRAINTS"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
 
-    # stderr 写入日志文件，方便诊断启动失败
-    err_log = open(LOG_FILE, "a", encoding="utf-8")
-    err_log.write(f"\n{'='*50}\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 后端启动\n{'='*50}\n")
+    # stdout/stderr 写入独立文件（不与 launcher.log 混用，避免 Windows 文件锁冲突）
+    # 用二进制模式打开——子进程输出是 GBK 字节流，启动器写入用 UTF-8 编码的字节
+    err_log = open(BACKEND_OUT_FILE, "ab")
+    err_log.write(f"\n{'='*50}\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 后端启动\n{'='*50}\n".encode("utf-8"))
     err_log.flush()
 
     proc = subprocess.Popen(
@@ -236,44 +336,110 @@ def _start_backend():
         env=env,
         stdout=err_log,
         stderr=err_log,
-        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
+
+    # 关闭启动器侧的文件句柄——子进程已继承独立的 fd，不受影响。
+    # 必须关闭，否则 Windows 文件锁会阻止 _wait_backend() 读取此文件。
+    err_log.close()
+
     _log(f"后端进程已启动, PID={proc.pid}, python={PYTHON_EXE}")
     return proc
 
 
-def _wait_backend(splash, proc, timeout=30):
-    """等待后端就绪，同时检测进程是否已崩溃退出"""
+# ── 启动阶段映射表：后端日志关键词 → 用户友好的进度文案 ──
+# 基于后端实际日志输出（backend_stdout.log 中 stdout/stderr 重定向的内容）
+# 按进度排序，越后面匹配到的阶段会覆盖前面的
+_PROGRESS_STAGES = [
+    # (日志关键词列表, 状态文案, 阶段说明, 进度百分比)
+    (["Started server process", "Waiting for application startup"],
+     "正在启动服务进程...", "步骤 1/4 · 进程初始化", 10),
+    (["ImmutableTriggers", "CREATE TABLE", "init_db", "maintenance_mode"],
+     "正在初始化数据库...", "步骤 2/4 · 数据库初始化", 30),
+    (["ConfirmStore", "confirm_store", "EventBus", "register_middleware",
+      "Truth Source", "不变量", "审计"],
+     "正在加载业务模块...", "步骤 3/4 · 模块加载", 65),
+    (["启动完成", "Application startup complete", "Uvicorn running"],
+     "服务即将就绪...", "步骤 4/4 · 启动服务", 90),
+]
+
+
+def _match_progress_stage(log_text):
+    """从日志文本匹配当前启动阶段，返回 (状态文案, 阶段说明, 进度百分比) 或 None"""
+    best = None
+    for keywords, status, stage, pct in _PROGRESS_STAGES:
+        for kw in keywords:
+            if kw in log_text:
+                best = (status, stage, pct)
+                break  # 匹配到当前阶段，继续看后面有没有更靠后的阶段
+    return best
+
+
+def _wait_backend(splash, proc, timeout=45):
+    """等待后端就绪，监控日志展示阶段性进度，检测进程崩溃"""
     start = time.time()
+    last_stage_pct = 0
+    log_offset = 0  # 已读取的日志偏移量
+
+    # 记录后端启动前的日志文件大小，只读新增部分
+    try:
+        log_offset = os.path.getsize(BACKEND_OUT_FILE)
+    except Exception:
+        log_offset = 0
+
     while time.time() - start < timeout:
         # ── 检测后端进程是否已经退出（说明崩溃了）──
         rc = proc.poll()
         if rc is not None:
             _log(f"后端进程已退出, returncode={rc}")
-            # 读取错误日志最后几行
-            error_tail = _read_log_tail(10)
+            error_tail = _read_log_tail(15)
             splash.update_status(f"后端启动失败 (code={rc})", COLOR_ERROR)
+            splash.update_progress(100, f"启动失败 (exit code {rc})")
             time.sleep(2)
             return ("crash", error_tail)
+
+        # ── 读取后端 stdout 日志新增内容，匹配启动阶段 ──
+        try:
+            current_size = os.path.getsize(BACKEND_OUT_FILE)
+            if current_size > log_offset:
+                with open(BACKEND_OUT_FILE, "r", encoding="utf-8", errors="replace") as f:
+                    f.seek(log_offset)
+                    new_content = f.read()
+                    log_offset = current_size
+
+                stage_info = _match_progress_stage(new_content)
+                if stage_info and stage_info[2] > last_stage_pct:
+                    status_msg, stage_text, pct = stage_info
+                    last_stage_pct = pct
+                    splash.update_status(status_msg, COLOR_SUCCESS)
+                    splash.update_progress(pct, stage_text)
+                    _log(f"进度更新: {stage_text} ({pct}%)")
+        except Exception:
+            pass
 
         # ── 健康检查 ──
         if _check_health():
             _log("后端健康检查通过")
+            splash.update_progress(100, "就绪")
             return ("ok", None)
 
+        # ── 时间兜底：如果日志阶段没更新，用时间模拟进度 ──
         elapsed = int(time.time() - start)
-        dots = "." * ((elapsed % 3) + 1)
-        splash.update_status(f"正在启动服务{dots} ({elapsed}s)", COLOR_SUCCESS)
-        time.sleep(1)
+        if last_stage_pct == 0 and elapsed > 3:
+            # 3 秒后还没匹配到任何日志阶段，显示通用进度
+            splash.update_status("正在启动服务...", COLOR_SUCCESS)
+            splash.update_progress(min(20 + elapsed, 50), f"正在启动... ({elapsed}s)")
+
+        time.sleep(0.5)
 
     _log(f"后端启动超时 ({timeout}s)")
-    return ("timeout", _read_log_tail(10))
+    return ("timeout", _read_log_tail(15))
 
 
 def _read_log_tail(n=10):
-    """读取日志文件最后 n 行"""
+    """读取后端 stdout 日志文件最后 n 行"""
     try:
-        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+        with open(BACKEND_OUT_FILE, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
         return "".join(lines[-n:]) if lines else "(空)"
     except Exception:
@@ -314,15 +480,42 @@ def _show_error(title, detail):
     root.destroy()
 
 
+def _show_info(title, detail):
+    """显示提示对话框"""
+    import tkinter as tk
+    import tkinter.messagebox as mb
+    root = tk.Tk()
+    root.withdraw()
+    mb.showinfo(title, detail)
+    root.destroy()
+
+
 def main():
-    """主入口：启动画面 → 后端 → pywebview 原生窗口"""
+    """主入口：启动画面 → 后端 → pywebview 原生窗口
+
+    生命周期：启动器退出 = 前端窗口关闭 + 后端进程终止，三者绑定。
+    """
+    global _backend_proc
+
     _log("=" * 50)
     _log("启动器开始执行")
     _log(f"BASE_DIR={BASE_DIR}")
     _log(f"PYTHON_EXE={PYTHON_EXE}")
     _log(f"BACKEND_DIR={BACKEND_DIR}")
 
-    # ── 1. 如果后端已经在运行，直接打开窗口 ──
+    # ── 0. 全局唯一实例检查（必须在任何窗口创建之前）──
+    if _acquire_single_instance_lock() is None:
+        _show_info("进销存管理系统", "程序已在运行中，请勿重复启动。")
+        return
+
+    # ── 注册清理兜底 ──
+    atexit.register(_cleanup_backend)
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: (sys.exit(0)))
+    except Exception:
+        pass  # Windows 对 SIGTERM 支持有限
+
+    # ── 1. 如果后端已经在运行，直接打开窗口（不接管生命周期）──
     if _check_health():
         _log("后端已在运行，直接打开窗口")
         try:
@@ -346,19 +539,20 @@ def main():
 
         # 启动后端
         splash.update_status("正在启动后端服务...", COLOR_SUCCESS)
+        splash.update_progress(5, "正在拉起后端进程...")
         try:
             backend_proc[0] = _start_backend()
         except Exception as e:
             _log(f"启动后端异常: {e}")
             splash.update_status(f"启动失败: {e}", COLOR_ERROR)
+            splash.update_progress(100, "启动失败")
             time.sleep(3)
             startup_result[0] = ("error", str(e))
             splash.close()
             return
 
-        # 等待就绪
-        splash.update_status("等待服务就绪...", COLOR_SUCCESS)
-        result, error_detail = _wait_backend(splash, backend_proc[0], timeout=30)
+        # 等待就绪（日志驱动进度展示）
+        result, error_detail = _wait_backend(splash, backend_proc[0], timeout=45)
 
         if result == "ok":
             splash.update_status("服务已就绪，正在打开窗口...", COLOR_SUCCESS)
@@ -385,7 +579,11 @@ def main():
     result = startup_result[0]
 
     if result and result[0] == "ok" and _check_health():
-        # 后端就绪，打开 pywebview 窗口
+        # 后端就绪 — 将进程引用提升到全局，窗口关闭后清理
+        _backend_proc = backend_proc[0]
+        _log("前端窗口即将打开，后端生命周期已绑定")
+
+        # 打开 pywebview 窗口（阻塞，直到用户关闭窗口）
         try:
             _open_webview_window(PORT)
         except ImportError:
@@ -394,12 +592,19 @@ def main():
                 "pywebview 未安装，请运行：\n\npip install pywebview\n\n"
                 "安装后重新启动系统。",
             )
-            sys.exit(1)
         except Exception as e:
             _show_error("窗口创建失败", str(e))
-            sys.exit(1)
+        finally:
+            # ── 窗口已关闭（或异常），终止后端进程 ──
+            _log("前端窗口已关闭，正在终止后端进程...")
+            _cleanup_backend()
+            _log("后端已终止，启动器退出")
     else:
-        # 后端没起来，显示具体错误
+        # 后端没起来 — 如果进程还残留也清掉
+        if backend_proc[0] is not None:
+            _backend_proc = backend_proc[0]
+            _cleanup_backend()
+
         error_detail = result[1] if result else "未知错误"
         _show_error(
             "后端启动失败",
@@ -408,11 +613,30 @@ def main():
             f"{'-'*40}\n"
             f"{error_detail}\n"
             f"{'-'*40}\n\n"
-            f"完整日志：{LOG_FILE}\n"
-            f"后端日志：{os.path.join(BACKEND_DIR, 'app.log')}",
+            f"启动器日志：{LOG_FILE}\n"
+            f"后端输出：{BACKEND_OUT_FILE}\n"
+            f"后端应用日志：{os.path.join(BACKEND_DIR, 'app.log')}",
         )
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        # pythonw.exe 下 sys.stderr=None，未捕获异常会静默崩溃
+        import traceback
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(f"\n[致命错误] 启动器崩溃:\n{traceback.format_exc()}\n")
+        except Exception:
+            pass
+        try:
+            import tkinter as tk
+            import tkinter.messagebox as mb
+            root = tk.Tk()
+            root.withdraw()
+            mb.showerror("启动器崩溃", traceback.format_exc())
+            root.destroy()
+        except Exception:
+            pass

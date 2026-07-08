@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Set
 
 from .dsl import Field, Source, Formula, Bucket
+from errors import BusinessError, ErrorCode
 
 
 class ReportEngine:
@@ -147,7 +148,7 @@ class ReportEngine:
 
         if len(sorted_keys) != len(fields):
             missing = set(f.key for f in fields) - set(sorted_keys)
-            raise ValueError(f"循环依赖或缺失依赖: {missing}")
+            raise BusinessError(code=ErrorCode.RULE_VIOLATION, message=f"循环依赖或缺失依赖: {missing}")
 
         return [key_map[k] for k in sorted_keys]
 

@@ -31,13 +31,14 @@ def straight_line_depreciation(original: Decimal, useful_life: int,
                                accumulated: Decimal, salvage_rate: Decimal = Decimal("0")) -> Decimal:
     """年限平均法月折旧/摊销额
 
-    fixed_asset 传 salvage_rate，intangible 默认 0。
+    useful_life 为**年**数，月折旧额 = (原值×(1-残值率)) / (年限×12)。
     已满额返回 0。
     """
     if useful_life <= 0:
         return Decimal("0")
     depreciable = (original * (Decimal("1") - salvage_rate)).quantize(Decimal("0.01"))
-    monthly = (depreciable / useful_life).quantize(Decimal("0.01"))
+    months = useful_life * 12
+    monthly = (depreciable / months).quantize(Decimal("0.01"))
     remaining = depreciable - accumulated
     if remaining <= 0:
         return Decimal("0")

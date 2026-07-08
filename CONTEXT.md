@@ -55,6 +55,59 @@
 3. 实施 → 遇新问题立即汇报等批准
 4. 汇报+自检 → `git status` / 测试 / diff
 
+### 自检规范（L1–L5 分层断言）
+
+> 功能能用不代表正常，正常不代表数字正确，数字正确不代表计算过程正确，计算过程正确不代表聚合计算正确。
+
+每次 candidate 完成后强制执行 L1–L2（30 秒内）。L3–L5 按影响的子系统选择执行。
+
+| 层级 | 检查项 | 命令/方法 | 触发条件 |
+|------|--------|----------|---------|
+| **L1** 编译 | 182 路由无报错 | `python -c "from main import app"` | 强制 |
+| **L2** 响应 | 所有列表端点 200 | Smoke sweep（17 个 GET） | 强制 |
+| **L3** 数值 | 关键字段期望值断言 | `pytest tests/unit/ tests/invariants/` | 改 model/schema/计算逻辑 |
+| **L4** 分录 | 单笔业务金额闭合（借方=贷方，库存=成本） | `pytest tests/unit/ tests/integration/` | 改 engine/command/journal/crud |
+| **L5** 聚合 | 借贷全局平衡 + 会计方程式 + BS/IS 对账 | `pytest tests/invariants/ tests/integration/` | 改 engine_finance/engine_inventory/reports |
+
+### L3–L5 变更-断言映射表
+
+不泛泛跑全量，按"改了哪个子系统"选对应的断言。
+
+| 改动层 | 文件/模块 | L3 断言 | L4 断言 | L5 断言 |
+|--------|----------|---------|---------|---------|
+| **Schema** | `schemas/*.py` | roundtrip: JSON→model→JSON 值不变；非法输入被拦截 | — | — |
+| **Model** | `models*.py` | 新增字段可读写、默认值正确 | — | — |
+| **Router** | `routers/*.py` | Pagination 分页返回正确条数；DateRange end_of_day 生效；get_or_404 抛错而非静默 | — | — |
+| **CRUD** | `crud/*.py` | get_xxx 不返回 None；list_xxx 排序/分页正确 | — | — |
+| **Command** | `commands/*.py` | 创建后 entity 字段与输入一致 | dispatch 后 StockMove 数量/金额与 entity 一致；AccountMove debit==credit | — |
+| **Engine: inventory** | `engine_inventory.py` | StockMove.unit_cost = total_cost / quantity | StockMove.total_cost = Σ(AccountMove lines for this move) | Inventory.value = Ledger 1405.balance |
+| **Engine: finance** | `engine_finance.py` | source 中 total_with_tax - tax_amount = total_without_tax | 采购分录: dr 1405 + dr 222102 = cr 2202；销售分录: dr 6401 = Σitem.unit_cost × qty | 全局借贷平衡 |
+| **Engine: journal** | `engine_journal.py` | 每条 AccountMove Σdebit == Σcredit | source_model+source_id 幂等（重复 post 不重复创建） | 所有 posted 凭证 Σdebit == Σcredit |
+| **Engine: tax** | `engine_tax.py` | 一般纳税人: output_tax = revenue × rate；小规模: 季度≤30万时普票免税 | 计提分录: dr 6403 = cr 222104 | tax_payable BS = Ledger 2221.balance |
+| **Reports** | `reports/`, `crud/finance/*.py` | BS 单科目余额 = Ledger balance | IS net_profit = revenue - cogs - expenses | A = L + E；BS diff = 0 |
+
+**每次 candidate 后跑对应列的全部断言。** 例如改了 `engine_finance.py` → 必须跑 L3+L4+L5 三列中"Engine: finance"行的全部断言。
+
+### L5 快速验证（无需跑全量集成测试）
+
+```python
+from rules.runtime_checks import check_global_balance, check_accounting_equation
+from models_finance import Ledger
+
+ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
+v1 = check_global_balance(db, {"ledger_id": ledger.id})                                  # Σdebit == Σcredit
+v2 = check_accounting_equation(db, {"ledger_id": ledger.id, "report_date": datetime.now().date()})  # A == L + E + (R - X)
+assert len(v1) == 0 and len(v2) == 0
+```
+
+**Golden Tests（独立会计师验证）** 见 [docs/测试规范.md § Golden Tests](docs/测试规范.md)。6 张表覆盖全业务闭环，每行期望值标注《小企业会计准则》条文。
+
+**新增 candidate 自检 checklist**：
+1. 标施工中 → L1 + L2
+2. 实施 → L1
+3. 自检 → L1 + L2 + 按变更断言映射表跑 L3/L4/L5
+4. 标已自检
+
 ### 技能使用规范
 
 - Skills 在 `.opencode/skills/` + `~/.claude/skills/` 中按名查找（如 `skill(name="tdd")`）

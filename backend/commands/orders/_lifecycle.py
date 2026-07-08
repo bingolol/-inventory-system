@@ -117,21 +117,27 @@ class OrderLifecycle:
         db.flush()
 
         # 计算明细并创建 SaleItem
+        account = db.get(models.Account, account_id)
+        enable_vat = FinanceEngine._vat_deduction(account)
         items_data = []
         total = Decimal("0")
+        total_tax = Decimal("0")
         for it in items:
             product = get_product(db, account_id, it["product_id"])
             if not product:
                 raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it["product_id"]})
             line_total = (_d(it["quantity"]) * _d(it["unit_price"])).quantize(Q2)
+            tax_rate = it.get("tax_rate", VAT_SMALL_SCALE_REDUCED_RATE.value)
+            item_tax = (line_total * _d(tax_rate)).quantize(Q2) if enable_vat else Decimal("0")
             items_data.append({
                 "product_id": it["product_id"],
                 "quantity": it["quantity"],
                 "unit_price": it["unit_price"],
-                "tax_rate": it.get("tax_rate", VAT_SMALL_SCALE_REDUCED_RATE.value),
+                "tax_rate": tax_rate,
                 "total_price": line_total,
             })
             total += line_total
+            total_tax += item_tax
 
         if total_price is not None:
             from crud.orders import _distribute_total_price
@@ -149,7 +155,8 @@ class OrderLifecycle:
             db.add(item)
 
         final_total = sum(_d(it["total_price"]) for it in items_data)
-        order.total_price_l1 = _d(total_price) if total_price is not None else final_total.quantize(Q2)
+        order.total_price_l1 = (_d(total_price) if total_price is not None else (final_total + total_tax)).quantize(Q2)
+        order.tax_amount_l1 = (_d(tax_amount) if tax_amount is not None else total_tax).quantize(Q2)
         db.flush()
 
         # Domain 状态机转换
@@ -279,19 +286,23 @@ class OrderLifecycle:
 
         account = db.get(models.Account, account_id)
         default_tax_rate = FinanceEngine._vat_rate(account)
+        enable_vat = FinanceEngine._vat_deduction(account)
         total = Decimal("0")
+        total_tax = Decimal("0")
         calculated_data = []
         for it in items:
             product = get_product(db, account_id, it["product_id"])
             if not product:
                 raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it["product_id"]})
             line_total = (_d(it["quantity"]) * _d(it["unit_price"])).quantize(Q2)
+            tax_rate = it.get("tax_rate", default_tax_rate)
+            item_tax = (line_total * _d(tax_rate)).quantize(Q2) if enable_vat else Decimal("0")
             item = models.PurchaseItem(
                 order_id=order.id,
                 product_id=it["product_id"],
                 quantity_l1=it["quantity"],
                 unit_price_l1=it["unit_price"],
-                tax_rate_l1=it.get("tax_rate", default_tax_rate),
+                tax_rate_l1=tax_rate,
                 total_price_l1=line_total,
             )
             db.add(item)
@@ -308,8 +319,10 @@ class OrderLifecycle:
                 )
                 calculated_data.append(calc)
             total += line_total
+            total_tax += item_tax
 
-        order.total_price_l1 = _d(total_price) if total_price is not None else total.quantize(Q2)
+        order.total_price_l1 = (_d(total_price) if total_price is not None else (total + total_tax)).quantize(Q2)
+        order.tax_amount_l1 = (_d(tax_amount) if tax_amount is not None else total_tax).quantize(Q2)
         db.flush()
 
         FinanceEngine(db, account_id).record_purchase(order)

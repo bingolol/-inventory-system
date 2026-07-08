@@ -30,10 +30,14 @@ def list_products(db: Session, account_id: int, skip: int = 0, limit: int = 100,
 
 
 def get_product(db: Session, account_id: int, product_id: int):
-    return db.query(models.Product).options(joinedload(models.Product.inventory)).filter(
+    """查询商品（含库存联表），不存在则抛 BusinessError"""
+    p = db.query(models.Product).options(joinedload(models.Product.inventory)).filter(
         models.Product.account_id == account_id,
         models.Product.id == product_id
     ).first()
+    if not p:
+        raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": product_id})
+    return p
 
 
 @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")

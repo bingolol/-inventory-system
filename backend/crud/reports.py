@@ -81,7 +81,7 @@ def get_purchase_report(db: Session, account_id: int, start_date: str = None, en
     if start_date:
         q = q.filter(models.PurchaseOrder.purchase_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.PurchaseOrder.purchase_date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.PurchaseOrder.purchase_date_l1 <= end_date)
     return q.order_by(models.PurchaseOrder.purchase_date_l1.desc()).all()
 
 
@@ -94,7 +94,7 @@ def get_sale_report(db: Session, account_id: int, start_date: str = None, end_da
     if start_date:
         q = q.filter(models.SaleOrder.sale_date_l1 >= start_date)
     if end_date:
-        q = q.filter(models.SaleOrder.sale_date_l1 <= end_date + " 23:59:59")
+        q = q.filter(models.SaleOrder.sale_date_l1 <= end_date)
     return q.order_by(models.SaleOrder.sale_date_l1.desc()).all()
 
 
@@ -116,7 +116,7 @@ def get_profit_report(db: Session, account_id: int, start_date: str = None, end_
     if start_date:
         q_sale = q_sale.filter(models.SaleOrder.sale_date_l1 >= start_date)
     if end_date:
-        q_sale = q_sale.filter(models.SaleOrder.sale_date_l1 <= end_date + " 23:59:59")
+        q_sale = q_sale.filter(models.SaleOrder.sale_date_l1 <= end_date)
 
     sale_orders = q_sale.all()
 

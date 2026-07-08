@@ -44,7 +44,7 @@ class UpdateAccount(Command):
 
     def __post_init__(self):
         if self.name is None:
-            raise ValueError("name is required")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="name is required")
 
 
 @register(UpdateAccount)

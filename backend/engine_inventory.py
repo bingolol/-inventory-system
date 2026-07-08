@@ -74,8 +74,8 @@ class InventoryEngine:
                     "total_cost": Decimal("0"), "tax_amount": Decimal("0"),
                     "total_amount": Decimal("0")}
 
-        from crud.base import get_account
-        account = get_account(self.db, account_id)
+        import models
+        account = self.db.query(models.Account).filter(models.Account.id == account_id).first()
         if not account:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                                 data={"details": f"账本不存在: account_id={account_id}"})

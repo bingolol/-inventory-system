@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination
+from schemas import PaginatedResponse
 import schemas, crud
 from commands import dispatch, AdjustInventory
 from uow import unit_of_work
@@ -11,9 +13,8 @@ router = APIRouter()
 
 
 @router.get("")
-def list_inventory(page: int = 1, page_size: int = 20, alert_only: bool = False, search: str = None, category: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
-    skip = (page - 1) * page_size
-    total, items = crud.list_inventory(db, account_id, skip=skip, limit=page_size, alert_only=alert_only, search=search, category=category)
+def list_inventory(pag: Pagination = Depends(), alert_only: bool = False, search: str = None, category: str = None, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
+    total, items = crud.list_inventory(db, account_id, skip=pag.skip, limit=pag.limit, alert_only=alert_only, search=search, category=category)
     result = []
     for p, current_qty in items:
         result.append(schemas.InventoryOut(
@@ -29,7 +30,7 @@ def list_inventory(page: int = 1, page_size: int = 20, alert_only: bool = False,
             last_updated=None,
             is_alert=current_qty < (p.min_stock_l3 if p else 0)
         ))
-    return {"total": total, "items": result}
+    return PaginatedResponse(total=total, items=result)
 
 
 @router.get("/alerts", response_model=list[schemas.InventoryOut])

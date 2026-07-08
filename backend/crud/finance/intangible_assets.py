@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 import models, schemas
 from ..base import log_op
+from utils import get_or_404
 from lineage import writes, TIER_L3
 
 @writes("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
@@ -23,24 +24,13 @@ def create_intangible_asset(db: Session, account_id: int, data: schemas.Intangib
     )
     db.add(asset)
     db.flush()
-    # 生成会计凭证：借:1701（无形资产）贷:2202（应付账款）
-    from finance_integration import post_journal
-    post_journal(db, account_id, "intangible_asset_purchase", {
-        "asset_id": asset.id,
-        "original_value": data.original_value,
-        "date": data.start_date,
-        "source_model": "intangible_asset",
-        "source_id": asset.id,
-    })
     log_op(db, account_id, "create", "intangible_asset", asset.id, f"创建无形资产: {data.name}", operator=operator)
+    return asset
     return asset
 
 
 def get_intangible_asset(db: Session, account_id: int, asset_id: int):
-    return db.query(models.IntangibleAsset).filter(
-        models.IntangibleAsset.account_id == account_id,
-        models.IntangibleAsset.id == asset_id
-    ).first()
+    return get_or_404(db, models.IntangibleAsset, asset_id, account_id)
 
 
 def list_intangible_assets(db: Session, account_id: int, status: str = None):

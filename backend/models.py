@@ -671,37 +671,17 @@ class PersonalAdvanceRepayment(Base):
 # before_update 事件：真相源流水表禁止 UPDATE
 # ═══════════════════════════════════════════════════════════
 
-@event.listens_for(StockMove, 'before_update')
-def prevent_stock_move_update(mapper, connection, target):
-    from errors import BusinessError, ErrorCode
-    raise BusinessError(
-        code=ErrorCode.DATA_INTEGRITY_ERROR,
-        data={"details": "StockMove 是库存真相源，一经生成严禁修改"}
-    )
+_IMMUTABLE_TABLES = {
+    StockMove: "StockMove 是库存真相源，一经生成严禁修改",
+    FixedAssetDepreciation: "FixedAssetDepreciation 是折旧真相源，一经生成严禁修改",
+    BankTransaction: "BankTransaction 是银行流水真相源，一经生成严禁修改",
+    IntangibleAssetAmortization: "IntangibleAssetAmortization 是摊销流水真相源，一经生成严禁修改",
+}
 
-
-@event.listens_for(FixedAssetDepreciation, 'before_update')
-def prevent_depreciation_update(mapper, connection, target):
-    from errors import BusinessError, ErrorCode
-    raise BusinessError(
-        code=ErrorCode.DATA_INTEGRITY_ERROR,
-        data={"details": "FixedAssetDepreciation 是折旧真相源，一经生成严禁修改"}
-    )
-
-
-@event.listens_for(BankTransaction, 'before_update')
-def prevent_bank_transaction_update(mapper, connection, target):
-    from errors import BusinessError, ErrorCode
-    raise BusinessError(
-        code=ErrorCode.DATA_INTEGRITY_ERROR,
-        data={"details": "BankTransaction 是银行流水真相源，一经生成严禁修改"}
-    )
-
-
-@event.listens_for(IntangibleAssetAmortization, 'before_update')
-def prevent_amortization_update(mapper, connection, target):
-    from errors import BusinessError, ErrorCode
-    raise BusinessError(
-        code=ErrorCode.DATA_INTEGRITY_ERROR,
-        data={"details": "IntangibleAssetAmortization 是摊销流水真相源，一经生成严禁修改"}
-    )
+for _table, _msg in _IMMUTABLE_TABLES.items():
+    def _make_guard(msg: str):
+        def _raise(mapper, connection, target):
+            from errors import BusinessError, ErrorCode
+            raise BusinessError(code=ErrorCode.DATA_INTEGRITY_ERROR, data={"details": msg})
+        return _raise
+    event.listens_for(_table, 'before_update')(_make_guard(_msg))

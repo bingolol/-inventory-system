@@ -11,7 +11,7 @@
 import json
 import logging
 from fastapi import APIRouter, Request
-from confirm_middleware import confirm_store
+from middleware.confirm_middleware import confirm_store
 from errors import BusinessError, ErrorCode
 
 logger = logging.getLogger("inventory")
@@ -30,7 +30,7 @@ def get_status(token: str):
     entry = confirm_store.get(token)
     if entry is None:
         return {"status": "not_found", "detail": "确认令牌不存在或已过期"}
-    from confirm_middleware import TOKEN_TTL
+    from middleware.confirm_middleware import TOKEN_TTL
     return {
         "status": "pending",
         "confirm_token": token,

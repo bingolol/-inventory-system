@@ -6,6 +6,7 @@
 
 from sqlalchemy.orm import Session
 import models
+from utils import get_or_404
 
 
 # ── 供应商 ──
@@ -20,10 +21,7 @@ def list_suppliers(db: Session, account_id: int, skip: int = 0, limit: int = 100
 
 
 def get_supplier(db: Session, account_id: int, supplier_id: int):
-    return db.query(models.Supplier).filter(
-        models.Supplier.account_id == account_id,
-        models.Supplier.id == supplier_id
-    ).first()
+    return get_or_404(db, models.Supplier, supplier_id, account_id)
 
 
 # ── 客户 ──
@@ -38,7 +36,4 @@ def list_customers(db: Session, account_id: int, skip: int = 0, limit: int = 100
 
 
 def get_customer(db: Session, account_id: int, customer_id: int):
-    return db.query(models.Customer).filter(
-        models.Customer.account_id == account_id,
-        models.Customer.id == customer_id
-    ).first()
+    return get_or_404(db, models.Customer, customer_id, account_id)

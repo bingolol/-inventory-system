@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
+from utils import get_or_404
 from account_dep import get_account_id, get_operator
 from uow import unit_of_work
 from commands.base import dispatch
@@ -68,12 +69,7 @@ def get_bank_statement(
     db: Session = Depends(get_db),
 ):
     import models_bank
-    stmt = db.query(models_bank.BankStatement).filter(
-        models_bank.BankStatement.id == stmt_id,
-        models_bank.BankStatement.account_id == account_id,
-    ).first()
-    if not stmt:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "对账单"})
+    stmt = get_or_404(db, models_bank.BankStatement, stmt_id, account_id)
     lines = db.query(models_bank.BankStatementLine).filter(
         models_bank.BankStatementLine.statement_id == stmt_id,
     ).all()

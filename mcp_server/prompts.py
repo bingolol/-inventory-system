@@ -60,7 +60,9 @@ def get_prompt(name: str, arguments: dict) -> dict:
     account_id = get_current_account_id()
     ctx = _load_context(account_id) if account_id else {"account_id": 0}
 
-    if name == "guide_month_close":
+    if name == "system_overview":
+        return _system_overview(ctx, arguments)
+    elif name == "guide_month_close":
         return _guide_month_close(ctx, arguments)
     elif name == "explain_report":
         return _explain_report(ctx, arguments)
@@ -68,8 +70,85 @@ def get_prompt(name: str, arguments: dict) -> dict:
         return _guide_purchase(ctx, arguments)
     elif name == "guide_tax_declaration":
         return _guide_tax_declaration(ctx, arguments)
+    elif name == "guide_surcharge_declaration":
+        return _guide_surcharge_declaration(ctx, arguments)
     else:
         raise ValueError(f"未知的 prompt: {name}")
+
+
+def _system_overview(ctx: dict, arguments: dict) -> dict:
+    """系统总览: agent 接入时第一次对话触发, 给出完整工作流引导。"""
+    user_question = arguments.get("question", "")
+
+    profile = ctx.get("entity_profile", {})
+    taxpayer = ctx.get("taxpayer_type", "未知")
+    vat_type = profile.get("vat_type", "未知")
+
+    system_prompt = f"""你是 {ctx.get('account_name', '未知')} 的会计助手, 接入了 inventory-mcp server。
+当前账本: {ctx.get('account_name', '未知')} (id={ctx.get('account_id', '?')})
+纳税人类型: {taxpayer} (增值税: {vat_type})
+
+## 工具分类 (共 30 个)
+
+### 读操作 (无副作用, 可随时调)
+- list_products / list_customers / list_suppliers / list_bank_accounts: 查主数据
+- list_invoices: 查发票 (按 direction/date 筛选)
+- get_sale_order / get_purchase_order: 查订单详情 (含明细+发票+收付款)
+- list_journal_entries: 查会计凭证
+- get_balance_sheet / get_income_statement: 查报表 (默认带 trace 追溯链)
+
+### 写操作 - 录业务 (会生成凭证, 不可逆)
+- create_sale_order_with_invoice: 销售单+销项发票 (借:应收账款 贷:收入+销项税)
+- create_purchase_order_with_invoice: 采购单+进项发票 (借:库存+进项税 贷:应付账款)
+- create_receipt: 客户收款 (借:银行存款 贷:应收账款)
+- create_payment: 付款给供应商 (借:应付账款 贷:银行存款)
+- create_expense: 费用录入 (借:管理费用 贷:应付/其他应付)
+- create_bank_entry: 银行扣款/利息 (借:财务费用 贷:银行存款)
+- create_fixed_asset: 固定资产入账 (借:固定资产 贷:应付账款)
+- batch_depreciate: 批量折旧计提 (借:管理费用 贷:累计折旧)
+
+### 写操作 - 税务申报 (L1 用户输入, 不可重复)
+- declare_vat: 增值税申报 (金额来自发票汇总, 不是 agent 算)
+- declare_surcharge: 附加税申报 (金额来自用户从税务局申报表抄录, 不是系统派生!)
+
+### 写操作 - 月结 (危险, 不可逆, 需用户确认)
+- month_end_close: 5 步月结 (折旧→算税→结转损益→年结→税务核对)
+
+### 写操作 - 红冲 (危险, 不可逆)
+- reverse_invoice / reverse_expense / reverse_receipt / reverse_payment
+
+### 主数据维护
+- setup_basic_data / add_product / add_customer / add_supplier / add_bank_account
+
+## 典型工作流 (顺序很重要!)
+
+1. **录业务** (日常): create_sale_order_with_invoice → create_receipt → create_expense
+2. **月结** (月末): month_end_close(period='YYYY-MM') — 必须先确认用户已授权
+3. **申报** (月结后): declare_vat → declare_surcharge
+4. **出报表** (随时): get_balance_sheet / get_income_statement
+
+## 关键铁律
+
+1. **写操作前用 dry_run**: 用户不确定时, 传 dry_run=True 先看金额计算和会计影响, 不写库
+2. **月结后不能补录**: 已月结月份禁止直接补录业务凭证, 走调整凭证
+3. **附加税是 L1 用户输入**: declare_surcharge 金额必须由用户从税务局申报表抄录, server 会返回 suggested_amounts 供参考但最终以用户输入为准
+4. **重复申报被拒绝**: 同一 period 不能重复 declare_vat / declare_surcharge
+5. **红冲前先检查**: reverse_* 会检查原单状态, 已红冲的会拒绝, dry_run 可预查
+6. **发票红冲不级联收款**: reverse_invoice 不会自动 reverse_receipt, 需手动先红冲收款
+
+## 用户问题
+
+{user_question or '(无)'}
+
+请根据用户问题判断意图, 选择合适的 tool。不确定用户意图时, 先问清楚再操作。
+"""
+
+    return {
+        "messages": [
+            {"role": "user", "content": {"type": "text", "text": user_question or "你好, 你能帮我做什么?"}},
+            {"role": "assistant", "content": {"type": "text", "text": system_prompt}},
+        ]
+    }
 
 
 def _guide_month_close(ctx: dict, arguments: dict) -> dict:
@@ -283,8 +362,81 @@ def _guide_tax_declaration(ctx: dict, arguments: dict) -> dict:
     }
 
 
+def _guide_surcharge_declaration(ctx: dict, arguments: dict) -> dict:
+    """附加税申报专门引导 (L1 用户输入)。"""
+    period = arguments.get("period", "")
+    user_question = arguments.get("question", "")
+
+    profile = ctx.get("entity_profile", {})
+    taxpayer = ctx.get("taxpayer_type", "未知")
+    surcharge_halved = profile.get("surcharge_halved", False)
+
+    system_prompt = f"""你是会计助手, 正在引导用户完成附加税申报。
+
+当前账本: {ctx.get('account_name', '未知')} (纳税人类型: {taxpayer}, 六税两费减半: {surcharge_halved})
+
+## 核心原则: 附加税是 L1 用户输入
+
+附加税金额必须由用户**从税务局申报表抄录实际金额**, 不是系统派生。
+- engine_tax.calculate_surcharges (月结时自动计提) 是 L3 派生, 用于账务处理
+- declare_surcharge (本申报) 是 L1 外部输入, 金额来自用户
+
+## 申报流程
+
+1. **确认 VAT 已申报**: 附加税基于 VAT 应纳税额计算, 必须先 declare_vat
+2. **建议先 dry_run**: 调用 declare_surcharge(period=..., dry_run=True)
+   - server 会返回 suggested_amounts (公式计算值) 供参考
+   - suggested_amounts 包含: 城建税/教育费附加/地方教育附加 + 计算依据
+3. **用户确认金额**: 把 suggested_amounts 给用户看, 问"税务局申报表上是这个数吗?"
+4. **正式申报**: 用户确认后, 调 declare_surcharge(period, urban=..., edu=..., local_edu=...)
+   - 金额以用户输入为准, 不一定等于 suggested_amounts
+5. **税务核对**: 申报后用 get_balance_sheet 检查应交税费科目
+
+## 公式参考 (server 算 suggested_amounts 用)
+
+- 城建税 = VAT 应纳税额 × 7% × (50% if 六税两费减半 else 100%)
+- 教育费附加 = VAT 应纳税额 × 3% (小规模季度销售额 ≤30 万免征)
+- 地方教育附加 = VAT 应纳税额 × 2% (小规模季度销售额 ≤30 万免征)
+
+注意: 一般纳税人不享受教育费附加/地方教育附加的季度免征政策。
+
+## 期间格式
+
+- 小规模: YYYY-QQ (按季度, 如 2026-Q2)
+- 一般纳税人: YYYY-MM (按月, 如 2026-06)
+
+## 用户参数
+
+- 期间: {period or '未指定'}
+- 问题: {user_question or '无'}
+
+请引导用户分步完成。若用户未指定期间, 先询问。
+"""
+
+    user_msg = f"我要申报附加税, 期间={period or '?'}"
+    if user_question:
+        user_msg += f", 问题: {user_question}"
+
+    return {
+        "messages": [
+            {"role": "user", "content": {"type": "text", "text": user_msg}},
+            {"role": "assistant", "content": {"type": "text", "text": system_prompt}},
+        ]
+    }
+
+
 # Prompt 清单 (供 server.py 注册)
 PROMPT_TEMPLATES = [
+    {
+        "name": "system_overview",
+        "description": (
+            "系统总览: agent 接入第一次对话时触发, 给出 30 个 tool 分类、"
+            "典型工作流、关键铁律。用户问「你能做什么」「帮我做账」时用。"
+        ),
+        "arguments": [
+            {"name": "question", "required": False, "description": "用户的具体问题"},
+        ],
+    },
     {
         "name": "guide_month_close",
         "description": (
@@ -328,6 +480,17 @@ PROMPT_TEMPLATES = [
         ),
         "arguments": [
             {"name": "period", "required": False, "description": "申报期间 (小规模 YYYY-QQ / 一般纳税人 YYYY-MM), 不传则询问"},
+            {"name": "question", "required": False, "description": "用户的具体问题"},
+        ],
+    },
+    {
+        "name": "guide_surcharge_declaration",
+        "description": (
+            "附加税申报专门引导 (L1 用户输入): 强调金额来自用户从税务局申报表抄录, "
+            "server 返回 suggested_amounts 供参考。用户问「附加税怎么填」「城建税多少」时触发。"
+        ),
+        "arguments": [
+            {"name": "period", "required": False, "description": "申报期间 (小规模 YYYY-QQ / 一般纳税人 YYYY-MM)"},
             {"name": "question", "required": False, "description": "用户的具体问题"},
         ],
     },

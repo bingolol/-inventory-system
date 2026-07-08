@@ -13,7 +13,7 @@ def list_operation_logs(db: Session, account_id: int, skip: int = 0, limit: int 
     if start_date:
         q = q.filter(models.OperationLog.created_at >= start_date)
     if end_date:
-        q = q.filter(models.OperationLog.created_at <= end_date + " 23:59:59")
+        q = q.filter(models.OperationLog.created_at <= end_date)
     total = q.count()
     items = q.order_by(models.OperationLog.created_at.desc()).offset(skip).limit(limit).all()
     return total, items

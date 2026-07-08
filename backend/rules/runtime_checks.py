@@ -284,7 +284,7 @@ def check_as05(db: Session, context: dict) -> List[RuleViolation]:
 
             # 月折旧额公式校验(若 useful_life > 0)
             if useful_life > 0:
-                expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life))).quantize(Q2)
+                expected_monthly = (original * (Decimal("1") - salvage_rate) / Decimal(str(useful_life * 12))).quantize(Q2)
                 from models import FixedAssetDepreciation
                 latest = db.query(FixedAssetDepreciation).filter(
                     FixedAssetDepreciation.asset_id == asset_id
@@ -325,7 +325,7 @@ def check_as05(db: Session, context: dict) -> List[RuleViolation]:
 
             # 月摊销额公式校验
             if useful_life > 0:
-                expected_monthly = (original / Decimal(str(useful_life))).quantize(Q2)
+                expected_monthly = (original / Decimal(str(useful_life * 12))).quantize(Q2)
                 from models import IntangibleAssetAmortization
                 latest = db.query(IntangibleAssetAmortization).filter(
                     IntangibleAssetAmortization.asset_id == intangible_asset_id

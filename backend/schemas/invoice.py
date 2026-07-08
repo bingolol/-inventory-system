@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
+from errors import BusinessError, ErrorCode
 
 
 # ── Invoice ──
@@ -114,27 +115,27 @@ class InvoiceQuickCreate(BaseModel):
         """
         if self.direction == "out":
             if not self.sale_order_action:
-                raise ValueError("销项发票必填 sale_order_action（link_existing 或 auto_create）")
+                raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="销项发票必填 sale_order_action（link_existing 或 auto_create）")
             if self.sale_order_action == "link_existing" and not self.related_order_id:
-                raise ValueError("sale_order_action=link_existing 时必填 related_order_id")
+                raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="sale_order_action=link_existing 时必填 related_order_id")
         elif self.direction == "in":
             # 固定资产场景：跳过 purchase_order_action 强制校验
             if self.fixed_asset is None:
                 if not self.purchase_order_action:
-                    raise ValueError("进项发票必填 purchase_order_action（link_existing 或 auto_create），"
+                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="进项发票必填 purchase_order_action（link_existing 或 auto_create），"
                                      "或携带 fixed_asset 块走固定资产过账分支")
                 if self.purchase_order_action == "link_existing" and not self.related_order_id:
-                    raise ValueError("purchase_order_action=link_existing 时必填 related_order_id")
+                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="purchase_order_action=link_existing 时必填 related_order_id")
         return self
 
     @model_validator(mode="after")
     def validate_tax_amount(self):
         """BR-27: tax_amount 必须手动输入，系统不推导。tax_rate > 0 时 tax_amount 必须 > 0。"""
         if self.tax_rate > 0 and self.tax_amount == 0:
-            raise ValueError("tax_rate > 0 时 tax_amount 必须手动填写，系统不再内部推导税额（BR-27）")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="tax_rate > 0 时 tax_amount 必须手动填写，系统不再内部推导税额（BR-27）")
         computed = self.amount_with_tax - self.tax_amount
         if computed < 0:
-            raise ValueError(f"amount_with_tax ({self.amount_with_tax}) 不能小于 tax_amount ({self.tax_amount})")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"amount_with_tax ({self.amount_with_tax}) 不能小于 tax_amount ({self.tax_amount})")
         return self
 
 

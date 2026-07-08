@@ -4,7 +4,7 @@ from database import get_db
 from account_dep import get_account_id, get_operator
 import schemas, crud
 from uow import unit_of_work
-from commands.base import dispatch
+from commands.base import dispatch, dispatch_safe
 from commands.finance_commands import CreateOpeningBalance, UpdateOpeningBalance
 from errors import BusinessError, ErrorCode
 from operation_result import OperationResult, EntityType, OperationType
@@ -39,29 +39,26 @@ def _build_ob_out(opening_balance):
 @router.post("")
 def create_opening_balance(data: schemas.OpeningBalanceCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     """创建期初余额"""
-    try:
-        with unit_of_work(db):
-            cmd = CreateOpeningBalance(
-                account_id=account_id,
-                operator=operator,
-                date=data.date,
-                cash_balance=data.cash_balance,
-                bank_balance=data.bank_balance,
-                accounts_receivable=data.accounts_receivable,
-                inventory_value=data.inventory_value,
-                fixed_assets_original=data.fixed_assets_original,
-                accumulated_depreciation=data.accumulated_depreciation,
-                intangible_assets_original=data.intangible_assets_original,
-                accumulated_amortization=data.accumulated_amortization,
-                accounts_payable=data.accounts_payable,
-                tax_payable=data.tax_payable,
-                long_term_borrowings=data.long_term_borrowings,
-                paid_in_capital=data.paid_in_capital,
-                retained_earnings=data.retained_earnings,
-            )
-            opening_balance = dispatch(cmd, db)
-    except ValueError:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建期初余额失败，请检查输入数据"})
+    with unit_of_work(db):
+        cmd = CreateOpeningBalance(
+            account_id=account_id,
+            operator=operator,
+            date=data.date,
+            cash_balance=data.cash_balance,
+            bank_balance=data.bank_balance,
+            accounts_receivable=data.accounts_receivable,
+            inventory_value=data.inventory_value,
+            fixed_assets_original=data.fixed_assets_original,
+            accumulated_depreciation=data.accumulated_depreciation,
+            intangible_assets_original=data.intangible_assets_original,
+            accumulated_amortization=data.accumulated_amortization,
+            accounts_payable=data.accounts_payable,
+            tax_payable=data.tax_payable,
+            long_term_borrowings=data.long_term_borrowings,
+            paid_in_capital=data.paid_in_capital,
+            retained_earnings=data.retained_earnings,
+        )
+        opening_balance = dispatch_safe(cmd, db, "创建期初余额失败，请检查输入数据")
     db.refresh(opening_balance)
     
     # 返回 OperationResult 格式
@@ -99,8 +96,6 @@ def get_latest_opening_balance(date: str = None, account_id: int = Depends(get_a
 def get_opening_balance(opening_balance_id: int, account_id: int = Depends(get_account_id), db: Session = Depends(get_db)):
     """获取指定期初余额"""
     opening_balance = crud.get_opening_balance(db, account_id, opening_balance_id)
-    if not opening_balance:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "期初余额", "order_id": opening_balance_id})
     return _build_ob_out(opening_balance)
 
 
@@ -121,30 +116,27 @@ def update_opening_balance(opening_balance_id: int, data: schemas.OpeningBalance
             ai_instruction="STOP_RETRYING. 期初余额已被锁定，存在业务数据后禁止修改。如需修改，请先清除所有业务数据。"
         )
 
-    try:
-        with unit_of_work(db):
-            cmd = UpdateOpeningBalance(
-                account_id=account_id,
-                operator=operator,
-                opening_balance_id=opening_balance_id,
-                date=data.date,
-                cash_balance=data.cash_balance,
-                bank_balance=data.bank_balance,
-                accounts_receivable=data.accounts_receivable,
-                inventory_value=data.inventory_value,
-                fixed_assets_original=data.fixed_assets_original,
-                accumulated_depreciation=data.accumulated_depreciation,
-                intangible_assets_original=data.intangible_assets_original,
-                accumulated_amortization=data.accumulated_amortization,
-                accounts_payable=data.accounts_payable,
-                tax_payable=data.tax_payable,
-                long_term_borrowings=data.long_term_borrowings,
-                paid_in_capital=data.paid_in_capital,
-                retained_earnings=data.retained_earnings,
-            )
-            opening_balance = dispatch(cmd, db)
-    except ValueError:
-        raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "更新期初余额失败，请检查输入数据"})
+    with unit_of_work(db):
+        cmd = UpdateOpeningBalance(
+            account_id=account_id,
+            operator=operator,
+            opening_balance_id=opening_balance_id,
+            date=data.date,
+            cash_balance=data.cash_balance,
+            bank_balance=data.bank_balance,
+            accounts_receivable=data.accounts_receivable,
+            inventory_value=data.inventory_value,
+            fixed_assets_original=data.fixed_assets_original,
+            accumulated_depreciation=data.accumulated_depreciation,
+            intangible_assets_original=data.intangible_assets_original,
+            accumulated_amortization=data.accumulated_amortization,
+            accounts_payable=data.accounts_payable,
+            tax_payable=data.tax_payable,
+            long_term_borrowings=data.long_term_borrowings,
+            paid_in_capital=data.paid_in_capital,
+            retained_earnings=data.retained_earnings,
+        )
+        opening_balance = dispatch_safe(cmd, db, "更新期初余额失败，请检查输入数据")
     db.refresh(opening_balance)
     return _build_ob_out(opening_balance)
 

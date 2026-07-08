@@ -6,6 +6,7 @@ from datetime import datetime, date
 from decimal import Decimal
 
 from enums import PERSONAL_ADVANCE_DEBIT_ACCOUNTS
+from errors import BusinessError, ErrorCode
 
 
 class PersonalAdvanceBase(BaseModel):
@@ -19,10 +20,7 @@ class PersonalAdvanceBase(BaseModel):
     @model_validator(mode="after")
     def _validate_debit_account(self):
         if self.debit_account_code not in PERSONAL_ADVANCE_DEBIT_ACCOUNTS:
-            raise ValueError(
-                f"debit_account_code '{self.debit_account_code}' 不合法，"
-                f"合法值: {PERSONAL_ADVANCE_DEBIT_ACCOUNTS}"
-            )
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"debit_account_code '{self.debit_account_code}' 不合法，合法值: {PERSONAL_ADVANCE_DEBIT_ACCOUNTS}")
         return self
 
 

@@ -10,25 +10,21 @@ Q2 = Decimal('0.01')
 ZERO = Decimal('0')
 
 
-def _d(value) -> Decimal:
-    """安全转换为 Decimal，None → 0"""
-    if value is None:
-        return Decimal('0')
-    return Decimal(str(value))
-
-
-def end_of_day(dt: datetime) -> datetime:
-    """返回当日 23:59:59，用于截止时间查询"""
-    return dt.replace(hour=23, minute=59, second=59, microsecond=0)
-
-
 def to_decimal(val):
-    """安全转换为 Decimal"""
+    """安全转换为 Decimal，None → 0"""
     if val is None:
         return Decimal('0')
     if isinstance(val, Decimal):
         return val
     return Decimal(str(val))
+
+
+_d = to_decimal  # 历史别名，新代码请用 to_decimal
+
+
+def end_of_day(dt: datetime) -> datetime:
+    """返回当日 23:59:59，用于截止时间查询"""
+    return dt.replace(hour=23, minute=59, second=59, microsecond=0)
 
 
 def get_quarter_date_range(year: int, quarter: int) -> tuple:
@@ -48,13 +44,20 @@ ENTITY_ERROR_CODES = {
     "PurchaseOrder": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "采购单"}),
     "Expense": (ErrorCode.EXPENSE_NOT_FOUND, {}),
     "FixedAsset": (ErrorCode.FIXED_ASSET_NOT_FOUND, {}),
+    "IntangibleAsset": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "无形资产"}),
     "Product": (ErrorCode.PRODUCT_NOT_FOUND, {}),
     "Customer": (ErrorCode.CUSTOMER_NOT_FOUND, {}),
+    "Supplier": (ErrorCode.CUSTOMER_NOT_FOUND, {}),
     "Invoice": (ErrorCode.INVOICE_NOT_FOUND, {}),
     "PersonalTransaction": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "个人流水记录"}),
+    "PersonalAdvance": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "垫付单"}),
+    "PersonalAdvanceRepayment": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "偿还记录"}),
+    "CashFlowTransaction": (ErrorCode.CASH_FLOW_NOT_FOUND, {}),
+    "BankStatement": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "对账单"}),
+    "OpeningBalance": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "期初余额"}),
+    "Payment": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "付款记录"}),
+    "Receipt": (ErrorCode.ORDER_NOT_FOUND, {"order_type": "收款记录"}),
 }
-
-DELETED_CHECK_MODELS = {"SaleOrder", "PurchaseOrder"}
 
 
 def get_or_404(db: Session, model: Type, id: int, account_id: int,
@@ -65,7 +68,7 @@ def get_or_404(db: Session, model: Type, id: int, account_id: int,
         model.account_id == account_id,
     )
     model_name = model.__name__
-    if model_name in DELETED_CHECK_MODELS:
+    if hasattr(model, 'is_deleted'):
         q = q.filter(model.is_deleted == False)
     if extra_filters:
         for f in extra_filters:
@@ -75,7 +78,7 @@ def get_or_404(db: Session, model: Type, id: int, account_id: int,
         error_code, error_data = ENTITY_ERROR_CODES.get(
             model_name, (ErrorCode.ORDER_NOT_FOUND, {})
         )
-        error_data = {**error_data, "order_id": id}
+        error_data = {**error_data, "id": id}
         raise BusinessError(code=error_code, data=error_data)
     return obj
 
@@ -115,43 +118,4 @@ def parse_date_to_date(s: str) -> date:
     return datetime.strptime(s, DATE_FMT).date()
 
 
-# ── OperationResult 工厂 ──
 
-from operation_result import OperationResult, OperationType, EntityType
-
-
-def op_create(entity_type: EntityType, entity_id: int, entity_no: str,
-              entity_label: str, data: dict, changes: Optional[dict] = None) -> dict:
-    return OperationResult(
-        operation=OperationType.CREATE,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        summary=f"{entity_label} {entity_no} 创建成功",
-        ai_hint=f"{entity_label}已创建。",
-        data=data,
-        changes=changes or {},
-    ).to_dict()
-
-
-def op_update(entity_type: EntityType, entity_id: int, entity_no: str,
-              entity_label: str, data: dict, changes: Optional[dict] = None) -> dict:
-    return OperationResult(
-        operation=OperationType.UPDATE,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        summary=f"{entity_label} {entity_no} 更新成功",
-        ai_hint=f"{entity_label}已更新。",
-        data=data,
-        changes=changes or {},
-    ).to_dict()
-
-
-def op_delete(entity_type: EntityType, entity_id: int, entity_no: str,
-              entity_label: str) -> dict:
-    return OperationResult(
-        operation=OperationType.DELETE,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        summary=f"{entity_label} {entity_no} 删除成功",
-        ai_hint=f"{entity_label}已删除。",
-    ).to_dict()

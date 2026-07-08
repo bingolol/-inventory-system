@@ -26,6 +26,7 @@ from schemas import (
     PersonalAdvanceSummary, PaginatedResponse,
 )
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination, DateRange
 from errors import BusinessError, ErrorCode
 from uow import unit_of_work
 import crud
@@ -44,20 +45,18 @@ router = APIRouter()
 
 @router.get("", response_model=PaginatedResponse)
 def list_personal_advances(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    pag: Pagination = Depends(),
     advancer_name: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    date_range: DateRange = Depends(),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db),
 ):
     """列表（分页+过滤）"""
     total, items = crud.list_personal_advances(
-        db, account_id, skip=skip, limit=limit,
+        db, account_id, skip=pag.skip, limit=pag.limit,
         advancer_name=advancer_name, status=status,
-        start_date=start_date, end_date=end_date,
+        start_date=date_range.start, end_date=date_range.end,
     )
     return PaginatedResponse(
         total=total,
@@ -91,11 +90,6 @@ def get_personal_advance(
 ):
     """单笔详情"""
     advance = crud.get_personal_advance(db, account_id, advance_id)
-    if not advance:
-        raise BusinessError(
-            code=ErrorCode.ORDER_NOT_FOUND,
-            data={"order_type": "个人垫付单", "order_id": advance_id},
-        )
     return PersonalAdvanceOut.model_validate(advance)
 
 
@@ -106,12 +100,7 @@ def list_repayments(
     db: Session = Depends(get_db),
 ):
     """偿还明细列表"""
-    advance = crud.get_personal_advance(db, account_id, advance_id)
-    if not advance:
-        raise BusinessError(
-            code=ErrorCode.ORDER_NOT_FOUND,
-            data={"order_type": "个人垫付单", "order_id": advance_id},
-        )
+    crud.get_personal_advance(db, account_id, advance_id)  # 权限/存在性校验
     items = crud.list_repayments_by_advance(db, account_id, advance_id)
     return [PersonalAdvanceRepaymentOut.model_validate(it) for it in items]
 

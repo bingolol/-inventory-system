@@ -12,6 +12,7 @@ from engine_ledger import LedgerEngine
 from lineage import writes, reads, derives, TIER_L1, TIER_L2
 from operation_result import EntityType
 from rules import enforce_rules, enforce_journal_rules
+from errors import BusinessError, ErrorCode
 
 
 # 税金及附加明细科目 -> 应交税费对应科目
@@ -435,7 +436,7 @@ class JournalEngine:
                 # expense_code 形如 "640302"，对应 payable_code "222110"
                 payable_code = TAX_SURCHARGE_EXPENSE_TO_PAYABLE.get(expense_code)
                 if not payable_code:
-                    raise ValueError(f"附加税明细科目 {expense_code} 未配置对应应交科目")
+                    raise BusinessError(code=ErrorCode.RULE_VIOLATION, message=f"附加税明细科目 {expense_code} 未配置对应应交科目")
                 lines.append({"account_code": expense_code, "debit": amount, "credit": Decimal("0")})
                 lines.append({"account_code": payable_code, "debit": Decimal("0"), "credit": amount})
             if not lines:

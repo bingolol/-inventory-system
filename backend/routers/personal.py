@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 from decimal import Decimal
 from database import get_db
 from account_dep import get_account_id, get_operator
+from dependencies import Pagination, DateRange
 from models import PersonalTransaction
+from errors import BusinessError, ErrorCode
+from utils import get_or_404
 from image_utils import delete_old_image
 from enums import PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES
 import schemas, crud
@@ -26,11 +29,11 @@ def _validate_personal_category(type: str, category: str):
 
 @router.get("/category_summary")
 def get_category_summary(
-    type: str = None, start_date: str = None, end_date: str = None,
+    type: str = None, date_range: DateRange = Depends(),
     account_id: int = Depends(get_account_id), db: Session = Depends(get_db)
 ):
     return crud.get_personal_category_summary(
-        db, account_id, type=type, start_date=start_date, end_date=end_date
+        db, account_id, type=type, start_date=date_range.start, end_date=date_range.end
     )
 
 
@@ -49,13 +52,12 @@ def get_summary(account_id: int = Depends(get_account_id), db: Session = Depends
 
 @router.get("")
 def list_transactions(
-    page: int = 1, page_size: int = 20,
-    type: str = None, category: str = None, start_date: str = None, end_date: str = None,
+    pag: Pagination = Depends(),
+    type: str = None, category: str = None, date_range: DateRange = Depends(),
     account_id: int = Depends(get_account_id), db: Session = Depends(get_db)
 ):
-    skip = (page - 1) * page_size
     total, items, sum_income, sum_expense = crud.list_personal_transactions(
-        db, account_id, skip=skip, limit=page_size, type=type, category=category, start_date=start_date, end_date=end_date
+        db, account_id, skip=pag.skip, limit=pag.limit, type=type, category=category, start_date=date_range.start, end_date=date_range.end
     )
     return {
         "total": total,
@@ -87,12 +89,7 @@ def create_transaction(data: schemas.PersonalTransactionCreate, account_id: int 
 @router.put("/{tx_id}", response_model=schemas.PersonalTransactionOut)
 def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     # 先查原记录，用于校验和确定 type
-    tx = db.query(PersonalTransaction).filter(
-        PersonalTransaction.id == tx_id,
-        PersonalTransaction.account_id == account_id
-    ).first()
-    if not tx:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
+    tx = get_or_404(db, PersonalTransaction, tx_id, account_id)
 
     # 确定最终 type（若传了新 type 则用新的，否则保持原 type）
     final_type = data.type if data.type is not None else tx.type
@@ -121,12 +118,7 @@ def update_transaction(tx_id: int, data: schemas.PersonalTransactionUpdate, acco
 @router.delete("/{tx_id}")
 def delete_transaction(tx_id: int, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     # 先查记录获取image_url
-    tx = db.query(PersonalTransaction).filter(
-        PersonalTransaction.id == tx_id,
-        PersonalTransaction.account_id == account_id
-    ).first()
-    if not tx:
-        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "个人流水记录", "order_id": tx_id})
+    tx = get_or_404(db, PersonalTransaction, tx_id, account_id)
     # 删除关联图片文件
     if tx.image_url:
         delete_old_image(tx.image_url)
