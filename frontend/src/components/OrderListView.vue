@@ -52,14 +52,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :prop="partnerPropName" :label="partnerLabel" min-width="120" />
+        <el-table-column :prop="term.partnerPropName" :label="term.partnerLabel" min-width="120" />
         <el-table-column label="商品数" min-width="80"><template #default="{ row }">{{ row.items?.length || 0 }}</template></el-table-column>
         <el-table-column prop="total_price" label="总价" min-width="110" align="right"><template #default="{ row }"><span class="money">¥{{ formatMoney(row.total_price) }}</span></template></el-table-column>
         <el-table-column prop="has_invoice" label="已开票" min-width="80" align="center"><template #default="{ row }"><span class="status-badge" :class="row.has_invoice?'success':'info'">{{ row.has_invoice?'是':'否' }}</span></template></el-table-column>
         <el-table-column v-if="orderType==='purchase'" prop="payment_method" label="支付方式" min-width="100" align="center"><template #default="{ row }"><span class="status-badge" :class="row.payment_method==='company'?'primary':'warning'">{{ enumsStore.getLabel('payment_method', row.payment_method) }}</span></template></el-table-column>
-        <el-table-column prop="payment_status" :label="paymentStatusLabel" min-width="100" align="center"><template #default="{ row }"><StatusTag :status="row.payment_status" type="payment_status" size="small" /></template></el-table-column>
+        <el-table-column prop="payment_status" :label="term.paymentStatusLabel" min-width="100" align="center"><template #default="{ row }"><StatusTag :status="row.payment_status" type="payment_status" size="small" /></template></el-table-column>
         <el-table-column prop="status" label="状态" min-width="90"><template #default="{ row }"><StatusTag :status="row.status" type="order" size="small" /></template></el-table-column>
-        <el-table-column :prop="datePropName" label="日期" min-width="110"><template #default="{ row }">{{ formatDate(row[datePropName]) }}</template></el-table-column>
+        <el-table-column prop="business_date" :label="term.dateLabel" min-width="110"><template #default="{ row }">{{ formatDate(row.business_date) }}</template></el-table-column>
         <el-table-column prop="notes" label="备注" min-width="100" />
         <el-table-column v-if="orderType==='sale'" label="附件" min-width="70" align="center">
           <template #default="{ row }">
@@ -99,52 +99,54 @@
       </div>
     </el-card>
 
-    <OrderFormDialog 
-      v-model:visible="orderForm.dialogVisible.value" 
-      :is-edit="false" 
-      :form="orderForm.form.value" 
-      :products="products" 
-      :partners="partners" 
-      :order-total="orderForm.orderTotal.value" 
-      :on-product-change="orderForm.onItemProductChange" 
+    <OrderFormDialog
+      v-model:visible="orderForm.dialogVisible.value"
+      :is-edit="false"
+      :form="orderForm.form.value"
+      :products="products"
+      :partners="partners"
+      :order-total="orderForm.orderTotal.value"
+      :on-product-change="orderForm.onItemProductChange"
       :operation-feedback="orderForm.operationFeedback.value"
-      :title-name="titleName"
-      :partner-label="partnerLabel"
-      :partner-field="partnerField"
-      :partner-mode="partnerMode"
+      :order-type="orderType"
+      :title-name="term.title"
+      :partner-label="term.partnerLabel"
+      :partner-field="term.partnerField"
+      :partner-mode="term.partnerMode"
       :show-date="orderType==='sale'"
       :show-tax-rate-on-edit="orderType!=='sale'"
-      :show-stock="orderType==='sale'"
-      :show-custom-price="orderType==='sale'"
-      :show-payment-method="orderType==='purchase'"
-      :use-enums-for-payment="orderType==='purchase'"
-      :business-type="orderType"
-      :confirm-text="confirmText"
+      :show-stock="term.showStock"
+      :show-custom-price="term.showCustomPrice"
+      :show-payment-method="term.showPaymentMethod"
+      :use-enums-for-payment="term.showPaymentMethod"
+      :business-type="term.businessType"
+      :confirm-text="term.confirmText"
       :update-api="(id, data) => api.update(id, data)"
-      @save="handleSave" 
-      @clear-feedback="orderForm.clearFeedback" 
+      @save="handleSave"
+      @clear-feedback="orderForm.clearFeedback"
     />
-    <OrderFormDialog 
-      v-model:visible="orderForm.editDialogVisible.value" 
-      :is-edit="true" 
-      :form="orderForm.editForm.value" 
-      :products="products" 
-      :partners="partners" 
-      :order-total="orderForm.editOrderTotal.value" 
+    <OrderFormDialog
+      v-model:visible="orderForm.editDialogVisible.value"
+      :is-edit="true"
+      :form="orderForm.editForm.value"
+      :products="products"
+      :partners="partners"
+      :order-total="orderForm.editOrderTotal.value"
       :on-product-change="orderForm.onEditItemProductChange"
-      :title-name="titleName"
-      :partner-label="partnerLabel"
-      :partner-field="partnerField"
-      :partner-mode="partnerMode"
+      :order-type="orderType"
+      :title-name="term.title"
+      :partner-label="term.partnerLabel"
+      :partner-field="term.partnerField"
+      :partner-mode="term.partnerMode"
       :show-date="false"
       :show-tax-rate-on-edit="orderType!=='sale'"
-      :show-stock="orderType==='sale'"
-      :show-custom-price="orderType==='sale'"
-      :show-payment-method="orderType==='purchase'"
-      :use-enums-for-payment="orderType==='purchase'"
-      :business-type="orderType"
+      :show-stock="term.showStock"
+      :show-custom-price="term.showCustomPrice"
+      :show-payment-method="term.showPaymentMethod"
+      :use-enums-for-payment="term.showPaymentMethod"
+      :business-type="term.businessType"
       :update-api="(id, data) => api.update(id, data)"
-      @save="handleEditSave" 
+      @save="handleEditSave"
     />
   </div>
 </template>
@@ -158,6 +160,7 @@ import { resolveImageUrl, handleError } from '../api/index'
 import StatusTag from './StatusTag.vue'
 import OrderFormDialog from './OrderFormDialog.vue'
 import { useOrderPage } from '../composables/useOrderPage'
+import { getOrderTerminology, buildOrderPayload } from '../constants/terminology'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -171,7 +174,6 @@ const props = defineProps({
   partnerMode: { type: String, default: 'select' },
   partnerField: { type: String, default: 'supplier_id' },
   partnerPropName: { type: String, default: 'supplier_name' },
-  datePropName: { type: String, default: 'purchase_date' },
   paymentStatusLabel: { type: String, default: '支付状态' },
   deleteConfirmText: { type: String, default: '确定删除？' },
   showKeywordSearch: { type: Boolean, default: false },
@@ -189,6 +191,8 @@ const isDeleteBlocked = (row) => {
   }
   return false
 }
+
+const term = computed(() => getOrderTerminology(props.orderType))
 
 const {
   list, loading, keyword, dateRange, statusFilter, pagination,
@@ -216,7 +220,7 @@ function showCreate() {
 
 function showEdit(row) {
   const defaults = props.orderType === 'sale'
-    ? { customer_name: row.customer_name || '', has_invoice: row.has_invoice, payment_status: row.payment_status, notes: row.notes || '', image_url: row.image_url || '', total_price: Number(row.total_price) || null }
+    ? { customer_name: row[term.value.partnerPropName] || '', has_invoice: row.has_invoice, payment_status: row.payment_status, notes: row.notes || '', image_url: row.image_url || '', total_price: Number(row.total_price) || null }
     : { supplier_id: row.supplier_id, tax_rate: Number(row.tax_rate) || 0.13, has_invoice: row.has_invoice, payment_method: row.payment_method, payment_status: row.payment_status || 'unpaid', notes: row.notes || '', image_url: row.image_url || '' }
   orderForm.setEditForm(row, defaults)
   orderForm.editDialogVisible.value = true
@@ -244,40 +248,30 @@ async function handleSave() {
   try {
     const f = orderForm.form.value
     const items = validItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
-    
-    if (props.orderType === 'sale') {
-      await props.api.create({
-        customer_id: await resolveCustomerId(f.customer_name),
-        has_invoice: f.has_invoice, payment_status: f.payment_status, notes: f.notes,
-        total_price: f.total_price ?? undefined,
-        sale_date: f.sale_date,
-        items
-      })
-      orderForm.operationFeedback.value = {
-        show: true, type: 'success', message: '销售成功',
-        details: [
-          { label: '库存扣减', value: '零售出库' },
-          { label: '销售商品数', value: `${validItems.length} 种` }
-        ]
-      }
-    } else {
-      await props.api.create({
-        supplier_id: f.supplier_id, tax_rate: f.tax_rate,
-        has_invoice: f.has_invoice, payment_method: f.payment_method, payment_status: f.payment_status,
-        notes: f.notes, items
-      })
-      orderForm.operationFeedback.value = {
-        show: true, type: 'success', message: '采购成功，已自动入库',
-        details: [
-          { label: '入库商品数', value: `${validItems.length} 种` },
-          { label: '总数量', value: `${validItems.reduce((sum, i) => sum + i.quantity, 0)} 件` }
-        ]
-      }
+    const partnerId = props.orderType === 'sale' ? await resolveCustomerId(f[term.value.partnerField]) : f[term.value.partnerField]
+
+    await props.api.create(buildOrderPayload({
+      orderType: props.orderType,
+      form: f,
+      items,
+      partnerId
+    }))
+
+    const fb = term.value.feedback
+    orderForm.operationFeedback.value = {
+      show: true,
+      type: 'success',
+      message: fb.createSuccess,
+      details: [
+        { label: fb.inventoryLabel, value: fb.inventoryValue || `${validItems.length} 种` },
+        ...(fb.itemCountLabel ? [{ label: fb.itemCountLabel, value: `${validItems.length} 种` }] : []),
+        ...(fb.totalQtyLabel ? [{ label: fb.totalQtyLabel, value: `${validItems.reduce((sum, i) => sum + i.quantity, 0)} 件` }] : [])
+      ]
     }
-    
+
     orderForm.dialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: props.orderType === 'sale' ? '销售失败，请检查库存和客户信息是否正确' : '采购失败，请检查输入数据是否正确' }) }
+  } catch (e) { handleError(e, { defaultMsg: term.value.feedback.createError }) }
 }
 
 async function handleEditSave() {
@@ -285,26 +279,20 @@ async function handleEditSave() {
   try {
     const f = orderForm.editForm.value
     const items = validItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
-    const orderLabel = props.orderType === 'sale' ? '销售单' : '采购单'
-    
-    if (props.orderType === 'sale') {
-      await props.api.update(f.id, {
-        customer_id: await resolveCustomerId(f.customer_name),
-        has_invoice: f.has_invoice, payment_status: f.payment_status, notes: f.notes,
-        image_url: f.image_url, total_price: f.total_price ?? undefined,
-        items
-      })
-    } else {
-      await props.api.update(f.id, {
-        supplier_id: f.supplier_id, tax_rate: f.tax_rate,
-        has_invoice: f.has_invoice, payment_method: f.payment_method, payment_status: f.payment_status,
-        notes: f.notes, image_url: f.image_url, items
-      })
-    }
-    ElMessage.success(validItems.length === 0 ? `${orderLabel}已删除（商品行数归零）` : `${orderLabel}修改成功`)
+    const partnerId = props.orderType === 'sale' ? await resolveCustomerId(f[term.value.partnerField]) : f[term.value.partnerField]
+
+    await props.api.update(f.id, buildOrderPayload({
+      orderType: props.orderType,
+      form: f,
+      items,
+      partnerId,
+      includeDate: false
+    }))
+
+    ElMessage.success(validItems.length === 0 ? `${term.value.orderLabel}已删除（商品行数归零）` : `${term.value.orderLabel}修改成功`)
     orderForm.editDialogVisible.value = false
     loadData()
-  } catch (e) { handleError(e, { defaultMsg: '修改失败，请检查输入数据是否正确' }) }
+  } catch (e) { handleError(e, { defaultMsg: term.value.feedback.editError }) }
 }
 </script>
 

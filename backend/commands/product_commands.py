@@ -73,6 +73,7 @@ class CreateProductHandler(CommandHandler):
                 source_type="product_opening",
                 source_id=product.id,
                 operator=cmd.operator,
+                move_date=datetime.now(),
             )
 
         # 3. 日志
@@ -286,9 +287,7 @@ class AdjustInventoryHandler(CommandHandler):
                             "average_cost": float(unit_cost),
                         },
                     )
-            move_date = None
-            if cmd.adjust_date:
-                move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d")
+            move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d") if cmd.adjust_date else datetime.now()
             if delta > 0:
                 engine.inbound(
                     account_id=cmd.account_id, product_id=cmd.product_id,

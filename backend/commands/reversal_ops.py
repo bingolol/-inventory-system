@@ -30,11 +30,13 @@ from operation_result import EntityType
 from utils import _d
 
 
-def reverse_single_receipt(db, account_id: int, receipt_id: int, call_reverse_journal: bool = True):
+def reverse_single_receipt(db, account_id: int, receipt_id: int, call_reverse_journal: bool = True, date: Optional[datetime] = None):
     """红冲单笔收款：生成反向收款 + 反向银行流水 + 回滚余额 + 可选冲红凭证。
 
     幂等性：通过 description 匹配 "冲销收款 #{原id}" 判断是否已被红冲过。
     call_reverse_journal=False 用于批量场景（order_lifecycle 统一处理凭证冲红）。
+
+    date: 冲销业务日期，默认取原始收款的 receipt_date_l1（BR-21：禁止用 datetime.now() 回退）。
     """
 
     receipt = db.query(models.Receipt).filter(
@@ -63,7 +65,7 @@ def reverse_single_receipt(db, account_id: int, receipt_id: int, call_reverse_jo
         related_entity_id=receipt.related_entity_id,
         amount_l1=-original_amount,
         receipt_method=receipt.receipt_method,
-        receipt_date_l1=datetime.now(),
+        receipt_date_l1=date or receipt.receipt_date_l1,
         bank_account_id=receipt.bank_account_id,
         description=f"冲销收款 #{receipt.id}",
     )
@@ -75,7 +77,7 @@ def reverse_single_receipt(db, account_id: int, receipt_id: int, call_reverse_jo
             bank_account_id=receipt.bank_account_id,
             transaction_type=TransactionType.OUTFLOW,
             amount=original_amount,
-            transaction_date=datetime.now(),
+            transaction_date=date or receipt.receipt_date_l1,
             description=f"冲销收款: {reversal.description}",
             related_entity_type=EntityType.RECEIPT,
             related_entity_id=reversal.id,
@@ -98,11 +100,13 @@ def reverse_single_receipt(db, account_id: int, receipt_id: int, call_reverse_jo
     return reversal
 
 
-def reverse_single_payment(db, account_id: int, payment_id: int, call_reverse_journal: bool = True):
+def reverse_single_payment(db, account_id: int, payment_id: int, call_reverse_journal: bool = True, date: Optional[datetime] = None):
     """红冲单笔付款：生成反向付款 + 反向银行流水 + 回滚余额 + 可选冲红凭证。
 
     幂等性：通过 description 匹配 "冲销付款 #{原id}" 判断是否已被红冲过。
     call_reverse_journal=False 用于批量场景（order_lifecycle 统一处理凭证冲红）。
+
+    date: 冲销业务日期，默认取原始付款的 payment_date_l1（BR-21：禁止用 datetime.now() 回退）。
     """
 
     payment = db.query(models.Payment).filter(
@@ -132,7 +136,7 @@ def reverse_single_payment(db, account_id: int, payment_id: int, call_reverse_jo
         amount_l1=-original_amount,
         withholding_tax_amount_l1=-_d(payment.withholding_tax_amount_l1 or 0),
         payment_method=payment.payment_method,
-        payment_date_l1=datetime.now(),
+        payment_date_l1=date or payment.payment_date_l1,
         bank_account_id=payment.bank_account_id,
         description=f"冲销付款 #{payment.id}",
     )
@@ -144,7 +148,7 @@ def reverse_single_payment(db, account_id: int, payment_id: int, call_reverse_jo
             bank_account_id=payment.bank_account_id,
             transaction_type=TransactionType.INFLOW,
             amount=original_amount,
-            transaction_date=datetime.now(),
+            transaction_date=date or payment.payment_date_l1,
             description=f"冲销付款: {reversal.description}",
             related_entity_type=EntityType.PAYMENT,
             related_entity_id=reversal.id,
@@ -215,8 +219,11 @@ def reverse_payments(db, account_id: int, purchase_order_id: int) -> None:
     db.flush()
 
 
-def reverse_bank_transaction(db, account_id: int, tx_id: int) -> Optional[models.BankTransaction]:
-    """红冲单笔银行交易：reverse_journal 红冲原始凭证 → 反向流水"""
+def reverse_bank_transaction(db, account_id: int, tx_id: int, date: Optional[datetime] = None) -> Optional[models.BankTransaction]:
+    """红冲单笔银行交易：reverse_journal 红冲原始凭证 → 反向流水
+
+    date: 冲销业务日期，默认取原始流水的 transaction_date（BR-21：禁止用 datetime.now() 回退）。
+    """
 
     tx = db.query(models.BankTransaction).filter(
         models.BankTransaction.id == tx_id,
@@ -250,7 +257,7 @@ def reverse_bank_transaction(db, account_id: int, tx_id: int) -> Optional[models
         bank_account_id=tx.bank_account_id,
         transaction_type=TransactionType.OUTFLOW if tx.transaction_type == TransactionType.INFLOW else TransactionType.INFLOW,
         amount=original_amount,
-        transaction_date=datetime.now(),
+        transaction_date=date or tx.transaction_date_l1,
         description=f"冲销银行交易 #{tx.id}",
         flow_category=tx.flow_category_l2 or "operating",
         related_entity_type=EntityType.REVERSAL,

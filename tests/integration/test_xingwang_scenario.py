@@ -167,7 +167,7 @@ class TestXingWangQ1:
                 {"product_id": s["products"]["CB"], "quantity": 500, "unit_price": 10, "tax_rate": 0.01},
             ],
             "payment_method": "company",
-            "purchase_date": "2026-01-05T10:00:00",
+            "business_date": "2026-01-05T10:00:00",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["orders"]["purchase1"] = r.json()["entity_id"]
@@ -187,8 +187,9 @@ class TestXingWangQ1:
 
         # 3a. 批发销售（赊账）
         r = c.post("/api/sales", json={
-            "sale_date": "2026-01-15",
+            "business_date": "2026-01-15",
             "customer_id": s["customer_id"],
+            "has_invoice": True,
             "items": [
                 {"product_id": s["products"]["BT"], "quantity": 50, "unit_price": 180, "tax_rate": 0.01},
                 {"product_id": s["products"]["PB"], "quantity": 80, "unit_price": 120, "tax_rate": 0.01},
@@ -204,8 +205,9 @@ class TestXingWangQ1:
 
         # 3b. 零售销售（现金收款）
         r = c.post("/api/sales", json={
-            "sale_date": "2026-01-15",
+            "business_date": "2026-01-15",
             "customer_id": None,
+            "has_invoice": True,
             "items": [
                 {"product_id": s["products"]["CB"], "quantity": 100, "unit_price": 25, "tax_rate": 0.01},
             ],
@@ -269,9 +271,30 @@ class TestXingWangQ1:
         # 第五幕：税务处理（3月31日）
         # ═══════════════════════════════════════════
 
-        # 5a. 红冲发票
+        # 5a. 红冲发票（用户先独立录入红字发票）
         if s["invoice_id"]:
-            r = c.post(f"/api/invoices/{s['invoice_id']}/reverse?reason={quote('开票信息错误')}", headers=HEADERS)
+            r = c.post("/api/invoices", json={
+                "invoice_no": "INV-2026-001-RED",
+                "direction": "out",
+                "invoice_type": "ordinary",
+                "amount_without_tax": -18415.84,
+                "tax_amount": -184.16,
+                "amount_with_tax": -18600,
+                "tax_rate": 0.01,
+                "counterparty_name": "北京中关村科技",
+                "seller_name": "兴旺电子贸易公司",
+                "buyer_name": "北京中关村科技",
+                "issue_date": "2026-03-31",
+                "related_order_id": s["orders"]["sale1"],
+                "related_order_type": "sale_order",
+                "related_original_invoice_id": s["invoice_id"],
+                "certification_status": "n_a",
+            }, headers=HEADERS)
+            assert r.status_code in (200, 201), r.text
+            red_invoice_id = r.json().get("entity_id") or r.json().get("data", {}).get("id")
+            r = c.post(f"/api/invoices/{s['invoice_id']}/reverse",
+                       json={"red_invoice_id": red_invoice_id, "reason": "开票信息错误"},
+                       headers=HEADERS)
             assert r.status_code == 200, r.text
 
         # 5b. Q1 资产负债表（验证接口正常响应，报告平衡状态）

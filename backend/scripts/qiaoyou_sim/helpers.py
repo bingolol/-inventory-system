@@ -168,16 +168,17 @@ def create_sale_order(db, account_id: int, customer_name: str, sale_date: dateti
 
     # 无发票模式：直接创建订单
     with unit_of_work(db):
+        from schemas.order import SaleItemCreate
         order = dispatch(CreateOrder(
             order_type="sale",
             account_id=account_id,
             operator="sim",
             customer_id=CUSTOMERS[customer_name],
-            sale_date=sale_date,
+            business_date=sale_date,
             has_invoice=False,
             notes=notes,
             payment_status="unpaid",
-            items=invoice_items,
+            items=[SaleItemCreate(**it).to_orm_kwargs() for it in invoice_items],
         ), db)
     db.flush()
     return order
@@ -238,14 +239,15 @@ def create_purchase_order(db, account_id: int, supplier_name: str,
 
     # 无发票模式
     with unit_of_work(db):
+        from schemas.order import PurchaseItemCreate
         order = dispatch(CreateOrder(
             order_type="purchase",
             account_id=account_id,
             operator="sim",
             supplier_id=SUPPLIERS[supplier_name],
-            purchase_date=purchase_date,
+            business_date=purchase_date,
             notes=notes,
-            items=invoice_items,
+            items=[PurchaseItemCreate(**it).to_orm_kwargs() for it in invoice_items],
         ), db)
     db.flush()
     return order

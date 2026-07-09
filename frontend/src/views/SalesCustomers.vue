@@ -17,7 +17,6 @@
             partner-mode="createable"
             partner-field="customer_name"
             partner-prop-name="customer_name"
-            date-prop-name="sale_date"
             delete-confirm-text="确定删除此销售单？"
             :default-form="SALE_DEFAULTS"
           />
@@ -48,7 +47,7 @@ import { today } from '../utils/date'
 const activeTab = ref('sales')
 
 const saleApi = { create: ordersApi.createSale, update: ordersApi.updateSale, delete: ordersApi.deleteSale, getList: ordersApi.getSales }
-const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null, sale_date: today() }
+const SALE_DEFAULTS = { customer_name: '', tax_rate: 0.03, has_invoice: false, payment_status: 'unpaid', notes: '', image_url: '', total_price: null, business_date: today() }
 
 const customersApi = {
   getList: partnersApi.getCustomers,

@@ -6,7 +6,6 @@ pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
 from tests.helpers import uniq
 from models import Invoice, FixedAsset
-from accounting_engine import AccountingEngine
 
 HEADERS = {"X-Account-ID": "1", "X-Operator": "user"}
 
@@ -87,6 +86,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商A",
             "seller_name": "供应商A",
             "buyer_name": "测试公司",
@@ -96,6 +96,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-001"),
                 "asset_name": "测试设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -114,6 +115,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 22600,
+            "tax_amount": 2600,
             "counterparty_name": "供应商B",
             "seller_name": "供应商B",
             "buyer_name": "测试公司",
@@ -123,6 +125,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-002"),
                 "asset_name": "测试设备B",
+                "salvage_rate": 0.05,
                 "useful_life": 120,
                 "start_date": "2026-06-19",
             },
@@ -145,6 +148,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商C",
             "seller_name": "供应商C",
             "buyer_name": "测试公司",
@@ -154,6 +158,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-ROLLBACK"),
                 "asset_name": "设备C",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -167,6 +172,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 5650,
+            "tax_amount": 650,
             "counterparty_name": "供应商D",
             "seller_name": "供应商D",
             "buyer_name": "测试公司",
@@ -176,6 +182,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-ROLLBACK-2"),
                 "asset_name": "设备D",
+                "salvage_rate": 0.05,
                 "useful_life": 36,
                 "start_date": "2026-06-19",
             },
@@ -202,6 +209,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商E",
             "seller_name": "供应商E",
             "buyer_name": "测试公司",
@@ -211,6 +219,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-DUP"),
                 "asset_name": "设备E",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -222,6 +231,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 5650,
+            "tax_amount": 650,
             "counterparty_name": "供应商F",
             "seller_name": "供应商F",
             "buyer_name": "测试公司",
@@ -231,6 +241,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-DUP-2"),
                 "asset_name": "设备F",
+                "salvage_rate": 0.05,
                 "useful_life": 36,
                 "start_date": "2026-06-19",
             },
@@ -249,6 +260,7 @@ class Test发票关联固定资产:
             "invoice_type": "special",
             "tax_rate": 0.09,
             "amount_with_tax": 10900,
+            "tax_amount": 900,
             "counterparty_name": "供应商G",
             "seller_name": "供应商G",
             "buyer_name": "测试公司",
@@ -295,6 +307,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商H",
             "seller_name": "供应商H",
             "buyer_name": "测试公司",
@@ -304,6 +317,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-UPD"),
                 "asset_name": "待更新设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -331,6 +345,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商I",
             "seller_name": "供应商I",
             "buyer_name": "测试公司",
@@ -340,6 +355,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-DEL"),
                 "asset_name": "待删除设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -373,6 +389,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商J",
             "seller_name": "供应商J",
             "buyer_name": "测试公司",
@@ -382,6 +399,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-SYNC"),
                 "asset_name": "同步设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -409,6 +427,7 @@ class Test发票关联固定资产:
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商K",
             "seller_name": "供应商K",
             "buyer_name": "测试公司",
@@ -418,6 +437,7 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-CLEAR"),
                 "asset_name": "待清空设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
@@ -443,17 +463,13 @@ class Test发票关联固定资产:
 
     def test_invoice_calculation_uses_accounting_engine(self, client):
         pid = _product_id(client)
-        engine = AccountingEngine()
-        expected = engine.calculate_invoice_amounts(
-            amount_with_tax=Decimal("11300"),
-            tax_rate=Decimal("0.13"),
-        )
         response = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("FA-INV-ENGINE"),
             "direction": "in",
             "invoice_type": "ordinary",
             "tax_rate": 0.13,
             "amount_with_tax": 11300,
+            "tax_amount": 1300,
             "counterparty_name": "供应商L",
             "seller_name": "供应商L",
             "buyer_name": "测试公司",
@@ -463,12 +479,13 @@ class Test发票关联固定资产:
             "fixed_asset": {
                 "asset_code": uniq("FA-ENGINE"),
                 "asset_name": "引擎测试设备",
+                "salvage_rate": 0.05,
                 "useful_life": 60,
                 "start_date": "2026-06-19",
             },
         }, headers=HEADERS)
         assert response.status_code == 200
         inv = response.json()["data"]
-        assert Decimal(str(inv["amount_without_tax"])) == expected.amount_without_tax
-        assert Decimal(str(inv["tax_amount"])) == expected.tax_amount
-        assert Decimal(str(inv["amount_with_tax"])) == expected.amount_with_tax
+        assert Decimal(str(inv["amount_without_tax"])) == Decimal("10000.00")
+        assert Decimal(str(inv["tax_amount"])) == Decimal("1300.00")
+        assert Decimal(str(inv["amount_with_tax"])) == Decimal("11300.00")

@@ -73,7 +73,7 @@ def test_purchase_amount_tax(client, ids):
         "supplier_id": ids["sid"],
         "payment_method": "company",
         "payment_status": "paid",
-        "purchase_date": "2026-01-05T10:00:00",
+        "business_date": "2026-01-05T10:00:00",
         "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": PRICE, "tax_rate": TAX_RATE}]
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)
@@ -116,10 +116,10 @@ def test_sale_amount_tax(client, ids):
     
     # 执行销售
     resp = client.post("/api/sales", json={
-        "customer_id": ids["cid"],
+        "customer_id": ids["cid"], "has_invoice": True,
         "deduct_inventory": True,
         "payment_status": "paid",
-        "sale_date": "2026-01-15T10:00:00",
+        "business_date": "2026-01-15T10:00:00",
         "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": PRICE, "tax_rate": TAX_RATE}]
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)
@@ -179,10 +179,10 @@ def test_return(client, ids):
     
     # 创建销售单
     resp = client.post("/api/sales", json={
-        "customer_id": ids["cid"],
+        "customer_id": ids["cid"], "has_invoice": True,
         "deduct_inventory": True,
         "payment_status": "paid",
-        "sale_date": "2026-02-01T10:00:00",
+        "business_date": "2026-02-01T10:00:00",
         "items": [{"product_id": ids["pid"], "quantity": RETURN_QTY, "unit_price": 150.00, "tax_rate": 0.01}]
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)

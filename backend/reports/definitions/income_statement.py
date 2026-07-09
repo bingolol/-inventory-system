@@ -51,7 +51,7 @@ INCOME_STATEMENT = [
     # 6403 主科目余额为 0 时回退到子科目（640302/303/304）
     Field("tax_surcharges", "税金及附加",
         source=LEDGER_PERIOD(["6403"], bucket=Bucket.PNL_EXCLUDED),
-        transform=SubaccountFallback(["640302"]),
+        transform=SubaccountFallback(["640302", "640303", "640304"]),
     ),
 
     # ── 附加税明细 ──

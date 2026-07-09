@@ -56,6 +56,7 @@ class TestStockMoveWrites:
             account_id=aid, product_id=pid, quantity=10,
             unit_price=Decimal("50"), source_type="test_dyn",
             source_id=99901, operator="tester",
+            move_date=PURCHASE_DATE,
         )
 
         moves = db.query(StockMove).filter(
@@ -74,6 +75,7 @@ class TestStockMoveWrites:
         InventoryEngine(db).outbound(
             account_id=aid, product_id=pid, quantity=5,
             source_type="test_dyn_out", source_id=99902, operator="tester",
+            move_date=PURCHASE_DATE,
         )
 
         moves = db.query(StockMove).filter(
@@ -85,21 +87,22 @@ class TestStockMoveWrites:
 
     def test_reverse_writes_stockmove(self, db):
         aid = _aid(db)
-        pid = _make_product_with_stock(db, aid)
-        engine = InventoryEngine(db)
-        # inbound first so reverse has an original StockMove to reference
-        engine.inbound(
-            account_id=aid, product_id=pid, quantity=10,
-            unit_price=Decimal("50"), source_type="test_dyn_rev",
-            source_id=99903, operator="tester",
+        sid = make_supplier(db, account_id=aid).id
+        pid = make_product(db, account_id=aid).id
+        # 通过真实采购单生成原始 StockMove，reverse 才能取到业务日期
+        order = OrderLifecycle.create_purchase_order(
+            db=db, account_id=aid, operator="tester",
+            items=[{"product_id": pid, "quantity_l1": 10, "unit_price_l1": Decimal("50"),
+                    "tax_rate_l1": Decimal("0.01")}],
+            purchase_date=PURCHASE_DATE, supplier_id=sid,
         )
-        engine.reverse(
+        InventoryEngine(db).reverse(
             account_id=aid, product_id=pid, quantity=3,
-            unit_cost=Decimal("50"), source_type="test_dyn_rev",
-            source_id=99903, operator="tester",
+            unit_cost=Decimal("50"), source_type="purchase_order",
+            source_id=order.id, operator="tester",
         )
         moves = db.query(StockMove).filter(
-            StockMove.source_type == "test_dyn_rev_reversal",
+            StockMove.source_type == "purchase_order_reversal",
             StockMove.product_id == pid,
         ).all()
         assert len(moves) >= 1
@@ -115,8 +118,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_purchase_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 5, "unit_price": Decimal("80"),
-                    "tax_rate": Decimal("0.01")}],
+            items=[{"product_id": pid, "quantity_l1": 5, "unit_price_l1": Decimal("80"),
+                    "tax_rate_l1": Decimal("0.01")}],
             purchase_date=PURCHASE_DATE, supplier_id=sid,
         )
 
@@ -138,8 +141,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_sale_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 3, "unit_price": Decimal("150"),
-                    "tax_rate": Decimal("0.01")}],
+            items=[{"product_id": pid, "quantity_l1": 3, "unit_price_l1": Decimal("150"),
+                    "tax_rate_l1": Decimal("0.01")}],
             sale_date=SALE_DATE, customer_id=cid,
         )
 
@@ -154,8 +157,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_purchase_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 2, "unit_price": Decimal("100"),
-                    "tax_rate": Decimal("0.01")}],
+            items=[{"product_id": pid, "quantity_l1": 2, "unit_price_l1": Decimal("100"),
+                    "tax_rate_l1": Decimal("0.01")}],
             purchase_date=PURCHASE_DATE, supplier_id=sid,
         )
 
@@ -172,8 +175,8 @@ class TestOrderLifecycleWrites:
 
         order = OrderLifecycle.create_sale_order(
             db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity": 1, "unit_price": Decimal("200"),
-                    "tax_rate": Decimal("0.01")}],
+            items=[{"product_id": pid, "quantity_l1": 1, "unit_price_l1": Decimal("200"),
+                    "tax_rate_l1": Decimal("0.01")}],
             sale_date=SALE_DATE, customer_id=cid,
         )
 

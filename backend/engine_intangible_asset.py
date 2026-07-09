@@ -16,15 +16,21 @@ from sqlalchemy.orm import Session
 import models
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal
-from utils import Q2
-from utils.period import period_bounds
 from cost_engine import straight_line_depreciation
-from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
+from lineage import writes, derives, reads, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
 from engine_asset_base import BaseAssetEngine
+from utils.period import period_bounds
 
 
 class IntangibleAssetEngine(BaseAssetEngine):
+
+    asset_model = models.IntangibleAsset
+    depreciation_model = models.IntangibleAssetAmortization
+    accumulated_attr = "accumulated_amortization_l4"
+    contra_account_code = "1702"
+    depreciation_source_model = "intangible_asset_amortization"
+    depreciation_move_name = "无形资产摊销"
 
     @reads("IntangibleAsset.useful_life_l3", tier=TIER_L3, source="policy")
     def calculate_monthly(self, asset: models.IntangibleAsset) -> Decimal:
@@ -39,96 +45,27 @@ class IntangibleAssetEngine(BaseAssetEngine):
     @derives("IntangibleAsset.accumulated_amortization_l4", from_fields=["IntangibleAssetAmortization.amount_l2"])
     def record_amortization(self, asset_id: int, period: str
                             ) -> Optional[models.IntangibleAssetAmortization]:
-        """计提单个无形资产的月摊销
-
-        1. 校验资产状态
-        2. 日期规则检查（当月增加当月摊；处置当月不再摊）
-        3. 幂等检查（同期间跳过）
-        4. 计算月摊销额
-        5. 写 IntangibleAssetAmortization 流水
-        6. 更新 accumulated_amortization 缓存
-        7. 生成会计凭证 借:6601(管理费用) 贷:1702(累计摊销)
-        """
-        asset = self.db.query(models.IntangibleAsset).filter(
-            models.IntangibleAsset.id == asset_id,
-            models.IntangibleAsset.account_id == self.account_id,
-        ).first()
-        if not asset:
-            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND,
-                                data={"order_type": "无形资产", "order_id": asset_id})
-        if asset.status == "已报废":
-            return None
-
-        period_start, period_end = period_bounds(period)
-
-        # 当月增加当月摊：开始日期在当月或之前即应摊
-        if asset.start_date_l1:
-            if asset.start_date_l1 > period_end:
-                return None
-        # 处置当月不再摊：已报废资产在 dispose_date 所在月不摊
-        # （status=已报废 已在上面拦截；若未来增加 disposal_date 字段，可在此扩展）
-
-        # 幂等检查
-        existing = self.db.query(models.IntangibleAssetAmortization).filter(
-            models.IntangibleAssetAmortization.asset_id == asset_id,
-            models.IntangibleAssetAmortization.period == period,
-        ).first()
-        if existing:
-            return existing
-
-        monthly = self.calculate_monthly(asset)
-        if monthly <= 0:
-            return None
-
-        accumulated_before = Decimal(str(asset.accumulated_amortization_l4 or 0))
-        accumulated_after = accumulated_before + monthly
-
-        # 写摊销流水（真相源）
-        amort = models.IntangibleAssetAmortization(
-            asset_id=asset_id,
-            account_id=self.account_id,
-            period=period,
-            amount_l2=monthly,
-            accumulated_before_l2=accumulated_before,
-            accumulated_after_l2=accumulated_after,
-        )
-        self.db.add(amort)
-
-        # 更新缓存
-        asset.accumulated_amortization_l4 = accumulated_after
-        self.db.flush()
-
-        # 生成会计凭证：借:6601（管理费用）贷:1702（累计摊销）
-        source = {
-            "amount": monthly,
-            "expense_account_code": "6601",
-            "contra_account_code": "1702",
-            "source_model": "intangible_asset_amortization",
-            "source_id": amort.id,
-            "date": period_end,
-            "description": f"无形资产摊销: {asset.name} {period}",
-        }
-        post_journal(self.db, self.account_id, "depreciation", source)
-
-        # AS-05 摊销公式 + 累计摊销上限校验
-        enforce_rules(self.db, ["AS-05"], {"intangible_asset_id": asset_id})
-
-        return amort
+        return self._record_depreciation(asset_id, period)
 
     def batch_amortize(self, period: str
                        ) -> List[models.IntangibleAssetAmortization]:
-        """批量计提所有在用无形资产的摊销"""
-        assets = self.db.query(models.IntangibleAsset).filter(
-            models.IntangibleAsset.account_id == self.account_id,
-            models.IntangibleAsset.status != "已报废",
-        ).all()
+        return self._batch_depreciate(period)
 
-        results = []
-        for asset in assets:
-            amort = self.record_amortization(asset.id, period)
-            if amort:
-                results.append(amort)
-        return results
+    def _raise_asset_not_found(self, asset_id: int):
+        raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND,
+                            data={"order_type": "无形资产", "order_id": asset_id})
+
+    def _is_eligible(self, asset, period: str) -> bool:
+        return asset.status != "已报废"
+
+    def _date_rule_ok(self, asset, period: str) -> bool:
+        if not asset.start_date_l1:
+            return True
+        _, period_end = period_bounds(period)
+        return asset.start_date_l1 <= period_end
+
+    def _rule_param(self, asset_id: int) -> dict:
+        return {"intangible_asset_id": asset_id}
 
     @derives("IntangibleAsset.accumulated_amortization_l4", from_fields=["IntangibleAssetAmortization.amount_l2"])
     def record_disposal(self, asset_id: int, disposal_date: Optional[date] = None) -> None:

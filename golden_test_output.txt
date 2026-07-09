@@ -1,0 +1,161 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0 -- C:\Miniconda3\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Administrator\Desktop\inventory-system
+configfile: pytest.ini
+plugins: anyio-4.12.1
+collecting ... collected 10 items
+
+tests/golden/test_golden_002_returns.py::TestGolden002::test_returns_compliance PASSED [ 10%]
+tests/golden/test_golden_003_fixed_asset.py::TestGolden003::test_fixed_asset_lifecycle PASSED [ 20%]
+tests/golden/test_golden_004_advance.py::TestPersonalAdvance::test_personal_advance_full_flow PASSED [ 30%]
+tests/golden/test_golden_005_small_scale.py::TestSmallScaleTrade::test_small_scale_buy_sell PASSED [ 40%]
+tests/golden/test_golden_006_expense_reversal.py::TestExpenseReversal::test_expense_reversal_flow PASSED [ 50%]
+tests/golden/test_golden_006_reconcile.py::TestBankReconcile::test_bank_reconcile_flow PASSED [ 60%]
+tests/golden/test_golden_007_bank_reconcile.py::TestBankReconciliation::test_bank_reconciliation_flow PASSED [ 70%]
+tests/golden/test_golden_007_multicurrency.py::TestMultiCurrency::test_multi_currency PASSED [ 80%]
+tests/golden/test_golden_full_cycle.py::TestFullCycle::test_full_cycle FAILED [ 90%]
+tests/golden/test_golden_v2_compliance.py::TestGolden001v2::test_accounting_rules_compliance PASSED [100%]
+
+================================== FAILURES ===================================
+________________________ TestFullCycle.test_full_cycle ________________________
+tests\golden\test_golden_full_cycle.py:385: in test_full_cycle
+    assert diff <= Decimal("0.05"), f"§84 BS不平衡, diff={diff}"
+E   AssertionError: §84 BS不平衡, diff=13.00
+E   assert Decimal('13.00') <= Decimal('0.05')
+E    +  where Decimal('0.05') = Decimal('0.05')
+---------------------------- Captured stdout setup ----------------------------
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+---------------------------- Captured stderr setup ----------------------------
+2026-07-08 15:26:36,203 [INFO] inventory: \u2705 Truth Source \u9759\u6001\u626b\u63cf\u901a\u8fc7\uff080 warning, 0 error\uff09\n2026-07-08 15:26:36,203 [INFO] inventory: \u23f3 \u8dd1\u4e0d\u53d8\u91cf\u6d4b\u8bd5\u5957\u4ef6\uff08\u7ea6 2-3 \u79d2\uff09...\n2026-07-08 15:26:40,183 [INFO] inventory: \u2705 \u4e0d\u53d8\u91cf\u6d4b\u8bd5\u901a\u8fc7\uff087 \u4e2a\uff09\n2026-07-08 15:26:40,184 [INFO] inventory: \u8fdb\u9500\u5b58\u7ba1\u7406\u7cfb\u7edf\u542f\u52a8\u5b8c\u6210
+----------------------------- Captured log setup ------------------------------
+INFO     inventory:main.py:314 \u2705 Truth Source \u9759\u6001\u626b\u63cf\u901a\u8fc7\uff080 warning, 0 error\uff09\nINFO     inventory:main.py:329 \u23f3 \u8dd1\u4e0d\u53d8\u91cf\u6d4b\u8bd5\u5957\u4ef6\uff08\u7ea6 2-3 \u79d2\uff09...\nINFO     inventory:main.py:357 \u2705 \u4e0d\u53d8\u91cf\u6d4b\u8bd5\u901a\u8fc7\uff087 \u4e2a\uff09\nINFO     inventory:main.py:58 \u8fdb\u9500\u5b58\u7ba1\u7406\u7cfb\u7edf\u542f\u52a8\u5b8c\u6210
+---------------------------- Captured stdout call -----------------------------
+
+DEBUG BS: total_assets=15103.67, total_L+E=15116.67, diff=13.00
+DEBUG BS: monetary=9435.0, inventory=700.0, fixed_net=4916.67, prepaid_tax=52.0
+DEBUG BS: ap=5000.0, vat=0.0, income_tax=5.83, total_liab=5005.83
+DEBUG BS: paid_in=10000.0, curr_profit=110.84, period_profit=0.0, retained=110.84, total_equity=10110.84
+DEBUG Expected: TOTAL_ASSETS=15168.67, TOTAL_LIAB=5057.83, TOTAL_EQUITY=10110.84
+---------------------------- Captured stderr call -----------------------------
+2026-07-08 15:26:40,200 [INFO] httpx: HTTP Request: POST http://testserver/api/bank-accounts "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,223 [INFO] httpx: HTTP Request: POST http://testserver/api/opening-balances "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,240 [INFO] httpx: HTTP Request: POST http://testserver/api/products "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,250 [INFO] httpx: HTTP Request: POST http://testserver/api/suppliers "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,260 [INFO] httpx: HTTP Request: POST http://testserver/api/customers "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.5ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.7ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.7ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.8ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.8ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.8ms
+2026-07-08 15:26:40,295 [INFO] inventory: [EventBus] purchase_order.created | handlers=1 | 0.9ms
+2026-07-08 15:26:40,304 [INFO] httpx: HTTP Request: POST http://testserver/api/purchases "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,332 [INFO] httpx: HTTP Request: POST http://testserver/api/invoices/quick "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.4ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.5ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.5ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,364 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.6ms
+2026-07-08 15:26:40,365 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.7ms
+2026-07-08 15:26:40,365 [INFO] inventory: [EventBus] sale_order.created | handlers=1 | 0.7ms
+2026-07-08 15:26:40,373 [INFO] httpx: HTTP Request: POST http://testserver/api/sales "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.4ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.5ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.5ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.7ms
+2026-07-08 15:26:40,399 [INFO] inventory: [EventBus] sale_order.returned | handlers=1 | 0.7ms
+2026-07-08 15:26:40,406 [INFO] httpx: HTTP Request: POST http://testserver/api/sales/1/return "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.4ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.5ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.6ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.7ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.7ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.8ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.8ms
+2026-07-08 15:26:40,433 [INFO] inventory: [EventBus] purchase_order.returned | handlers=1 | 0.9ms
+2026-07-08 15:26:40,441 [INFO] httpx: HTTP Request: POST http://testserver/api/purchases/1/return "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,472 [INFO] httpx: HTTP Request: POST http://testserver/api/payments "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,504 [INFO] httpx: HTTP Request: POST http://testserver/api/receipts "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,529 [INFO] httpx: HTTP Request: POST http://testserver/api/fixed-assets "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,727 [INFO] inventory: 月结 2026-01 计提所得税: +5.83
+2026-07-08 15:26:40,741 [INFO] inventory: 损益结转 2026-01: 收入=400.00 费用=289.16 净利润=110.84
+2026-07-08 15:26:40,749 [INFO] httpx: HTTP Request: POST http://testserver/api/finance/month-close "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,758 [INFO] httpx: HTTP Request: GET http://testserver/api/financial-reports/balance-sheet?date=2026-01-31 "HTTP/1.1 200 OK"
+2026-07-08 15:26:40,763 [INFO] httpx: HTTP Request: GET http://testserver/api/financial-reports/income-statement?start_date=2026-01-01&end_date=2026-01-31 "HTTP/1.1 200 OK"
+------------------------------ Captured log call ------------------------------
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/bank-accounts "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/opening-balances "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/products "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/suppliers "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/customers "HTTP/1.1 200 OK"
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.8ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.8ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.8ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.created | handlers=1 | 0.9ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/purchases "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/invoices/quick "HTTP/1.1 200 OK"
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.4ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.created | handlers=1 | 0.7ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/sales "HTTP/1.1 200 OK"
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.4ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] sale_order.returned | handlers=1 | 0.7ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/sales/1/return "HTTP/1.1 200 OK"
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.4ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.5ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.6ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.7ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.8ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.8ms
+INFO     inventory:__init__.py:25 [EventBus] purchase_order.returned | handlers=1 | 0.9ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/purchases/1/return "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/payments "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/receipts "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/fixed-assets "HTTP/1.1 200 OK"
+INFO     inventory:engine_tax.py:142 月结 2026-01 计提所得税: +5.83
+INFO     inventory:engine_period_close.py:163 损益结转 2026-01: 收入=400.00 费用=289.16 净利润=110.84
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/finance/month-close "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://testserver/api/financial-reports/balance-sheet?date=2026-01-31 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://testserver/api/financial-reports/income-statement?start_date=2026-01-01&end_date=2026-01-31 "HTTP/1.1 200 OK"
+============================== warnings summary ===============================
+..\..\..\..\Miniconda3\Lib\site-packages\fastapi\testclient.py:1
+  C:\Miniconda3\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/golden/test_golden_full_cycle.py::TestFullCycle::test_full_cycle - AssertionError: §84 BS不平衡, diff=13.00
+assert Decimal('13.00') <= Decimal('0.05')
+ +  where Decimal('0.05') = Decimal('0.05')
+=================== 1 failed, 9 passed, 1 warning in 50.78s ===================

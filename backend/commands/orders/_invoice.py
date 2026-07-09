@@ -10,12 +10,11 @@ from decimal import Decimal
 from typing import Any, Optional, List
 
 import models
-from enums import InvoiceDirection, InvoiceType, CertificationStatus
+from enums import InvoiceDirection, InvoiceType
 from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
 
 from commands.base import Command, CommandHandler, register
-from ._lifecycle import OrderLifecycle
 from crud.base import log_op
 from image_utils import delete_old_image
 from accounting_engine import AccountingEngine
@@ -26,6 +25,7 @@ from crud.invoice_linkage import validate_link_target
 from rules import enforce_rules
 
 from . import _cascade
+from . import _invoice_orders
 
 _engine = AccountingEngine()
 
@@ -62,6 +62,8 @@ class CreateInvoice(Command):
     certification_date: Any = None
     related_order_id: Optional[int] = None
     related_order_type: Optional[str] = None
+    related_original_invoice_id: Optional[int] = None
+    is_normal_invoice: bool = True
     notes: str = ""
     items: List[dict] = field(default_factory=list)
     sale_order_action: Optional[str] = None
@@ -122,6 +124,8 @@ class CreateInvoiceHandler(CommandHandler):
             certification_date_l3=cmd.certification_date,
             related_order_id=cmd.related_order_id,
             related_order_type=cmd.related_order_type,
+            related_original_invoice_id=cmd.related_original_invoice_id,
+            is_normal_invoice=cmd.is_normal_invoice,
             notes=cmd.notes,
         )
         db.add(db_invoice)
@@ -149,7 +153,7 @@ class CreateInvoiceHandler(CommandHandler):
                 db_invoice.related_order_type = "sale_order"
                 db_invoice.related_order_id = cmd.related_order_id
             elif cmd.sale_order_action == "auto_create":
-                sale_order = _auto_generate_sale_order(
+                sale_order = _invoice_orders._auto_generate_sale_order(
                     db, cmd.account_id, cmd.operator, db_invoice, cmd.items
                 )
                 db_invoice.related_order_type = "sale_order"
@@ -165,7 +169,7 @@ class CreateInvoiceHandler(CommandHandler):
                 db_invoice.related_order_type = "purchase_order"
                 db_invoice.related_order_id = cmd.related_order_id
             elif cmd.purchase_order_action == "auto_create":
-                purchase_order = _auto_generate_purchase_order(
+                purchase_order = _invoice_orders._auto_generate_purchase_order(
                     db, cmd.account_id, cmd.operator, db_invoice, cmd.items
                 )
                 db_invoice.related_order_type = "purchase_order"
@@ -264,6 +268,7 @@ class UpdateInvoiceHandler(CommandHandler):
 @dataclass
 class CertifyInvoice(Command):
     invoice_id: int = 0
+    certification_date: Any = None
 
 
 @register(CertifyInvoice)
@@ -292,8 +297,23 @@ class CertifyInvoiceHandler(CommandHandler):
                 message="只有专票可以认证",
                 ai_instruction="STOP_RETRYING. 只有专用发票（invoice_type=special）可以认证。请检查发票类型。"
             )
+        if cmd.certification_date is None:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="认证日期 certification_date 必须传入",
+                ai_instruction="STOP_RETRYING. 认证日期必须用户录入，禁止系统自动填充。"
+            )
+        issue_date = cmd.certification_date
+        if isinstance(issue_date, str):
+            try:
+                issue_date = datetime.strptime(issue_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise BusinessError(
+                    code=ErrorCode.INVOICE_INVALID_DATE,
+                    data={"date": cmd.certification_date}
+                )
         invoice.certification_status_l3 = "certified"
-        invoice.certification_date_l3 = datetime.now()
+        invoice.certification_date_l3 = issue_date
         log_op(db, cmd.account_id, "update", "invoice", cmd.invoice_id,
              f"认证发票: {invoice.invoice_no}", operator=cmd.operator)
         db.flush()
@@ -319,6 +339,7 @@ class CreateInvoiceWithFixedAsset(Command):
     notes: str = ""
     items: List[dict] = field(default_factory=list)
     purchase_order_action: Optional[str] = None
+    related_original_invoice_id: Optional[int] = None
     asset_code: str = ""
     asset_name: str = ""
     category: Optional[str] = None
@@ -371,6 +392,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             issue_date_l1=issue_date,
             notes=cmd.notes,
             related_order_type="fixed_asset",
+            related_original_invoice_id=cmd.related_original_invoice_id,
         )
         db.add(db_invoice)
         db.flush()
@@ -394,11 +416,6 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
         enable_vat_deduction = acct_conf["enable_vat_deduction"] and cmd.invoice_type == InvoiceType.SPECIAL
         acct_conf["enable_vat_deduction"] = enable_vat_deduction
         asset_original_value = amount_with_tax if not enable_vat_deduction else amount_without_tax
-
-        if enable_vat_deduction:
-            db_invoice.certification_status_l3 = CertificationStatus.CERTIFIED
-            db_invoice.certification_date_l3 = datetime.combine(issue_date, datetime.min.time())
-            db.flush()
 
         db_asset = models.FixedAsset(
             account_id=cmd.account_id,
@@ -456,7 +473,8 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
 
 @dataclass
 class ReverseInvoice(Command):
-    invoice_id: int = 0
+    original_invoice_id: int = 0
+    red_invoice_id: int = 0
     reason: str = ""
 
 
@@ -464,20 +482,15 @@ class ReverseInvoice(Command):
 class ReverseInvoiceHandler(CommandHandler):
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
-    @writes("Invoice.tax_rate_l1", tier=TIER_L1, source="external")
-    @writes("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
-    @writes("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
-    @writes("Invoice.amount_with_tax_l1", tier=TIER_L1, source="external")
-    @writes("Invoice.issue_date_l1", tier=TIER_L1, source="external")
     def handle(self, cmd: ReverseInvoice, db: Any) -> Any:
         invoice = db.query(models.Invoice).filter(
-            models.Invoice.id == cmd.invoice_id,
+            models.Invoice.id == cmd.original_invoice_id,
             models.Invoice.account_id == cmd.account_id,
         ).first()
         if not invoice:
             raise BusinessError(
                 code=ErrorCode.INVOICE_NOT_FOUND,
-                data={"invoice_id": cmd.invoice_id}
+                data={"invoice_id": cmd.original_invoice_id}
             )
         if invoice.is_reversed:
             raise BusinessError(
@@ -486,36 +499,38 @@ class ReverseInvoiceHandler(CommandHandler):
                 ai_instruction="STOP_RETRYING. 该发票已冲红，无需再次冲红。"
             )
 
+        red_invoice = db.query(models.Invoice).filter(
+            models.Invoice.id == cmd.red_invoice_id,
+            models.Invoice.account_id == cmd.account_id,
+        ).first()
+        if not red_invoice:
+            raise BusinessError(
+                code=ErrorCode.INVOICE_NOT_FOUND,
+                data={"invoice_id": cmd.red_invoice_id}
+            )
+        if red_invoice.related_original_invoice_id != invoice.id:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="红字发票必须关联到正确的原发票",
+                ai_instruction="STOP_RETRYING. 红字发票的 related_original_invoice_id 必须与原发票一致。"
+            )
+        if red_invoice.direction != invoice.direction:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="红字发票方向必须与原发票一致",
+                ai_instruction="STOP_RETRYING. 红字发票的 direction 必须与原发票相同。"
+            )
+
+        # 校验红字发票金额为负（票面金额符号相反）
+        if red_invoice.amount_with_tax_l1 >= 0:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="红字发票价税合计必须为负数",
+                ai_instruction="STOP_RETRYING. 红字发票的 amount_with_tax 必须小于 0。"
+            )
+
         invoice.is_reversed = True
         invoice.reversed_at = datetime.now()
-
-        red_invoice_no = f"H-{invoice.invoice_no}"
-        existing_red = db.query(models.Invoice).filter(
-            models.Invoice.account_id == cmd.account_id,
-            models.Invoice.invoice_no == red_invoice_no,
-        ).first()
-        if existing_red:
-            red_invoice_no = f"H-{invoice.invoice_no}-{invoice.id}"
-
-        red_invoice = models.Invoice(
-            account_id=cmd.account_id,
-            invoice_no=red_invoice_no,
-            direction=invoice.direction,
-            invoice_type=invoice.invoice_type,
-            tax_rate_l1=invoice.tax_rate_l1,
-            amount_without_tax_l1=-to_decimal(invoice.amount_without_tax_l1),
-            tax_amount_l1=-to_decimal(invoice.tax_amount_l1),
-            amount_with_tax_l1=-to_decimal(invoice.amount_with_tax_l1),
-            counterparty_name=invoice.counterparty_name,
-            seller_name=invoice.seller_name,
-            buyer_name=invoice.buyer_name,
-            issue_date_l1=invoice.issue_date_l1,  # BR-REV: 用原发票日期，避免跨期冲红时发票口径错位（与 BR-22 同源）
-            related_order_id=invoice.related_order_id,
-            related_order_type=invoice.related_order_type,
-            notes=f"红字发票：冲红原发票 {invoice.invoice_no}(ID:{invoice.id})。原因：{cmd.reason}",
-        )
-        db.add(red_invoice)
-        db.flush()
 
         enforce_rules(db, ["AS-06"], {"invoice_id": red_invoice.id})
 
@@ -529,7 +544,7 @@ class ReverseInvoiceHandler(CommandHandler):
         )
 
         log_op(db, cmd.account_id, "reverse", "invoice", invoice.id,
-             f"红字发票冲红: {invoice.invoice_no} → {red_invoice_no}, 级联: {', '.join(cascade_result)}",
+             f"红字发票冲红: {invoice.invoice_no} → {red_invoice.invoice_no}, 级联: {', '.join(cascade_result)}",
              operator=cmd.operator)
         db.flush()
 
@@ -653,50 +668,3 @@ class UpdateAssetWithInvoiceHandler(CommandHandler):
                  f"联动更新发票: {invoice.invoice_no}", operator=cmd.operator)
         return {"asset": asset, "invoice": invoice}
 
-
-# ═══════════════════════════════════════════════════════════
-# 辅助函数：发票自动生成销售单/采购单
-# ═══════════════════════════════════════════════════════════
-
-def _auto_generate_sale_order(db, account_id, operator, invoice, items):
-    customer = db.query(models.Customer).filter(
-        models.Customer.account_id == account_id,
-        models.Customer.name == invoice.counterparty_name,
-    ).first()
-    if not customer and invoice.counterparty_name:
-        customer = models.Customer(
-            account_id=account_id, name=invoice.counterparty_name,
-            contact="", phone="",
-        )
-        db.add(customer)
-        db.flush()
-    customer_id = customer.id if customer else None
-    return OrderLifecycle.create_sale_order(
-        db=db, account_id=account_id, operator=operator,
-        items=items, sale_date=invoice.issue_date_l1,
-        customer_id=customer_id,
-        total_price=invoice.amount_with_tax_l1,
-        tax_amount=invoice.tax_amount_l1,
-        has_invoice=True,
-        notes=f"由发票 {invoice.invoice_no} 自动生成",
-        auto_generated_from=invoice.invoice_no,
-    )
-
-
-def _auto_generate_purchase_order(db, account_id, operator, invoice, items):
-    supplier_id = None
-    supplier = db.query(models.Supplier).filter(
-        models.Supplier.account_id == account_id,
-        models.Supplier.name == invoice.counterparty_name,
-    ).first()
-    if supplier:
-        supplier_id = supplier.id
-    return OrderLifecycle.create_purchase_order(
-        db=db, account_id=account_id, operator=operator,
-        items=items, purchase_date=invoice.issue_date_l1,
-        supplier_id=supplier_id,
-        total_price=invoice.amount_with_tax_l1,
-        tax_amount=invoice.tax_amount_l1,
-        notes=f"由发票 {invoice.invoice_no} 自动生成",
-        auto_generated_from=invoice.invoice_no,
-    )

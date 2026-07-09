@@ -7,6 +7,7 @@
 # 导入各模块以触发 @register 装饰器
 from . import _order  # noqa: F401
 from . import _invoice  # noqa: F401
+from . import _event_handlers  # noqa: F401
 
 # 参数化订单命令（通过 order_type 区分 sale/purchase）
 from ._order import (

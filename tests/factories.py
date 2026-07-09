@@ -188,14 +188,15 @@ def api_create_supplier(client, headers, **overrides):
     assert resp.status_code in (200, 201), f"创建供应商失败: {resp.text}"
     return get_entity_id(resp.json()), resp.json()
 
-def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_price=10.00):
+def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_price=10.00,
+                                    tax_rate=0.13):
     """创建采购单并完成入库"""
     tag = uniq("PO")
     now_str = datetime.now().strftime("%Y-%m-%d")
     resp = client.post("/api/purchases", json={
         "order_no": f"PO-{tag}", "supplier_id": 1,
-        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price}],
-        "purchase_date": now_str,
+        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
+        "business_date": now_str,
     }, headers=headers)
     assert resp.status_code in (200, 201), f"创建采购单失败: {resp.text}"
     purchase_id = get_entity_id(resp.json())
@@ -206,13 +207,13 @@ def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_pr
     return purchase_id
 
 def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=20.00,
-                    tax_rate=0.03, has_invoice=False, sale_date=None, **extra):
+                    tax_rate=0.03, has_invoice=False, business_date=None, **extra):
     tag = uniq("SO")
-    now_str = sale_date or datetime.now().strftime("%Y-%m-%d")
+    now_str = business_date or datetime.now().strftime("%Y-%m-%d")
     payload = {
         "order_no": f"SO-{tag}", "customer_id": customer_id,
         "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
-        "sale_date": now_str,
+        "business_date": now_str,
         "has_invoice": has_invoice,
     }
     payload.update(extra)
@@ -222,13 +223,13 @@ def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=
 
 
 def api_create_purchase(client, headers, product_id, supplier_id, qty=1, unit_price=10.00,
-                        tax_rate=0.03, purchase_date=None, **extra):
+                        tax_rate=0.03, business_date=None, **extra):
     tag = uniq("PO")
-    now_str = purchase_date or datetime.now().strftime("%Y-%m-%d")
+    now_str = business_date or datetime.now().strftime("%Y-%m-%d")
     payload = {
         "order_no": f"PO-{tag}", "supplier_id": supplier_id,
         "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
-        "purchase_date": now_str,
+        "business_date": now_str,
     }
     payload.update(extra)
     resp = client.post("/api/purchases", json=payload, headers=headers)

@@ -29,13 +29,12 @@ class CreateOrder(Command):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
     payment_status: str = PaymentStatus.UNPAID
-    has_invoice: bool = True
+    has_invoice: bool = True  # 销售单是否已开发票；Schema 层已改为必填，命令层保留默认兼容旧测试
     # purchase fields
     supplier_id: Optional[int] = None
     payment_method: str = "company"
     # common fields
-    sale_date: Optional[datetime] = None
-    purchase_date: Optional[datetime] = None
+    business_date: Optional[datetime] = None
     notes: str = ""
     image_url: str = ""
     total_price: Optional[Decimal] = None
@@ -52,7 +51,7 @@ class CreateOrderHandler(CommandHandler):
         if cmd.order_type == "sale":
             return OrderLifecycle.create_sale_order(
                 db=db, account_id=cmd.account_id, operator=cmd.operator,
-                items=cmd.items, sale_date=cmd.sale_date,
+                items=cmd.items, sale_date=cmd.business_date,
                 customer_id=cmd.customer_id, total_price=cmd.total_price,
                 tax_amount=cmd.tax_amount, has_invoice=cmd.has_invoice,
                 notes=cmd.notes, image_url=cmd.image_url,
@@ -63,7 +62,7 @@ class CreateOrderHandler(CommandHandler):
         elif cmd.order_type == "purchase":
             return OrderLifecycle.create_purchase_order(
                 db=db, account_id=cmd.account_id, operator=cmd.operator,
-                items=cmd.items, purchase_date=cmd.purchase_date,
+                items=cmd.items, purchase_date=cmd.business_date,
                 supplier_id=cmd.supplier_id, total_price=cmd.total_price,
                 tax_amount=cmd.tax_amount, payment_method=cmd.payment_method,
                 notes=cmd.notes, image_url=cmd.image_url,

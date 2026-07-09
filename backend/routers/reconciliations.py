@@ -16,86 +16,65 @@ from crud.invoice_linkage import has_invoice as linkage_has_invoice
 
 router = APIRouter()
 
+_PARTY_CONFIG = {
+    "supplier": {
+        "model": Supplier, "partner_key": "supplier_id",
+        "order_model": PurchaseOrder, "order_date_attr": "purchase_date_l1",
+        "order_label": "采购单", "error_code": ErrorCode.ORDER_NOT_FOUND,
+        "inv_dir": InvoiceDirection.IN,
+    },
+    "customer": {
+        "model": Customer, "partner_key": "customer_id",
+        "order_model": SaleOrder, "order_date_attr": "sale_date_l1",
+        "order_label": "销售单", "error_code": ErrorCode.CUSTOMER_NOT_FOUND,
+        "inv_dir": InvoiceDirection.OUT,
+    },
+}
+
 
 def _calc_partner_reconciliation(db: Session, account_id: int, party_type: str, partner_id: int,
                                   start_date: str, end_date: str):
     """计算单个合作伙伴的对账数据"""
+    cfg = _PARTY_CONFIG[party_type]
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
 
-    if party_type == "supplier":
-        partner = db.query(Supplier).filter(
-            Supplier.id == partner_id, Supplier.account_id == account_id
-        ).first()
-        if not partner:
-            return None
+    partner = db.query(cfg["model"]).filter(
+        cfg["model"].id == partner_id, cfg["model"].account_id == account_id
+    ).first()
+    if not partner:
+        return None
 
-        # 期初：start_date 前未付款采购单
-        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price_l1), 0)).filter(
-            PurchaseOrder.account_id == account_id,
-            PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date_l1 < start_dt,
-            PurchaseOrder.payment_status == PaymentStatus.UNPAID,
-            PurchaseOrder.status == OrderStatus.COMPLETED
-        ).scalar())
+    order_model = cfg["order_model"]
+    partner_fk = getattr(order_model, cfg["partner_key"])
+    order_date = getattr(order_model, cfg["order_date_attr"])
 
-        # 本期所有采购单
-        orders = db.query(PurchaseOrder).filter(
-            PurchaseOrder.account_id == account_id,
-            PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date_l1 >= start_dt,
-            PurchaseOrder.purchase_date_l1 <= end_dt,
-            PurchaseOrder.status == OrderStatus.COMPLETED
-        ).all()
-        current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
-        paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
+    opening = _d(db.query(func.coalesce(func.sum(order_model.total_price_l1), 0)).filter(
+        order_model.account_id == account_id,
+        partner_fk == partner_id,
+        order_date < start_dt,
+        order_model.payment_status == PaymentStatus.UNPAID,
+        order_model.status == OrderStatus.COMPLETED
+    ).scalar())
 
-        # 发票
-        invs = db.query(Invoice).filter(
-            Invoice.account_id == account_id,
-            Invoice.direction == InvoiceDirection.IN,
-            Invoice.counterparty_name == partner.name,
-            Invoice.issue_date_l1 >= start_dt,
-            Invoice.issue_date_l1 <= end_dt
-        ).all()
-        inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
+    orders = db.query(order_model).filter(
+        order_model.account_id == account_id,
+        partner_fk == partner_id,
+        order_date >= start_dt,
+        order_date <= end_dt,
+        order_model.status == OrderStatus.COMPLETED
+    ).all()
+    current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
+    paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
 
-    else:
-        partner = db.query(Customer).filter(
-            Customer.id == partner_id, Customer.account_id == account_id
-        ).first()
-        if not partner:
-            return None
-
-        # 期初：start_date 前未收款销售单
-        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price_l1), 0)).filter(
-            SaleOrder.account_id == account_id,
-            SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date_l1 < start_dt,
-            SaleOrder.payment_status == PaymentStatus.UNPAID,
-            SaleOrder.status == OrderStatus.COMPLETED
-        ).scalar())
-
-        # 本期所有销售单
-        orders = db.query(SaleOrder).filter(
-            SaleOrder.account_id == account_id,
-            SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date_l1 >= start_dt,
-            SaleOrder.sale_date_l1 <= end_dt,
-            SaleOrder.status == OrderStatus.COMPLETED
-        ).all()
-        current = sum((_d(o.total_price_l1) for o in orders), Decimal('0'))
-        paid = sum((_d(o.total_price_l1) for o in orders if o.payment_status == PaymentStatus.PAID), Decimal('0'))
-
-        # 发票
-        invs = db.query(Invoice).filter(
-            Invoice.account_id == account_id,
-            Invoice.direction == InvoiceDirection.OUT,
-            Invoice.counterparty_name == partner.name,
-            Invoice.issue_date_l1 >= start_dt,
-            Invoice.issue_date_l1 <= end_dt
-        ).all()
-        inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
+    invs = db.query(Invoice).filter(
+        Invoice.account_id == account_id,
+        Invoice.direction == cfg["inv_dir"],
+        Invoice.counterparty_name == partner.name,
+        Invoice.issue_date_l1 >= start_dt,
+        Invoice.issue_date_l1 <= end_dt
+    ).all()
+    inv_amount = sum((_d(i.amount_with_tax_l1) for i in invs), Decimal('0'))
 
     closing = opening + current - paid
     return {
@@ -126,11 +105,9 @@ def get_all_reconciliations(
     except ValueError:
         raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": f"{start_date} ~ {end_date}"})
 
-    # 获取所有合作伙伴
-    if party_type == "supplier":
-        partners = db.query(Supplier).filter(Supplier.account_id == account_id).all()
-    else:
-        partners = db.query(Customer).filter(Customer.account_id == account_id).all()
+    partners = db.query(_PARTY_CONFIG[party_type]["model"]).filter(
+        _PARTY_CONFIG[party_type]["model"].account_id == account_id
+    ).all()
 
     # 计算每个合作伙伴的对账数据
     results = []
@@ -181,95 +158,52 @@ def get_reconciliation_detail(
     except ValueError:
         raise BusinessError(code=ErrorCode.INVOICE_INVALID_DATE, data={"date": f"{start_date} ~ {end_date}"})
 
-    if party_type == "supplier":
-        partner = db.query(Supplier).filter(
-            Supplier.id == partner_id, Supplier.account_id == account_id
-        ).first()
-        if not partner:
-            raise BusinessError(code=ErrorCode.ORDER_NOT_FOUND, data={"order_type": "供应商", "order_id": partner_id})
+    cfg = _PARTY_CONFIG[party_type]
+    order_model = cfg["order_model"]
+    partner_fk = getattr(order_model, cfg["partner_key"])
+    order_date = getattr(order_model, cfg["order_date_attr"])
 
-        # 期初
-        opening = _d(db.query(func.coalesce(func.sum(PurchaseOrder.total_price_l1), 0)).filter(
-            PurchaseOrder.account_id == account_id,
-            PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date_l1 < start_dt,
-            PurchaseOrder.payment_status == PaymentStatus.UNPAID,
-            PurchaseOrder.status == OrderStatus.COMPLETED
-        ).scalar())
+    partner = db.query(cfg["model"]).filter(
+        cfg["model"].id == partner_id, cfg["model"].account_id == account_id
+    ).first()
+    if not partner:
+        raise BusinessError(code=cfg["error_code"], data={"order_type": cfg["order_label"], "order_id": partner_id})
 
-        # 明细
-        orders = db.query(PurchaseOrder).filter(
-            PurchaseOrder.account_id == account_id,
-            PurchaseOrder.supplier_id == partner_id,
-            PurchaseOrder.purchase_date_l1 >= start_dt,
-            PurchaseOrder.purchase_date_l1 <= end_dt,
-            PurchaseOrder.status == OrderStatus.COMPLETED
-        ).order_by(PurchaseOrder.purchase_date_l1).all()
+    opening = _d(db.query(func.coalesce(func.sum(order_model.total_price_l1), 0)).filter(
+        order_model.account_id == account_id,
+        partner_fk == partner_id,
+        order_date < start_dt,
+        order_model.payment_status == PaymentStatus.UNPAID,
+        order_model.status == OrderStatus.COMPLETED
+    ).scalar())
 
-        items = []
-        for o in orders:
-            items.append({
-                "date": o.purchase_date_l1.strftime("%Y-%m-%d") if o.purchase_date_l1 else "",
-                "description": f"采购单 {o.order_no}",
-                "amount": o.total_price_l1,
-                "payment_status": o.payment_status,
-                "has_invoice": linkage_has_invoice(db, account_id, "purchase_order", o.id),
-                "notes": o.notes or ""
-            })
+    orders = db.query(order_model).filter(
+        order_model.account_id == account_id,
+        partner_fk == partner_id,
+        order_date >= start_dt,
+        order_date <= end_dt,
+        order_model.status == OrderStatus.COMPLETED
+    ).order_by(order_date).all()
 
-        # 发票
-        invs = db.query(Invoice).filter(
-            Invoice.account_id == account_id,
-            Invoice.direction == InvoiceDirection.IN,
-            Invoice.counterparty_name == partner.name,
-            Invoice.issue_date_l1 >= start_dt,
-            Invoice.issue_date_l1 <= end_dt
-        ).all()
+    items = []
+    for o in orders:
+        date_val = getattr(o, cfg["order_date_attr"])
+        items.append({
+            "date": date_val.strftime("%Y-%m-%d") if date_val else "",
+            "description": f"{cfg['order_label']} {o.order_no}",
+            "amount": o.total_price_l1,
+            "payment_status": o.payment_status,
+            "has_invoice": linkage_has_invoice(db, account_id, f"{cfg['partner_key'].replace('_id', '')}_order", o.id),
+            "notes": o.notes or ""
+        })
 
-    else:
-        partner = db.query(Customer).filter(
-            Customer.id == partner_id, Customer.account_id == account_id
-        ).first()
-        if not partner:
-            raise BusinessError(code=ErrorCode.CUSTOMER_NOT_FOUND, data={"customer_id": partner_id})
-
-        # 期初
-        opening = _d(db.query(func.coalesce(func.sum(SaleOrder.total_price_l1), 0)).filter(
-            SaleOrder.account_id == account_id,
-            SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date_l1 < start_dt,
-            SaleOrder.payment_status == PaymentStatus.UNPAID,
-            SaleOrder.status == OrderStatus.COMPLETED
-        ).scalar())
-
-        # 明细
-        orders = db.query(SaleOrder).filter(
-            SaleOrder.account_id == account_id,
-            SaleOrder.customer_id == partner_id,
-            SaleOrder.sale_date_l1 >= start_dt,
-            SaleOrder.sale_date_l1 <= end_dt,
-            SaleOrder.status == OrderStatus.COMPLETED
-        ).order_by(SaleOrder.sale_date_l1).all()
-
-        items = []
-        for o in orders:
-            items.append({
-                "date": o.sale_date_l1.strftime("%Y-%m-%d") if o.sale_date_l1 else "",
-                "description": f"销售单 {o.order_no}",
-                "amount": o.total_price_l1,
-                "payment_status": o.payment_status,
-                "has_invoice": linkage_has_invoice(db, account_id, "sale_order", o.id),
-                "notes": o.notes or ""
-            })
-
-        # 发票
-        invs = db.query(Invoice).filter(
-            Invoice.account_id == account_id,
-            Invoice.direction == InvoiceDirection.OUT,
-            Invoice.counterparty_name == partner.name,
-            Invoice.issue_date_l1 >= start_dt,
-            Invoice.issue_date_l1 <= end_dt
-        ).all()
+    invs = db.query(Invoice).filter(
+        Invoice.account_id == account_id,
+        Invoice.direction == cfg["inv_dir"],
+        Invoice.counterparty_name == partner.name,
+        Invoice.issue_date_l1 >= start_dt,
+        Invoice.issue_date_l1 <= end_dt
+    ).all()
 
     for i in invs:
         items.append({

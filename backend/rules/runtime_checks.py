@@ -210,11 +210,24 @@ def check_as04(db: Session, context: dict) -> List[RuleViolation]:
     if not (account_id and start_date and end_date):
         return violations
 
-    from models_finance import AccountMove, AccountMoveLine, LedgerAccount
+    from models_finance import AccountMove, AccountMoveLine, LedgerAccount, Ledger
     from sqlalchemy import func
+    from models import Account, SaleOrder
 
-    # 总账 6001 贷方发生额
-    la_6001 = db.query(LedgerAccount).filter(LedgerAccount.code == "6001").first()
+    # 总账 6001 贷方发生额：必须限定在当前 account 对应的 ledger 下，
+    # 否则全局取第一条 6001 会拿到错误账本，导致误报“未过账”。
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        return violations
+
+    ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
+    if not ledger:
+        return violations
+
+    la_6001 = db.query(LedgerAccount).filter(
+        LedgerAccount.ledger_id == ledger.id,
+        LedgerAccount.code == "6001",
+    ).first()
     if not la_6001:
         return violations
 
@@ -225,7 +238,6 @@ def check_as04(db: Session, context: dict) -> List[RuleViolation]:
     ).scalar() or Decimal("0")
 
     # 销售订单总额(禁止用作期间收入,但此处仅作对比)
-    from models import SaleOrder
     order_total = db.query(func.sum(SaleOrder.total_price_l1)).filter(
         SaleOrder.account_id == account_id,
         SaleOrder.sale_date_l1 >= start_date,

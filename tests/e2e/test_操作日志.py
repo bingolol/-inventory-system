@@ -286,7 +286,7 @@ class TestE2EWithOperatorPropagation:
             "deduct_inventory": False,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-05-19T10:00:00",
+            "business_date": "2026-05-19T10:00:00",
             "items": [
                 {"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -446,7 +446,7 @@ class TestE2EAISaleLifecycle:
             "deduct_inventory": False,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-05-19T10:00:00",
+            "business_date": "2026-05-19T10:00:00",
             "items": [
                 {"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -526,7 +526,7 @@ class TestE2EAISaleLifecycle:
             "deduct_inventory": False,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-05-19T10:00:00",
+            "business_date": "2026-05-19T10:00:00",
             "items": [{"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}]
         }, headers=HEADERS_BASE)
         sale_id = _get_entity_id(r.json())
@@ -569,7 +569,7 @@ class TestE2EAISaleLifecycle:
             "deduct_inventory": False,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-05-19T10:00:00",
+            "business_date": "2026-05-19T10:00:00",
             "items": [{"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}]
         }, headers=HEADERS_BASE)
         sale_id = _get_entity_id(r.json())

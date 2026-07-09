@@ -3,6 +3,18 @@ from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 
+from .mappers import FieldMap, SchemaMapper
+
+
+# ── 共享映射器 ──
+
+_item_to_orm_mapper = SchemaMapper([
+    FieldMap("product_id"),
+    FieldMap("quantity", "quantity_l1"),
+    FieldMap("unit_price", "unit_price_l1"),
+    FieldMap("tax_rate", "tax_rate_l1"),
+])
+
 
 # ── Purchase Order + Items ──
 
@@ -11,6 +23,9 @@ class PurchaseItemCreate(BaseModel):
     quantity: int = Field(..., gt=0)
     unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
+
+    def to_orm_kwargs(self) -> dict:
+        return _item_to_orm_mapper.map(self.model_dump())
 
 
 class PurchaseItemOut(BaseModel):
@@ -26,13 +41,26 @@ class PurchaseItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+_purchase_order_lifecycle_mapper = SchemaMapper([
+    FieldMap("supplier_id"),
+    FieldMap("business_date", "purchase_date"),
+    FieldMap("payment_method"),
+    FieldMap("image_url"),
+    FieldMap("notes"),
+    FieldMap("items", transform=lambda items: [it.to_orm_kwargs() for it in items]),
+])
+
+
 class PurchaseOrderCreate(BaseModel):
     supplier_id: Optional[int] = None
-    purchase_date: Optional[datetime] = None
+    business_date: datetime
     payment_method: str = "company"
     image_url: Optional[str] = ""
     notes: str = ""
     items: List[PurchaseItemCreate]
+
+    def to_lifecycle_kwargs(self) -> dict:
+        return _purchase_order_lifecycle_mapper.map(self.model_dump())
 
 
 class PurchaseOrderUpdate(BaseModel):
@@ -57,7 +85,7 @@ class PurchaseOrderOut(BaseModel):
     status: str
     notes: str
     image_url: Optional[str] = ""
-    purchase_date: datetime
+    business_date: datetime
     created_at: datetime
     items: List[PurchaseItemOut]
 
@@ -71,6 +99,9 @@ class SaleItemCreate(BaseModel):
     quantity: int = Field(..., gt=0)
     unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
+
+    def to_orm_kwargs(self) -> dict:
+        return _item_to_orm_mapper.map(self.model_dump())
 
 
 class SaleItemOut(BaseModel):
@@ -86,16 +117,32 @@ class SaleItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+_sale_order_lifecycle_mapper = SchemaMapper([
+    FieldMap("customer_id"),
+    FieldMap("deduct_inventory"),
+    FieldMap("payment_status"),
+    FieldMap("has_invoice"),
+    FieldMap("image_url"),
+    FieldMap("notes"),
+    FieldMap("total_price"),
+    FieldMap("business_date", "sale_date"),
+    FieldMap("items", transform=lambda items: [it.to_orm_kwargs() for it in items]),
+])
+
+
 class SaleOrderCreate(BaseModel):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
     payment_status: str = "unpaid"
-    has_invoice: bool = True  # 散客现金销售不开发票时传 False
+    has_invoice: bool  # 散客现金销售不开发票时传 False
     image_url: Optional[str] = ""
     notes: str = ""
     total_price: Optional[Decimal] = None
-    sale_date: datetime
+    business_date: datetime
     items: List[SaleItemCreate]
+
+    def to_lifecycle_kwargs(self) -> dict:
+        return _sale_order_lifecycle_mapper.map(self.model_dump())
 
 
 class SaleOrderUpdate(BaseModel):
@@ -117,10 +164,10 @@ class SaleOrderOut(BaseModel):
     total_price: Decimal
     payment_status: str
     status: str
-    has_invoice: bool = True
+    has_invoice: bool
     notes: str
     image_url: Optional[str] = ""
-    sale_date: datetime
+    business_date: datetime
     created_at: datetime
     items: List[SaleItemOut]
 

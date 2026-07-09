@@ -115,16 +115,16 @@ def _setup_diluted_stock(db):
     # 1. 先入低价货（稀释均价）
     o1 = dispatch(CreateOrder(order_type="purchase", 
         account_id=1, operator="test",
-        supplier_id=s.id, purchase_date=PURCHASE_DATE,
-        items=[{"product_id": p.id, "quantity": 5, "unit_price": 500, "tax_rate": 0.13}],
+        supplier_id=s.id, business_date=PURCHASE_DATE,
+        items=[{"product_id": p.id, "quantity_l1": 5, "unit_price_l1": 500, "tax_rate_l1": 0.13}],
     ), db)
     _create_invoice_for_order(db, o1, s)
 
     # 2. 再入高价货 A（A 的 unit_cost 被稀释到 833.33）
     order_a = dispatch(CreateOrder(order_type="purchase", 
         account_id=1, operator="test",
-        supplier_id=s.id, purchase_date=PURCHASE_DATE,
-        items=[{"product_id": p.id, "quantity": 10, "unit_price": 1000, "tax_rate": 0.13}],
+        supplier_id=s.id, business_date=PURCHASE_DATE,
+        items=[{"product_id": p.id, "quantity_l1": 10, "unit_price_l1": 1000, "tax_rate_l1": 0.13}],
     ), db)
     _create_invoice_for_order(db, order_a, s)
 

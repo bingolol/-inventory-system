@@ -29,9 +29,9 @@
         </el-select>
       </el-form-item>
 
-      <!-- 日期（仅销售新建时） -->
-      <el-form-item v-if="showDate && !isEdit" label="销售日期">
-        <el-date-picker v-model="form.sale_date" type="date" placeholder="选择日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
+      <!-- 日期 -->
+      <el-form-item v-if="showDate && !isEdit" :label="term.dateLabel">
+        <el-date-picker v-model="form[term.dateFormField]" type="date" placeholder="选择日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:100%" />
       </el-form-item>
 
       <!-- 税率 -->
@@ -116,14 +116,16 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import ImageUpload from './ImageUpload.vue'
 import OrderItemEditor from './OrderItemEditor.vue'
 import { useEnumsStore } from '../stores/enums'
 import { TAX_RATE_OPTIONS } from '../constants/taxRates'
+import { getOrderTerminology } from '../constants/terminology'
 
 const enumsStore = useEnumsStore()
 
-defineProps({
+const props = defineProps({
   visible: Boolean,
   isEdit: Boolean,
   form: { type: Object, required: true },
@@ -133,6 +135,7 @@ defineProps({
   onProductChange: { type: Function, required: true },
   operationFeedback: { type: Object, default: null },
 
+  orderType: { type: String, default: '' },
   titleName: { type: String, default: '' },
   partnerLabel: { type: String, default: '' },
   partnerMode: { type: String, default: 'select' },
@@ -148,6 +151,20 @@ defineProps({
   itemsTitle: { type: String, default: '' },
   confirmText: { type: String, default: '确认' },
   updateApi: { type: Function, default: () => {} }
+})
+
+const term = computed(() => {
+  if (props.orderType) {
+    return getOrderTerminology(props.orderType)
+  }
+  // 兼容旧调用：从传入的 props 构造一个最小 terminology
+  return {
+    orderLabel: props.titleName ? `${props.titleName}单` : '订单',
+    partnerLabel: props.partnerLabel,
+    dateLabel: '日期',
+    dateFormField: 'business_date',
+    confirmText: props.confirmText,
+  }
 })
 
 defineEmits(['update:visible', 'save', 'clear-feedback'])

@@ -17,7 +17,6 @@
             partner-mode="select"
             partner-field="supplier_id"
             partner-prop-name="supplier_name"
-            date-prop-name="purchase_date"
             :show-keyword-search="true"
             :default-form="PURCHASE_DEFAULTS"
           />
@@ -55,7 +54,7 @@ import { today } from '../utils/date'
 
 const activeTab = ref('purchases')
 const purchaseApi = { create: ordersApi.createPurchase, update: ordersApi.updatePurchase, delete: ordersApi.deletePurchase, getList: ordersApi.getPurchases }
-const PURCHASE_DEFAULTS = { supplier_id: null, tax_rate: 0.03, has_invoice: false, payment_method: 'company', payment_status: 'unpaid', notes: '', total_price: null, purchase_date: today() }
+const PURCHASE_DEFAULTS = { supplier_id: null, tax_rate: 0.03, has_invoice: false, payment_method: 'company', payment_status: 'unpaid', notes: '', total_price: null, business_date: today() }
 
 const suppliersApi = {
   getList: partnersApi.getSuppliers,

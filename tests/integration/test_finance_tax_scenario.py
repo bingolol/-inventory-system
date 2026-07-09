@@ -62,6 +62,7 @@ class TestFullTaxScenario:
         finally:
             db.close()
         r = client.post(f"/api/invoices/{inv_id}/certify",
+                        json={"certification_date": "2026-04-15"},
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
 

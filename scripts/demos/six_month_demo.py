@@ -1,6 +1,6 @@
 """6个月全流程时间轴演示 — 用内存 SQLite"""
 import sys, os, uuid
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 from datetime import datetime, timedelta
 from decimal import Decimal

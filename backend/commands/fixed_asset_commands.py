@@ -38,9 +38,9 @@ class DepreciateFixedAssetHandler(CommandHandler):
         if dep is None:
             return {"message": "无需计提（已提足或不在计提期）", "depreciation_id": None}
         return {
-            "message": f"折旧计提成功: {dep.amount}",
+            "message": f"折旧计提成功: {dep.amount_l2}",
             "depreciation_id": dep.id,
-            "amount": str(dep.amount),
+            "amount": str(dep.amount_l2),
         }
 
 
@@ -55,10 +55,10 @@ class BatchDepreciateFixedAssets(Command):
 
 @register(BatchDepreciateFixedAssets)
 class BatchDepreciateFixedAssetsHandler(CommandHandler):
-    # 批量折旧委托 FixedAssetEngine.batch_depreciate 写入，引擎已声明 @writes。
+    # 批量折旧统一走 FinanceOrchestrator，由 orchestrator 分发到 FixedAssetEngine。
     def handle(self, cmd: BatchDepreciateFixedAssets, db: Any) -> Any:
-        eng = FixedAssetEngine(db, cmd.account_id)
-        results = eng.batch_depreciate(cmd.period)
+        from finance_orchestrator import FinanceOrchestrator
+        results = FinanceOrchestrator(db, cmd.account_id).batch_depreciate(cmd.period)
         return {
             "message": f"批量折旧完成: {len(results)}项资产已计提",
             "count": len(results),

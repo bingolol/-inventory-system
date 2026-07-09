@@ -85,7 +85,8 @@ class FixedAssetBase(BaseModel):
 
 
 class FixedAssetCreate(FixedAssetBase):
-    pass
+    tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=1, max_digits=5, decimal_places=2,
+        description="增值税税率（一般纳税人价税分离用，0=不分离）")
 
 
 class FixedAssetUpdate(BaseModel):

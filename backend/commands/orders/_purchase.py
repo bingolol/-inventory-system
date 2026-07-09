@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, List, Optional
 
 import models
-from enums import OrderStatus, InvoiceDirection, CertificationStatus
+from enums import OrderStatus, InvoiceDirection
 from events import emit
 from commands.base import Command, CommandHandler
 from crud.base import gen_order_no as _generate_order_no
@@ -146,38 +146,6 @@ def return_purchase_order(db, account_id, operator, order_id, return_date, reaso
         "date": return_date,
     })
 
-    if original_invoice:
-        red_invoice_no = f"RED-{original_invoice.invoice_no}-{return_id}"
-        existing_red = db.query(models.Invoice).filter(
-            models.Invoice.account_id == account_id,
-            models.Invoice.invoice_no == red_invoice_no,
-        ).first()
-        if not existing_red:
-            ret_dt = datetime.fromisoformat(return_date) if isinstance(return_date, str) else return_date
-            red_cert_status = original_invoice.certification_status_l3 if (
-                enable_vat_deduction and original_invoice.invoice_type == "special"
-            ) else CertificationStatus.N_A
-            red_invoice = models.Invoice(
-                account_id=account_id,
-                invoice_no=red_invoice_no,
-                direction=InvoiceDirection.IN,
-                invoice_type=original_invoice.invoice_type,
-                tax_rate_l1=original_invoice.tax_rate_l1,
-                amount_without_tax_l1=-inventory_cost_ret if enable_vat_deduction else -total_with_tax_ret,
-                tax_amount_l1=-(tax_amount_ret if enable_vat_deduction else Decimal("0")),
-                amount_with_tax_l1=-total_with_tax_ret,
-                counterparty_name=order.supplier.name if order.supplier else (original_invoice.counterparty_name or ""),
-                seller_name=original_invoice.seller_name,
-                buyer_name=original_invoice.buyer_name,
-                issue_date_l1=ret_dt,
-                certification_status_l3=red_cert_status,
-                related_order_id=order.id,
-                related_order_type="purchase_order",
-                notes=f"红字进项发票（采购退货）: {reason or '未提供'}",
-            )
-            db.add(red_invoice)
-            db.flush()
-
     emit("purchase_order.returned", db=db, account_id=account_id, order=order,
          operator=operator, return_amount=total_with_tax_ret,
          log_action="return",
@@ -198,29 +166,18 @@ def update_purchase_items(db, account_id, operator, order_id, items, supplier_id
         if dup_pids:
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
+    from finance_orchestrator import FinanceOrchestrator
+    orch = FinanceOrchestrator(db, account_id)
+
     old_status = order.status
 
     if old_status == OrderStatus.COMPLETED:
-        eng = InventoryEngine(db)
-        for item in order.items:
-            product = db.get(models.Product, item.product_id)
-            if product and product.track_inventory_l3:
-                eng.reverse(
-                    account_id=account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity_l1,
-                    unit_cost=Decimal("0"),
-                    source_type="purchase_order",
-                    source_id=order.id,
-                    operator=operator,
-                    force=True,
-                )
-        FinanceEngine(db, account_id).reverse_purchase(order.id, force=True)
+        orch.reverse_purchase_order(order, operator, force=True)
 
     if len(items) == 0:
         # 直接删除 order，cascade 会自动删除关联 items，避免先删 items 再删 order 的双重删除警告
         emit("purchase_order.deleted", db=db, account_id=account_id, order=order,
-             operator=operator,
+             operator=operator, old_status=old_status,
              log_action="delete",
              log_detail=f"删除采购单 {order.order_no}（商品行数归零自动删除）")
         db.delete(order)
@@ -243,39 +200,26 @@ def update_purchase_items(db, account_id, operator, order_id, items, supplier_id
     new_status = order.status
 
     total = Decimal('0')
-    calculated_data = []
     for it in items:
         product = get_product(db, account_id, it['product_id'])
         if not product:
             raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
-        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        line_total = (Decimal(str(it['quantity_l1'])) * _d(it['unit_price_l1'])).quantize(Q2)
         new_item = models.PurchaseItem(
             order_id=order.id,
             product_id=it['product_id'],
-            quantity_l1=it['quantity'],
-            unit_price_l1=it['unit_price'],
-            tax_rate_l1=it['tax_rate'],
+            quantity_l1=it['quantity_l1'],
+            unit_price_l1=it['unit_price_l1'],
+            tax_rate_l1=it['tax_rate_l1'],
             total_price_l1=line_total,
         )
         db.add(new_item)
-        if new_status == OrderStatus.COMPLETED and product.track_inventory_l3:
-            calc = InventoryEngine(db).force_inbound(
-                account_id=account_id,
-                product_id=it['product_id'],
-                quantity=it['quantity'],
-                unit_price=it['unit_price'],
-                source_type="purchase_order",
-                source_id=order.id,
-                tax_rate=it['tax_rate'],
-                operator=operator,
-            )
-            calculated_data.append(calc)
         total += line_total
 
     order.total_price_l1 = total.quantize(Q2)
 
     if new_status == OrderStatus.COMPLETED:
-        FinanceEngine(db, account_id).record_purchase(order, force=True)
+        orch.record_purchase_order_completed(order, operator)
 
     emit("purchase_order.updated", db=db, account_id=account_id, order=order, operator=operator,
          log_action="update",
@@ -304,41 +248,14 @@ def update_purchase_fields(db, account_id, operator, order_id, **fields):
         if v is not None:
             setattr(order, k, v)
 
+    from finance_orchestrator import FinanceOrchestrator
+    orch = FinanceOrchestrator(db, account_id)
+
     new_status = order.status
-    eng = InventoryEngine(db)
-    fin = FinanceEngine(db, account_id)
     if old_status == OrderStatus.COMPLETED and new_status == OrderStatus.CANCELLED:
-        for item in order.items:
-            product = db.get(models.Product, item.product_id)
-            if product and product.track_inventory_l3:
-                eng.reverse(
-                    account_id=account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity_l1,
-                    unit_cost=Decimal("0"),
-                    source_type="purchase_order",
-                    source_id=order.id,
-                    operator=operator,
-                    force=True,
-                )
-        fin.reverse_purchase(order.id, force=True)
+        orch.reverse_purchase_order(order, operator, force=True)
     elif old_status == OrderStatus.CANCELLED and new_status == OrderStatus.COMPLETED:
-        calculated_data = []
-        for item in order.items:
-            product = db.get(models.Product, item.product_id)
-            if product and product.track_inventory_l3:
-                calc = eng.force_inbound(
-                    account_id=account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity_l1,
-                    unit_price=item.unit_price_l1,
-                    source_type="purchase_order",
-                    source_id=order.id,
-                    tax_rate=item.tax_rate_l1,
-                    operator=operator,
-                )
-                calculated_data.append(calc)
-        fin.record_purchase(order, force=True)
+        orch.record_purchase_order_completed(order, operator)
 
     emit("purchase_order.updated", db=db, account_id=account_id, order=order, operator=operator,
          log_action="update",

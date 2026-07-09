@@ -3,7 +3,7 @@
 合并自:
   - test_取消销售单.py   取消/恢复销售单 + 状态机拦截
   - test_库存回补.py     取消回补库存 + 恢复重新扣减
-  - test_销售日期.py     自定义 sale_date
+  - test_销售日期.py     自定义 business_date
   - test_自定义价格.py   自定义金额 + 差额分配 + 精度
   - test_重复校验.py     重复商品拦截
   - test_delivery_check.py  T1-T6 交付目标
@@ -57,14 +57,14 @@ def ids(client):
     return {"pid": pid, "pid2": pid2, "cid": cid, "sid": sid}
 
 
-def _purchase_stock(client, ids, qty=50, unit_price=10.00):
+def _purchase_stock(client, ids, qty=50, unit_price=10.00, tax_rate=0.13):
     """辅助：创建采购单（自动完成入库）"""
     tag = uniq("STK")
     resp = client.post("/api/purchases", json={
         "order_no": f"PO-{tag}", "supplier_id": ids["sid"],
         "payment_method": "company", "payment_status": "unpaid",
-        "purchase_date": "2026-06-01",
-        "items": [{"product_id": ids["pid"], "quantity": qty, "unit_price": unit_price}],
+        "business_date": "2026-06-01",
+        "items": [{"product_id": ids["pid"], "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
 
@@ -72,36 +72,37 @@ def _purchase_stock(client, ids, qty=50, unit_price=10.00):
 class Test创建销售单:
     """创建销售单：日期/价格/重复校验/库存一致性/成本锁定/应收/勾稽"""
 
-    def test_custom_sale_date(self, client, ids):
-        """自定义 sale_date 创建销售单"""
+    def test_custom_business_date(self, client, ids):
+        """自定义 business_date 创建销售单"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid", "notes": "自定义日期测试",
-            "sale_date": "2025-03-15T10:30:00",
+            "business_date": "2025-03-15T10:30:00",
             "items": [{"product_id": ids["pid"], "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
         data = resp.json().get("data", resp.json())
-        sale_date_str = data.get("sale_date", "")
-        assert "2025-03-15" in sale_date_str, f"sale_date 不一致: {sale_date_str}"
+        business_date_str = data.get("business_date", "")
+        assert "2025-03-15" in business_date_str, f"business_date 不一致: {business_date_str}"
 
-    def test_schema_accepts_sale_date(self):
-        """SaleOrderCreate schema 接受 sale_date 字段"""
+    def test_schema_accepts_business_date(self):
+        """SaleOrderCreate schema 接受 business_date 字段"""
         from schemas.order import SaleOrderCreate
         data = SaleOrderCreate(
             customer_id=None, payment_status="unpaid", notes="schema测试",
-            sale_date=datetime(2025, 6, 1),
+            has_invoice=True,
+            business_date=datetime(2025, 6, 1),
             items=[{"product_id": 1, "quantity": 1, "unit_price": 50, "tax_rate": Decimal("0.03")}],
         )
-        assert data.sale_date is not None
-        assert data.sale_date.year == 2025
-        assert data.sale_date.month == 6
+        assert data.business_date is not None
+        assert data.business_date.year == 2025
+        assert data.business_date.month == 6
 
     def test_auto_calculate_without_total_price(self, client, ids):
         """不传 total_price → 自动计算"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
-            "payment_status": "unpaid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
+            "payment_status": "unpaid", "business_date": "2026-01-15T10:00:00",
             "items": [
                 {"product_id": ids["pid"], "quantity": 2, "unit_price": 100, "tax_rate": 0.13},
                 {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200, "tax_rate": 0.13},
@@ -114,9 +115,9 @@ class Test创建销售单:
     def test_distribute_to_zero_price_items(self, client, ids):
         """传 total_price，单价为0 → 差额分配到单价为0的行"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 5000,
-            "sale_date": "2026-01-15T10:00:00", "items": [
+            "business_date": "2026-01-15T10:00:00", "items": [
                 {"product_id": ids["pid"], "quantity": 12, "unit_price": 0, "tax_rate": 0.13},
                 {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0, "tax_rate": 0.13},
             ],
@@ -128,9 +129,9 @@ class Test创建销售单:
     def test_distribute_to_partial_zero_price_items(self, client, ids):
         """传 total_price，部分行有单价 → 差额分配到单价为0的行"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 5000,
-            "sale_date": "2026-01-15T10:00:00", "items": [
+            "business_date": "2026-01-15T10:00:00", "items": [
                 {"product_id": ids["pid"], "quantity": 12, "unit_price": 200, "tax_rate": 0.13},
                 {"product_id": ids["pid2"], "quantity": 1, "unit_price": 0, "tax_rate": 0.13},
             ],
@@ -142,9 +143,9 @@ class Test创建销售单:
     def test_proportional_discount_when_all_have_price(self, client, ids):
         """传 total_price，所有行有单价 → 按比例打折"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 360,
-            "sale_date": "2026-01-15T10:00:00", "items": [
+            "business_date": "2026-01-15T10:00:00", "items": [
                 {"product_id": ids["pid"], "quantity": 2, "unit_price": 100, "tax_rate": 0.13},
                 {"product_id": ids["pid2"], "quantity": 1, "unit_price": 200, "tax_rate": 0.13},
             ],
@@ -156,9 +157,9 @@ class Test创建销售单:
     def test_unit_price_precision_6_digits(self, client, db, ids):
         """分摊后 unit_price 保留6位小数"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid", "total_price": 10,
-            "sale_date": "2026-01-15T10:00:00",
+            "business_date": "2026-01-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 0, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"创建失败: {resp.text}"
@@ -173,9 +174,9 @@ class Test创建销售单:
     def test_duplicate_product_blocked(self, client, ids):
         """销售单重复商品 → 422"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-06-01",
+            "business_date": "2026-06-01",
             "items": [
                 {"product_id": ids["pid"], "quantity": 5, "unit_price": 100, "tax_rate": 0.13},
                 {"product_id": ids["pid"], "quantity": 3, "unit_price": 200, "tax_rate": 0.13},
@@ -198,8 +199,8 @@ class Test创建销售单:
     def test_different_products_ok(self, client, ids):
         """不同商品 → 正常创建（200）"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": False,
-            "payment_status": "unpaid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": False,
+            "payment_status": "unpaid", "business_date": "2026-01-15T10:00:00",
             "items": [
                 {"product_id": ids["pid"], "quantity": 5, "unit_price": 100, "tax_rate": 0.13},
                 {"product_id": ids["pid2"], "quantity": 3, "unit_price": 200, "tax_rate": 0.13},
@@ -212,7 +213,7 @@ class Test创建销售单:
         """StockMove 与 Inventory 一致（采购入库后）"""
         resp = client.post("/api/purchases", json={
             "supplier_id": ids["sid"], "payment_method": "company",
-            "payment_status": "unpaid", "purchase_date": "2026-01-05T10:00:00",
+            "payment_status": "unpaid", "business_date": "2026-01-05T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 50, "unit_price": 10.00, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
@@ -230,8 +231,8 @@ class Test创建销售单:
     def test_t3_sale_keeps_consistency(self, client, db, ids):
         """StockMove 与 Inventory 一致（销售出库后）"""
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "unpaid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "unpaid", "business_date": "2026-01-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 20, "unit_price": 20.00, "tax_rate": 0.01}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"销售失败: {resp.text}"
@@ -277,8 +278,8 @@ class Test创建销售单:
         avg_before = Decimal(str(inv.average_cost_l4)) if inv and inv.quantity_l4 > 0 else Decimal("10.00")
 
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "unpaid", "sale_date": "2026-02-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "unpaid", "business_date": "2026-02-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 15, "unit_price": 20.00, "tax_rate": 0.01}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"销售失败: {resp.text}"
@@ -349,7 +350,7 @@ class Test创建销售单:
         """
         # ── 月结：损益结转（收入/费用 → 4103）──
         # 逐月结账确保每月附加税/所得税正确计提：
-        # 2025-03 覆盖模块内唯一的 2025 年销售单（test_custom_sale_date）
+        # 2025-03 覆盖模块内唯一的 2025 年销售单（test_custom_business_date）
         # 2026-01 覆盖 1 月销售单（多笔）
         # 2026-02 覆盖 2 月销售单（test_t2_cost_locked_at_sale_time）
         for period in ["2025-03", "2026-01", "2026-02"]:
@@ -396,8 +397,8 @@ class Test取消恢复销售单:
         """取消已完成销售单 → CANCELLED，恢复 → COMPLETED"""
         _purchase_stock(client, ids)
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "paid", "business_date": "2026-01-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"销售创建失败: {resp.text}"
@@ -420,8 +421,8 @@ class Test取消恢复销售单:
         """重复取消已取消的销售单 → 422"""
         _purchase_stock(client, ids)
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "paid", "business_date": "2026-01-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 3, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200
@@ -442,8 +443,8 @@ class Test取消恢复销售单:
         qty_before = inv_before.quantity_l4
 
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "paid", "sale_date": "2026-01-15T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "paid", "business_date": "2026-01-15T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200
@@ -484,8 +485,8 @@ class Test取消恢复销售单:
         qty_before = stock.quantity_l4
 
         resp = client.post("/api/sales", json={
-            "customer_id": ids["cid"], "deduct_inventory": True,
-            "payment_status": "unpaid", "sale_date": "2026-02-01T10:00:00",
+            "customer_id": ids["cid"], "has_invoice": True, "deduct_inventory": True,
+            "payment_status": "unpaid", "business_date": "2026-02-01T10:00:00",
             "items": [{"product_id": ids["pid"], "quantity": 10, "unit_price": 20.00, "tax_rate": 0.01}],
         }, headers=HEADERS)
         assert resp.status_code == 200, f"销售失败: {resp.text}"

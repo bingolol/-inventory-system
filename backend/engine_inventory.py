@@ -22,19 +22,38 @@ class InventoryEngine:
         self.db = db
 
     def _get_move_date(self, source_type: str, source_id: int) -> datetime:
-        """从源单据获取业务日期"""
+        """从源单据获取业务日期。
+
+        BR-21: 业务日期必填。源单据日期缺失时抛 BusinessError，禁止回退到 datetime.now()。
+        调用方应在 inbound/outbound 时显式传 move_date，此方法仅作为兜底查询。
+        """
         if source_type == EntityType.PURCHASE_ORDER:
             po = self.db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == source_id).first()
-            return po.purchase_date_l1 if po and po.purchase_date_l1 else datetime.now()
+            if po and po.purchase_date_l1:
+                return po.purchase_date_l1
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"采购单 #{source_id} 缺少采购日期，无法确定库存移动日期",
+                data={"source_type": source_type, "source_id": source_id, "missing_field": "purchase_date_l1"},
+            )
         if source_type == EntityType.SALE_ORDER:
             so = self.db.query(models.SaleOrder).filter(models.SaleOrder.id == source_id).first()
-            return so.sale_date_l1 if so and so.sale_date_l1 else datetime.now()
+            if so and so.sale_date_l1:
+                return so.sale_date_l1
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=f"销售单 #{source_id} 缺少销售日期，无法确定库存移动日期",
+                data={"source_type": source_type, "source_id": source_id, "missing_field": "sale_date_l1"},
+            )
         if source_type.endswith("_reversal"):
             base_type = source_type.replace("_reversal", "")
             return self._get_move_date(base_type, source_id)
-        if source_type == "inventory_adjustment":
-            return datetime.now()
-        return datetime.now()
+        # inventory_adjustment 及未知类型：调用方必须显式传 move_date
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"source_type='{source_type}' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退",
+            data={"source_type": source_type, "source_id": source_id},
+        )
 
     def _get_product(self, account_id: int, product_id: int):
         """查询并校验产品存在性"""
@@ -215,16 +234,19 @@ class InventoryEngine:
 
     def force_outbound(self, account_id: int, product_id: int, quantity: int,
                        source_type: str, source_id: int,
-                       operator: str = "user") -> Decimal:
+                       operator: str = "user",
+                       move_date: datetime = None) -> Decimal:
         """强制出库（跳过幂等检查），用于 RestoreOrderHandler / 明细更新重建等场景。
 
         注意：此处的 "force" 仅指跳过 (source_type, source_id) 的幂等检查，
         **并非跳过非负校验**。底层 _record_outbound 仍会校验
         inv.quantity < quantity 并在库存不足时抛 BusinessError。
         因此本方法不会产生负库存——与 outbound 的非负约束一致。
+
+        move_date 由调用方传入正确的业务日期（如 order.sale_date_l1）。
         """
         return self._record_outbound(account_id, product_id, quantity,
-                                     source_type, source_id, operator)
+                                     source_type, source_id, operator, move_date)
 
     def force_inbound(self, account_id: int, product_id: int, quantity: int,
                       unit_price: Decimal, source_type: str, source_id: int,

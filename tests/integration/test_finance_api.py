@@ -21,9 +21,10 @@ def _get_sid(client, tag):
 def _create_sale(client, pid: int, cid: int) -> dict:
     resp = client.post("/api/sales", json={
         "customer_id": cid,
+        "has_invoice": True,
         "deduct_inventory": True,
         "payment_status": "unpaid",
-        "sale_date": "2026-06-15T10:00:00",
+        "business_date": "2026-06-15T10:00:00",
         "items": [{"product_id": pid, "quantity": 2, "unit_price": 100, "tax_rate": 0.01}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建销售失败: {resp.text}"
@@ -165,7 +166,7 @@ class TestPartnerReceivable:
         resp = client.post("/api/purchases", json={
             "supplier_id": sid,
             "payment_method": "company",
-            "purchase_date": "2026-06-10T10:00:00",
+            "business_date": "2026-06-10T10:00:00",
             "items": [{"product_id": pid, "quantity": 5, "unit_price": 50, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建采购失败: {resp.text}"

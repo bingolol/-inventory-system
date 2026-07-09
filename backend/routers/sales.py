@@ -48,7 +48,7 @@ def _build_sale_out(order, invoiced: bool = False):
         status=order.status,
         notes=order.notes,
         image_url=order.image_url or "",
-        sale_date=order.sale_date_l1,
+        business_date=order.sale_date_l1,
         created_at=order.created_at,
         items=items
     )
@@ -80,8 +80,8 @@ def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_acc
                 notes=data.notes,
                 image_url=data.image_url or "",
                 total_price=data.total_price,
-                sale_date=data.sale_date,
-                items=[item.model_dump() for item in data.items],
+                business_date=data.business_date,
+                items=[item.to_orm_kwargs() for item in data.items],
             )
             order = dispatch(cmd, db)
         except ValueError as e:
@@ -131,7 +131,7 @@ def update_sale(sale_id: int, data: schemas.SaleOrderUpdate, account_id: int = D
 
             # 1) items 全量替换 → UpdateSaleOrderItems
             if has_items:
-                items_dicts = [item.model_dump() for item in data.items]
+                items_dicts = [item.to_orm_kwargs() for item in data.items]
                 cmd = UpdateOrderItems(
                     order_type="sale",
                     account_id=account_id,

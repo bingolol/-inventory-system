@@ -1,0 +1,108 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Administrator\Desktop\inventory-system
+configfile: pytest.ini
+plugins: anyio-4.13.0
+collected 299 items
+
+tests\integration\test_accounting.py .....                               [  1%]
+tests\integration\test_accounting_check.py ................              [  7%]
+tests\integration\test_accrual_accounting.py ........................... [ 16%]
+                                                                         [ 16%]
+tests\integration\test_bank_fee_seam.py ....                             [ 17%]
+tests\integration\test_bank_reconcile.py ......                          [ 19%]
+tests\integration\test_cwbb_xqykjzz.py .....                             [ 21%]
+tests\integration\test_engine_journal.py ............                    [ 25%]
+tests\integration\test_engine_ledger.py .............                    [ 29%]
+tests\integration\test_engine_receivable.py ...........                  [ 33%]
+tests\integration\test_error_guidance.py ....                            [ 34%]
+tests\integration\test_export.py ..................                      [ 40%]
+tests\integration\test_finance_api.py ...F....F.F.                       [ 44%]
+tests\integration\test_finance_tax_scenario.py ..FF.........             [ 48%]
+tests\integration\test_general_taxpayer_full_cycle.py .                  [ 49%]
+tests\integration\test_invoice_to_sale_order.py FFF....F..               [ 52%]
+tests\integration\test_invoice_with_fixed_asset.py ...........           [ 56%]
+tests\integration\test_invoices_quick_merge.py .....                     [ 57%]
+tests\integration\test_opening_balance_validation.py ......              [ 59%]
+tests\integration\test_operation_templates.py s                          [ 60%]
+tests\integration\test_purchases_router.py ............                  [ 64%]
+tests\integration\test_reconciliations.py .........                      [ 67%]
+tests\integration\test_stress_ai_gateway.py ..F...                       [ 69%]
+tests\integration\test_tax_declaration.py .......                        [ 71%]
+tests\integration\test_xingwang_scenario.py .                            [ 71%]
+tests\integration\test_会计准则校验.py ..............F................   [ 82%]
+tests\integration\test_全面硬编码验证.py .FFFF..FF..F                    [ 86%]
+tests\integration\test_半年业务模拟.py ..FFFFFF.................F....... [ 97%]
+.                                                                        [ 97%]
+tests\integration\test_无票销售退货场景.py Fs.....                       [100%]
+
+=========================== short test summary info ===========================
+FAILED tests/integration/test_finance_api.py::TestJournalMoves::test_moves_list_after_sale - AssertionError: 创建销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_finance_api.py::TestTrialBalance::test_balanced_after_sale - AssertionError: 创建销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_finance_api.py::TestPartnerReceivable::test_customer_balance_and_aging - AssertionError: 创建销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-06-01~2026-06-30 有销售订单 200.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_finance_tax_scenario.py::TestFullTaxScenario::test_03_create_output_invoice - AssertionError: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-05-01~2026-05-31 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-05-01~2026-05-31 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-05-01~2026-05-31 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_finance_tax_scenario.py::TestFullTaxScenario::test_04_quarterly_vat_report - AssertionError: assert 0.0 >= 100.0
+ +  where 0.0 = float('0.00')
+FAILED tests/integration/test_invoice_to_sale_order.py::TestInvoiceAutoGenerateSaleOrder::test_out_invoice_creates_sale_order - AssertionError: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_invoice_to_sale_order.py::TestInvoiceAutoGenerateSaleOrder::test_out_invoice_sale_order_amounts_match - AssertionError: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_invoice_to_sale_order.py::TestInvoiceAutoGenerateSaleOrder::test_out_invoice_items_synced_to_sale_order - AssertionError: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-06-01~2026-06-30 有销售订单 1030.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_invoice_to_sale_order.py::TestInvoiceAutoGenerateSaleOrder::test_out_invoice_link_existing_no_new_sale_order - AssertionError: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 500.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 500.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-06-01~2026-06-30 有销售订单 500.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_stress_ai_gateway.py::TestQuickBatchCreate::test_batch_50_invoices_all_succeed - AssertionError: 第0张创建失败: {"error":{"code":"RULE_VIOLATION","message":"会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 113.00 但总账 6001 贷方为 0,可能未过账","action":"user_input","action_data":{},"data":{"details":"[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 113.00 但总账 6001 贷方为 0,可能未过账","violations":[{"rule_id":"AS-04","rule_name":"权责发生制","severity":"ERROR","message":"期间 2026-06-01~2026-06-30 有销售订单 113.00 但总账 6001 贷方为 0,可能未过账","fix_hint":"检查 FinanceEngine.record_sale 是否调用","field":"AccountMoveLine.credit_l2"}]},"ai_instruction":"STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_会计准则校验.py::TestInvoiceAmountCalculation::test_invoice_amount_calculation_1_percent - AssertionError: 创建发票失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-06-01~2026-06-30 有销售订单 10100.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_全面硬编码验证.py::test_sale_amount_tax - assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_全面硬编码验证.py::test_inventory - AssertionError: 库存错误: 70 != 100
+assert 100 == 70
+FAILED tests/integration/test_全面硬编码验证.py::test_return - assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_全面硬编码验证.py::test_invoice - assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_全面硬编码验证.py::test_income_tax - AssertionError: 利润错误: -5000.00 != 0.00
+assert Decimal('0.00') == Decimal('-5000.00')
+FAILED tests/integration/test_全面硬编码验证.py::test_balance_sheet - AssertionError: assert Decimal('-5000.00') >= 0
+FAILED tests/integration/test_全面硬编码验证.py::test_final_inventory - AssertionError: 最终库存错误: 70 != 100
+assert 100 == 70
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_january_business - AssertionError: 1月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-01-01~2026-01-31 有销售订单 2000.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-01-01~2026-01-31 有销售订单 2000.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-01-01~2026-01-31 有销售订单 2000.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_february_business - AssertionError: 2月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-02-01~2026-02-28 有销售订单 3000.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-02-01~2026-02-28 有销售订单 3000.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-02-01~2026-02-28 有销售订单 3000.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_march_business - AssertionError: 3月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-03-01~2026-03-31 有销售订单 4000.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-03-01~2026-03-31 有销售订单 4000.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-03-01~2026-03-31 有销售订单 4000.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_april_business - AssertionError: 4月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-04-01~2026-04-30 有销售订单 3600.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-04-01~2026-04-30 有销售订单 3600.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-04-01~2026-04-30 有销售订单 3600.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_may_business - AssertionError: 5月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-05-01~2026-05-31 有销售订单 3200.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-05-01~2026-05-31 有销售订单 3200.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-05-01~2026-05-31 有销售订单 3200.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestMonthlyBusinessCycle::test_june_business - AssertionError: 6月销售失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-06-01~2026-06-30 有销售订单 4400.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-06-01~2026-06-30 有销售订单 4400.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-06-01~2026-06-30 有销售订单 4400.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/integration/test_半年业务模拟.py::TestDataConsistency::test_inventory_consistency - AssertionError: 库存不一致: 预期1290，实际2300
+assert 2300 == 1290
+FAILED tests/integration/test_无票销售退货场景.py::TestNoInvoiceSale::test_sale_without_invoice - AssertionError: 创建销售单失败: {"ok": false, "entity": {"error": {"code": "RULE_VIOLATION", "message": "会计准则校验失败: [AS-04] 期间 2026-01-01~2026-01-31 有销售订单 300.00 但总账 6001 贷方为 0,可能未过账", "action": "user_input", "action_data": {}, "data": {"details": "[AS-04] 期间 2026-01-01~2026-01-31 有销售订单 300.00 但总账 6001 贷方为 0,可能未过账", "violations": [{"rule_id": "AS-04", "rule_name": "权责发生制", "severity": "ERROR", "message": "期间 2026-01-01~2026-01-31 有销售订单 300.00 但总账 6001 贷方为 0,可能未过账", "fix_hint": "检查 FinanceEngine.record_sale 是否调用", "field": "AccountMoveLine.credit_l2"}]}, "ai_instruction": "STOP_RETRYING. 操作违反会计准则校验,请检查数据并修正后重试,或联系管理员排查。"}}, "operation": "created", "idempotent": false, "state_after": {}}
+assert 422 in (200, 201)
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+====== 26 failed, 271 passed, 2 skipped, 1 warning in 302.37s (0:05:02) =======

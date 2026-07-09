@@ -91,7 +91,7 @@ class TestAccountingEquation:
         # 创建采购单（使用 balance-sheet 查询日期范围内的日期）
         resp = client.post("/api/purchases", json={
             "supplier_id": None,
-            "purchase_date": TODAY,
+            "business_date": TODAY,
             "items": [{"product_id": pid, "quantity": 10, "unit_price": 10, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200
@@ -114,13 +114,14 @@ class TestAccountingEquation:
         # 采购入库
         client.post("/api/purchases", json={
             "supplier_id": None,
-            "purchase_date": TODAY,
+            "business_date": TODAY,
             "items": [{"product_id": pid, "quantity": 20, "unit_price": 10, "tax_rate": 0.13}],
         }, headers=HEADERS)
 
         # 销售出库
         resp = client.post("/api/sales", json={
-            "sale_date": "2026-06-24",
+            "has_invoice": True,
+            "business_date": "2026-06-24",
             "items": [{"product_id": pid, "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
         assert resp.status_code == 200, resp.text
@@ -162,17 +163,18 @@ class TestAccountingEquation:
 
         # 采购两批
         client.post("/api/purchases", json={
-            "purchase_date": TODAY,
+            "business_date": TODAY,
             "items": [{"product_id": pid1, "quantity": 10, "unit_price": 10, "tax_rate": 0.13}],
         }, headers=HEADERS)
         client.post("/api/purchases", json={
-            "purchase_date": TODAY,
+            "business_date": TODAY,
             "items": [{"product_id": pid2, "quantity": 5, "unit_price": 50, "tax_rate": 0.13}],
         }, headers=HEADERS)
 
         # 销售
         client.post("/api/sales", json={
-            "sale_date": "2026-06-24",
+            "has_invoice": True,
+            "business_date": "2026-06-24",
             "items": [{"product_id": pid1, "quantity": 3, "unit_price": 20, "tax_rate": 0.13}],
         }, headers=HEADERS)
 

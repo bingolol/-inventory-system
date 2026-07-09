@@ -1,0 +1,905 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Administrator\Desktop\inventory-system
+configfile: pytest.ini
+plugins: anyio-4.12.1
+collected 878 items
+
+tests\unit\test_accounting_engine.py .....................               [  2%]
+tests\unit\test_accounting_error.py ................                     [  4%]
+tests\unit\test_ai_gateway.py ................                           [  6%]
+tests\unit\test_audit_fixes.py .......................                   [  8%]
+tests\unit\test_auth.py ..                                               [  8%]
+tests\unit\test_auth_middleware.py ....                                  [  9%]
+tests\unit\test_engine_finance.py .....                                  [  9%]
+tests\unit\test_engine_fixed_asset.py ...............                    [ 11%]
+tests\unit\test_engine_intangible_asset.py ............                  [ 12%]
+tests\unit\test_flow_category.py ........                                [ 13%]
+tests\unit\test_income_tax_caliber.py ..                                 [ 14%]
+tests\unit\test_invoice_linkage.py ...............                       [ 15%]
+tests\unit\test_orm_protection.py .....                                  [ 16%]
+tests\unit\test_product_commands.py XXX                                  [ 16%]
+tests\unit\test_purchase_accounting_integration.py ....                  [ 17%]
+tests\unit\test_report_tax_caliber.py ..                                 [ 17%]
+tests\unit\test_reports_api.py ....                                      [ 17%]
+tests\unit\test_reports_bs.py ..                                         [ 18%]
+tests\unit\test_reports_cf.py ...                                        [ 18%]
+tests\unit\test_reports_dsl.py ................                          [ 20%]
+tests\unit\test_reports_dual.py ..                                       [ 20%]
+tests\unit\test_reports_engine.py ..                                     [ 20%]
+tests\unit\test_reversal.py ........                                     [ 21%]
+tests\unit\test_sale_accounting_integration.py .                         [ 21%]
+tests\unit\test_security.py ..............                               [ 23%]
+tests\unit\test_snapshot_trace.py ......                                 [ 24%]
+tests\unit\test_unrecorded_revenue.py ...........                        [ 25%]
+tests\unit\test_无形资产摊销.py ........                                 [ 26%]
+tests\integration\test_accounting.py .....                               [ 26%]
+tests\integration\test_accounting_check.py ................              [ 28%]
+tests\integration\test_accrual_accounting.py ........................... [ 31%]
+                                                                         [ 31%]
+tests\integration\test_bank_fee_seam.py ....                             [ 32%]
+tests\integration\test_bank_reconcile.py ......                          [ 32%]
+tests\integration\test_cwbb_xqykjzz.py .....                             [ 33%]
+tests\integration\test_engine_journal.py ............                    [ 34%]
+tests\integration\test_engine_ledger.py .............                    [ 36%]
+tests\integration\test_engine_receivable.py ...........                  [ 37%]
+tests\integration\test_error_guidance.py ....                            [ 37%]
+tests\integration\test_export.py ..................                      [ 39%]
+tests\integration\test_finance_api.py ............                       [ 41%]
+tests\integration\test_finance_tax_scenario.py .............             [ 42%]
+tests\integration\test_general_taxpayer_full_cycle.py .                  [ 42%]
+tests\integration\test_invoice_to_sale_order.py ..........               [ 44%]
+tests\integration\test_invoice_with_fixed_asset.py ...........           [ 45%]
+tests\integration\test_invoices_quick_merge.py .....                     [ 45%]
+tests\integration\test_opening_balance_validation.py ......              [ 46%]
+tests\integration\test_operation_templates.py .                          [ 46%]
+tests\integration\test_purchases_router.py ............                  [ 48%]
+tests\integration\test_reconciliations.py .........                      [ 49%]
+tests\integration\test_stress_ai_gateway.py ......                       [ 49%]
+tests\integration\test_tax_declaration.py .......                        [ 50%]
+tests\integration\test_xingwang_scenario.py .                            [ 50%]
+tests\integration\test_会计准则校验.py ...............................   [ 54%]
+tests\integration\test_全面硬编码验证.py ............                    [ 55%]
+tests\integration\test_半年业务模拟.py ................................. [ 59%]
+.                                                                        [ 59%]
+tests\integration\test_无票销售退货场景.py .......                       [ 60%]
+tests\transaction\test_delete_account_validation.py .F...                [ 60%]
+tests\transaction\test_emit_as_log.py ....                               [ 61%]
+tests\transaction\test_export.py ..................                      [ 63%]
+tests\transaction\test_salary_iit_withholding.py ...............         [ 65%]
+tests\transaction\test_security_middleware.py .......                    [ 65%]
+tests\transaction\test_个人垫付全流程.py ............FF.........         [ 68%]
+tests\transaction\test_发票销售单联动.py FFFFFFFFF.FFF.....              [ 70%]
+tests\transaction\test_固定资产全流程.py .....FFFFFFFFFF                 [ 72%]
+tests\transaction\test_固定资产发票过账.py FFFFFFFFFFF                   [ 73%]
+tests\transaction\test_权责发生制.py EEEEEEEEEEEEEEEEEEEEEEEEEEE         [ 76%]
+tests\transaction\test_财务核算.py FF................................... [ 80%]
+                                                                         [ 80%]
+tests\transaction\test_资金对账.py ....FFFF.................             [ 83%]
+tests\transaction\test_采购全流程.py ......................              [ 86%]
+tests\transaction\test_销售全流程.py ...................FFF.             [ 88%]
+tests\invariants\test_accounting_rules_dsl.py ......................     [ 91%]
+tests\invariants\test_as22_unsupported_boundary.py ..................... [ 93%]
+                                                                         [ 93%]
+tests\invariants\test_enforce_rules.py ..............                    [ 95%]
+tests\invariants\test_lineage_dynamic.py FFF......                       [ 96%]
+tests\invariants\test_lineage_registry.py ...............                [ 97%]
+tests\invariants\test_runtime_checks.py ...........                      [ 99%]
+tests\invariants\test_truth_source_invariants.py .......                 [100%]
+
+=================================== ERRORS ====================================
+_________________ ERROR at setup of test_create_bank_account __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+__________________ ERROR at setup of test_list_bank_accounts __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_________________ ERROR at setup of test_update_bank_account __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+__ ERROR at setup of test_delete_bank_account_with_transactions_should_fail ___
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_________________ ERROR at setup of test_delete_bank_account __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_______________ ERROR at setup of test_create_bank_transaction ________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+___________ ERROR at setup of test_create_bank_transaction_outflow ____________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+________________ ERROR at setup of test_create_expense_accrual ________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_____________________ ERROR at setup of test_pay_expense ______________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_______________ ERROR at setup of test_create_purchase_accrual ________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_____________________ ERROR at setup of test_pay_purchase _____________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_________________ ERROR at setup of test_create_sale_accrual __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_____________________ ERROR at setup of test_receive_sale _____________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+________ ERROR at setup of test_balance_sheet_includes_unpaid_expenses ________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+______ ERROR at setup of test_income_statement_includes_unpaid_expenses _______
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+______ ERROR at setup of test_cash_flow_statement_from_bank_transactions ______
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_________________ ERROR at setup of test_expense_amount_zero __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+_______________ ERROR at setup of test_expense_amount_negative ________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+____________ ERROR at setup of test_payment_exceeds_expense_amount ____________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+________________ ERROR at setup of test_bank_account_not_found ________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+__________________ ERROR at setup of test_duplicate_payment ___________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+______________ ERROR at setup of test_payment_with_bank_account _______________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+______ ERROR at setup of test_payment_rollback_on_bank_account_not_found ______
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+__________________ ERROR at setup of test_full_business_flow __________________
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+___ ERROR at setup of test_balance_sheet_monetary_funds_with_bank_accounts ____
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+____ ERROR at setup of test_balance_sheet_monetary_funds_reflects_payments ____
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+____ ERROR at setup of test_bank_account_balance_cannot_be_edited_directly ____
+E   AttributeError: module 'database' has no attribute '_init_pending_confirms_table'
+================================== FAILURES ===================================
+E   AssertionError: assert '银行账户' in '操作日志'
+     +  where '操作日志' = <built-in method get of dict object at 0x000002A3D129BFC0>('label', '')
+     +    where <built-in method get of dict object at 0x000002A3D129BFC0> = {'count': 1, 'label': '操作日志'}.get
+     +      where {'count': 1, 'label': '操作日志'} = BusinessError('该商品存在 {purchase_count} 条采购记录和 {sale_count} 条销售记录，无法删除').data
+     +        where BusinessError('该商品存在 {purchase_count} 条采购记录和 {sale_count} 条销售记录，无法删除') = <ExceptionInfo BusinessError('该商品存在 {purchase_count} 条采购记录和 {sale_count} 条销售记录，无法删除') tblen=2>.value
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_delete_account_validation.py:46: AssertionError: assert '银行账户' in '操作日志'
+E   AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: 'BankTransaction' object has no attribute 'transaction_date'
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 314, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 20, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 346, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\routers\personal_advances.py", line 176, in reverse_repayment
+    return dispatch(ReversePersonalAdvanceRepayment(
+        account_id=account_id,
+    ...<2 lines>...
+        repayment_id=repayment_id,
+    ), db)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\base.py", line 71, in dispatch
+    return handler_cls().handle(cmd, db)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\lineage\registry.py", line 165, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\lineage\registry.py", line 165, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\personal_advance_commands.py", line 370, in handle
+    reverse_bank_transaction(db, account_id, repayment.bank_transaction_id)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\reversal_ops.py", line 260, in reverse_bank_transaction
+    transaction_date=date or tx.transaction_date_l1,
+                             ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+C:\Users\Administrator\Desktop\inventory-system\backend\commands\reversal_ops.py:260: AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+E   AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: 'BankTransaction' object has no attribute 'transaction_date'
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 314, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 20, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 346, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\routers\personal_advances.py", line 176, in reverse_repayment
+    return dispatch(ReversePersonalAdvanceRepayment(
+        account_id=account_id,
+    ...<2 lines>...
+        repayment_id=repayment_id,
+    ), db)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\base.py", line 71, in dispatch
+    return handler_cls().handle(cmd, db)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\lineage\registry.py", line 165, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\lineage\registry.py", line 165, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\personal_advance_commands.py", line 370, in handle
+    reverse_bank_transaction(db, account_id, repayment.bank_transaction_id)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\commands\reversal_ops.py", line 260, in reverse_bank_transaction
+    transaction_date=date or tx.transaction_date_l1,
+                             ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+C:\Users\Administrator\Desktop\inventory-system\backend\commands\reversal_ops.py:260: AttributeError: 'BankTransaction' object has no attribute 'transaction_date'. Did you mean: 'transaction_date_l1'?
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749166531', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 1, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:81: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749166531', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 1, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749232728', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 2, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:96: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749232728', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 2, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749297967', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 3, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:107: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749297967', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 3, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749427604', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 4, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'link_existing', 'related_order_id': 1, 'related_order_type': 'sale_order'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:132: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-OUT--233749427604', 'direction': 'out', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '本公司', 'buyer_name': '测试买方公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 4, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'sale_order_action': 'link_existing', 'related_order_id': 1, 'related_order_type': 'sale_order'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749446304', 'direction': 'in', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 5, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'purchase_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:151: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749446304', 'direction': 'in', 'invoice_type': 'ordinary', 'amount_with_tax': '1030.00', 'tax_rate': '0.03', 'counterparty_name': '测试买方公司', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-15', 'items': [{'product_id': 5, 'quantity': 10, 'unit_price': '100.00', 'tax_rate': '0.03'}], 'purchase_order_action': 'auto_create'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749469248', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 6, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-QUICK-233749469227', 'asset_name': '测试设备', 'category': '电子设备', 'salvage_rate': '0.05', 'useful_life': 60, 'depreciation_method': '年限平均法', 'start_date': '2026-06-01', 'accumulated_depreciation': '0', 'asset_status': '在用'}})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:171: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749469248', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 6, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-QUICK-233749469227', 'asset_name': '测试设备', 'category': '电子设备', 'salvage_rate': '0.05', 'useful_life': 60, 'depreciation_method': '年限平均法', 'start_date': '2026-06-01', 'accumulated_depreciation': '0', 'asset_status': '在用'}})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-PERSIST-233749493421', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 7, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-PERSIST-233749493438', 'asset_name': '持久化测试设备', 'useful_life': 36, 'start_date': '2026-06-01'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-PERSIST-233749493438', 'asset_name': '持久化测试设备', 'useful_life': 36, 'start_date': '2026-06-01'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:190: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-PERSIST-233749493421', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 7, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-PERSIST-233749493438', 'asset_name': '持久化测试设备', 'useful_life': 36, 'start_date': '2026-06-01'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-PERSIST-233749493438', 'asset_name': '持久化测试设备', 'useful_life': 36, 'start_date': '2026-06-01'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749515432', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 8, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}]})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:205: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749515432', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 8, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}]})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IMG-233749540626', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 9, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'image_url': '/uploads/invoice/test.png'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:217: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IMG-233749540626', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': '11300.00', 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 9, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'image_url': '/uploads/invoice/test.png'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749563212', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 11300, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 10, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-001-233749563229', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-001-233749563229', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:241: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749563212', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 11300, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 10, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-001-233749563229', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-001-233749563229', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749582499', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 22600, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 11, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-002-233749582517', 'asset_name': '测试设备B', 'useful_life': 120, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-002-233749582517', 'asset_name': '测试设备B', 'useful_life': 120, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:256: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749582499', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 22600, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 11, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-002-233749582517', 'asset_name': '测试设备B', 'useful_life': 120, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-002-233749582517', 'asset_name': '测试设备B', 'useful_life': 120, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749602790', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 11300, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 12, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-ENGINE-233749602809', 'asset_name': '引擎测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-ENGINE-233749602809', 'asset_name': '引擎测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_发票销售单联动.py:275: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'INV-IN--233749602790', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 11300, 'tax_rate': '0.13', 'counterparty_name': '测试供应商', 'seller_name': '测试供应商', 'buyer_name': '本公司', 'issue_date': '2026-06-01', 'notes': 'quick 合并测试', 'purchase_order_action': 'auto_create', 'items': [{'product_id': 12, 'quantity': 1, 'unit_price': '10000.00', 'tax_rate': '0.13'}], 'fixed_asset': {'asset_code': 'FA-ENGINE-233749602809', 'asset_name': '引擎测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA-ENGINE-233749602809', 'asset_name': '引擎测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:103: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:130: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:162: assert 422 == 200
+E   assert 422 == 409
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:238: assert 422 == 409
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:270: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:312: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:348: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:390: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:426: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产全流程.py:470: assert 422 == 200
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804433324', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 11300, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 1, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804433357', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804433357', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804433324', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 11300, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 1, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804433357', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804433357', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804482584', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 5000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 2, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804482623', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804482623', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804482584', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 5000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 2, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804482623', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804482623', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804576799', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 3000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 3, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804576830', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804576830', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804576799', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 3000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 3, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804576830', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804576830', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804622856', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 8000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 4, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804622889', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804622889', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804622856', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 8000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 4, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804622889', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804622889', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804665041', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 12000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 5, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804665067', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804665067', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804665041', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 12000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 5, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804665067', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804665067', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804703977', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 11300, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 6, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804704004', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804704004', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804703977', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 11300, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 6, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804704004', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804704004', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804744468', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 5000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 7, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804744495', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804744495', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804744468', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 5000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 7, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804744495', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804744495', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804777515', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 2000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 8, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804777536', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804777536', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:116: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-INV--233804777515', 'direction': 'in', 'invoice_type': 'ordinary', 'tax_rate': 0.13, 'amount_with_tax': 2000, 'counterparty_name': '供应商X', 'seller_name': '供应商X', 'buyer_name': '测试公司', 'issue_date': '2026-06-19', 'items': [{'product_id': 8, 'quantity': 1, 'unit_price': 100, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804777536', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804777536', 'asset_name': '测试设备', 'useful_life': 60, 'start_date': '2026-06-19'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT--233804860280', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 9, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804860301', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804860301', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:323: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT--233804860280', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 9, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804860301', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804860301', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT--233804924788', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 10, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804924817', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804924817', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:355: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT--233804924788', 'direction': 'in', 'invoice_type': 'special', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 10, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804924817', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804924817', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT-ORD--233804984350', 'direction': 'in', 'invoice_type': 'ordinary', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 11, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804984372', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804984372', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_固定资产发票过账.py:395: AssertionError: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_amount': Field required (当前值: {'invoice_no': 'FA-GT-ORD--233804984350', 'direction': 'in', 'invoice_type': 'ordinary', 'amount_with_tax': 6780, 'tax_rate': 0.13, 'counterparty_name': '供应商Y', 'seller_name': '供应商Y', 'buyer_name': '一般纳税人测试', 'issue_date': '2026-06-05', 'items': [{'product_id': 11, 'quantity': 1, 'unit_price': 6000, 'tax_rate': 0.13}], 'fixed_asset': {'asset_code': 'FA--233804984372', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'}}); 字段 'salvage_rate': Field required (当前值: {'asset_code': 'FA--233804984372', 'asset_name': '打印机', 'useful_life': 48, 'start_date': '2026-06-05'})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_财务核算.py:71: assert 422 == 200
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_财务核算.py:77: assert 422 == 200
+E   pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 295, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 24, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 711, in app
+    content = await serialize_response(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 333, in serialize_response
+    return jsonable_encoder(response_content)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\encoders.py", line 244, in jsonable_encoder
+    obj_dict = obj.model_dump(
+        mode="json",
+    ...<5 lines>...
+        exclude_defaults=exclude_defaults,
+    )
+  File "C:\Miniconda3\Lib\site-packages\pydantic\main.py", line 475, in model_dump
+    return self.__pydantic_serializer__.to_python(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<13 lines>...
+        polymorphic_serialization=polymorphic_serialization,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+C:\Miniconda3\Lib\site-packages\pydantic\main.py:475: pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+E   TypeError: strptime() argument 1 must be str, not datetime.datetime
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: strptime() argument 1 must be str, not datetime.datetime
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 295, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 24, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 346, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\anyio\_backends\_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\routers\cash_flows.py", line 71, in list_cash_transactions
+    total, items = crud.list_cash_flow_transactions(db, account_id, pag.skip, pag.limit, date_range.start, date_range.end, flow_category)
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\lineage\registry.py", line 196, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\crud\finance\cash_flow.py", line 26, in list_cash_flow_transactions
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+TypeError: strptime() argument 1 must be str, not datetime.datetime
+C:\Users\Administrator\Desktop\inventory-system\backend\crud\finance\cash_flow.py:26: TypeError: strptime() argument 1 must be str, not datetime.datetime
+E   pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 295, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 24, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 711, in app
+    content = await serialize_response(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 333, in serialize_response
+    return jsonable_encoder(response_content)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\encoders.py", line 244, in jsonable_encoder
+    obj_dict = obj.model_dump(
+        mode="json",
+    ...<5 lines>...
+        exclude_defaults=exclude_defaults,
+    )
+  File "C:\Miniconda3\Lib\site-packages\pydantic\main.py", line 475, in model_dump
+    return self.__pydantic_serializer__.to_python(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<13 lines>...
+        polymorphic_serialization=polymorphic_serialization,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+C:\Miniconda3\Lib\site-packages\pydantic\main.py:475: pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+E   pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+------------------------------ Captured log call ------------------------------
+ERROR    inventory:main.py:210 未处理异常: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+Traceback (most recent call last):
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\ai_gateway.py", line 295, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\write_permission.py", line 24, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\readonly_middleware.py", line 61, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Administrator\Desktop\inventory-system\backend\middleware\confirm_middleware.py", line 335, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Miniconda3\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 711, in app
+    content = await serialize_response(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "C:\Miniconda3\Lib\site-packages\fastapi\routing.py", line 333, in serialize_response
+    return jsonable_encoder(response_content)
+  File "C:\Miniconda3\Lib\site-packages\fastapi\encoders.py", line 244, in jsonable_encoder
+    obj_dict = obj.model_dump(
+        mode="json",
+    ...<5 lines>...
+        exclude_defaults=exclude_defaults,
+    )
+  File "C:\Miniconda3\Lib\site-packages\pydantic\main.py", line 475, in model_dump
+    return self.__pydantic_serializer__.to_python(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<13 lines>...
+        polymorphic_serialization=polymorphic_serialization,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+C:\Miniconda3\Lib\site-packages\pydantic\main.py:475: pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'models.CashFlowTransaction'>
+E   AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 50, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 in (200, 201)
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_销售全流程.py:69: AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 50, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 50, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 in (200, 201)
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_销售全流程.py:69: AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 50, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 100, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+    assert 422 in (200, 201)
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\Users\Administrator\Desktop\inventory-system\tests\transaction\test_销售全流程.py:69: AssertionError: 采购失败: {"error":{"code":"VALIDATION_ERROR","message":"字段 'tax_rate': Field required (当前值: {'product_id': 1, 'quantity': 100, 'unit_price': 10.0})","action":"user_input","action_data":{},"data":{},"ai_instruction":"STOP_RETRYING. 参数校验失败，请检查字段名和值是否正确。"}}
+E   errors.BusinessError: source_type='test_dyn' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+C:\Users\Administrator\Desktop\inventory-system\backend\engine_inventory.py:52: errors.BusinessError: source_type='test_dyn' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+E   errors.BusinessError: source_type='test_dyn_out' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+C:\Users\Administrator\Desktop\inventory-system\backend\engine_inventory.py:52: errors.BusinessError: source_type='test_dyn_out' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+E   errors.BusinessError: source_type='test_dyn_rev' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+C:\Users\Administrator\Desktop\inventory-system\backend\engine_inventory.py:52: errors.BusinessError: source_type='test_dyn_rev' 需要调用方显式传 move_date，_get_move_date 不再提供 datetime.now() 回退
+============================== warnings summary ===============================
+..\..\..\..\Miniconda3\Lib\site-packages\fastapi\testclient.py:1
+  C:\Miniconda3\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/transaction/test_delete_account_validation.py::TestDeleteAccountValidation::test_account_with_bank_account_blocked
+FAILED tests/transaction/test_个人垫付全流程.py::Test红冲::test_reverse_repayment_reverses_bank_and_status
+FAILED tests/transaction/test_个人垫付全流程.py::Test红冲::test_reverse_advance_after_all_repayments_reversed
+FAILED tests/transaction/test_发票销售单联动.py::Test销项发票联动销售单::test_out_invoice_creates_sale_order
+FAILED tests/transaction/test_发票销售单联动.py::Test销项发票联动销售单::test_out_invoice_sale_order_amounts_match
+FAILED tests/transaction/test_发票销售单联动.py::Test销项发票联动销售单::test_out_invoice_items_synced_to_sale_order
+FAILED tests/transaction/test_发票销售单联动.py::Test销项发票联动销售单::test_out_invoice_link_existing_no_new_sale_order
+FAILED tests/transaction/test_发票销售单联动.py::Test进项发票联动采购单::test_in_invoice_creates_purchase_order
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_quick_with_fixed_asset_creates_both
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_quick_with_fixed_asset_persisted
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_quick_without_fixed_asset_creates_invoice_only
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_quick_image_url_passthrough
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_invoice_amount_equals_asset_original_value
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_invoice_amounts_auto_calculated_and_balanced
+FAILED tests/transaction/test_发票销售单联动.py::TestQuick合并端点::test_invoice_calculation_uses_accounting_engine
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_invoice_amount_equals_asset_original_value
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_invoice_amounts_auto_calculated_and_balanced
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_rollback_on_duplicate_invoice
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_duplicate_invoice_number_returns_structured_error
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_response_contains_complete_invoice_and_asset_info
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_update_invoice_amount_syncs_asset
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_delete_invoice_cascades_to_asset
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_update_asset_syncs_invoice_amount
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_delete_asset_clears_invoice_link
+FAILED tests/transaction/test_固定资产全流程.py::Test发票关联固定资产::test_invoice_calculation_uses_accounting_engine
+FAILED tests/transaction/test_固定资产发票过账.py::Test创建固定资产发票_总账过账::test_小规模_全额进资产_无进项税
+FAILED tests/transaction/test_固定资产发票过账.py::Test创建固定资产发票_总账过账::test_bs_固定资产科目包含资产原值
+FAILED tests/transaction/test_固定资产发票过账.py::Test创建固定资产发票_总账过账::test_bs_应付账款包含该笔
+FAILED tests/transaction/test_固定资产发票过账.py::Test红冲固定资产发票::test_红冲后总账冲回
+FAILED tests/transaction/test_固定资产发票过账.py::Test红冲固定资产发票::test_红冲后资产停止折旧
+FAILED tests/transaction/test_固定资产发票过账.py::Test更新资产原值_同步总账::test_原值变更后_bs_1601_同步
+FAILED tests/transaction/test_固定资产发票过账.py::Test更新资产原值_同步总账::test_多次更新原值_总账始终一致
+FAILED tests/transaction/test_固定资产发票过账.py::Test幂等性::test_重复创建同资产_id_不重复过账
+FAILED tests/transaction/test_固定资产发票过账.py::Test一般纳税人专票自动认证::test_一般纳税人专票_自动认证
+FAILED tests/transaction/test_固定资产发票过账.py::Test一般纳税人专票自动认证::test_一般纳税人专票_资产原值不含税_222102入账
+FAILED tests/transaction/test_固定资产发票过账.py::Test一般纳税人专票自动认证::test_一般纳税人普通发票_不自动认证
+FAILED tests/transaction/test_财务核算.py::Test会计准则预检查::TestCheckInvoiceAmounts::test_valid_invoice_amounts
+FAILED tests/transaction/test_财务核算.py::Test会计准则预检查::TestCheckInvoiceAmounts::test_invalid_invoice_amounts
+FAILED tests/transaction/test_资金对账.py::Test银行流水::test_list_default - ...
+FAILED tests/transaction/test_资金对账.py::Test银行流水::test_list_with_filters
+FAILED tests/transaction/test_资金对账.py::Test银行流水::test_list_pagination
+FAILED tests/transaction/test_资金对账.py::Test银行流水::test_list_includes_created
+FAILED tests/transaction/test_销售全流程.py::Test取消恢复销售单::test_cancel_completed_order
+FAILED tests/transaction/test_销售全流程.py::Test取消恢复销售单::test_cancel_already_cancelled_blocked
+FAILED tests/transaction/test_销售全流程.py::Test取消恢复销售单::test_cancel_restores_inventory
+FAILED tests/invariants/test_lineage_dynamic.py::TestStockMoveWrites::test_inbound_writes_stockmove
+FAILED tests/invariants/test_lineage_dynamic.py::TestStockMoveWrites::test_outbound_writes_stockmove
+FAILED tests/invariants/test_lineage_dynamic.py::TestStockMoveWrites::test_reverse_writes_stockmove
+ERROR tests/transaction/test_权责发生制.py::test_create_bank_account - Attrib...
+ERROR tests/transaction/test_权责发生制.py::test_list_bank_accounts - Attribu...
+ERROR tests/transaction/test_权责发生制.py::test_update_bank_account - Attrib...
+ERROR tests/transaction/test_权责发生制.py::test_delete_bank_account_with_transactions_should_fail
+ERROR tests/transaction/test_权责发生制.py::test_delete_bank_account - Attrib...
+ERROR tests/transaction/test_权责发生制.py::test_create_bank_transaction - At...
+ERROR tests/transaction/test_权责发生制.py::test_create_bank_transaction_outflow
+ERROR tests/transaction/test_权责发生制.py::test_create_expense_accrual - Att...
+ERROR tests/transaction/test_权责发生制.py::test_pay_expense - AttributeError...
+ERROR tests/transaction/test_权责发生制.py::test_create_purchase_accrual - At...
+ERROR tests/transaction/test_权责发生制.py::test_pay_purchase - AttributeErro...
+ERROR tests/transaction/test_权责发生制.py::test_create_sale_accrual - Attrib...
+ERROR tests/transaction/test_权责发生制.py::test_receive_sale - AttributeErro...
+ERROR tests/transaction/test_权责发生制.py::test_balance_sheet_includes_unpaid_expenses
+ERROR tests/transaction/test_权责发生制.py::test_income_statement_includes_unpaid_expenses
+ERROR tests/transaction/test_权责发生制.py::test_cash_flow_statement_from_bank_transactions
+ERROR tests/transaction/test_权责发生制.py::test_expense_amount_zero - Attrib...
+ERROR tests/transaction/test_权责发生制.py::test_expense_amount_negative - At...
+ERROR tests/transaction/test_权责发生制.py::test_payment_exceeds_expense_amount
+ERROR tests/transaction/test_权责发生制.py::test_bank_account_not_found - Att...
+ERROR tests/transaction/test_权责发生制.py::test_duplicate_payment - Attribut...
+ERROR tests/transaction/test_权责发生制.py::test_payment_with_bank_account - ...
+ERROR tests/transaction/test_权责发生制.py::test_payment_rollback_on_bank_account_not_found
+ERROR tests/transaction/test_权责发生制.py::test_full_business_flow - Attribu...
+ERROR tests/transaction/test_权责发生制.py::test_balance_sheet_monetary_funds_with_bank_accounts
+ERROR tests/transaction/test_权责发生制.py::test_balance_sheet_monetary_funds_reflects_payments
+ERROR tests/transaction/test_权责发生制.py::test_bank_account_balance_cannot_be_edited_directly
+= 48 failed, 800 passed, 3 xpassed, 1 warning, 27 errors in 808.77s (0:13:28) =

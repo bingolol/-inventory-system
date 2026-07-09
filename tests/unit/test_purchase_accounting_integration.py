@@ -69,15 +69,13 @@ class TestPurchaseCreateTriggersAccounting:
             account_id=account.id,
             operator="test",
             supplier_id=1,
-            purchase_date=datetime(2026, 6, 1),
+            business_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
-                "quantity": 10,
-                "unit_price": "10.00",
-                "tax_rate": "0.13",
+                "quantity_l1": 10,
+                "unit_price_l1": "10.00",
+                "tax_rate_l1": "0.13",
             }],
-            tax_amount=Decimal("13.00"),
-            total_price=Decimal("113.00"),
         )
         order = dispatch(cmd, db)
         db.flush()
@@ -125,15 +123,13 @@ class TestPurchaseCreateTriggersAccounting:
             account_id=account.id,
             operator="test",
             supplier_id=1,
-            purchase_date=datetime(2026, 6, 1),
+            business_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
-                "quantity": 10,
-                "unit_price": "10.00",
-                "tax_rate": "0.13",
+                "quantity_l1": 10,
+                "unit_price_l1": "10.00",
+                "tax_rate_l1": "0.13",
             }],
-            tax_amount=Decimal("13.00"),
-            total_price=Decimal("113.00"),
         )
         order = dispatch(cmd, db)
         db.flush()
@@ -173,12 +169,12 @@ class TestSmallScaleTaxpayerPurchase:
             account_id=acc.id,
             operator="test",
             supplier_id=1,
-            purchase_date=datetime(2026, 6, 1),
+            business_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": prod.id,
-                "quantity": 10,
-                "unit_price": "10.00",
-                "tax_rate": "0.01",
+                "quantity_l1": 10,
+                "unit_price_l1": "10.00",
+                "tax_rate_l1": "0.01",
             }],
         )
         order = dispatch(cmd, db)
@@ -214,12 +210,12 @@ class TestCancelPurchaseTriggersReversal:
             account_id=account.id,
             operator="test",
             supplier_id=1,
-            purchase_date=datetime(2026, 6, 1),
+            business_date=datetime(2026, 6, 1),
             items=[{
                 "product_id": product.id,
-                "quantity": 10,
-                "unit_price": "10.00",
-                "tax_rate": "0.13",
+                "quantity_l1": 10,
+                "unit_price_l1": "10.00",
+                "tax_rate_l1": "0.13",
             }],
         )
         order = dispatch(cmd, db)

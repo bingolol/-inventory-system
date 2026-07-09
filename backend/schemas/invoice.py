@@ -23,14 +23,16 @@ class InvoiceBase(BaseModel):
     certification_date: Optional[datetime] = None
     related_order_id: Optional[int] = None
     related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
+    related_original_invoice_id: Optional[int] = None
+    is_normal_invoice: bool = Field(default=True, description="真=普通发票，假=红冲发票")
     notes: str = ""
 
 
 class InvoiceCreate(InvoiceBase):
-    # 创建发票时金额必须非负（红字发票由系统 reverse 流程生成，不走此 schema）
-    amount_without_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
-    tax_amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
-    amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+    # 创建发票时金额可正可负；红字发票由用户独立录入，也走此 schema
+    amount_without_tax: Decimal = Field(..., max_digits=12, decimal_places=2)
+    tax_amount: Decimal = Field(..., max_digits=12, decimal_places=2)
+    amount_with_tax: Decimal = Field(..., max_digits=12, decimal_places=2)
 
 
 class InvoiceUpdate(BaseModel):
@@ -45,7 +47,8 @@ class InvoiceUpdate(BaseModel):
     issue_date: Optional[datetime] = None
     pdf_path: Optional[str] = None
     related_order_id: Optional[int] = None
-    image_url: Optional[str] = None
+    related_order_type: Optional[str] = None
+    related_original_invoice_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -86,9 +89,10 @@ class InvoiceQuickCreate(BaseModel):
     invoice_no: str = Field(..., max_length=50)
     direction: str = Field(..., pattern="^(in|out)$")
     invoice_type: str = Field(..., pattern="^(ordinary|special)$")
-    amount_with_tax: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
-    tax_amount: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2,
-        description="税额（外部输入，发票上的实际税额。必须手动填写，系统不推导。0税率发票可填0）")
+    amount_with_tax: Decimal = Field(..., max_digits=12, decimal_places=2,
+        description="价税合计。红字发票为负数。")
+    tax_amount: Decimal = Field(..., max_digits=12, decimal_places=2,
+        description="税额（外部输入，发票上的实际税额。必须手动填写，系统不推导。0税率发票可填0；红字发票为负数）")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
     counterparty_name: str = Field(..., max_length=200)
     seller_name: str = Field(..., max_length=200, description="销方名称")
@@ -101,6 +105,8 @@ class InvoiceQuickCreate(BaseModel):
         description="进项发票必填：link_existing=关联已有采购单, auto_create=自动生成采购单")
     related_order_id: Optional[int] = Field(None, description="关联订单ID（link_existing时必填）")
     related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
+    related_original_invoice_id: Optional[int] = Field(None, description="红字发票关联的原发票ID")
+    is_normal_invoice: bool = Field(default=True, description="真=普通发票，假=红冲发票")
     image_url: Optional[str] = None
     notes: str = ""
     # 可选：发票同时入账固定资产（合并自原 POST /with-fixed-asset）
@@ -114,28 +120,40 @@ class InvoiceQuickCreate(BaseModel):
         不再生成采购单，因此 purchase_order_action 可留空。
         """
         if self.direction == "out":
+            # 红冲发票：必须关联原发票，且不参与销售单 action 校验
+            if not self.is_normal_invoice:
+                if self.related_original_invoice_id is None:
+                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="红冲发票必须填写 related_original_invoice_id")
+                return self
             if not self.sale_order_action:
                 raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="销项发票必填 sale_order_action（link_existing 或 auto_create）")
             if self.sale_order_action == "link_existing" and not self.related_order_id:
                 raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="sale_order_action=link_existing 时必填 related_order_id")
         elif self.direction == "in":
-            # 固定资产场景：跳过 purchase_order_action 强制校验
-            if self.fixed_asset is None:
+            # 红冲发票：必须关联原发票，且不参与订单/固定资产 action 校验
+            if not self.is_normal_invoice:
+                if self.related_original_invoice_id is None:
+                    raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="红冲发票必须填写 related_original_invoice_id")
+                return self
+            # 固定资产场景 或 已填 related_original_invoice_id 的红字发票：跳过 purchase_order_action 强制校验
+            if self.fixed_asset is None and self.related_original_invoice_id is None:
                 if not self.purchase_order_action:
                     raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="进项发票必填 purchase_order_action（link_existing 或 auto_create），"
-                                     "或携带 fixed_asset 块走固定资产过账分支")
+                                     "或携带 fixed_asset 块走固定资产过账分支，或设置 is_normal_invoice=false 作为红冲发票")
                 if self.purchase_order_action == "link_existing" and not self.related_order_id:
                     raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="purchase_order_action=link_existing 时必填 related_order_id")
         return self
 
     @model_validator(mode="after")
     def validate_tax_amount(self):
-        """BR-27: tax_amount 必须手动输入，系统不推导。tax_rate > 0 时 tax_amount 必须 > 0。"""
+        """BR-27: tax_amount 必须手动输入，系统不推导。tax_rate > 0 时 tax_amount 必须非零。"""
         if self.tax_rate > 0 and self.tax_amount == 0:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="tax_rate > 0 时 tax_amount 必须手动填写，系统不再内部推导税额（BR-27）")
-        computed = self.amount_with_tax - self.tax_amount
-        if computed < 0:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"amount_with_tax ({self.amount_with_tax}) 不能小于 tax_amount ({self.tax_amount})")
+        # 红字发票：价税合计与税额同为负数，且价税合计绝对值 >= 税额绝对值
+        if (self.amount_with_tax >= 0 and self.tax_amount < 0) or (self.amount_with_tax < 0 and self.tax_amount > 0):
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"红字发票的 amount_with_tax ({self.amount_with_tax}) 与 tax_amount ({self.tax_amount}) 必须同为负数")
+        if abs(self.amount_with_tax) < abs(self.tax_amount):
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"amount_with_tax 绝对值不能小于 tax_amount 绝对值")
         return self
 
 

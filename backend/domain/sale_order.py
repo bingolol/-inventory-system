@@ -105,8 +105,8 @@ class SaleOrderDomain(DomainModel["SaleOrder"]):
             SaleOrderLine(
                 product_id=item.product_id,
                 quantity=item.quantity_l1,
-                unit_price=Decimal(str(item.unit_price_l1)) if item.unit_price_l1 else Decimal("0"),
-                tax_rate=Decimal(str(item.tax_rate_l1)) if item.tax_rate_l1 else Decimal("0"),
+                unit_price=Decimal(str(item.unit_price_l1)),
+                tax_rate=Decimal(str(item.tax_rate_l1)),
                 total_price=Money(item.total_price_l1),
             )
             for item in (orm_obj.items or [])

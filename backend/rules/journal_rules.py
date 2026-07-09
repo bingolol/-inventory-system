@@ -406,17 +406,17 @@ def _register_default_rules():
         description="所得税冲回必须借应交所得税(222105)、贷所得税费用(6801)",
     ))
 
-    # VAT 转出：借应交增值税 贷应交税费-未交增值税
+    # VAT 转出：借转出未交增值税 贷未交增值税（§12.3）
     register_journal_rule(JournalRule(
         move_type=ET.VAT_TRANSFER_OUT, name="VAT转出",
         patterns=[
             AccountPattern(
-                must_have_debit=["222101", "222103"],  # 应交增值税（销项）
+                must_have_debit=["222106"],  # 转出未交增值税
                 must_have_credit=["222107"],  # 未交增值税
                 condition="月末VAT转出",
             ),
         ],
-        description="VAT转出必须借应交增值税(222101/222103)、贷未交增值税(222107)",
+        description="VAT转出必须借转出未交增值税(222106)、贷未交增值税(222107)",
     ))
 
     # VAT 免税：借应交增值税 费营业收入（免税转收入）

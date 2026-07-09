@@ -248,7 +248,7 @@ class PurchaseOrder(Base):
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    purchase_date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 采购日期", info={"tier":"L1","source":"external"})
+    purchase_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 采购日期（BR-21必填，禁止ORM层默认值）", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
     supplier = relationship("Supplier", back_populates="purchase_orders")
@@ -291,7 +291,7 @@ class SaleOrder(Base):
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    sale_date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 销售日期", info={"tier":"L1","source":"external"})
+    sale_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 销售日期（BR-21必填，禁止ORM层默认值）", info={"tier":"L1","source":"external"})
     created_at = Column(DateTime, default=datetime.now)
 
     customer = relationship("Customer", back_populates="sale_orders")
@@ -398,7 +398,7 @@ class PersonalTransaction(Base):
     category = Column(String(50), default="", comment="分类")
     description = Column(Text, default="", comment="描述")
     image_url = Column(String(500), default="", comment="附件图片URL")
-    date_l1 = Column(DateTime, default=datetime.now, comment="[L1-外部] 交易日期", info={"tier":"L1","source":"external"})
+    date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 交易日期（BR-21必填，禁止ORM层默认值）", info={"tier":"L1","source":"external"})
     is_reversed = Column(Boolean, default=False, comment="是否已冲红/作废")
     created_at = Column(DateTime, default=datetime.now)
 
@@ -426,6 +426,8 @@ class Invoice(Base):
     certification_date_l3 = Column(DateTime, nullable=True, comment="[L3-政策] 认证日期", info={"tier":"L3","source":"policy"})
     related_order_id = Column(Integer, nullable=True, comment="关联订单ID")
     related_order_type = Column(String(20), nullable=True, comment="关联订单类型: sale_order/purchase_order/expense/fixed_asset")
+    related_original_invoice_id = Column(Integer, nullable=True, comment="红字发票关联的原发票ID")
+    is_normal_invoice = Column(Boolean, default=True, nullable=False, comment="真=普通发票，假=红冲发票")
     is_reversed = Column(Boolean, default=False, comment="是否已被冲红")
     reversed_at = Column(DateTime, nullable=True, comment="冲红时间")
     notes = Column(Text, default="", comment="备注")

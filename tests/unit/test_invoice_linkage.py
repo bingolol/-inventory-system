@@ -21,8 +21,8 @@ def seed_data(db):
     account = models.Account(id=1, name="测试账本", type="company", code="test", taxpayer_type_l3="small_scale")
     db.add(account)
 
-    sale = models.SaleOrder(id=100, account_id=1, order_no="SO-001", total_price_l1=Decimal("1000"))
-    purchase = models.PurchaseOrder(id=200, account_id=1, order_no="PO-001", total_price_l1=Decimal("500"))
+    sale = models.SaleOrder(id=100, account_id=1, order_no="SO-001", total_price_l1=Decimal("1000"), sale_date_l1=datetime.now())
+    purchase = models.PurchaseOrder(id=200, account_id=1, order_no="PO-001", total_price_l1=Decimal("500"), purchase_date_l1=datetime.now())
     expense = models.Expense(id=300, account_id=1, category="房租", amount_l1=Decimal("2000"), expense_date_l1=datetime.now())
     db.add_all([sale, purchase, expense])
     db.flush()
@@ -81,7 +81,7 @@ class TestBulkHasInvoice:
         assert bulk_has_invoice(db, 1, "sale_order", [100]) == set()
 
     def test_returns_correct_ids(self, db, seed_data):
-        sale2 = models.SaleOrder(id=101, account_id=1, order_no="SO-002", total_price_l1=Decimal("500"))
+        sale2 = models.SaleOrder(id=101, account_id=1, order_no="SO-002", total_price_l1=Decimal("500"), sale_date_l1=datetime.now())
         db.add(sale2)
         db.flush()
 

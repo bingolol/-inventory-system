@@ -1,5 +1,5 @@
 """银行对账 — 真实业务流程演示"""
-import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","backend"))
+import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","..","backend"))
 import json,uuid,tempfile
 from datetime import datetime,date
 from decimal import Decimal

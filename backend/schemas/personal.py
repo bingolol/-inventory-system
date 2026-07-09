@@ -26,7 +26,7 @@ class PersonalTransactionCreate(BaseModel):
     category: str = ""
     description: str = ""
     image_url: str = ""
-    date: Optional[str] = None
+    date: str = Field(..., description="交易日期 YYYY-MM-DD（BR-21必填）")
 
 
 class PersonalTransactionUpdate(BaseModel):

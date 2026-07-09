@@ -129,28 +129,22 @@ class DeclareVATHandler(CommandHandler):
 
         # 一般纳税人：自动执行 vat_transfer_out（幂等）
         if taxpayer_type != "small_scale" and vat_result.tax_payable > Q2:
-            sn_list = list(agg.get("out_invoices", []) or [])
-            move_exists = False
-            try:
-                existing_move = db.query(type(db.registry._class_registry.get("AccountMove", None))).filter(
-                    type(db.registry._class_registry.get("AccountMove", None)).source_model == "vat_transfer_out",
-                    type(db.registry._class_registry.get("AccountMove", None)).source_id == period_hash(cmd.period, "vat_xfer"),
-                ).first() if "AccountMove" in db.registry._class_registry else None
-                move_exists = existing_move is not None
-            except Exception:
-                logger.debug("vat_transfer_out existence check failed, assuming not posted")
+            from models_finance import AccountMove as _AM
+            ledger_id = get_or_create_ledger_id(db, cmd.account_id)
+            existing_move = db.query(_AM).filter(
+                _AM.ledger_id == ledger_id,
+                _AM.source_model == "vat_transfer_out",
+                _AM.source_id == period_hash(cmd.period, "vat_xfer"),
+                _AM.is_reversal == False,
+            ).first()
 
-            if not move_exists:
-                try:
-                    post_journal(db, cmd.account_id, "vat_transfer_out", {
-                        "amount": vat_result.tax_payable,
-                        "date": period_end,
-                        "source_model": "vat_transfer_out",
-                        "source_id": period_hash(cmd.period, "vat_xfer"),
-                    })
-                except Exception:
-                    logger.exception("vat_transfer_out post_journal failed for period=%s", cmd.period)
-                    raise
+            if not existing_move:
+                post_journal(db, cmd.account_id, "vat_transfer_out", {
+                    "amount": vat_result.tax_payable,
+                    "date": period_end,
+                    "source_model": "vat_transfer_out",
+                    "source_id": period_hash(cmd.period, "vat_xfer"),
+                })
 
         log_op(db, cmd.account_id, "create", "vat_declaration", declaration.id,
              f"VAT 申报声明: 期间={cmd.period}, 应缴={vat_result.tax_payable}", operator=cmd.operator)
@@ -184,7 +178,6 @@ class DeclareSurchargeHandler(CommandHandler):
     def handle(self, cmd: DeclareSurcharge, db: Any) -> Any:
         import models
         from models_finance import AccountMove
-        from engine_period_close import PeriodCloseEngine
         from utils.period import parse_period
 
         # 验证 VATDeclaration 存在
@@ -314,7 +307,6 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
     from datetime import datetime
     from calendar import monthrange
     from models_finance import AccountMove
-    from engine_period_close import PeriodCloseEngine
 
     # 季度 period → 月度 period（取季度末月）
     if "Q" in period:
@@ -369,8 +361,8 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
 
     if close_exists:
         try:
-            engine = PeriodCloseEngine(db)
-            engine.execute(account_id, monthly_period, force=True)
+            from finance_orchestrator import FinanceOrchestrator
+            FinanceOrchestrator(db, account_id).close_period(monthly_period, force=True)
             result["period_close_rerun"] = True
         except Exception:
             logger.exception("_cascade_fix period_close rerun failed for period=%s", period)

@@ -475,13 +475,37 @@ def test_reverse_invoice_keeps_asset(client):
     invoice_id = get_entity_id(create_resp.json())
     asset_id = cr_data["fixed_asset"]["id"]
 
-    reverse_resp = client.post(f"/api/invoices/{invoice_id}/reverse", json={"reason": "测试冲红"}, headers={"X-Account-ID": "1"})
+    # 用户先独立录入红字固定资产发票
+    red_body = {
+        "invoice_no": "FA-DEL-RED",
+        "direction": "in",
+        "invoice_type": "ordinary",
+        "amount_without_tax": -10000,
+        "tax_amount": -1300,
+        "amount_with_tax": -11300,
+        "tax_rate": 0.13,
+        "counterparty_name": "测试供应商",
+        "seller_name": "测试供应商",
+        "buyer_name": "测试公司",
+        "issue_date": "2026-06-20",
+        "related_order_id": asset_id,
+        "related_order_type": "fixed_asset",
+        "related_original_invoice_id": invoice_id,
+        "certification_status": "n_a",
+    }
+    red_resp = client.post("/api/invoices", json=red_body, headers={"X-Account-ID": "1"})
+    assert red_resp.status_code in (200, 201), red_resp.text
+    red_invoice_id = get_entity_id(red_resp.json())
+
+    reverse_resp = client.post(f"/api/invoices/{invoice_id}/reverse",
+                               json={"red_invoice_id": red_invoice_id, "reason": "测试冲红"},
+                               headers={"X-Account-ID": "1"})
     assert reverse_resp.status_code == 200
 
-    # 冲红后会生成红字发票
+    # 冲红后原发票标记为已冲红，红字发票由用户录入
     invoice_list = client.get("/api/invoices", headers={"X-Account-ID": "1"})
     assert invoice_list.status_code == 200
-    assert any(i.get("invoice_no", "").startswith("H-") for i in invoice_list.json()["items"])
+    assert any(i.get("id") == red_invoice_id for i in invoice_list.json()["items"])
 
     asset_list = client.get("/api/fixed-assets", headers={"X-Account-ID": "1"})
     assert asset_list.status_code == 200

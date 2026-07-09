@@ -4,7 +4,7 @@
 期初: 银行存款 100,000 = 实收资本 100,000
 每月: 采购→销售→出库→工资→房租→水电→收款→付款→月结→银行对账→税务核对
 """
-import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","backend"))
+import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","..","backend"))
 import uuid,calendar
 from datetime import datetime,date
 from decimal import Decimal

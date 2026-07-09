@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import models
+from errors import BusinessError, ErrorCode
 
 from .base import Command, CommandHandler, register
 
@@ -24,14 +25,20 @@ class CreatePersonalTransaction(Command):
     category: str = ""
     description: str = ""
     image_url: str = ""
-    date: str = ""                # YYYY-MM-DD
+    date: str = ""                # YYYY-MM-DD（BR-21必填，禁止 datetime.now() 回退）
 
 
 @register(CreatePersonalTransaction)
 class CreatePersonalTransactionHandler(CommandHandler):
     def handle(self, cmd: CreatePersonalTransaction, db: Any) -> Any:
-        # 日期解析
-        tx_date = datetime.strptime(cmd.date, "%Y-%m-%d") if cmd.date else datetime.now()
+        # 日期解析（BR-21：业务日期必填，禁止 datetime.now() 回退）
+        if not cmd.date:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="个人流水日期不能为空，请提供业务发生日期",
+                ai_instruction="STOP_RETRYING. date 字段必填，请补充交易日期（格式 YYYY-MM-DD）。",
+            )
+        tx_date = datetime.strptime(cmd.date, "%Y-%m-%d")
 
         tx = models.PersonalTransaction(
             account_id=cmd.account_id,

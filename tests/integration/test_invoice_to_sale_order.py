@@ -175,9 +175,10 @@ class TestInvoiceAutoGenerateSaleOrder:
         # 先手动建一个销售单
         r_sale = client.post("/api/sales", json={
             "customer_id": None,
+            "has_invoice": True,
             "deduct_inventory": True,
             "payment_status": "unpaid",
-            "sale_date": "2026-06-10",
+            "business_date": "2026-06-10",
             "items": [{"product_id": pid, "quantity": 5, "unit_price": "100.00", "tax_rate": "0.03"}],
         }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r_sale.status_code in (200, 201), r_sale.text

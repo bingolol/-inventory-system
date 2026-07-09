@@ -45,8 +45,8 @@ class TestEmitAsLogSingleWrite:
         order = dispatch(CreateOrder(order_type="sale", 
             account_id=1, operator="ai",
             customer_id=c.id, deduct_inventory=False,
-            payment_status="unpaid", sale_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 2, "unit_price": 20, "tax_rate": Decimal("0.01")}],
+            payment_status="unpaid", business_date=datetime(2026,6,29,10,0,0),
+            items=[{"product_id": p.id, "quantity_l1": 2, "unit_price_l1": 20, "tax_rate_l1": Decimal("0.01")}],
         ), db)
 
         logs = _logs_since(db, before, "sale_order", order.id)
@@ -66,8 +66,8 @@ class TestEmitAsLogSingleWrite:
 
         order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
-            supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 3, "unit_price": 10, "tax_rate": 0.13}],
+            supplier_id=s.id, business_date=datetime(2026,6,29,10,0,0),
+            items=[{"product_id": p.id, "quantity_l1": 3, "unit_price_l1": 10, "tax_rate_l1": 0.13}],
         ), db)
 
         logs = _logs_since(db, before, "purchase_order", order.id)
@@ -84,8 +84,8 @@ class TestEmitAsLogSingleWrite:
         order = dispatch(CreateOrder(order_type="sale", 
             account_id=1, operator="ai",
             customer_id=c.id, deduct_inventory=False,
-            payment_status="unpaid", sale_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 1, "unit_price": 10, "tax_rate": Decimal("0.01")}],
+            payment_status="unpaid", business_date=datetime(2026,6,29,10,0,0),
+            items=[{"product_id": p.id, "quantity_l1": 1, "unit_price_l1": 10, "tax_rate_l1": Decimal("0.01")}],
         ), db)
         before = _max_log_id(db)
 
@@ -103,8 +103,8 @@ class TestEmitAsLogSingleWrite:
         db.flush()
         order = dispatch(CreateOrder(order_type="purchase", 
             account_id=1, operator="user",
-            supplier_id=s.id, purchase_date=datetime(2026,6,29,10,0,0),
-            items=[{"product_id": p.id, "quantity": 1, "unit_price": 10, "tax_rate": 0.13}],
+            supplier_id=s.id, business_date=datetime(2026,6,29,10,0,0),
+            items=[{"product_id": p.id, "quantity_l1": 1, "unit_price_l1": 10, "tax_rate_l1": 0.13}],
         ), db)
         before = _max_log_id(db)
 

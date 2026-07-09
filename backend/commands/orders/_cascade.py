@@ -1,11 +1,12 @@
-"""冲红级联策略 — ReverseInvoice 的 5 种级联分支提取为独立策略
+"""冲红级联策略 — ReverseInvoice 的级联分支提取为可注册策略
 
-每个策略实现 resolve(db, account_id, operator, invoice, red_invoice, reason) → list[str]。
+每个策略实现 cascade(db, account_id, operator, invoice, red_invoice, reason) -> list[str]。
+resolve_reversal 通过策略注册表分发，新增级联类型无需修改 dispatcher。
 """
 
 import time as _time
 from decimal import Decimal
-from typing import Any, List
+from typing import Any, Callable, Dict, List
 
 import models
 from enums import OrderStatus, InvoiceType
@@ -17,30 +18,39 @@ from lineage import reads, writes, TIER_L1, TIER_L3
 from sqlalchemy import func as sqlfunc
 
 
-def resolve_reversal(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
-    """分发到对应策略 — 替代原 ReverseInvoiceHandler 中的 280 行 if-else 树"""
-    from engine_finance import FinanceEngine
-    from engine_inventory import InventoryEngine
-    from finance_integration import post_journal
+CascadeStrategy = Callable[[Any, int, str, Any, Any, str], List[str]]
+_reversal_strategies: Dict[str, CascadeStrategy] = {}
 
-    lines = []
+
+def register_cascade_strategy(related_type: str) -> Callable[[CascadeStrategy], CascadeStrategy]:
+    """注册冲红级联策略装饰器。
+
+    用法::
+
+        @register_cascade_strategy("sale_order")
+        def _cascade_sale(db, account_id, operator, invoice, red_invoice, reason):
+            ...
+    """
+    def decorator(fn: CascadeStrategy) -> CascadeStrategy:
+        _reversal_strategies[related_type] = fn
+        return fn
+    return decorator
+
+
+def resolve_reversal(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
+    """分发到对应策略 — 替代原 ReverseInvoiceHandler 中的 if-else 树。"""
     related_type = invoice.related_order_type
     related_id = invoice.related_order_id
 
-    if related_type == "sale_order" and related_id:
-        lines = _cascade_sale(db, account_id, operator, invoice, red_invoice, reason)
-    elif related_type == "purchase_order" and related_id:
-        lines = _cascade_purchase(db, account_id, operator, invoice, red_invoice, reason)
-    elif related_type == "expense":
-        lines = _cascade_expense(db, account_id, operator, invoice, red_invoice, reason)
-    elif related_type == "fixed_asset":
-        lines = _cascade_fixed_asset(db, account_id, operator, invoice, red_invoice, reason)
-    else:
-        lines.append("独立发票（无级联冲红）")
+    if related_type and related_id and related_type in _reversal_strategies:
+        return _reversal_strategies[related_type](
+            db, account_id, operator, invoice, red_invoice, reason
+        )
 
-    return lines
+    return ["独立发票（无级联冲红）"]
 
 
+@register_cascade_strategy("sale_order")
 def _cascade_sale(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
     """销项发票冲红级联 — 销售凭证冲红 + 库存回退（支持部分退货）"""
     from engine_finance import FinanceEngine
@@ -159,6 +169,7 @@ def _cascade_sale(db, account_id, operator, invoice, red_invoice, reason) -> Lis
     return lines
 
 
+@register_cascade_strategy("purchase_order")
 def _cascade_purchase(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
     """进项发票冲红级联 — 采购凭证冲红 + 库存退回（支持部分退货，与 _cascade_sale 对称）"""
     from engine_finance import FinanceEngine
@@ -265,7 +276,7 @@ def _cascade_purchase(db, account_id, operator, invoice, red_invoice, reason) ->
                 lines.append("冲红采购凭证")
                 eng_inv = InventoryEngine(db)
                 for item in purchase_order.items:
-                    unit_cost = to_decimal(item.unit_price_l1) if item.unit_price_l1 else Decimal('0')
+                    unit_cost = to_decimal(item.unit_price_l1)
                     eng_inv.reverse(
                         account_id=account_id, product_id=item.product_id,
                         quantity=item.quantity_l1, unit_cost=unit_cost,
@@ -279,6 +290,7 @@ def _cascade_purchase(db, account_id, operator, invoice, red_invoice, reason) ->
     return lines
 
 
+@register_cascade_strategy("fixed_asset")
 def _cascade_fixed_asset(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
     """固定资产发票冲红 — 冲红总账凭证 + 资产卡片标记已冲红"""
     from finance_integration import reverse_journal
@@ -301,6 +313,7 @@ def _cascade_fixed_asset(db, account_id, operator, invoice, red_invoice, reason)
     return lines
 
 
+@register_cascade_strategy("expense")
 def _cascade_expense(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
     """费用发票冲红 — 冲红费用凭证 + 标记 Expense.is_reversed=True
 

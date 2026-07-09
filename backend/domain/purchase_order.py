@@ -134,8 +134,8 @@ class PurchaseOrderDomain(DomainModel):
             PurchaseOrderLine(
                 product_id=item.product_id,
                 quantity=item.quantity_l1,
-                unit_price=Decimal(str(item.unit_price_l1)) if item.unit_price_l1 else Decimal("0"),
-                tax_rate=Decimal(str(item.tax_rate_l1)) if item.tax_rate_l1 else Decimal("0"),
+                unit_price=Decimal(str(item.unit_price_l1)),
+                tax_rate=Decimal(str(item.tax_rate_l1)),
                 total_price=Money(item.total_price_l1),
             )
             for item in (orm_obj.items or [])
@@ -148,7 +148,7 @@ class PurchaseOrderDomain(DomainModel):
             status=orm_obj.status or OrderStatus.PENDING,
             payment_status=orm_obj.payment_status or PaymentStatus.UNPAID,
             payment_method=orm_obj.payment_method or PaymentMethod.COMPANY,
-            purchase_date=str(orm_obj.purchase_date_l1) if orm_obj.purchase_date_l1 else "",
+            purchase_date=str(orm_obj.purchase_date_l1),
             notes=orm_obj.notes or "",
             order_type=getattr(orm_obj, 'order_type', None) or OrderType.RETAIL,
             total_price=Money(orm_obj.total_price_l1),

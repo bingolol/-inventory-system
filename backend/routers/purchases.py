@@ -48,7 +48,7 @@ def _build_purchase_out(order, invoiced: bool = False):
         status=order.status,
         notes=order.notes,
         image_url=order.image_url or "",
-        purchase_date=order.purchase_date_l1,
+        business_date=order.purchase_date_l1,
         created_at=order.created_at,
         items=items
     )
@@ -74,11 +74,11 @@ def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends
                 account_id=account_id,
                 operator=operator,
                 supplier_id=data.supplier_id,
-                purchase_date=data.purchase_date,
+                business_date=data.business_date,
                 payment_method=data.payment_method,
                 notes=data.notes,
                 image_url=data.image_url or "",
-                items=[item.model_dump() for item in data.items],
+                items=[item.to_orm_kwargs() for item in data.items],
             )
             order = dispatch(cmd, db)
         except ValueError as e:
@@ -128,7 +128,7 @@ def update_purchase(purchase_id: int, data: schemas.PurchaseOrderUpdate, account
 
             # 1) items 全量替换 → UpdatePurchaseOrderItems
             if has_items:
-                items_dicts = [item.model_dump() for item in data.items]
+                items_dicts = [item.to_orm_kwargs() for item in data.items]
                 cmd = UpdateOrderItems(
                     order_type="purchase",
                     account_id=account_id,

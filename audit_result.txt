@@ -1,0 +1,26 @@
+C:\Miniconda3\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+[ImmutableTriggers] 已创建 5 个真相源表 UPDATE 触发器
+================================================================================
+独立审计: 完整业务周期
+准则: 《小企业会计准则》§1.3 存货 §5.1 销售 §7.1 成本 §31 折旧 §84 报表
+================================================================================
+
+【L1 独立会计师手算期望值】
+  采购: 10件@100 → 成本1000 税130.00 总计1130.00
+  销售: 3件@200 → 收入600 税78.00 总计678.00 成本300
+  销售退: 1件 → 收入-200 税-26.00 成本-100
+  采购退: 1件 → 成本-100 税-13.00
+  净收入: 400, 净成本: 200
+  净进项税: 117.00, 净销项税: 52.00
+  净AR: 452.00, 净AP: 1017.00
+  期末存货: 7件=700
+  折旧: 83.33/月, 固资净值: 4916.67
+  银行期末: 9435.00
+  税前利润: 116.67, 所得税: 5.83, 净利润: 110.84
+  BS: 资产=15116.67, 负债=5005.83, 权益=10110.84
+Traceback (most recent call last):
+  File "C:\Users\Administrator\Desktop\inventory-system\independent_audit.py", line 169, in <module>
+    print(f"  BS恒等: {TOTAL_ASSETS} == {TOTAL_LIAB} + {TOTAL_EQUITY} = {TOTAL_LIAB + TOTAL_EQUITY} → {'\u2705' if abs(TOTAL_ASSETS - TOTAL_LIAB - TOTAL_EQUITY) < Decimal('0.05') else '\u274c'}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2705' in position 52: illegal multibyte sequence

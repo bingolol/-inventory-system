@@ -93,20 +93,28 @@ def _create_product(client):
 def _create_fa_invoice(client, **overrides):
     """创建一张含固定资产的进项发票"""
     pid = _create_product(client)
+    tax_rate = overrides.get("tax_rate", 0.13)
+    amount_with_tax = overrides.get("amount_with_tax", 11300)
+    tax_amount = overrides.get("tax_amount")
+    if tax_amount is None and tax_rate is not None and amount_with_tax is not None:
+        # 按不含税价计算税额，与发票价税合计保持一致
+        tax_amount = round(amount_with_tax * tax_rate / (1 + tax_rate), 2)
     body = {
         "invoice_no": uniq("FA-INV-"),
         "direction": "in",
         "invoice_type": "ordinary",
-        "tax_rate": 0.13,
-        "amount_with_tax": 11300,
+        "tax_rate": tax_rate,
+        "amount_with_tax": amount_with_tax,
+        "tax_amount": tax_amount,
         "counterparty_name": "供应商X",
         "seller_name": "供应商X",
         "buyer_name": "测试公司",
         "issue_date": "2026-06-19",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": 100, "tax_rate": tax_rate}],
         "fixed_asset": {
             "asset_code": uniq("FA-"),
             "asset_name": "测试设备",
+            "salvage_rate": 0,
             "useful_life": 60,
             "start_date": "2026-06-19",
         },
@@ -163,6 +171,27 @@ class Test创建固定资产发票_总账过账:
 class Test红冲固定资产发票:
     """验证：红冲 → 总账 1601/2202 冲回，资产卡片 status=已冲红"""
 
+    def _create_red_invoice(self, client, original, amount_with_tax):
+        """创建一张对应的红字发票"""
+        tax_amount = -round(abs(amount_with_tax) * 0.13 / 1.13, 2)
+        r = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("FA-RED-"),
+            "direction": "in",
+            "invoice_type": "ordinary",
+            "amount_with_tax": -abs(amount_with_tax),
+            "tax_amount": tax_amount,
+            "tax_rate": 0.13,
+            "counterparty_name": original["counterparty_name"],
+            "seller_name": original.get("seller_name", "供应商X"),
+            "buyer_name": original.get("buyer_name", "测试公司"),
+            "issue_date": "2026-06-19",
+            "items": [{"product_id": _create_product(client), "quantity": 1, "unit_price": 100, "tax_rate": 0.13}],
+            "is_normal_invoice": False,
+            "related_original_invoice_id": original["id"],
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        return r.json()["data"]
+
     def test_红冲后总账冲回(self, client, db):
         data = _create_fa_invoice(client, amount_with_tax=8000)
         invoice_id = data["id"]
@@ -171,9 +200,10 @@ class Test红冲固定资产发票:
         before_1601 = _ledger_balance(db, 1, "1601")
         before_2202 = _ledger_balance(db, 1, "2202")
 
-        # 红冲
+        # 先录入红字发票，再关联冲红
+        red = self._create_red_invoice(client, data, 8000)
         r = client.post(f"/api/invoices/{invoice_id}/reverse",
-                        json={"reason": "测试红冲"}, headers=HEADERS)
+                        json={"red_invoice_id": red["id"], "reason": "测试红冲"}, headers=HEADERS)
         assert r.status_code == 200, r.text
 
         after_1601 = _ledger_balance(db, 1, "1601")
@@ -193,8 +223,9 @@ class Test红冲固定资产发票:
         data = _create_fa_invoice(client, amount_with_tax=12000)
         asset_id = data["fixed_asset"]["id"]
 
+        red = self._create_red_invoice(client, data, 12000)
         client.post(f"/api/invoices/{data['id']}/reverse",
-                    json={"reason": "测试"}, headers=HEADERS)
+                    json={"red_invoice_id": red["id"], "reason": "测试"}, headers=HEADERS)
 
         # 尝试计提折旧 → status="已冲红" 时 record_depreciation 直接返回 None，路由返回 200 + depreciation_id=null
         r = client.post(f"/api/fixed-assets/{asset_id}/depreciate?period=2026-07",
@@ -311,25 +342,23 @@ class Test一般纳税人专票自动认证:
         r = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("FA-GT-"),
             "direction": "in", "invoice_type": "special",
-            "amount_with_tax": 6780, "tax_rate": 0.13,
+            "amount_with_tax": 6780, "tax_amount": 780, "tax_rate": 0.13,
             "counterparty_name": "供应商Y", "seller_name": "供应商Y",
             "buyer_name": "一般纳税人测试", "issue_date": "2026-06-05",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 6000, "tax_rate": 0.13}],
             "fixed_asset": {
                 "asset_code": uniq("FA-"), "asset_name": "打印机",
-                "useful_life": 48, "start_date": "2026-06-05",
+                "salvage_rate": 0, "useful_life": 48, "start_date": "2026-06-05",
             },
         }, headers=h)
         assert r.status_code == 200, r.text
         data = r.json()["data"]
 
-        # 关键断言1：发票自动认证（无需单独调 /certify）
-        assert data["certification_status"] == "certified", \
-            f"一般纳税人专票应自动认证, 实际={data['certification_status']}"
-        # 认证日期 = 开票日期（兼容 date/datetime 序列化格式）
-        cert_date = str(data["certification_date"] or "")[:10]
-        assert cert_date == "2026-06-05", \
-            f"认证日期应=开票日期, 实际={data['certification_date']}"
+        # 关键断言1：固定资产发票不再自动认证，需单独调 /certify 并传入 certification_date
+        assert data["certification_status"] == "n_a", \
+            f"一般纳税人专票不应自动认证, 实际={data['certification_status']}"
+        assert data["certification_date"] is None, \
+            f"未认证发票认证日期应为空, 实际={data['certification_date']}"
 
     def test_一般纳税人专票_资产原值不含税_222102入账(self, client, db):
         """一般纳税人：资产原值=不含税(6000), 222102=780, 2202=6780（三个数据源一致）"""
@@ -345,13 +374,13 @@ class Test一般纳税人专票自动认证:
         r = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("FA-GT-"),
             "direction": "in", "invoice_type": "special",
-            "amount_with_tax": 6780, "tax_rate": 0.13,
+            "amount_with_tax": 6780, "tax_amount": 780, "tax_rate": 0.13,
             "counterparty_name": "供应商Y", "seller_name": "供应商Y",
             "buyer_name": "一般纳税人测试", "issue_date": "2026-06-05",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 6000, "tax_rate": 0.13}],
             "fixed_asset": {
                 "asset_code": uniq("FA-"), "asset_name": "打印机",
-                "useful_life": 48, "start_date": "2026-06-05",
+                "salvage_rate": 0, "useful_life": 48, "start_date": "2026-06-05",
             },
         }, headers=h)
         assert r.status_code == 200, r.text
@@ -385,13 +414,13 @@ class Test一般纳税人专票自动认证:
         r = client.post("/api/invoices/quick", json={
             "invoice_no": uniq("FA-GT-ORD-"),
             "direction": "in", "invoice_type": "ordinary",
-            "amount_with_tax": 6780, "tax_rate": 0.13,
+            "amount_with_tax": 6780, "tax_amount": 780, "tax_rate": 0.13,
             "counterparty_name": "供应商Y", "seller_name": "供应商Y",
             "buyer_name": "一般纳税人测试", "issue_date": "2026-06-05",
             "items": [{"product_id": pid, "quantity": 1, "unit_price": 6000, "tax_rate": 0.13}],
             "fixed_asset": {
                 "asset_code": uniq("FA-"), "asset_name": "打印机",
-                "useful_life": 48, "start_date": "2026-06-05",
+                "salvage_rate": 0, "useful_life": 48, "start_date": "2026-06-05",
             },
         }, headers=h)
         assert r.status_code == 200, r.text

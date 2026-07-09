@@ -28,39 +28,39 @@ def _distribute_total_price(items_data: list, target_total):
     - 所有行都有单价时按金额比例分配（整体打折/加价）
     - 尾差给最后一行，确保合计精确
     """
-    raw_total = sum(to_decimal(it['total_price']) for it in items_data)
+    raw_total = sum(to_decimal(it['total_price_l1']) for it in items_data)
     target_total = to_decimal(target_total)
     if raw_total == target_total:
         return  # 无需分配
     diff = target_total - raw_total
 
-    zero_price_indices = [i for i, it in enumerate(items_data) if to_decimal(it['unit_price']) == 0]
+    zero_price_indices = [i for i, it in enumerate(items_data) if to_decimal(it['unit_price_l1']) == 0]
     if zero_price_indices:
         # 按数量加权分配给单价为0的行
-        zero_qty_sum = sum(Decimal(str(items_data[i]['quantity'])) for i in zero_price_indices)
+        zero_qty_sum = sum(Decimal(str(items_data[i]['quantity_l1'])) for i in zero_price_indices)
         if zero_qty_sum > 0:
             for idx in zero_price_indices[:-1]:
-                qty = Decimal(str(items_data[idx]['quantity']))
+                qty = Decimal(str(items_data[idx]['quantity_l1']))
                 share = (diff * qty / zero_qty_sum).quantize(Q2)
-                items_data[idx]['unit_price'] = (share / qty).quantize(Q6)
-                items_data[idx]['total_price'] = share
+                items_data[idx]['unit_price_l1'] = (share / qty).quantize(Q6)
+                items_data[idx]['total_price_l1'] = share
             # 尾差给最后一行
             last_idx = zero_price_indices[-1]
-            last_share = (target_total - sum(to_decimal(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
-            items_data[last_idx]['unit_price'] = (last_share / Decimal(str(items_data[last_idx]['quantity']))).quantize(Q6)
-            items_data[last_idx]['total_price'] = last_share
+            last_share = (target_total - sum(to_decimal(it['total_price_l1']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
+            items_data[last_idx]['unit_price_l1'] = (last_share / Decimal(str(items_data[last_idx]['quantity_l1']))).quantize(Q6)
+            items_data[last_idx]['total_price_l1'] = last_share
     else:
         # 按金额比例分配（整体打折/加价）
         if raw_total > 0:
             for idx in range(len(items_data) - 1):
-                ratio = to_decimal(items_data[idx]['total_price']) / raw_total
+                ratio = to_decimal(items_data[idx]['total_price_l1']) / raw_total
                 new_line = (target_total * ratio).quantize(Q2)
-                items_data[idx]['unit_price'] = (new_line / Decimal(str(items_data[idx]['quantity']))).quantize(Q6)
-                items_data[idx]['total_price'] = new_line
+                items_data[idx]['unit_price_l1'] = (new_line / Decimal(str(items_data[idx]['quantity_l1']))).quantize(Q6)
+                items_data[idx]['total_price_l1'] = new_line
             last_idx = len(items_data) - 1
-            last_line = (target_total - sum(to_decimal(it['total_price']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
-            items_data[last_idx]['unit_price'] = (last_line / Decimal(str(items_data[last_idx]['quantity']))).quantize(Q6)
-            items_data[last_idx]['total_price'] = last_line
+            last_line = (target_total - sum(to_decimal(it['total_price_l1']) for i, it in enumerate(items_data) if i != last_idx)).quantize(Q2)
+            items_data[last_idx]['unit_price_l1'] = (last_line / Decimal(str(items_data[last_idx]['quantity_l1']))).quantize(Q6)
+            items_data[last_idx]['total_price_l1'] = last_line
 
 
 # ── 采购单（只读） ──

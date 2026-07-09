@@ -38,11 +38,12 @@ class MonthEndCloseHandler(CommandHandler):
                             f"调节表状态为 {rec.status}，请先完成银行对账并确认"
                 )
 
+        from finance_orchestrator import FinanceOrchestrator
+        orch = FinanceOrchestrator(db, cmd.account_id)
+
         # ── 折旧/摊销计提（影响利润 → 影响所得税）──
-        from engine_fixed_asset import FixedAssetEngine
-        from engine_intangible_asset import IntangibleAssetEngine
-        depreciations = FixedAssetEngine(db, cmd.account_id).batch_depreciate(cmd.period)
-        amortizations = IntangibleAssetEngine(db, cmd.account_id).batch_amortize(cmd.period)
+        depreciations = orch.batch_depreciate(cmd.period)
+        amortizations = orch.batch_amortize(cmd.period)
 
         engine = TaxAccrualEngine(db)
         result = engine.execute(cmd.account_id, cmd.period, cmd.taxpayer_type)
@@ -52,9 +53,7 @@ class MonthEndCloseHandler(CommandHandler):
 
         # ── 损益结转（月结最后一步，在税务计提之后）──
         # 将收入/费用科目余额结转到 4103（本年利润），12月额外年结 4103→4104
-        from engine_period_close import PeriodCloseEngine
-        close_engine = PeriodCloseEngine(db)
-        close_result = close_engine.execute(cmd.account_id, cmd.period, force=False)
+        close_result = orch.close_period(cmd.period, force=False)
         result["period_close"] = close_result
 
         # ── 月结后自动税务核对（必须在日志 flush 前执行）──

@@ -79,7 +79,7 @@ def setup_data(client):
         "supplier_id": data["supplier_id"],
         "payment_method": "company",
         "payment_status": "paid",
-        "purchase_date": "2026-01-01T10:00:00",
+        "business_date": "2026-01-01T10:00:00",
         "items": [
             {"product_id": data["product_id"], "quantity": 100, "unit_price": 50.00, "tax_rate": 0.13}
         ]
@@ -106,9 +106,10 @@ class TestNoInvoiceSale:
         # 创建销售单：卖了300元（3个×100元），无票
         resp = client.post("/api/sales", json={
             "customer_id": customer_id,
+            "has_invoice": False,
             "deduct_inventory": True,
             "payment_status": "paid",
-            "sale_date": "2026-01-15T10:00:00",
+            "business_date": "2026-01-15T10:00:00",
             "items": [
                 {"product_id": product_id, "quantity": 3, "unit_price": 100.00, "tax_rate": 0.01}
             ]

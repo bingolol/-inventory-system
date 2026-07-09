@@ -104,8 +104,8 @@ class JournalEngine:
             EntityType.EXPENSE:                 self._build_expense,
             EntityType.DEPRECIATION:            self._build_depreciation,
             EntityType.ASSET_DISPOSAL:          self._build_asset_disposal,
-            EntityType.FIXED_ASSET_PURCHASE:    self._build_fixed_asset_purchase,
-            EntityType.INTANGIBLE_ASSET_PURCHASE: self._build_intangible_asset_purchase,
+            EntityType.FIXED_ASSET_PURCHASE:    lambda s: self._build_asset_purchase(s, "1601"),
+            EntityType.INTANGIBLE_ASSET_PURCHASE: lambda s: self._build_asset_purchase(s, "1701"),
             EntityType.OPENING_BALANCE:         self._build_opening_balance,
             EntityType.CASH_FLOW:               self._build_cash_flow,
             EntityType.SALE_RETURN:             self._build_sale_return,
@@ -126,7 +126,7 @@ class JournalEngine:
         if not builder:
             raise AccountingError(AccountingErrorCode.UNKNOWN_MOVE_TYPE,
                 f"未知凭证类型: {move_type}。支持 "
-                f"sale_order/purchase_order/receipt/payment/expense/depreciation/asset_disposal/fixed_asset_purchase/opening_balance/cash_flow")
+                f"sale_order/purchase_order/receipt/payment/expense/depreciation/asset_disposal/asset_purchase/opening_balance/cash_flow")
         return builder(source)
 
     def _build_sale_order(self, source):
@@ -137,8 +137,7 @@ class JournalEngine:
         total_without_tax = Decimal(str(source["total_without_tax"]))
         tax_amount = Decimal(str(source["tax_amount"]))
 
-        if total_without_tax + tax_amount != total_with_tax:
-            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH, "不含税 + 税额 != 价税合计")
+        self._validate_amount(total_without_tax, tax_amount, total_with_tax)
 
         acct_conf = source.get("account_config", {})
         taxpayer_type = acct_conf.get("taxpayer_type") if "account_config" in source else "general"
@@ -184,8 +183,7 @@ class JournalEngine:
         total_without_tax = Decimal(str(source["total_without_tax"]))
         tax_amount = Decimal(str(source["tax_amount"]))
 
-        if total_without_tax + tax_amount != total_with_tax:
-            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH, "不含税 + 税额 != 价税合计")
+        self._validate_amount(total_without_tax, tax_amount, total_with_tax)
 
         acct_conf = source.get("account_config", {})
         enable_vat_deduction = acct_conf.get("enable_vat_deduction") if "account_config" in source else True
@@ -326,8 +324,10 @@ class JournalEngine:
 
         return lines, "FA", {"balance_check": True}
 
-    def _build_fixed_asset_purchase(self, source):
-        """固定资产入账：借:1601（固定资产，不含税）借:222102（进项税额）贷:2202（应付账款，价税合计）
+    def _build_asset_purchase(self, source, asset_account_code: str):
+        """资产采购入账：借:asset_account_code（固定资产/无形资产，不含税）
+                          借:222102（进项税额）
+                          贷:2202（应付账款，价税合计）
 
         小规模纳税人：全额进资产（价税合计），不抵扣进项税。
         一般纳税人：不含税金额进资产，税额单列 222102 抵扣。
@@ -338,33 +338,7 @@ class JournalEngine:
         total_with_tax = Decimal(str(source.get("amount_with_tax", original + tax_amount)))
         partner_id = source.get("partner_id")
 
-        acct_conf = source.get("account_config", {})
-        enable_vat_deduction = acct_conf.get("enable_vat_deduction", True) if "account_config" in source else True
-
-        # 小规模：全额进资产；一般纳税人：不含税进资产
-        asset_cost = total_with_tax if not enable_vat_deduction else original
-
-        lines = [
-            {"account_code": "1601", "debit": asset_cost, "credit": Decimal("0")},
-            {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
-             "partner_id": partner_id, "partner_type": "supplier"},
-        ]
-        if enable_vat_deduction and tax_amount > 0:
-            lines.insert(1, {"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
-
-        return lines, "GEN", {"balance_check": True}
-
-    def _build_intangible_asset_purchase(self, source):
-        """无形资产入账：借:1701（无形资产，不含税）借:222102（进项税额）贷:2202（应付账款，价税合计）
-
-        小规模纳税人：全额进资产（价税合计），不抵扣进项税。
-        一般纳税人：不含税金额进资产，税额单列 222102 抵扣。
-        """
-        self._check_required(source, ["original_value", "asset_id"])
-        original = Decimal(str(source["original_value"]))
-        tax_amount = Decimal(str(source.get("tax_amount", 0)))
-        total_with_tax = Decimal(str(source.get("amount_with_tax", original + tax_amount)))
-        partner_id = source.get("partner_id")
+        self._validate_amount(original, tax_amount, total_with_tax)
 
         acct_conf = source.get("account_config", {})
         enable_vat_deduction = acct_conf.get("enable_vat_deduction", True) if "account_config" in source else True
@@ -373,7 +347,7 @@ class JournalEngine:
         asset_cost = total_with_tax if not enable_vat_deduction else original
 
         lines = [
-            {"account_code": "1701", "debit": asset_cost, "credit": Decimal("0")},
+            {"account_code": asset_account_code, "debit": asset_cost, "credit": Decimal("0")},
             {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
              "partner_id": partner_id, "partner_type": "supplier"},
         ]
@@ -471,18 +445,21 @@ class JournalEngine:
     def _build_vat_transfer_out(self, source):
         """转出未交增值税（一般纳税人月结）
 
-        标准三步式结转：
-          1. Dr 222101(销项税额) / Cr 222106(转出未交增值税) — 结转销项
-          2. Dr 222106(转出未交增值税) / Cr 222107(未交增值税) — 转出未交
+        《小企业科目勾稽计算手册》§12.3 标准分录：
+          借：应交税费—应交增值税（转出未交增值税）222106
+          贷：应交税费—未交增值税 222107
 
-        合并后：Dr 222101 / Cr 222107（222106 借贷相抵为 0，可省略）
-        不能只 Dr 222106 / Cr 222107 而漏掉 222101，否则 222101 余额永远不会被清零，
-        导致 BS 应交税费项目重复计算（销项税 + 未交增值税双计）。
+        说明：
+          - 222101(销项税额) 和 222102(进项税额) 是明细台账，月结后保留原值，
+            用于累计统计和申报对账，不需要结转清零。
+          - 222106(转出未交增值税) 记录本期应转出的未交增值税额（借方余额）。
+          - 222107(未交增值税) 记录实际应向税务机关缴纳的增值税（贷方余额）。
+          - BS 应交税费 = (222101 贷 + 222107 贷) - (222102 借 + 222106 借) = 销项 - 进项 = 应交增值税。
         """
         self._check_required(source, ["amount"])
         amount = Decimal(str(source["amount"]))
         return [
-            {"account_code": "222101", "debit": amount, "credit": Decimal("0")},
+            {"account_code": "222106", "debit": amount, "credit": Decimal("0")},
             {"account_code": "222107", "debit": Decimal("0"), "credit": amount},
         ], "VAT", {"balance_check": True}
 
@@ -675,6 +652,12 @@ class JournalEngine:
             if abs(total_debit - total_credit) > Decimal("0.01"):
                 raise AccountingError(AccountingErrorCode.BALANCE_NOT_EQUAL,
                     f"借贷不平衡: 借={total_debit}, 贷={total_credit}")
+
+    def _validate_amount(self, total_without_tax: Decimal, tax_amount: Decimal,
+                         total_with_tax: Decimal):
+        if total_without_tax + tax_amount != total_with_tax:
+            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH,
+                                  "不含税 + 税额 != 价税合计")
 
     def _check_required(self, source: dict, fields: list):
         for field in fields:

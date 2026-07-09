@@ -232,7 +232,7 @@ class TestGeneralTaxpayerFullCycle:
                     "unit_price": float(price),
                     "tax_rate": 0.13,
                 }],
-                "purchase_date": f"2026-01-{day:02d}T10:00:00",
+                "business_date": f"2026-01-{day:02d}T10:00:00",
             }, headers=HEADERS)
             assert r.status_code == 200, r.text
             pid = r.json()["entity_id"]
@@ -339,9 +339,10 @@ class TestGeneralTaxpayerFullCycle:
         for idx, (day, qty, price, revenue, tax, total) in enumerate(sales, 1):
             r = c.post("/api/sales", json={
                 "customer_id": s["customer_id"],
+                "has_invoice": True,
                 "deduct_inventory": True,
                 "payment_status": "unpaid",
-                "sale_date": f"2026-01-{day:02d}T10:00:00",
+                "business_date": f"2026-01-{day:02d}T10:00:00",
                 "items": [{
                     "product_id": s["pid"],
                     "quantity": qty,

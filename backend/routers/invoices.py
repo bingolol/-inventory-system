@@ -52,6 +52,7 @@ def _invoice_to_out(inv: Invoice) -> InvoiceOut:
         certification_date=inv.certification_date_l3.strftime("%Y-%m-%d") if inv.certification_date_l3 else None,
         related_order_id=inv.related_order_id,
         related_order_type=inv.related_order_type,
+        related_original_invoice_id=inv.related_original_invoice_id,
         notes=inv.notes,
         image_url=inv.image_url or "",
         created_at=inv.created_at
@@ -131,6 +132,8 @@ async def create_invoice(
                 certification_date=invoice.certification_date if invoice.certification_date else None,
                 related_order_id=invoice.related_order_id,
                 related_order_type=invoice.related_order_type,
+                related_original_invoice_id=invoice.related_original_invoice_id,
+                is_normal_invoice=invoice.is_normal_invoice,
                 notes=invoice.notes,
             )
             db_invoice = dispatch(cmd, db)
@@ -188,6 +191,7 @@ async def quick_create_invoice(
                     notes=invoice.notes,
                     items=[it.model_dump() for it in invoice.items],
                     purchase_order_action=invoice.purchase_order_action,
+                    related_original_invoice_id=invoice.related_original_invoice_id,
                     asset_code=fa.asset_code,
                     asset_name=fa.asset_name,
                     category=fa.category,
@@ -223,6 +227,8 @@ async def quick_create_invoice(
                     purchase_order_action=invoice.purchase_order_action,
                     related_order_id=invoice.related_order_id,
                     related_order_type=invoice.related_order_type,
+                    related_original_invoice_id=invoice.related_original_invoice_id,
+                    is_normal_invoice=invoice.is_normal_invoice,
                 )
                 db_invoice = dispatch(cmd, db)
                 db_asset = None
@@ -335,13 +341,23 @@ async def get_invoice_pdf(
 @router.post("/{invoice_id}/certify")
 async def certify_invoice_endpoint(
     invoice_id: int,
+    body: dict = None,
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """认证进项专票"""
+    """认证进项专票
+
+    - certification_date 必填，格式 YYYY-MM-DD，必须由用户录入。
+    """
+    certification_date = (body or {}).get("certification_date")
     with unit_of_work(db):
-        dispatch(CertifyInvoice(account_id=account_id, operator=operator, invoice_id=invoice_id), db)
+        dispatch(CertifyInvoice(
+            account_id=account_id,
+            operator=operator,
+            invoice_id=invoice_id,
+            certification_date=certification_date,
+        ), db)
     
     # 返回 OperationResult 格式
     result = OperationResult(
@@ -363,19 +379,32 @@ async def reverse_invoice(
     account_id: int = Depends(get_account_id),
     operator: str = Depends(get_operator)
 ):
-    """红字发票冲红：标记原发票 + 创建红字发票 + 级联冲红凭证和库存
+    """红字发票冲红：用户先独立录入红字发票，再调用本接口做关联和级联冲红
+
+    请求体：
+    - red_invoice_id: 用户已录入的红字发票 ID（必填）
+    - reason: 冲红原因（可选）
 
     级联规则：
     - 销项发票（关联销售单）：冲红收入/应收/税额凭证 + 库存回退
     - 进项发票（关联采购单）：冲红存货/应付/税额凭证 + 库存退回
-    - 独立发票：仅标记+创建红字发票
+    - 独立发票：仅标记原发票已冲红
     """
-    reason = (body or {}).get("reason", "")
+    body = body or {}
+    red_invoice_id = body.get("red_invoice_id")
+    reason = body.get("reason", "")
+    if not red_invoice_id:
+        raise BusinessError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="red_invoice_id 必填",
+            ai_instruction="STOP_RETRYING. 红字发票必须用户独立录入，然后通过 red_invoice_id 指定。"
+        )
     with unit_of_work(db):
         result = dispatch(ReverseInvoice(
             account_id=account_id,
             operator=operator,
-            invoice_id=invoice_id,
+            original_invoice_id=invoice_id,
+            red_invoice_id=red_invoice_id,
             reason=reason,
         ), db)
 

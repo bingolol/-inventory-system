@@ -70,13 +70,20 @@ def create_fixed_asset(
     """创建固定资产"""
     with unit_of_work(db):
         asset = crud.create_fixed_asset(db, account_id, data, operator=operator)
-        post_journal(db, account_id, "fixed_asset_purchase", {
+        # 价税分离：一般纳税人传 tax_rate > 0 时，engine_journal 会拆出 222102 进项税
+        tax_amount = (data.original_value * data.tax_rate).quantize(Decimal("0.01"))
+        journal_source = {
             "asset_id": asset.id,
             "original_value": data.original_value,
             "date": data.start_date,
             "source_model": "fixed_asset",
             "source_id": asset.id,
-        })
+        }
+        if tax_amount > 0:
+            journal_source["tax_amount"] = tax_amount
+            journal_source["amount_with_tax"] = data.original_value + tax_amount
+            journal_source["account_config"] = {"enable_vat_deduction": True}
+        post_journal(db, account_id, "fixed_asset_purchase", journal_source)
     db.refresh(asset)
     return _to_out(asset)
 

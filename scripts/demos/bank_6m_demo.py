@@ -1,5 +1,5 @@
 """6月业务 + 银行对账 — 完整数据变化时间轴"""
-import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","backend"))
+import sys,os;sys.path.insert(0,os.path.join(os.path.dirname(__file__),"..","..","backend"))
 import uuid,calendar
 from datetime import datetime,date
 from decimal import Decimal

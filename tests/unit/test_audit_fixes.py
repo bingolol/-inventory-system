@@ -590,12 +590,23 @@ class TestFix6ReverseNoneOriginal:
         self, db, small_scale_account, product
     ):
         """有原始 StockMove 时应正常红冲"""
+        # 创建采购单（_get_move_date 需要从源单据读取日期）
+        po = PurchaseOrder(
+            id=1, account_id=1, order_no="PO-TEST-1",
+            order_type=OrderType.RETAIL, payment_status=PaymentStatus.UNPAID,
+            status=OrderStatus.COMPLETED,
+            purchase_date_l1=datetime(2026, 6, 15),
+        )
+        db.add(po)
+        db.flush()
+
         # 先入库
         eng = InventoryEngine(db)
         eng.inbound(
             account_id=1, product_id=1, quantity=20,
             unit_price=Decimal("100"),
             source_type="purchase_order", source_id=1,
+            move_date=datetime(2026, 6, 15),
         )
         db.flush()
 
@@ -680,6 +691,7 @@ class TestRegression11ReturnCostUsesOriginalUnitCost:
         unit_cost_1 = eng.outbound(
             account_id=1, product_id=1, quantity=10,
             source_type="sale_order", source_id=1,
+            move_date=datetime(2026, 6, 10),
         )
         si1.set_calculated_cost(unit_cost_1)
         db.flush()
@@ -691,6 +703,7 @@ class TestRegression11ReturnCostUsesOriginalUnitCost:
             account_id=1, product_id=1, quantity=50,
             unit_price=Decimal("150"),
             source_type="purchase_order", source_id=2,
+            move_date=datetime(2026, 6, 12),
         )
         db.flush()
 
@@ -789,9 +802,27 @@ class TestFix12RedInvoiceNoDoubleReverse:
         db.add(invoice)
         db.commit()
 
-        # 4. 红字发票冲红
+        # 4. 用户先独立录入红字发票
+        red_invoice = Invoice(
+            account_id=1, invoice_no="INV-TEST-001-RED",
+            direction=InvoiceDirection.OUT, invoice_type=InvoiceType.ORDINARY,
+            tax_rate_l1=Decimal("0.03"),
+            amount_without_tax_l1=Decimal("-2000"),
+            tax_amount_l1=Decimal("-60"),
+            amount_with_tax_l1=Decimal("-2060"),
+            issue_date_l1=date(2026, 6, 15),
+            counterparty_name="测试客户",
+            related_order_type="sale_order",
+            related_order_id=1,
+            related_original_invoice_id=invoice.id,
+        )
+        db.add(red_invoice)
+        db.commit()
+
+        # 5. 红字发票冲红
         rev_cmd = ReverseInvoice(
-            account_id=1, invoice_id=invoice.id,
+            account_id=1, original_invoice_id=invoice.id,
+            red_invoice_id=red_invoice.id,
             reason="红字发票测试",
         )
         rev_cmd.account_id = 1
@@ -858,9 +889,27 @@ class TestFix12RedInvoiceNoDoubleReverse:
         db.add(invoice)
         db.commit()
 
-        # 3. 红字发票冲红（无部分退货）
+        # 3. 用户先独立录入红字发票
+        red_invoice = Invoice(
+            account_id=1, invoice_no="INV-TEST-002-RED",
+            direction=InvoiceDirection.OUT, invoice_type=InvoiceType.ORDINARY,
+            tax_rate_l1=Decimal("0.03"),
+            amount_without_tax_l1=Decimal("-2000"),
+            tax_amount_l1=Decimal("-60"),
+            amount_with_tax_l1=Decimal("-2060"),
+            issue_date_l1=date(2026, 6, 15),
+            counterparty_name="测试客户",
+            related_order_type="sale_order",
+            related_order_id=2,
+            related_original_invoice_id=invoice.id,
+        )
+        db.add(red_invoice)
+        db.commit()
+
+        # 4. 红字发票冲红（无部分退货）
         rev_cmd = ReverseInvoice(
-            account_id=1, invoice_id=invoice.id,
+            account_id=1, original_invoice_id=invoice.id,
+            red_invoice_id=red_invoice.id,
             reason="整单红冲测试",
         )
         rev_cmd.account_id = 1

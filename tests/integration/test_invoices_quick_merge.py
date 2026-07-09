@@ -5,16 +5,44 @@
      related_order_type=="fixed_asset"，响应 data.fixed_asset.id > 0
   2. POST /api/invoices/quick 不带 fixed_asset → 仅创建发票（回归，确认合并未破坏基础路径）
 """
+import uuid
 import pytest
 from datetime import datetime
 from database import SessionLocal
-from models import Invoice, FixedAsset
+from models import Account, Invoice, FixedAsset
 from test_helpers import ensure_test_product
-from helpers import get_account_id, uniq
+from helpers import uniq
 
 
-def _base_invoice_payload():
-    pid = ensure_test_product()
+def _create_small_scale_account():
+    """创建专用小规模纳税人账本，避免被其他测试（如 golden / general_taxpayer）共享的 account 1 影响"""
+    from database import set_maintenance_mode
+    from finance_integration import get_or_create_ledger_id
+    set_maintenance_mode(True)
+    db = SessionLocal()
+    try:
+        tag = uuid.uuid4().hex[:6]
+        acc = Account(
+            name=f"测试账本-{tag}",
+            code=f"quick-test-{tag}",
+            type="company",
+            taxpayer_type_l3="small_scale",
+        )
+        db.add(acc)
+        db.flush()
+        get_or_create_ledger_id(db, acc.id)
+        db.commit()
+        return acc.id
+    finally:
+        db.close()
+        set_maintenance_mode(False)
+
+
+_SMALL_SCALE_AID = _create_small_scale_account()
+
+
+def _base_invoice_payload(account_id=None):
+    pid = ensure_test_product(account_id or _SMALL_SCALE_AID)
     return {
         "invoice_no": uniq("INV-QUICK"),
         "direction": "in",
@@ -40,9 +68,9 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_with_fixed_asset_creates_both(self, client):
         """带 fixed_asset → 发票+资产原子创建，related_order_type==fixed_asset"""
-        aid = get_account_id()
+        aid = _SMALL_SCALE_AID
         asset_code = uniq("FA-QUICK")
-        payload = _base_invoice_payload()
+        payload = _base_invoice_payload(aid)
         payload["fixed_asset"] = {
             "asset_code": asset_code,
             "asset_name": "测试设备",
@@ -69,10 +97,10 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_with_fixed_asset_persisted(self, client):
         """DB 中发票与资产记录关联一致"""
-        aid = get_account_id()
+        aid = _SMALL_SCALE_AID
         asset_code = uniq("FA-PERSIST")
         inv_no = uniq("INV-PERSIST")
-        payload = _base_invoice_payload()
+        payload = _base_invoice_payload(aid)
         payload["invoice_no"] = inv_no
         payload["fixed_asset"] = {
             "asset_code": asset_code,
@@ -101,8 +129,8 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_without_fixed_asset_creates_invoice_only(self, client):
         """不带 fixed_asset → 仅创建发票（回归：合并未破坏基础路径）"""
-        aid = get_account_id()
-        payload = _base_invoice_payload()
+        aid = _SMALL_SCALE_AID
+        payload = _base_invoice_payload(aid)
         r = client.post("/api/invoices/quick", json=payload,
                         headers={"X-Account-ID": str(aid), "X-Operator": "user"})
         assert r.status_code == 200, r.text
@@ -113,9 +141,9 @@ class TestQuickMergeFixedAsset:
 
     def test_quick_image_url_passthrough(self, client):
         """image_url 透传到 DB（修复原 handler 丢弃 image_url 的 bug）"""
-        aid = get_account_id()
+        aid = _SMALL_SCALE_AID
         inv_no = uniq("INV-IMG")
-        payload = _base_invoice_payload()
+        payload = _base_invoice_payload(aid)
         payload["invoice_no"] = inv_no
         payload["image_url"] = "/uploads/invoice/test.png"
         r = client.post("/api/invoices/quick", json=payload,
@@ -136,7 +164,7 @@ class TestQuickMergeFixedAsset:
         但该路径只注册了 PUT/DELETE，故 POST 返回 405 Method Not Allowed；
         无论 404 还是 405 都证明专用变体端点已不存在（不再返回 200 创建）。
         """
-        aid = get_account_id()
+        aid = _SMALL_SCALE_AID
         r = client.post("/api/invoices/with-fixed-asset", json={
             "invoice_no": uniq("INV-GONE"),
             "direction": "in", "invoice_type": "ordinary",

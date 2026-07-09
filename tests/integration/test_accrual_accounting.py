@@ -372,7 +372,7 @@ def test_create_purchase_accrual(client):
         "supplier_id": 1,
         "items": [{"product_id": 1, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
         "payment_method": "company",
-        "purchase_date": "2026-06-19"
+        "business_date": "2026-06-19"
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
@@ -414,7 +414,7 @@ def test_pay_purchase(client):
         "supplier_id": supplier_id,
         "items": [{"product_id": product_id, "quantity": 200, "unit_price": 50, "tax_rate": 0.13}],
         "payment_method": "company",
-        "purchase_date": "2026-06-19"
+        "business_date": "2026-06-19"
     }, headers={"X-Account-ID": "1"})
 
     assert purchase_resp.status_code == 200
@@ -472,14 +472,15 @@ def test_create_sale_accrual(client):
         "supplier_id": 1,
         "items": [{"product_id": 1, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
         "payment_method": "company",
-        "purchase_date": "2026-06-18"
+        "business_date": "2026-06-18"
     }, headers={"X-Account-ID": "1"})
 
     # 创建销售单
     response = client.post("/api/sales", json={
         "customer_id": 1,
+        "has_invoice": True,
         "items": [{"product_id": 1, "quantity": 50, "unit_price": 150, "tax_rate": 0.13}],
-        "sale_date": "2026-06-19"
+        "business_date": "2026-06-19"
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
@@ -525,14 +526,15 @@ def test_receive_sale(client):
         "supplier_id": 1,
         "items": [{"product_id": 1, "quantity": 200, "unit_price": 80, "tax_rate": 0.13}],
         "payment_method": "company",
-        "purchase_date": "2026-06-18"
+        "business_date": "2026-06-18"
     }, headers={"X-Account-ID": "1"})
 
     # 创建销售单
     sale_resp = client.post("/api/sales", json={
         "customer_id": 1,
+        "has_invoice": True,
         "items": [{"product_id": 1, "quantity": 100, "unit_price": 120, "tax_rate": 0.13}],
-        "sale_date": "2026-06-19"
+        "business_date": "2026-06-19"
     }, headers={"X-Account-ID": "1"})
 
     assert sale_resp.status_code == 200
@@ -962,7 +964,7 @@ def test_full_business_flow(client):
         "supplier_id": supplier_id,
         "items": [{"product_id": product_id, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
         "payment_method": "company",
-        "purchase_date": "2026-06-10"
+        "business_date": "2026-06-10"
     }, headers={"X-Account-ID": "1"})
     assert purchase_resp.status_code == 200
     _pd2 = purchase_resp.json()
@@ -986,8 +988,9 @@ def test_full_business_flow(client):
     # ── 7. 销售出库（未收款）──
     sale_resp = client.post("/api/sales", json={
         "customer_id": customer_id,
+        "has_invoice": True,
         "items": [{"product_id": product_id, "quantity": 50, "unit_price": 150, "tax_rate": 0.13}],
-        "sale_date": "2026-06-20"
+        "business_date": "2026-06-20"
     }, headers={"X-Account-ID": "1"})
     assert sale_resp.status_code == 200
     _sd3 = sale_resp.json()

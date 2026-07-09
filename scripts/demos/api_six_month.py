@@ -1,6 +1,6 @@
 """6个月全流程 — API 原生输出"""
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 import json, calendar, uuid, tempfile, os as _os, atexit
 from datetime import datetime, timedelta

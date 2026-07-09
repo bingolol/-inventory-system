@@ -6,20 +6,26 @@ FixedAsset.accumulated_depreciation 仅为缓存。
 from datetime import date
 from decimal import Decimal
 from typing import Optional, List
+
 from sqlalchemy.orm import Session
 
 import models
 from errors import BusinessError, ErrorCode
 from finance_integration import post_journal, reverse_journal
-from utils import Q2
-from utils.period import period_end_date
 from cost_engine import straight_line_depreciation
-from lineage import writes, derives, reads, TIER_L1, TIER_L2, TIER_L3, TIER_L4
+from lineage import writes, derives, reads, TIER_L2, TIER_L3, TIER_L4
 from rules import enforce_rules
 from engine_asset_base import BaseAssetEngine
 
 
 class FixedAssetEngine(BaseAssetEngine):
+
+    asset_model = models.FixedAsset
+    depreciation_model = models.FixedAssetDepreciation
+    accumulated_attr = "accumulated_depreciation_l4"
+    contra_account_code = "1602"
+    depreciation_source_model = "fixed_asset_depreciation"
+    depreciation_move_name = "固定资产折旧"
 
     @reads("FixedAsset.salvage_rate_l3", tier=TIER_L3, source="policy")
     @reads("FixedAsset.useful_life_l3", tier=TIER_L3, source="policy")
@@ -36,95 +42,23 @@ class FixedAssetEngine(BaseAssetEngine):
     @derives("FixedAsset.accumulated_depreciation_l4", from_fields=["FixedAssetDepreciation.amount_l2"])
     def record_depreciation(self, asset_id: int, period: str
                             ) -> Optional[models.FixedAssetDepreciation]:
-        """计提单个资产的月折旧
-
-        1. 校验资产状态
-        2. 幂等检查（同期间跳过）
-        3. 计算月折旧额
-        4. 写 FixedAssetDepreciation 流水
-        5. 更新 accumulated_depreciation 缓存
-        6. 生成会计凭证 借:6601(管理费用) 贷:1602(累计折旧)
-        """
-        asset = self.db.query(models.FixedAsset).filter(
-            models.FixedAsset.id == asset_id,
-            models.FixedAsset.account_id == self.account_id,
-        ).first()
-        if not asset:
-            raise BusinessError(code=ErrorCode.FIXED_ASSET_NOT_FOUND,
-                                data={"asset_id": asset_id})
-        if asset.status != "在用":
-            return None
-
-        # 当月增加下月提（第三十一条）
-        if asset.start_date_l1:
-            dep_year, dep_month = map(int, period.split("-"))
-            if dep_year < asset.start_date_l1.year or (
-                dep_year == asset.start_date_l1.year and dep_month <= asset.start_date_l1.month
-            ):
-                return None
-
-        # 幂等检查
-        existing = self.db.query(models.FixedAssetDepreciation).filter(
-            models.FixedAssetDepreciation.asset_id == asset_id,
-            models.FixedAssetDepreciation.period == period,
-        ).first()
-        if existing:
-            return existing
-
-        monthly = self.calculate_monthly(asset)
-        if monthly <= 0:
-            return None
-
-        accumulated_before = Decimal(str(asset.accumulated_depreciation_l4))
-        accumulated_after = accumulated_before + monthly
-
-        # 写折旧流水（真相源）
-        dep = models.FixedAssetDepreciation(
-            asset_id=asset_id,
-            account_id=self.account_id,
-            period=period,
-            amount_l2=monthly,
-            accumulated_before_l2=accumulated_before,
-            accumulated_after_l2=accumulated_after,
-        )
-        self.db.add(dep)
-
-        # 更新缓存
-        asset.accumulated_depreciation_l4 = accumulated_after
-        self.db.flush()
-
-        # 生成会计凭证：借:6601（管理费用）贷:1602（累计折旧）
-        dep_date = period_end_date(period)
-        source = {
-            "amount": monthly,
-            "expense_account_code": "6601",
-            "contra_account_code": "1602",
-            "source_model": "fixed_asset_depreciation",
-            "source_id": dep.id,
-            "date": dep_date,
-            "description": f"固定资产折旧: {asset.name} {period}",
-        }
-        post_journal(self.db, self.account_id, "depreciation", source)
-
-        # AS-05 折旧公式 + 累计折旧上限校验
-        enforce_rules(self.db, ["AS-05"], {"asset_id": asset_id})
-
-        return dep
+        return self._record_depreciation(asset_id, period)
 
     def batch_depreciate(self, period: str
                          ) -> List[models.FixedAssetDepreciation]:
-        """批量计提所有在用资产的折旧"""
-        assets = self.db.query(models.FixedAsset).filter(
-            models.FixedAsset.account_id == self.account_id,
-            models.FixedAsset.status == "在用",
-        ).all()
+        return self._batch_depreciate(period)
 
-        results = []
-        for asset in assets:
-            dep = self.record_depreciation(asset.id, period)
-            if dep:
-                results.append(dep)
-        return results
+    def _raise_asset_not_found(self, asset_id: int):
+        raise BusinessError(code=ErrorCode.FIXED_ASSET_NOT_FOUND,
+                            data={"asset_id": asset_id})
+
+    def _date_rule_ok(self, asset, period: str) -> bool:
+        if not asset.start_date_l1:
+            return True
+        dep_year, dep_month = map(int, period.split("-"))
+        return not (dep_year < asset.start_date_l1.year or (
+            dep_year == asset.start_date_l1.year and dep_month <= asset.start_date_l1.month
+        ))
 
     @derives("FixedAsset.accumulated_depreciation_l4", from_fields=["FixedAssetDepreciation.amount_l2"])
     def record_disposal(self, asset_id: int, disposal_price: Decimal = Decimal("0"),

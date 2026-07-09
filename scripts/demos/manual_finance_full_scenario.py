@@ -171,7 +171,7 @@ inv1 = post("/api/invoices/quick", {
 })
 inv1_id = extract_id(inv1)
 print(f"进项发票1 ID={inv1_id}")
-cert1 = post(f"/api/invoices/{inv1_id}/certify")
+cert1 = post(f"/api/invoices/{inv1_id}/certify", {"certification_date": "2026-06-05"})
 print(f"认证: {cert1.get('ok', False)}")
 
 section("4b. 进项专票2: 商品B 50件@2000不含税 13% (6/8)")
@@ -185,7 +185,7 @@ inv2 = post("/api/invoices/quick", {
     "purchase_order_action": "auto_create",
 })
 inv2_id = extract_id(inv2)
-cert2 = post(f"/api/invoices/{inv2_id}/certify")
+cert2 = post(f"/api/invoices/{inv2_id}/certify", {"certification_date": "2026-06-08"})
 
 section("4c. 验证采购后库存")
 inv_data = get("/api/inventory")
@@ -321,8 +321,8 @@ print(f"打印机发票ID={fa_inv_id} 资产ID={fa_asset_id}")
 inv_amount_without_tax = fa_inv_data.get("amount_without_tax", 0)
 asset_value = fa_inv_asset.get("original_value", 0)
 check("资产原值=不含税金额(一般纳税人抵扣进项税)", inv_amount_without_tax, asset_value)
-# 进项税额已在创建时自动认证(无需单独调 /certify)，与 222102 总账入账原子同步
-check("固定资产发票自动认证", "certified", fa_inv_data.get("certification_status"))
+# 固定资产发票不再自动认证，如需认证需单独调 /certify 并传入 certification_date
+check("固定资产发票未自动认证", "n_a", fa_inv_data.get("certification_status"))
 
 section("7b. 固定资产(直接创建): 服务器 50000元 5年 残值5% (6/1)")
 # 月折旧=50000*0.95/60=791.67 但6月新增当月不提

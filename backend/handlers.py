@@ -25,17 +25,18 @@ def _emit_log(order, default_action: str, entity_type: str, default_detail: str,
 
 
 EVENT_LOG_RULES = [
-    ("sale_order.created",       "create", "sale_order",    "销售单创建"),
-    ("sale_order.cancelled",     "update", "sale_order",    "销售单取消"),
-    ("sale_order.returned",      "return", "sale_order",    "销售退货"),
-    ("sale_order.restored",      "update", "sale_order",    "销售单恢复"),
-    ("sale_order.deleted",       "delete", "sale_order",    "销售单删除"),
-    ("sale_order.items_updated", "update", "sale_order",    "更新销售单明细"),
-    ("sale_order.fields_updated","update", "sale_order",    "更新销售单字段"),
-    ("purchase_order.created",   "create", "purchase_order","采购单创建"),
-    ("purchase_order.updated",   "update", "purchase_order","采购单更新"),
-    ("purchase_order.returned",  "return", "purchase_order","采购退货"),
-    ("purchase_order.deleted",   "delete", "purchase_order","采购单删除"),
+    ("sale_order.created",        "create", "sale_order",     "销售单创建"),
+    ("sale_order.cancelled",      "update", "sale_order",     "销售单取消"),
+    ("sale_order.returned",       "return", "sale_order",     "销售退货"),
+    ("sale_order.restored",       "update", "sale_order",     "销售单恢复"),
+    ("sale_order.deleted",        "delete", "sale_order",     "销售单删除"),
+    ("sale_order.items_updated",  "update", "sale_order",     "更新销售单明细"),
+    ("sale_order.fields_updated", "update", "sale_order",     "更新销售单字段"),
+    ("purchase_order.created",    "create", "purchase_order", "采购单创建"),
+    ("purchase_order.cancelled",  "update", "purchase_order", "采购单取消"),
+    ("purchase_order.updated",    "update", "purchase_order", "采购单更新"),
+    ("purchase_order.returned",   "return", "purchase_order", "采购退货"),
+    ("purchase_order.deleted",    "delete", "purchase_order", "采购单删除"),
 ]
 
 
@@ -44,7 +45,10 @@ def _register():
         def _handler(order, _action=action, _etype=entity_type, _label=label, **kw):
             _emit_log(order, _action, _etype, f"{_label}: {order.order_no}", **kw)
         _handler.__name__ = f"_log_{event_name.replace('.', '_')}"
-        on(event_name, priority=10, name=_handler.__name__)(_handler)
+        on(event_name, priority=100, name=_handler.__name__)(_handler)
 
 
 _register()
+
+# 注册订单业务事件处理器（库存/财务联动）
+from commands.orders import _event_handlers  # noqa: E402,F401

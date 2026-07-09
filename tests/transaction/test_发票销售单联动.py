@@ -31,7 +31,7 @@ def _purchase_stock(client, pid, qty=50):
     sid, _ = api_create_supplier(client, HEADERS)
     resp = client.post("/api/purchases", json={
         "supplier_id": sid, "payment_method": "company", "payment_status": "unpaid",
-        "purchase_date": "2026-06-01",
+        "business_date": "2026-06-01",
         "items": [{"product_id": pid, "quantity": qty, "unit_price": 50, "tax_rate": 0.13}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
@@ -43,6 +43,7 @@ def _out_payload(pid):
         "direction": "out",
         "invoice_type": "ordinary",
         "amount_with_tax": "1030.00",
+        "tax_amount": "30.00",
         "tax_rate": "0.03",
         "counterparty_name": "测试买方公司",
         "seller_name": "本公司",
@@ -59,6 +60,7 @@ def _in_payload(pid):
         "direction": "in",
         "invoice_type": "special",
         "amount_with_tax": "11300.00",
+        "tax_amount": "1300.00",
         "tax_rate": "0.13",
         "counterparty_name": "测试供应商",
         "seller_name": "测试供应商",
@@ -118,8 +120,8 @@ class Test销项发票联动销售单:
         pid = _product_id(client)
         _purchase_stock(client, pid, qty=20)
         r_sale = client.post("/api/sales", json={
-            "customer_id": None, "deduct_inventory": True, "payment_status": "unpaid",
-            "sale_date": "2026-06-10",
+            "customer_id": None, "has_invoice": True, "deduct_inventory": True, "payment_status": "unpaid",
+            "business_date": "2026-06-10",
             "items": [{"product_id": pid, "quantity": 5, "unit_price": "100.00", "tax_rate": "0.03"}],
         }, headers=HEADERS)
         assert r_sale.status_code in (200, 201), r_sale.text
@@ -184,7 +186,9 @@ class TestQuick合并端点:
         payload["invoice_no"] = inv_no
         payload["fixed_asset"] = {
             "asset_code": asset_code, "asset_name": "持久化测试设备",
-            "useful_life": 36, "start_date": "2026-06-01",
+            "category": "电子设备", "salvage_rate": "0.05",
+            "useful_life": 36, "depreciation_method": "年限平均法",
+            "start_date": "2026-06-01", "accumulated_depreciation": "0", "asset_status": "在用",
         }
         r = client.post("/api/invoices/quick", json=payload, headers=HEADERS)
         assert r.status_code == 200, r.text
@@ -235,7 +239,9 @@ class TestQuick合并端点:
         payload["amount_with_tax"] = 11300
         payload["fixed_asset"] = {
             "asset_code": uniq("FA-001"), "asset_name": "测试设备",
-            "useful_life": 60, "start_date": "2026-06-19",
+            "category": "电子设备", "salvage_rate": "0.05",
+            "useful_life": 60, "depreciation_method": "年限平均法",
+            "start_date": "2026-06-19", "accumulated_depreciation": "0", "asset_status": "在用",
         }
         r = client.post("/api/invoices/quick", json=payload, headers=HEADERS)
         assert r.status_code == 200, r.text
@@ -247,10 +253,14 @@ class TestQuick合并端点:
     def test_invoice_amounts_auto_calculated_and_balanced(self, client):
         pid = _product_id(client)
         payload = _in_payload(pid)
+        # BR-27: tax_amount 为外部输入，系统按 amount_with_tax - tax_amount 推导不含税金额
         payload["amount_with_tax"] = 22600
+        payload["tax_amount"] = 2600
         payload["fixed_asset"] = {
             "asset_code": uniq("FA-002"), "asset_name": "测试设备B",
-            "useful_life": 120, "start_date": "2026-06-19",
+            "category": "电子设备", "salvage_rate": "0.05",
+            "useful_life": 120, "depreciation_method": "年限平均法",
+            "start_date": "2026-06-19", "accumulated_depreciation": "0", "asset_status": "在用",
         }
         r = client.post("/api/invoices/quick", json=payload, headers=HEADERS)
         assert r.status_code == 200, r.text
@@ -261,22 +271,23 @@ class TestQuick合并端点:
 
     def test_invoice_calculation_uses_accounting_engine(self, client):
         pid = _product_id(client)
-        engine = AccountingEngine()
-        expected = engine.calculate_invoice_amounts(
-            amount_with_tax=Decimal("11300"), tax_rate=Decimal("0.13")
-        )
+        # BR-27: tax_amount 为外部输入，系统不再调用 AccountingEngine 推导税额；
+        # 本用例改为验证系统按传入的 tax_amount 正确计算 amount_without_tax。
         payload = _in_payload(pid)
         payload["amount_with_tax"] = 11300
+        payload["tax_amount"] = 1300
         payload["fixed_asset"] = {
             "asset_code": uniq("FA-ENGINE"), "asset_name": "引擎测试设备",
-            "useful_life": 60, "start_date": "2026-06-19",
+            "category": "电子设备", "salvage_rate": "0.05",
+            "useful_life": 60, "depreciation_method": "年限平均法",
+            "start_date": "2026-06-19", "accumulated_depreciation": "0", "asset_status": "在用",
         }
         r = client.post("/api/invoices/quick", json=payload, headers=HEADERS)
         assert r.status_code == 200, r.text
         inv = r.json()["data"]
-        assert Decimal(str(inv["amount_without_tax"])) == expected.amount_without_tax
-        assert Decimal(str(inv["tax_amount"])) == expected.tax_amount
-        assert Decimal(str(inv["amount_with_tax"])) == expected.amount_with_tax
+        assert Decimal(str(inv["amount_without_tax"])) == Decimal("10000.00")
+        assert Decimal(str(inv["tax_amount"])) == Decimal("1300.00")
+        assert Decimal(str(inv["amount_with_tax"])) == Decimal("11300.00")
 
 
 class Test校验拒绝场景:

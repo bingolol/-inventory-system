@@ -2023,12 +2023,13 @@ def _check_reverse_status(entity_type: str, entity_id: int) -> dict:
 def reverse_invoice(arguments: dict) -> dict:
     """红字发票冲红 (写操作, 危险)。
 
-    调用路径: dispatch(ReverseInvoice(invoice_id, reason))
+    调用路径: dispatch(ReverseInvoice(original_invoice_id, red_invoice_id, reason))
     会级联冲红关联的 expense 凭证, 标记原发票 is_reversed=True。
     铁律: 已申报 VAT 的发票冲红后, 必须重新申报 VAT。
 
     参数:
         invoice_id: int  原发票 ID
+        red_invoice_id: int  用户已独立录入的红字发票 ID
         reason: str  冲红原因 (会记入审计日志)
         dry_run: bool  仅检查原单状态, 不实际红冲
     """
@@ -2037,6 +2038,9 @@ def reverse_invoice(arguments: dict) -> dict:
     invoice_id = arguments.get("invoice_id")
     if not invoice_id:
         raise BusinessError(code=None, message="invoice_id 必填")
+    red_invoice_id = arguments.get("red_invoice_id")
+    if not red_invoice_id:
+        raise BusinessError(code=None, message="red_invoice_id 必填。红字发票必须用户独立录入后再冲红。")
     dry_run = bool(arguments.get("dry_run", False))
 
     # 原单状态校验
@@ -2056,23 +2060,25 @@ def reverse_invoice(arguments: dict) -> dict:
                 "original": status["original"],
                 "warnings": status["warnings"],
             },
-            accounting_hint="红字发票冲红 (dry_run 未执行): 原发票 is_reversed=True, 生成红字发票。",
+            accounting_hint="红字发票冲红 (dry_run 未执行): 原发票 is_reversed=True, 红字发票需用户独立录入。",
         )
 
     # 有未红冲收款的警告 (不阻塞, 让 agent 决定)
     result = tool_dispatcher.execute_command(
         ReverseInvoice,
-        invoice_id=invoice_id,
+        original_invoice_id=invoice_id,
+        red_invoice_id=red_invoice_id,
         reason=arguments.get("reason", "MCP agent 发起冲红"),
     )
     return {
         "ok": True,
         "operation": "reverse_invoice",
         "invoice_id": invoice_id,
+        "red_invoice_id": red_invoice_id,
         "result": _safe_serialize(result),
         "warnings": status["warnings"],
         "accounting_hint": (
-            "红字发票冲红: 原发票 is_reversed=True, 生成红字发票 (金额取负)。"
+            "红字发票冲红: 原发票 is_reversed=True, 红字发票由用户独立录入。"
             "级联冲红关联 expense 凭证。已申报 VAT 的需重新申报。"
             "注意: 不会自动红冲关联收款, 需手动调 reverse_receipt。"
         ),

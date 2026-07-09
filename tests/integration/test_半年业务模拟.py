@@ -159,7 +159,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-01-05T10:00:00",
+            "business_date": "2026-01-05T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 500, "unit_price": 10.00, "tax_rate": 0.13},
                 {"product_id": svc_id, "quantity": 10, "unit_price": 50.00, "tax_rate": 0.06},
@@ -178,7 +178,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-01-10T10:00:00",
+            "business_date": "2026-01-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 100, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -237,7 +237,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-02-03T10:00:00",
+            "business_date": "2026-02-03T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 300, "unit_price": 10.00, "tax_rate": 0.13}
             ]
@@ -250,7 +250,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-02-10T10:00:00",
+            "business_date": "2026-02-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 150, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -280,7 +280,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-03-05T10:00:00",
+            "business_date": "2026-03-05T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 400, "unit_price": 10.00, "tax_rate": 0.13}
             ]
@@ -293,7 +293,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-03-10T10:00:00",
+            "business_date": "2026-03-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 200, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -347,7 +347,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-04-05T10:00:00",
+            "business_date": "2026-04-05T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 350, "unit_price": 10.00, "tax_rate": 0.13}
             ]
@@ -360,7 +360,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-04-10T10:00:00",
+            "business_date": "2026-04-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 180, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -390,7 +390,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-05-05T10:00:00",
+            "business_date": "2026-05-05T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 300, "unit_price": 10.00, "tax_rate": 0.13}
             ]
@@ -403,7 +403,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-05-10T10:00:00",
+            "business_date": "2026-05-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 160, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -433,7 +433,7 @@ class TestMonthlyBusinessCycle:
             "has_invoice": True,
             "payment_method": "company",
             "payment_status": "paid",
-            "purchase_date": "2026-06-05T10:00:00",
+            "business_date": "2026-06-05T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 450, "unit_price": 10.00, "tax_rate": 0.13}
             ]
@@ -446,7 +446,7 @@ class TestMonthlyBusinessCycle:
             "deduct_inventory": True,
             "has_invoice": True,
             "payment_status": "paid",
-            "sale_date": "2026-06-10T10:00:00",
+            "business_date": "2026-06-10T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 220, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -702,7 +702,7 @@ class TestBoundaryConditions:
             "deduct_inventory": True,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-06-30T10:00:00",
+            "business_date": "2026-06-30T10:00:00",
             "items": [
                 {"product_id": pid, "quantity": 0, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -720,7 +720,7 @@ class TestBoundaryConditions:
             "deduct_inventory": True,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-06-30T11:00:00",
+            "business_date": "2026-06-30T11:00:00",
             "items": [
                 {"product_id": pid, "quantity": -5, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -738,7 +738,7 @@ class TestBoundaryConditions:
             "deduct_inventory": True,
             "has_invoice": False,
             "payment_status": "unpaid",
-            "sale_date": "2026-06-30T12:00:00",
+            "business_date": "2026-06-30T12:00:00",
             "items": [
                 {"product_id": pid, "quantity": 99999, "unit_price": 20.00, "tax_rate": 0.01}
             ]
@@ -771,7 +771,7 @@ class TestConcurrency:
                 "deduct_inventory": True,
                 "has_invoice": False,
                 "payment_status": "unpaid",
-                "sale_date": f"2026-06-30T{13+i}:00:00",
+                "business_date": f"2026-06-30T{13+i}:00:00",
                 "items": [
                     {"product_id": pid, "quantity": 2, "unit_price": 20.00, "tax_rate": 0.01}
                 ]

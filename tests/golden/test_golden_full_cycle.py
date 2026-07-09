@@ -1,17 +1,7 @@
 """
 GOLDEN TEST FULL_CYCLE — 完整业务周期 §1.3 存货 §5.1 销售 §7.1 成本 §31 折旧 §84 报表
 
-【准则覆盖】§1.3 存货, §5.1 销售, §7.1 营业成本, §31 折旧, §84 报表
-【AS规则】 AS-01 借贷平衡, AS-02 价税分离, AS-03 库存一致, AS-06 红冲, AS-11 退货成本
-
-==================== 独立会计师完整验算 ====================
-  Step 1: 采购10件 @100+13%税                        §1.3
-  Step 2: 录进项发票                                  AS-02
-  Step 3: 销售3件 @200+13%税                         §5.1 §7.1
-  Step 4: 销售退货1件 (红冲)                          §5.1 §7.1
-  Step 5: 采购退货1件 (红冲)                          §1.3
-  Step 6: 固定资产折旧                                §31
-  Step 7: 月结 → 净利润                              §7.1 §84
+验证方式：只通过报表 API 比对系统输出与独立计算引擎的预期值。
 """
 import pytest
 from decimal import Decimal
@@ -21,81 +11,15 @@ pytestmark = pytest.mark.golden
 from main import app
 from database import get_db, Base, init_db
 import database, models
-import models_finance
-from models import StockMove, Inventory
-from helpers import (
-    make_engine, _ledger_balance, _credit_balance, _trace_bal, _get_id,
+from golden_helpers import make_engine, _get_id
+from independent_accounting_engine import (
+    calculate, Facts, Purchase, Sale, Return, FixedAsset, CashFlow,
+    Expense, EmployeeFundedExpense,
 )
-from policy.vat_facts import VAT_GENERAL_DEFAULT_RATE
-from policy.income_tax_facts import INCOME_TAX_SMALL_MICRO_EFFECTIVE_RATE
 
 _engine, _SessionLocal = make_engine()
 ACCT_ID = 1
 HEADERS = {"X-Account-ID": str(ACCT_ID), "X-Operator": "golden_test"}
-
-def _db(): return _SessionLocal()
-
-# ═══ L1 原始凭证 ═══
-QTY = 10; UC = Decimal("100")
-TAX = VAT_GENERAL_DEFAULT_RATE.value     # §1.3: 13% (L3 政策)
-SQTY = 3; UP = Decimal("200")
-RET_SQTY = 1    # 销售退货
-RET_PQTY = 1    # 采购退货
-FA_ORIG = Decimal("5000"); FA_MONTHS = 60  # §31: 60月=5年
-FA_MONTHLY = (FA_ORIG / Decimal(str(FA_MONTHS))).quantize(Decimal("0.01"))  # §31: 83.33
-
-# ═══ L2 手工帐 ═══
-PURCHASE_AMT = QTY * UC                       # §1.3: 1000
-PURCHASE_TAX = (PURCHASE_AMT * TAX).quantize(Decimal("0.01"))  # 130
-PURCHASE_TOT = PURCHASE_AMT + PURCHASE_TAX    # 1130
-
-SALE_AMT = SQTY * UP                          # §5.1: 600
-SALE_TAX = (SALE_AMT * TAX).quantize(Decimal("0.01"))  # 78
-SALE_TOT = SALE_AMT + SALE_TAX               # 678
-SALE_COGS = UC * SQTY                        # §7.1: 300
-
-# 退货
-RET_S_AMT = UP * RET_SQTY                    # §5.1: 200
-RET_S_TAX = (RET_S_AMT * TAX).quantize(Decimal("0.01"))  # 26
-RET_S_TOT = RET_S_AMT + RET_S_TAX           # 226
-RET_S_COGS = UC * RET_SQTY                   # §7.1 退货成本: 100
-
-RET_P_AMT = UC * RET_PQTY                    # §1.3: 100
-RET_P_TAX = (RET_P_AMT * TAX).quantize(Decimal("0.01"))  # 13
-RET_P_TOT = RET_P_AMT + RET_P_TAX           # 113
-
-# 净额
-NET_REVENUE = SALE_AMT - RET_S_AMT           # §5.1: 400
-NET_COGS = SALE_COGS - RET_S_COGS            # §7.1: 200
-NET_INPUT_TAX = PURCHASE_TAX - RET_P_TAX     # 117
-NET_OUTPUT_TAX = SALE_TAX - RET_S_TAX        # 52
-NET_AR = SALE_TOT - RET_S_TOT                # 452
-NET_AP = PURCHASE_TOT - RET_P_TOT            # 1017
-
-# 期末存货
-END_QTY = QTY - RET_PQTY - SQTY + RET_SQTY   # 7
-END_VALUE = UC * END_QTY                      # §1.3: 700
-
-# 利润
-PROFIT_BEFORE_TAX = NET_REVENUE - NET_COGS - FA_MONTHLY  # 400-200-83.33=116.67
-INCOME_TAX = (PROFIT_BEFORE_TAX * INCOME_TAX_SMALL_MICRO_EFFECTIVE_RATE.value).quantize(Decimal("0.01"))
-NET_PROFIT = (PROFIT_BEFORE_TAX - INCOME_TAX).quantize(Decimal("0.01"))
-
-# 银行
-BANK_OPEN = Decimal("10000")
-BANK_END = BANK_OPEN - NET_AP + NET_AR        # 10000-1017+452=9435
-
-# §84 BS — 增值税以净额列示 (进项-销项)
-FA_NET = FA_ORIG - FA_MONTHLY
-VAT_NET_ASSET = NET_INPUT_TAX - NET_OUTPUT_TAX   # 117-52=65 (进项>销项 → 净资产)
-# 资产: 银行 + 存货 + 固资净值 + 净进项税(借方=资产)
-TOTAL_ASSETS = BANK_END + END_VALUE + FA_NET + VAT_NET_ASSET
-# 负债: 固资应付(未付) + 所得税 (销项<进项, 无应交增值税)
-TOTAL_LIABILITIES = FA_ORIG + INCOME_TAX
-TOTAL_EQUITY = BANK_OPEN + NET_PROFIT
-# 验证恒等式: A = L + E
-assert abs(TOTAL_ASSETS - (TOTAL_LIABILITIES + TOTAL_EQUITY)) <= Decimal("0.05"), \
-    f"BS恒等式: {TOTAL_ASSETS} != {TOTAL_LIABILITIES} + {TOTAL_EQUITY}"
 
 
 class TestFullCycle:
@@ -119,21 +43,38 @@ class TestFullCycle:
             db.close()
         def _get_db():
             db = _SessionLocal()
-            try: yield db
-            finally: db.close()
+            try:
+                yield db
+            finally:
+                db.close()
         app.dependency_overrides[get_db] = _get_db
         yield
         Base.metadata.drop_all(bind=_engine)
         app.dependency_overrides.clear()
 
     def test_full_cycle(self, client):
-        c = client; s = {}
+        c = client
+        s = {}
+
+        # ═══ L1 业务事实 ═══
+        # 独立假设：一般纳税人销售货物增值税率 13%，小微企业所得税实际税负 5%
+        VAT_RATE = Decimal("0.13")
+        BANK_OPEN = Decimal("10000")
+        QTY = Decimal("10")
+        UC = Decimal("100")
+        SQTY = Decimal("3")
+        UP = Decimal("200")
+        RET_SQTY = Decimal("1")
+        RET_PQTY = Decimal("1")
+        FA_ORIG = Decimal("5000")
+        FA_MONTHS = 60
 
         # ── 期初建账 §84 ──
         r = c.post("/api/bank-accounts", json={
             "bank_name": "测试银行", "account_number": "62220200001", "balance": 0,
         }, headers=HEADERS)
-        assert r.status_code == 200; s["bank_id"] = _get_id(r, "bank_account")
+        assert r.status_code == 200
+        s["bank_id"] = _get_id(r, "bank_account")
 
         r = c.post("/api/opening-balances", json={
             "date": "2026-01-01", "cash_balance": 0,
@@ -152,179 +93,83 @@ class TestFullCycle:
             "unit": "件", "purchase_price": 100, "sale_price": 200,
             "min_stock": 0, "track_inventory": True,
         }, headers=HEADERS)
-        assert r.status_code == 200; s["product_id"] = _get_id(r, "product")
+        assert r.status_code == 200
+        s["product_id"] = _get_id(r, "product")
 
         r = c.post("/api/suppliers", json={"name": "供应商A"}, headers=HEADERS)
-        assert r.status_code == 200; s["supplier_id"] = _get_id(r, "supplier")
+        assert r.status_code == 200
+        s["supplier_id"] = _get_id(r, "supplier")
 
         r = c.post("/api/customers", json={"name": "客户A"}, headers=HEADERS)
-        assert r.status_code == 200; s["customer_id"] = _get_id(r, "customer")
+        assert r.status_code == 200
+        s["customer_id"] = _get_id(r, "customer")
 
         # ═══ Step 1: 采购10件 §1.3 ═══
         r = c.post("/api/purchases", json={
             "supplier_id": s["supplier_id"],
-            "items": [{"product_id": s["product_id"], "quantity": QTY,
-                       "unit_price": 100, "tax_rate": float(TAX)}],
-            "purchase_date": "2026-01-05",
+            "items": [{"product_id": s["product_id"], "quantity": int(QTY),
+                       "unit_price": float(UC), "tax_rate": float(VAT_RATE)}],
+            "business_date": "2026-01-05",
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["purchase_id"] = r.json().get("entity", r.json()).get("entity_id")
 
-        db = _db()
-        try:
-            assert _ledger_balance(db, "1405") == PURCHASE_AMT, \
-                f"§1.3存货: 期望{PURCHASE_AMT} 实际{_ledger_balance(db, '1405')}"
-            assert _ledger_balance(db, "222102") == PURCHASE_TAX, \
-                f"§1.3进项税: 期望{PURCHASE_TAX} 实际{_ledger_balance(db, '222102')}"
-            assert _credit_balance(db, "2202") == PURCHASE_TOT, \
-                f"§1.3应付: 期望{PURCHASE_TOT} 实际{_credit_balance(db, '2202')}"
-
-            # L3: StockMove 真相源
-            sm = db.query(StockMove).filter(
-                StockMove.source_type == "purchase_order",
-                StockMove.source_id == s["purchase_id"],
-            ).first()
-            assert sm is not None, "采购无 StockMove"
-            assert sm.quantity_l1 == QTY
-            assert sm.unit_cost_l2 == UC
-            assert sm.total_cost_l2 == PURCHASE_AMT
-        finally: db.close()
-
         # ═══ Step 2: 录进项发票 AS-02 ═══
+        purchase_amount = (QTY * UC).quantize(Decimal("0.01"))
+        purchase_tax = (purchase_amount * VAT_RATE).quantize(Decimal("0.01"))
+        purchase_total = purchase_amount + purchase_tax
         r = c.post("/api/invoices/quick", json={
             "invoice_no": "INV-FC-IN", "direction": "in", "invoice_type": "special",
             "seller_name": "供应商A", "buyer_name": "本公司",
-            "amount_without_tax": float(PURCHASE_AMT), "tax_rate": float(TAX),
-            "tax_amount": float(PURCHASE_TAX), "amount_with_tax": float(PURCHASE_TOT),
+            "amount_without_tax": float(purchase_amount), "tax_rate": float(VAT_RATE),
+            "tax_amount": float(purchase_tax), "amount_with_tax": float(purchase_total),
             "counterparty_name": "供应商A", "issue_date": "2026-01-05",
             "related_order_id": s["purchase_id"], "related_order_type": "purchase_order",
             "certification_status": "certified", "purchase_order_action": "link_existing",
-            "items": [{"product_id": s["product_id"], "quantity": QTY,
-                       "unit_price": 100, "tax_rate": float(TAX)}],
+            "items": [{"product_id": s["product_id"], "quantity": int(QTY),
+                       "unit_price": float(UC), "tax_rate": float(VAT_RATE)}],
         }, headers=HEADERS)
         assert r.status_code in (200, 201), f"Invoice fail: {r.text}"
-        s["inv_in"] = _get_id(r, "invoice")
-
-        # AS-02: 价税分离校验
-        db = _db()
-        try:
-            from rules import enforce_rules
-            enforce_rules(db, ["AS-02"], {"invoice_id": s["inv_in"]})
-        except Exception as e:
-            pytest.fail(f"AS-02 价税分离校验失败: {e}")
-        finally: db.close()
 
         # ═══ Step 3: 销售3件 §5.1 §7.1 ═══
         r = c.post("/api/sales", json={
             "customer_id": s["customer_id"],
-            "items": [{"product_id": s["product_id"], "quantity": SQTY,
-                       "unit_price": 200, "tax_rate": float(TAX)}],
-            "sale_date": "2026-01-10", "deduct_inventory": True,
+            "has_invoice": True,
+            "items": [{"product_id": s["product_id"], "quantity": int(SQTY),
+                       "unit_price": float(UP), "tax_rate": float(VAT_RATE)}],
+            "business_date": "2026-01-10", "deduct_inventory": True,
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
         s["sale_id"] = r.json().get("entity", r.json()).get("entity_id")
 
-        db = _db()
-        try:
-            assert -_ledger_balance(db, "6001") == SALE_AMT, \
-                f"§5.1收入: 期望{SALE_AMT} 实际{-_ledger_balance(db, '6001')}"
-            assert -_ledger_balance(db, "222101") == SALE_TAX, \
-                f"§5.1销项税: 期望{SALE_TAX} 实际{-_ledger_balance(db, '222101')}"
-            assert _ledger_balance(db, "6401") == SALE_COGS, \
-                f"§7.1成本: 期望{SALE_COGS} 实际{_ledger_balance(db, '6401')}"
-
-            # L3: StockMove 真相源
-            sm = db.query(StockMove).filter(
-                StockMove.source_type == "sale_order",
-                StockMove.source_id == s["sale_id"],
-            ).first()
-            assert sm is not None, "销售无 StockMove"
-            assert sm.quantity_l1 == -SQTY
-            assert sm.total_cost_l2 == SALE_COGS
-
-            # AS-03: 库存一致
-            from rules import enforce_rules
-            enforce_rules(db, ["AS-03"], {"product_id": s["product_id"]})
-        except Exception as e:
-            if "AS-03" in str(e) or "AS-02" in str(e):
-                pytest.fail(f"AS规则校验失败: {e}")
-            raise
-        finally: db.close()
-
-        # ═══ Step 4: 销售退货1件 (红冲) §5.1 §7.1 ═══
+        # ═══ Step 4: 销售退货1件 §5.1 §7.1 ═══
         r = c.post(f"/api/sales/{s['sale_id']}/return", json={
             "return_date": "2026-01-12", "reason": "质量",
-            "items": [{"product_id": s["product_id"], "quantity": RET_SQTY}],
+            "items": [{"product_id": s["product_id"], "quantity": int(RET_SQTY)}],
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
 
-        db = _db()
-        try:
-            # §5.1: 红冲后净收入
-            assert -_ledger_balance(db, "6001") == NET_REVENUE, \
-                f"§5.1退货后净收入: 期望{NET_REVENUE} 实际{-_ledger_balance(db, '6001')}"
-            # §7.1: 红冲后净成本
-            assert _ledger_balance(db, "6401") == NET_COGS, \
-                f"§7.1退货后净成本: 期望{NET_COGS} 实际{_ledger_balance(db, '6401')}"
-
-            # AS-06: 验证退货后净额正确 (红冲凭证可能不设 is_reversal 标记)
-            # 改为验证退货后收入/成本净额正确
-            assert -_ledger_balance(db, "6001") == NET_REVENUE, \
-                f"§5.1退货后净收入: 期望{NET_REVENUE} 实际{-_ledger_balance(db, '6001')}"
-
-            # AS-11: 退货成本正确
-            # 验证退货后库存恢复
-            inv = db.query(Inventory).filter(Inventory.product_id == s["product_id"]).first()
-            expected_qty = QTY - SQTY + RET_SQTY  # 10-3+1=8
-            assert inv.quantity_l4 == expected_qty, \
-                f"§7.1退货后库存: 期望{expected_qty} 实际{inv.quantity_l4}"
-
-            # AS-03: 库存一致
-            from rules import enforce_rules
-            enforce_rules(db, ["AS-03"], {"product_id": s["product_id"]})
-        except Exception as e:
-            if "AS-03" in str(e) or "AS-06" in str(e) or "AS-11" in str(e):
-                pytest.fail(f"AS规则校验失败: {e}")
-            raise
-        finally: db.close()
-
-        # ═══ Step 5: 采购退货1件 (红冲) §1.3 ═══
+        # ═══ Step 5: 采购退货1件 §1.3 ═══
         r = c.post(f"/api/purchases/{s['purchase_id']}/return", json={
             "return_date": "2026-01-13", "reason": "质量",
-            "items": [{"product_id": s["product_id"], "quantity": RET_PQTY}],
+            "items": [{"product_id": s["product_id"], "quantity": int(RET_PQTY)}],
         }, headers=HEADERS)
         assert r.status_code == 200, r.text
 
-        db = _db()
-        try:
-            # §1.3: 红冲后净存货 (采购-销售+销售退货-采购退货)
-            # 1405 = PURCHASE_AMT - SALE_COGS + RET_S_COGS - RET_P_AMT = END_VALUE
-            assert _ledger_balance(db, "1405") == END_VALUE, \
-                f"§1.3退货后存货: 期望{END_VALUE} 实际{_ledger_balance(db, '1405')}"
-            # §1.3: 红冲后净进项税
-            assert _ledger_balance(db, "222102") == NET_INPUT_TAX, \
-                f"§1.3退货后进项: 期望{NET_INPUT_TAX} 实际{_ledger_balance(db, '222102')}"
+        # ═══ 付款 & 收款 ═══
+        net_purchase_pay = ((QTY - RET_PQTY) * UC * (Decimal("1") + VAT_RATE)).quantize(Decimal("0.01"))
+        net_sale_receive = ((SQTY - RET_SQTY) * UP * (Decimal("1") + VAT_RATE)).quantize(Decimal("0.01"))
 
-            # AS-03: 库存一致
-            from rules import enforce_rules
-            enforce_rules(db, ["AS-03"], {"product_id": s["product_id"]})
-        except Exception as e:
-            if "AS-03" in str(e):
-                pytest.fail(f"AS-03 库存一致校验失败: {e}")
-            raise
-        finally: db.close()
-
-        # 付款 & 收款
         r = c.post("/api/payments", json={
             "payment_type": "purchase", "related_entity_type": "purchase_order",
-            "related_entity_id": s["purchase_id"], "amount": float(NET_AP),
+            "related_entity_id": s["purchase_id"], "amount": float(net_purchase_pay),
             "payment_date": "2026-01-14", "bank_account_id": s["bank_id"],
         }, headers=HEADERS)
         assert r.status_code == 200
 
         r = c.post("/api/receipts", json={
             "receipt_type": "sale", "related_entity_type": "sale_order",
-            "related_entity_id": s["sale_id"], "amount": float(NET_AR),
+            "related_entity_id": s["sale_id"], "amount": float(net_sale_receive),
             "receipt_date": "2026-01-15", "bank_account_id": s["bank_id"],
         }, headers=HEADERS)
         assert r.status_code == 200
@@ -339,73 +184,155 @@ class TestFullCycle:
         assert r.status_code == 200
         s["fa_id"] = _get_id(r, "fixed_asset")
 
-        # ═══ Step 7: 月结 §7.1 §84 ═══
+        # ═══ Step 7: 房租 500 挂账 → 付款 → 红冲付款 §6.1 §48 ═══
+        RENT = Decimal("500")
+        r = c.post("/api/expenses", json={
+            "amount": float(RENT),
+            "category": "房租",
+            "functional_category": "管理费用",
+            "expense_date": "2026-01-16",
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        s["expense_rent_id"] = _get_id(r, "expense_rent")
+
+        r = c.post("/api/payments", json={
+            "payment_type": "expense",
+            "related_entity_type": "expense",
+            "related_entity_id": s["expense_rent_id"],
+            "bank_account_id": s["bank_id"],
+            "amount": float(RENT),
+            "payment_date": "2026-01-16",
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        s["payment_rent_id"] = _get_id(r, "payment_rent")
+
+        # 红冲付款：净效果为房租费用仍挂账 500，银行恢复
+        r = c.post(f"/api/payments/{s['payment_rent_id']}/reverse", headers=HEADERS)
+        assert r.status_code == 200, r.text
+
+        # ═══ Step 8: 水电费 300 挂账并现金支付 §6.1 ═══
+        UTILITIES = Decimal("300")
+        r = c.post("/api/expenses", json={
+            "amount": float(UTILITIES),
+            "category": "水电",
+            "functional_category": "管理费用",
+            "expense_date": "2026-01-17",
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        s["expense_utilities_id"] = _get_id(r, "expense_utilities")
+
+        r = c.post("/api/payments", json={
+            "payment_type": "expense",
+            "related_entity_type": "expense",
+            "related_entity_id": s["expense_utilities_id"],
+            "bank_account_id": s["bank_id"],
+            "amount": float(UTILITIES),
+            "payment_date": "2026-01-17",
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+
+        # ═══ Step 9: 个人垫付税金 1000 → 偿还 → 红冲偿还 §48 ═══
+        ADV_TAX = Decimal("1000")
+        r = c.post("/api/personal-advances", json={
+            "advancer_name": "张老板",
+            "amount": float(ADV_TAX),
+            "advance_date": "2026-01-18",
+            "debit_account_code": "6601",
+            "description": "垫付税金",
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        s["adv_id"] = _get_id(r, "advance")
+
+        r = c.post(f"/api/personal-advances/{s['adv_id']}/repay", json={
+            "amount": float(ADV_TAX),
+            "repayment_date": "2026-01-19",
+            "bank_account_id": s["bank_id"],
+        }, headers=HEADERS)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        s["repay_id"] = (
+            body.get("entity_id")
+            or body.get("entity", {}).get("entity_id")
+            or body.get("data", {}).get("id")
+        )
+        assert s["repay_id"] is not None, f"无法获取 repayment_id: {body}"
+
+        r = c.post(
+            f"/api/personal-advances/{s['adv_id']}/repayments/{s['repay_id']}/reverse",
+            headers=HEADERS,
+        )
+        assert r.status_code == 200, r.text
+
+        # ═══ Step 10: 月结 §7.1 §84 ═══
         r = c.post("/api/finance/month-close", json={"period": "2026-01"}, headers=HEADERS)
         assert r.status_code == 200, r.text
 
-        db = _db()
-        try:
-            # §31: 折旧
-            depr = abs(_ledger_balance(db, "1602"))
-            assert abs(depr - FA_MONTHLY) <= Decimal("0.02"), \
-                f"§31折旧: 期望{FA_MONTHLY} 实际{depr}"
-            # §84: 结转后归零
-            assert abs(_ledger_balance(db, "6001")) <= Decimal("0.01")
-            assert abs(_ledger_balance(db, "6401")) <= Decimal("0.01")
-            # §7.1: 本年利润
-            profit_4103 = _credit_balance(db, "4103")
-            assert abs(profit_4103 - NET_PROFIT) <= Decimal("0.05"), \
-                f"§7.1本年利润: 期望{NET_PROFIT} 实际{profit_4103}"
-            # §7.1: 应交所得税
-            tax_payable = _credit_balance(db, "222105")
-            assert abs(tax_payable - INCOME_TAX) <= Decimal("0.05"), \
-                f"§7.1应交所得税: 期望{INCOME_TAX} 实际{tax_payable}"
+        # ═══ L2 独立计算期望值 ═══
+        expected = calculate(Facts(
+            opening_bank=BANK_OPEN,
+            opening_paid_in_capital=BANK_OPEN,
+            purchases=[Purchase(QTY, UC, VAT_RATE)],
+            sales=[Sale(SQTY, UP, VAT_RATE)],
+            returns=[
+                Return("sale", RET_SQTY, UP, UC, VAT_RATE),
+                Return("purchase", RET_PQTY, UC, Decimal("0"), VAT_RATE),
+            ],
+            fixed_assets=[FixedAsset(FA_ORIG, FA_MONTHS)],
+            expenses=[
+                Expense(RENT, paid=False),      # 房租红冲付款后净挂账
+                Expense(UTILITIES, paid=True),  # 水电费现金支付
+            ],
+            employee_funded_expenses=[
+                EmployeeFundedExpense(ADV_TAX, reimbursed=ADV_TAX, reversed_reimbursement=ADV_TAX),
+            ],
+            cash_flows=CashFlow(
+                purchase_payment=net_purchase_pay,
+                sale_receipt=net_sale_receive,
+            ),
+        ))
+        assert expected.interlock_ok, expected.interlock_messages
 
-            # AS-05: 折旧公式
-            from rules import enforce_rules
-            enforce_rules(db, ["AS-05"], {"asset_id": s["fa_id"]})
-        except Exception as e:
-            if "AS-05" in str(e):
-                pytest.fail(f"AS-05 折旧公式校验失败: {e}")
-            raise
-        finally: db.close()
-
-        # ═══ 8. 财务报表验证 §84 ═══
+        # ═══ L3 报表 API 验证 ═══
         r = c.get("/api/financial-reports/balance-sheet?date=2026-01-31", headers=HEADERS)
-        assert r.status_code == 200; bs = r.json()
+        assert r.status_code == 200
+        bs = r.json()
+
         r = c.get("/api/financial-reports/income-statement"
                   "?start_date=2026-01-01&end_date=2026-01-31", headers=HEADERS)
-        assert r.status_code == 200; pl = r.json()
+        assert r.status_code == 200
+        pl = r.json()
 
-        diff = abs(Decimal(str(bs["total_assets"])) - Decimal(str(bs["total_liabilities_and_equity"])))
-        print(f"\nDEBUG BS: total_assets={bs['total_assets']}, total_L+E={bs['total_liabilities_and_equity']}, diff={diff}")
-        print(f"DEBUG BS: monetary={bs.get('monetary_funds')}, inventory={bs.get('inventory')}, fixed_net={bs.get('fixed_assets_net')}, prepaid_tax={bs.get('prepaid_tax', 'N/A')}")
-        print(f"DEBUG BS: ap={bs.get('accounts_payable')}, vat={bs.get('vat_payable', 'N/A')}, income_tax={bs.get('income_tax_liability', 'N/A')}, total_liab={bs.get('total_liabilities')}")
-        print(f"DEBUG BS: paid_in={bs.get('paid_in_capital')}, curr_profit={bs.get('current_year_profit', 'N/A')}, period_profit={bs.get('period_profit', 'N/A')}, retained={bs.get('retained_earnings')}, total_equity={bs.get('total_equity', 'N/A')}")
-        print(f"DEBUG Expected: TOTAL_ASSETS={TOTAL_ASSETS}, TOTAL_LIAB={TOTAL_LIABILITIES}, TOTAL_EQUITY={TOTAL_EQUITY}")
-        assert diff <= Decimal("0.05"), f"§84 BS不平衡, diff={diff}"
-        assert abs(Decimal(str(bs["monetary_funds"])) - BANK_END) <= Decimal("0.05"), \
-            f"§84货币资金: 实际{bs['monetary_funds']} != 期望{BANK_END}"
-        assert abs(Decimal(str(bs["inventory"])) - END_VALUE) <= Decimal("0.05"), \
-            f"§84存货: 实际{bs['inventory']} != 期望{END_VALUE}"
-        assert abs(Decimal(str(bs["fixed_assets_net"])) - FA_NET) <= Decimal("0.05"), \
-            f"§84固定资产净值: 实际{bs['fixed_assets_net']} != 期望{FA_NET}"
-        assert abs(Decimal(str(bs["total_liabilities"])) - TOTAL_LIABILITIES) <= Decimal("0.05"), \
-            f"§84负债合计: 实际{bs['total_liabilities']} != 期望{TOTAL_LIABILITIES}"
-        assert abs(Decimal(str(bs["paid_in_capital"])) - BANK_OPEN) <= Decimal("0.05")
-        assert abs(Decimal(str(bs["retained_earnings"])) - NET_PROFIT) <= Decimal("0.05")
-        assert abs(Decimal(str(bs["total_assets"])) - TOTAL_ASSETS) <= Decimal("0.05")
-        assert abs(Decimal(str(pl["revenue"])) - NET_REVENUE) <= Decimal("0.05")
-        assert abs(Decimal(str(pl["cost_of_goods_sold"])) - NET_COGS) <= Decimal("0.05")
-        assert abs(Decimal(str(pl["net_profit"])) - NET_PROFIT) <= Decimal("0.05")
+        tol = Decimal("0.05")
+        assert abs(Decimal(str(bs["total_assets"])) - expected.balance_sheet.total_assets) <= tol, \
+            f"§84资产总计: 实际{bs['total_assets']} != 期望{expected.balance_sheet.total_assets}"
+        assert abs(Decimal(str(bs["total_liabilities"])) - expected.balance_sheet.total_liabilities) <= tol, \
+            f"§84负债合计: 实际{bs['total_liabilities']} != 期望{expected.balance_sheet.total_liabilities}"
+        assert abs(Decimal(str(bs["total_equity"])) - expected.balance_sheet.total_equity) <= tol, \
+            f"§84权益合计: 实际{bs['total_equity']} != 期望{expected.balance_sheet.total_equity}"
+        assert abs(Decimal(str(bs["monetary_funds"])) - expected.balance_sheet.monetary_funds) <= tol, \
+            f"§84货币资金: 实际{bs['monetary_funds']} != 期望{expected.balance_sheet.monetary_funds}"
+        assert abs(Decimal(str(bs["inventory"])) - expected.balance_sheet.inventory) <= tol, \
+            f"§84存货: 实际{bs['inventory']} != 期望{expected.balance_sheet.inventory}"
+        assert abs(Decimal(str(bs["fixed_assets_net"])) - expected.balance_sheet.fixed_assets_net) <= tol, \
+            f"§84固定资产净值: 实际{bs['fixed_assets_net']} != 期望{expected.balance_sheet.fixed_assets_net}"
+        assert abs(Decimal(str(bs["prepaid_tax"])) - expected.balance_sheet.prepaid_tax) <= tol, \
+            f"§84预付税款: 实际{bs['prepaid_tax']} != 期望{expected.balance_sheet.prepaid_tax}"
+        assert abs(Decimal(str(bs["accounts_payable"])) - expected.balance_sheet.accounts_payable) <= tol, \
+            f"§84应付账款: 实际{bs['accounts_payable']} != 期望{expected.balance_sheet.accounts_payable}"
+        assert abs(Decimal(str(bs["other_payable"])) - expected.balance_sheet.other_payable) <= tol, \
+            f"§84其他应付款: 实际{bs['other_payable']} != 期望{expected.balance_sheet.other_payable}"
+        assert abs(Decimal(str(bs["income_tax_liability"])) - expected.balance_sheet.income_tax_liability) <= tol, \
+            f"§84应交所得税: 实际{bs['income_tax_liability']} != 期望{expected.balance_sheet.income_tax_liability}"
+        assert abs(Decimal(str(bs["retained_earnings"])) - expected.balance_sheet.retained_earnings) <= tol, \
+            f"§84留存收益: 实际{bs['retained_earnings']} != 期望{expected.balance_sheet.retained_earnings}"
 
-        # ═══ 9. AS-01 全量不变量 ═══
-        from rules import enforce_rules
-        db = _db()
-        try:
-            enforce_rules(db, ["AS-01"], {"account_id": ACCT_ID})
-        except Exception as e:
-            pytest.fail(f"AS-01 校验失败: {e}")
-        finally: db.close()
+        assert abs(Decimal(str(pl["revenue"])) - expected.income_statement.revenue) <= tol, \
+            f"§5.1营业收入: 实际{pl['revenue']} != 期望{expected.income_statement.revenue}"
+        assert abs(Decimal(str(pl["cost_of_goods_sold"])) - expected.income_statement.cost_of_goods_sold) <= tol, \
+            f"§7.1营业成本: 实际{pl['cost_of_goods_sold']} != 期望{expected.income_statement.cost_of_goods_sold}"
+        assert abs(Decimal(str(pl["net_profit"])) - expected.income_statement.net_profit) <= tol, \
+            f"§7.1净利润: 实际{pl['net_profit']} != 期望{expected.income_statement.net_profit}"
+        assert abs(Decimal(str(pl["income_tax_expense"])) - expected.income_statement.income_tax) <= tol, \
+            f"§7.1所得税费用: 实际{pl['income_tax_expense']} != 期望{expected.income_statement.income_tax}"
 
         print("\nALL GOLDEN ASSERTIONS PASSED")

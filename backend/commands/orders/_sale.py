@@ -2,12 +2,11 @@
 
 import time
 from collections import Counter
-from datetime import datetime
 from decimal import Decimal
 from typing import Any, List, Optional
 
 import models
-from enums import OrderStatus, InvoiceDirection, CertificationStatus
+from enums import OrderStatus
 from events import emit
 from domain.sale_order import SaleOrderDomain
 from commands.base import Command, CommandHandler
@@ -18,7 +17,6 @@ from utils import _d, Q2
 from utils.price import without_tax_from
 from errors import BusinessError, ErrorCode
 from engine_inventory import InventoryEngine
-from engine_finance import FinanceEngine
 from lineage import reads, writes, TIER_L1, TIER_L2, TIER_L3
 from policy.vat_facts import VAT_SMALL_SCALE_REDUCED_RATE
 
@@ -146,43 +144,6 @@ def return_sale_order(db, account_id, operator, order_id, return_date, reason, i
         "date": return_date,
     })
 
-    original_invoice = db.query(models.Invoice).filter(
-        models.Invoice.account_id == account_id,
-        models.Invoice.related_order_type == "sale_order",
-        models.Invoice.related_order_id == order.id,
-        models.Invoice.direction == InvoiceDirection.OUT,
-        models.Invoice.is_reversed == False,
-    ).first()
-
-    if original_invoice:
-        red_invoice_no = f"RED-{original_invoice.invoice_no}-{return_id}"
-        existing_red = db.query(models.Invoice).filter(
-            models.Invoice.account_id == account_id,
-            models.Invoice.invoice_no == red_invoice_no,
-        ).first()
-        if not existing_red:
-            ret_dt = datetime.fromisoformat(return_date) if isinstance(return_date, str) else return_date
-            red_invoice = models.Invoice(
-                account_id=account_id,
-                invoice_no=red_invoice_no,
-                direction=InvoiceDirection.OUT,
-                invoice_type=original_invoice.invoice_type,
-                tax_rate_l1=original_invoice.tax_rate_l1,
-                amount_without_tax_l1=-total_without_tax_ret,
-                tax_amount_l1=-tax_amount_ret,
-                amount_with_tax_l1=-total_with_tax_ret,
-                counterparty_name=order.customer.name if order.customer else (original_invoice.counterparty_name or ""),
-                seller_name=original_invoice.seller_name,
-                buyer_name=original_invoice.buyer_name,
-                issue_date_l1=ret_dt,
-                certification_status_l3=CertificationStatus.N_A,
-                related_order_id=order.id,
-                related_order_type="sale_order",
-                notes=f"红字销项发票（销售退货）: {reason or '未提供'}",
-            )
-            db.add(red_invoice)
-            db.flush()
-
     emit("sale_order.returned", db=db, account_id=account_id, order=order,
          operator=operator, return_amount=total_with_tax_ret,
          log_action="return",
@@ -207,23 +168,6 @@ def restore_sale_order(db, account_id, operator, order_id):
     domain.transition_to(OrderStatus.COMPLETED)
     order.status = domain.status
 
-    eng = InventoryEngine(db)
-    for item in order.items:
-        product = get_product(db, account_id, item.product_id)
-        if product.track_inventory_l3:
-            unit_cost = eng.force_outbound(
-                account_id=account_id,
-                product_id=item.product_id,
-                quantity=item.quantity_l1,
-                source_type="sale_order",
-                source_id=order.id,
-                operator=operator,
-            )
-            item.set_calculated_cost(unit_cost)
-        else:
-            item.set_calculated_cost(Decimal("0"))
-    FinanceEngine(db, account_id).record_sale(order, force=True)
-
     emit("sale_order.restored", db=db, account_id=account_id, order=order,
          operator=operator, old_status=old_status,
          log_action="update",
@@ -244,32 +188,18 @@ def update_sale_items(db, account_id, operator, order_id, items, total_price=Non
         if dup_pids:
             raise BusinessError(code=ErrorCode.ORDER_DUPLICATE_PRODUCT, data={"product_ids": dup_pids})
 
+    from finance_orchestrator import FinanceOrchestrator
+    orch = FinanceOrchestrator(db, account_id)
+
     old_status = order.status
-    old_items = [
-        {'product_id': item.product_id, 'quantity': item.quantity_l1,
-         'unit_cost': Decimal(str(item.unit_cost_l2)) if item.unit_cost_l2 else Decimal('0')}
-        for item in order.items
-    ]
 
     if old_status == OrderStatus.COMPLETED:
-        eng = InventoryEngine(db)
-        for item_data in old_items:
-            eng.reverse(
-                account_id=account_id,
-                product_id=item_data['product_id'],
-                quantity=item_data['quantity'],
-                unit_cost=item_data['unit_cost'],
-                source_type="sale_order",
-                source_id=order.id,
-                operator=operator,
-                force=True,
-            )
-        FinanceEngine(db, account_id).reverse_sale(order.id, force=True)
+        orch.reverse_sale_order(order, operator, force=True)
 
     if len(items) == 0:
         # 直接删除 order，cascade 会自动删除关联 items，避免先删 items 再删 order 的双重删除警告
         emit("sale_order.deleted", db=db, account_id=account_id, order=order,
-             operator=operator,
+             operator=operator, old_status=old_status,
              log_action="delete",
              log_detail=f"删除销售单 {order.order_no}（商品行数归零自动删除）")
         db.delete(order)
@@ -286,13 +216,13 @@ def update_sale_items(db, account_id, operator, order_id, items, total_price=Non
         product = get_product(db, account_id, it['product_id'])
         if not product:
             raise BusinessError(code=ErrorCode.PRODUCT_NOT_FOUND, data={"product_id": it['product_id']})
-        line_total = (Decimal(str(it['quantity'])) * _d(it['unit_price'])).quantize(Q2)
+        line_total = (Decimal(str(it['quantity_l1'])) * _d(it['unit_price_l1'])).quantize(Q2)
         items_data.append({
             'product_id': it['product_id'],
-            'quantity': it['quantity'],
-            'unit_price': it['unit_price'],
-            'tax_rate': it['tax_rate'],
-            'total_price': line_total,
+            'quantity_l1': it['quantity_l1'],
+            'unit_price_l1': it['unit_price_l1'],
+            'tax_rate_l1': it['tax_rate_l1'],
+            'total_price_l1': line_total,
         })
         total += line_total
 
@@ -303,34 +233,19 @@ def update_sale_items(db, account_id, operator, order_id, items, total_price=Non
         new_item = models.SaleItem(
             order_id=order.id,
             product_id=it['product_id'],
-            quantity_l1=it['quantity'],
-            unit_price_l1=it['unit_price'],
-            tax_rate_l1=it['tax_rate'],
-            total_price_l1=it['total_price'],
+            quantity_l1=it['quantity_l1'],
+            unit_price_l1=it['unit_price_l1'],
+            tax_rate_l1=it['tax_rate_l1'],
+            total_price_l1=it['total_price_l1'],
         )
         db.add(new_item)
 
-    final_total = sum(_d(it['total_price']) for it in items_data)
+    final_total = sum(_d(it['total_price_l1']) for it in items_data)
     order.total_price_l1 = _d(total_price) if total_price is not None else final_total.quantize(Q2)
     db.flush()
 
     if order.status == OrderStatus.COMPLETED:
-        eng = InventoryEngine(db)
-        for item in order.items:
-            product = get_product(db, account_id, item.product_id)
-            if product.track_inventory_l3:
-                unit_cost = eng.force_outbound(
-                    account_id=account_id,
-                    product_id=item.product_id,
-                    quantity=item.quantity_l1,
-                    source_type="sale_order",
-                    source_id=order.id,
-                    operator=operator,
-                )
-                item.set_calculated_cost(unit_cost)
-            else:
-                item.set_calculated_cost(Decimal("0"))
-        FinanceEngine(db, account_id).record_sale(order, force=True)
+        orch.record_sale_order_completed(order, operator)
 
     emit("sale_order.items_updated", db=db, account_id=account_id, order=order,
          operator=operator,

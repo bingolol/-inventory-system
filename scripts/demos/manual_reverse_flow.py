@@ -148,7 +148,7 @@ inv1 = post("/api/invoices/quick", {
     "purchase_order_action": "auto_create",
 })
 inv1_id = extract_id(inv1)
-post(f"/api/invoices/{inv1_id}/certify")
+post(f"/api/invoices/{inv1_id}/certify", {"certification_date": "2026-06-05"})
 
 inv2 = post("/api/invoices/quick", {
     "invoice_no": "RJ-002", "direction": "in", "invoice_type": "special",
@@ -158,7 +158,7 @@ inv2 = post("/api/invoices/quick", {
     "purchase_order_action": "auto_create",
 })
 inv2_id = extract_id(inv2)
-post(f"/api/invoices/{inv2_id}/certify")
+post(f"/api/invoices/{inv2_id}/certify", {"certification_date": "2026-06-06"})
 
 # 销售3笔
 inv3 = post("/api/invoices/quick", {
@@ -295,9 +295,21 @@ if len(so_a_ids) >= 1:
 # 3. 发票红冲
 # ══════════════════════════════════════════════════════════
 section("3. 发票红冲: 销项发票3红冲 (6/18)")
-# 红冲销售3的发票 → 级联冲红凭证和库存
+# 用户先独立录入红字发票，再做冲红级联
+inv5_data = get(f"/api/invoices/{inv5_id}")
+red_inv5 = post("/api/invoices", {
+    "invoice_no": "RX-003-RED", "direction": "out", "invoice_type": "special",
+    "amount_without_tax": -15000, "tax_amount": -1950, "amount_with_tax": -16950,
+    "tax_rate": 0.13, "counterparty_name": "客户R",
+    "seller_name": "反向流程测试_", "buyer_name": "客户R", "issue_date": "2026-06-18",
+    "related_order_id": inv5_data.get("related_order_id"),
+    "related_order_type": "sale_order",
+    "related_original_invoice_id": inv5_id,
+    "certification_status": "n_a",
+})
+red_inv5_id = extract_id(red_inv5)
 result = post_dangerous(f"/api/invoices/{inv5_id}/reverse", {
-    "reverse_date": "2026-06-18", "reason": "发票开错红冲",
+    "red_invoice_id": red_inv5_id, "reason": "发票开错红冲",
 }, label="发票红冲")
 if not result.get("_timeout"):
     print(f"  发票红冲完成")
@@ -399,20 +411,31 @@ print(f"固定资产发票ID={fa_inv_6b_id} 资产ID={fa_6b_asset_id}")
 
 # 验证创建：资产原值=不含税6000, 自动认证
 check("6b 资产原值=不含税6000", 6000, fa_6b_asset.get("original_value"))
-check("6b 固定资产发票自动认证", "certified", fa_6b_data.get("certification_status"))
+check("6b 固定资产发票不再自动认证", "n_a", fa_6b_data.get("certification_status"))
 
-# 验证总账增量：1601借+6000, 222102借+780, 2202贷+6780
+# 验证总账增量：1601借+6000, 222102借+0(未认证), 2202贷+6780
 trial_6b_after_create = get("/api/finance/reports/trial-balance?date=2026-06-30")
 a1601 = _tb_amt(trial_6b_after_create, "1601")
 a222102 = _tb_amt(trial_6b_after_create, "222102")
 a2202 = _tb_amt(trial_6b_after_create, "2202")
 check("6b 创建后1601借方增量+6000", 6000, a1601[0] - b1601[0])
-check("6b 创建后222102借方增量+780", 780, a222102[0] - b222102[0])
+check("6b 创建后222102借方增量+0(未认证)", 0, a222102[0] - b222102[0])
 check("6b 创建后2202贷方增量+6780", 6780, a2202[1] - b2202[1])
 
-# 红冲固定资产发票（触发 fixed_asset 级联冲红分支，post_dangerous 已改为自动确认）
+# 用户先录入红字固定资产发票，再触发级联冲红
+red_fa_inv = post("/api/invoices", {
+    "invoice_no": f"RJ-FA-{UNIQUE}-RED", "direction": "in", "invoice_type": "special",
+    "amount_without_tax": -6000, "tax_amount": -780, "amount_with_tax": -6780,
+    "tax_rate": 0.13, "counterparty_name": "供应商R",
+    "seller_name": "供应商R", "buyer_name": f"反向流程测试_{UNIQUE}", "issue_date": "2026-06-23",
+    "related_order_id": fa_6b_asset_id,
+    "related_order_type": "fixed_asset",
+    "related_original_invoice_id": fa_inv_6b_id,
+    "certification_status": "n_a",
+})
+red_fa_inv_id = extract_id(red_fa_inv)
 result_6b = post_dangerous(f"/api/invoices/{fa_inv_6b_id}/reverse", {
-    "reverse_date": "2026-06-23", "reason": "固定资产发票红冲测试",
+    "red_invoice_id": red_fa_inv_id, "reason": "固定资产发票红冲测试",
 }, label="固定资产发票红冲")
 print(f"  固定资产发票红冲完成")
 
