@@ -91,6 +91,28 @@ skills-lock.json
 # Repomix single-file output
 repomix-output.xml
 
+# Root-level debug & test output artifacts
+*_output.txt
+*_verbose.txt
+*_debug.txt
+*_test*.txt
+audit_result.txt
+debug_out.txt
+integration_list.txt
+other_tests.txt
+stash_diff.txt
+test_fail_detail.txt
+test_int.txt
+test_summary.txt
+
+# Subdirectory debug artifacts
+backend/debug_out.txt
+backend/debug_validate.txt
+tests/pattern_search_results.txt
+
+# Temp JSON diagnostic output
+tmp_diag_*.json
+
 # Windows reserved-name artifact (NUL device, cannot be tracked)
 nul
 
