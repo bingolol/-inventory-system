@@ -17,7 +17,12 @@ def ensure_test_product(account_id=None, min_stock=1000):
 
     db = SessionLocal()
     try:
-        product = db.query(Product).filter(Product.account_id == aid).first()
+        # 只查询实物商品（track_inventory_l3=True）。
+        # 服务类商品无库存概念，AdjustInventory 对其返回 None inv 会报错。
+        product = db.query(Product).filter(
+            Product.account_id == aid,
+            Product.track_inventory_l3 == True,
+        ).first()
         if not product:
             tag = uuid.uuid4().hex[:8]
             product = Product(
@@ -47,6 +52,7 @@ def ensure_test_product(account_id=None, min_stock=1000):
                         account_id=aid,
                         product_id=product.id,
                         quantity=float(min_stock),
+                        adjust_date="2026-01-01",
                         reason="测试初始化库存",
                         unit_cost=float(product.purchase_price_l3 or 10),
                     ),

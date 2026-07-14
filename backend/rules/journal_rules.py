@@ -249,17 +249,22 @@ def _register_default_rules():
         description="销售凭证必须借应收(1122)、贷收入(6001/6051)，可选贷销项税(222101/222103)",
     ))
 
-    # 采购订单：借库存+进项税 贷应付
+    # 采购订单：借库存+进项税 贷应付；或借费用（服务类商品）+进项税 贷应付
     register_journal_rule(JournalRule(
         move_type=ET.PURCHASE_ORDER, name="采购订单",
         patterns=[
             AccountPattern(
                 must_have_debit=["1405"],  # 库存商品
-                must_have_credit=["2202"],  # 应付账款
+                must_have_credit=["2202", "2241"],  # 应付账款 或 其他应付款（个人垫付）
                 condition="采购入库",
             ),
+            AccountPattern(
+                must_have_debit=["6601"],  # 主体费用（服务类商品直接费用化）
+                must_have_credit=["2202", "2241"],
+                condition="采购服务",
+            ),
         ],
-        description="采购凭证必须借库存(1405)、贷应付(2202)，可选借进项税(222102)",
+        description="采购凭证必须借库存(1405)或费用(6601)、贷应付(2202)或其他应付款(2241)，可选借进项税(222102)",
     ))
 
     # 销售退货：反向销售
@@ -341,30 +346,40 @@ def _register_default_rules():
         description="折旧凭证必须借管理费用(6601)、贷累计折旧/摊销(1602/1702)",
     ))
 
-    # 固定资产采购：借固定资产 贷银行/应付
+    # 固定资产采购：借固定资产 贷银行/应付/其他应付款(个人垫付)
     register_journal_rule(JournalRule(
         move_type=ET.FIXED_ASSET_PURCHASE, name="固定资产采购",
         patterns=[
             AccountPattern(
                 must_have_debit=["1601"],  # 固定资产
-                must_have_credit=["1001", "1002", "2202"],  # 现金/银行/应付
-                condition="固定资产采购",
+                must_have_credit=["1001", "1002", "2202"],  # 现金/银行/应付（公司采购）
+                condition="固定资产采购-公司付款",
+            ),
+            AccountPattern(
+                must_have_debit=["1601"],  # 固定资产
+                must_have_credit=["2241"],  # 其他应付款（个人垫付）
+                condition="固定资产采购-个人垫付",
             ),
         ],
-        description="固定资产采购必须借固定资产(1601)、贷现金/银行/应付",
+        description="固定资产采购必须借固定资产(1601)、贷现金/银行/应付(2202)/其他应付款(2241个人垫付)",
     ))
 
-    # 无形资产采购：借无形资产 贷银行/应付
+    # 无形资产采购：借无形资产 贷银行/应付/其他应付款(个人垫付)
     register_journal_rule(JournalRule(
         move_type=ET.INTANGIBLE_ASSET_PURCHASE, name="无形资产采购",
         patterns=[
             AccountPattern(
                 must_have_debit=["1701"],  # 无形资产
-                must_have_credit=["1001", "1002", "2202"],  # 现金/银行/应付
-                condition="无形资产采购",
+                must_have_credit=["1001", "1002", "2202"],  # 现金/银行/应付（公司采购）
+                condition="无形资产采购-公司付款",
+            ),
+            AccountPattern(
+                must_have_debit=["1701"],  # 无形资产
+                must_have_credit=["2241"],  # 其他应付款（个人垫付）
+                condition="无形资产采购-个人垫付",
             ),
         ],
-        description="无形资产采购必须借无形资产(1701)、贷现金/银行/应付",
+        description="无形资产采购必须借无形资产(1701)、贷现金/银行/应付(2202)/其他应付款(2241个人垫付)",
     ))
 
     # 附加税计提：借税金及附加 贷应交税费
@@ -478,7 +493,8 @@ def _register_default_rules():
         description="银行手续费借费用(6603/6601)贷银行(1002)；利息收入借银行(1002)贷费用(6603/6601)",
     ))
 
-    # 个人垫付：借费用 贷其他应付款
+    # 个人垫付：借费用/资产/应交税费 贷其他应付款
+    # 借方由 debit_account_code 决定用途（与 PERSONAL_ADVANCE_DEBIT_ACCOUNTS 白名单一致）
     register_journal_rule(JournalRule(
         move_type=ET.PERSONAL_ADVANCE, name="个人垫付",
         patterns=[
@@ -487,8 +503,28 @@ def _register_default_rules():
                 must_have_credit=["2241"],  # 其他应付款
                 condition="个人垫付费用",
             ),
+            AccountPattern(
+                must_have_debit=["1405", "1601", "1701"],  # 资产类（垫付采购货款/固定资产/无形资产）
+                must_have_credit=["2241"],
+                condition="个人垫付资产",
+            ),
+            AccountPattern(
+                must_have_debit=["222103", "222105", "222107", "222110"],  # 应交税费（个人垫付代缴税: 小规模增值税/所得税/未交增值税/城建税）
+                must_have_credit=["2241"],
+                condition="个人垫付代缴税",
+            ),
+            AccountPattern(
+                must_have_debit=["1221"],  # 其他应收款（多缴所得税挂账）
+                must_have_credit=["2241"],
+                condition="个人垫付-多缴所得税挂账",
+            ),
+            AccountPattern(
+                must_have_debit=["6711"],  # 营业外支出-税收滞纳金
+                must_have_credit=["2241"],
+                condition="个人垫付-税收滞纳金",
+            ),
         ],
-        description="个人垫付必须借费用类(6601/6602/6603/6403)、贷其他应付款(2241)",
+        description="个人垫付必须贷其他应付款(2241)；借方按用途：费用(6601/6602/6603/6403/6711)/资产(1405/1601/1701/1221)/应交税费(222103/222105/222110)",
     ))
 
     # 个人垫付还款：借其他应付款 贷银行/现金

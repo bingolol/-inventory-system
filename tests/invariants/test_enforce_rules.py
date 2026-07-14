@@ -229,9 +229,17 @@ class Test业务入口拦截:
         import engine_fixed_asset
         import inspect
 
+        # record_depreciation 委托给基类 BaseAssetEngine._record_depreciation，
+        # enforce_rules(AS-05) 在基类中调用。检查委托链源码含守卫即可。
         dep_src = inspect.getsource(engine_fixed_asset.FixedAssetEngine.record_depreciation)
-        assert "enforce_rules" in dep_src
-        assert "AS-05" in dep_src
+        if "enforce_rules" not in dep_src or "AS-05" not in dep_src:
+            # 委托给基类时，检查基类 _record_depreciation 源码
+            from engine_asset_base import BaseAssetEngine
+            base_src = inspect.getsource(BaseAssetEngine._record_depreciation)
+            assert "enforce_rules" in base_src, "record_depreciation 委托链缺失 enforce_rules"
+            assert "AS-05" in base_src, "record_depreciation 委托链缺失 AS-05 守卫"
+            # 同时确认 record_depreciation 确实委托给了 _record_depreciation
+            assert "_record_depreciation" in dep_src, "record_depreciation 未委托给 _record_depreciation"
 
         disposal_src = inspect.getsource(engine_fixed_asset.FixedAssetEngine.record_disposal)
         assert "enforce_rules" in disposal_src

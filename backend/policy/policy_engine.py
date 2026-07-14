@@ -21,7 +21,7 @@ logger = logging.getLogger("inventory")
 
 @dataclass
 class VATResult:
-    total_revenue: Decimal
+    total_revenue_l1: Decimal
     tax_rate: Decimal
     tax_payable_gross: Decimal
     tax_reduction: Decimal
@@ -42,44 +42,44 @@ class IncomeTaxResult:
 
 def calculate_vat(
     profile: EntityProfile,
-    total_revenue: Decimal,
-    input_tax: Decimal = Decimal("0"),
-    output_tax: Optional[Decimal] = None,
+    total_revenue_l1: Decimal,
+    input_tax_l1: Decimal = Decimal("0"),
+    output_tax_l1: Optional[Decimal] = None,
     ordinary_revenue: Decimal = Decimal("0"),
     special_revenue: Decimal = Decimal("0"),
-    carry_forward: Decimal = Decimal("0"),
+    carry_forward_l1: Decimal = Decimal("0"),
     ref_date: Optional[date] = None,
 ) -> VATResult:
     vat_facts = load_vat_facts(ref_date)
 
-    total_revenue = _d(total_revenue)
-    input_tax = _d(input_tax)
+    total_revenue_l1 = _d(total_revenue_l1)
+    input_tax_l1 = _d(input_tax_l1)
 
     if profile.vat_type not in ("small_scale", "general"):
         raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=f"无效的增值税纳税人类型: {profile.vat_type}")
 
     if profile.vat_type == "general":
-        if output_tax is None:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="一般纳税人必须提供 output_tax（销项税额）")
+        if output_tax_l1 is None:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message="一般纳税人必须提供 output_tax_l1（销项税额）")
 
-        tax_payable_gross = _d(output_tax).quantize(Q2, rounding=ROUND_HALF_UP)
+        tax_payable_gross = _d(output_tax_l1).quantize(Q2, rounding=ROUND_HALF_UP)
         tax_rate = (
-            (tax_payable_gross / total_revenue).quantize(Decimal("0.01"))
-            if total_revenue != 0
+            (tax_payable_gross / total_revenue_l1).quantize(Decimal("0.01"))
+            if total_revenue_l1 != 0
             else Decimal("0")
         )
-        tax_payable = max(tax_payable_gross - input_tax - carry_forward, Decimal("0"))
+        tax_payable = max(tax_payable_gross - input_tax_l1 - carry_forward_l1, Decimal("0"))
 
         tax_reduction = Decimal("0")
         reduction_item = "一般纳税人"
     else:
         tax_rate = vat_facts.small_scale_syndicated_rate
-        tax_payable_gross = (total_revenue * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
+        tax_payable_gross = (total_revenue_l1 * tax_rate).quantize(Q2, rounding=ROUND_HALF_UP)
 
         ordinary_rev = _d(ordinary_revenue)
         special_rev = _d(special_revenue)
 
-        if total_revenue <= vat_facts.small_scale_quarterly_exemption:
+        if total_revenue_l1 <= vat_facts.small_scale_quarterly_exemption:
             ordinary_tax = Decimal("0")
             special_tax = (special_rev * vat_facts.small_scale_reduced_rate).quantize(Q2, rounding=ROUND_HALF_UP)
             reduction_item = f"小规模普票免征增值税（季≤{vat_facts.small_scale_quarterly_exemption}），专票减按{vat_facts.small_scale_reduced_rate}征收"
@@ -92,7 +92,7 @@ def calculate_vat(
         tax_reduction = (tax_payable_gross - tax_payable).quantize(Q2, rounding=ROUND_HALF_UP)
 
     return VATResult(
-        total_revenue=total_revenue,
+        total_revenue_l1=total_revenue_l1,
         tax_rate=tax_rate,
         tax_payable_gross=tax_payable_gross.quantize(Q2),
         tax_reduction=tax_reduction,

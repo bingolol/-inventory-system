@@ -25,50 +25,52 @@ def _product_id(c):
 
 
 def _purchase_stock(client, pid, qty=50):
-    """辅助：创建采购单并完成入库"""
-    tag = uniq("PO")
-    from tests.factories import api_create_supplier
-    sid, _ = api_create_supplier(client, HEADERS)
-    resp = client.post("/api/purchases", json={
-        "supplier_id": sid, "payment_method": "company", "payment_status": "unpaid",
-        "business_date": "2026-06-01",
-        "items": [{"product_id": pid, "quantity": qty, "unit_price": 50, "tax_rate": 0.13}],
+    """辅助：创建采购单并完成入库（发票驱动，建议填法：tax_rate=0, tax_amount=0）"""
+    amount = qty * 50  # 不含税合计
+    resp = client.post("/api/invoices/quick", json={
+        "invoice_no": uniq("INV-IN-STK"), "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+        "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+        "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+        "items": [{"product_id": pid, "quantity": qty, "unit_price": "50", "tax_rate": "0"}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
 
 
 def _out_payload(pid):
+    """销项发票 payload（建议填法：amount_with_tax=不含税合计, tax_amount=0）"""
     return {
         "invoice_no": uniq("INV-OUT-"),
         "direction": "out",
         "invoice_type": "ordinary",
-        "amount_with_tax": "1030.00",
-        "tax_amount": "30.00",
-        "tax_rate": "0.03",
+        "amount_with_tax": "1000.00",
+        "tax_amount": "0",
+        "tax_rate": "0",
         "counterparty_name": "测试买方公司",
         "seller_name": "本公司",
         "buyer_name": "测试买方公司",
         "issue_date": "2026-06-15",
-        "items": [{"product_id": pid, "quantity": 10, "unit_price": "100.00", "tax_rate": "0.03"}],
+        "items": [{"product_id": pid, "quantity": 10, "unit_price": "100.00", "tax_rate": "0"}],
         "sale_order_action": "auto_create",
     }
 
 
 def _in_payload(pid):
+    """进项发票 payload（建议填法：amount_with_tax=不含税合计, tax_amount=0）"""
     return {
         "invoice_no": uniq("INV-IN-"),
         "direction": "in",
         "invoice_type": "special",
-        "amount_with_tax": "11300.00",
-        "tax_amount": "1300.00",
-        "tax_rate": "0.13",
+        "amount_with_tax": "10000.00",
+        "tax_amount": "0",
+        "tax_rate": "0",
         "counterparty_name": "测试供应商",
         "seller_name": "测试供应商",
         "buyer_name": "本公司",
         "issue_date": "2026-06-01",
         "notes": "quick 合并测试",
         "purchase_order_action": "auto_create",
-        "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0.13"}],
+        "items": [{"product_id": pid, "quantity": 1, "unit_price": "10000.00", "tax_rate": "0"}],
     }
 
 
@@ -98,8 +100,8 @@ class Test销项发票联动销售单:
         assert r.status_code == 200, r.text
         inv = db.query(Invoice).filter(Invoice.invoice_no == payload["invoice_no"]).first()
         so = db.query(SaleOrder).filter(SaleOrder.id == inv.related_order_id).first()
-        assert Decimal(str(so.total_price_l1)) == Decimal("1030.00")
-        assert Decimal(str(so.tax_amount_l1)) == Decimal("30.00")
+        assert Decimal(str(so.total_price_l1)) == Decimal("1000.00")
+        assert Decimal(str(so.tax_amount_l1)) == Decimal("0.00")
 
     def test_out_invoice_items_synced_to_sale_order(self, db, client):
         pid = _product_id(client)
@@ -119,13 +121,16 @@ class Test销项发票联动销售单:
     def test_out_invoice_link_existing_no_new_sale_order(self, client):
         pid = _product_id(client)
         _purchase_stock(client, pid, qty=20)
-        r_sale = client.post("/api/sales", json={
-            "customer_id": None, "has_invoice": True, "deduct_inventory": True, "payment_status": "unpaid",
-            "business_date": "2026-06-10",
-            "items": [{"product_id": pid, "quantity": 5, "unit_price": "100.00", "tax_rate": "0.03"}],
+        # 先通过发票驱动创建销售单（auto_create）
+        r_sale = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-OUT-EXIST"), "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "500.00", "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试买方公司", "seller_name": "本公司", "buyer_name": "测试买方公司",
+            "issue_date": "2026-06-10", "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 5, "unit_price": "100.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert r_sale.status_code in (200, 201), r_sale.text
-        existing_sale_id = get_entity_id(r_sale.json())
+        existing_sale_id = r_sale.json()["data"]["related_order_id"]
         payload = _out_payload(pid)
         payload["sale_order_action"] = "link_existing"
         payload["related_order_id"] = existing_sale_id
@@ -176,7 +181,7 @@ class TestQuick合并端点:
         assert data["related_order_id"] is not None
         assert data["fixed_asset"]["id"] > 0
         assert data["fixed_asset"]["asset_code"] == asset_code
-        assert data["fixed_asset"]["original_value"] == "11300.00"
+        assert data["fixed_asset"]["original_value"] == "10000.00"
 
     def test_quick_with_fixed_asset_persisted(self, db, client):
         pid = _product_id(client)

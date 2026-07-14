@@ -208,33 +208,78 @@ def api_create_product_and_purchase(client, headers, product_id, qty=10, unit_pr
 
 def api_create_sale(client, headers, product_id, customer_id, qty=1, unit_price=20.00,
                     tax_rate=0.03, has_invoice=False, business_date=None, **extra):
+    """创建销售单（发票驱动：通过 /api/invoices/quick 创建销项发票，自动生成销售单）
+
+    架构改造后 POST /api/sales 已停用，所有销售单必须由发票驱动创建。
+    has_invoice 参数已废弃（恒为 True）。
+    unit_price 为不含税单价。
+    """
+    from decimal import Decimal as _D
     tag = uniq("SO")
     now_str = business_date or datetime.now().strftime("%Y-%m-%d")
+    atw = _D(str(qty)) * _D(str(unit_price)) * (1 + _D(str(tax_rate)))
+    awt = _D(str(qty)) * _D(str(unit_price))
+    tax_amt = atw - awt
     payload = {
-        "order_no": f"SO-{tag}", "customer_id": customer_id,
-        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
-        "business_date": now_str,
-        "has_invoice": has_invoice,
+        "invoice_no": f"INV-OUT-{tag}", "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": str(atw.quantize(_D("0.01"))),
+        "tax_rate": str(tax_rate), "tax_amount": str(tax_amt.quantize(_D("0.01"))),
+        "counterparty_name": "测试客户", "seller_name": "本公司", "buyer_name": "测试客户",
+        "issue_date": now_str, "sale_order_action": "auto_create",
+        "items": [{"product_id": product_id, "quantity": qty, "unit_price": str(unit_price), "tax_rate": str(tax_rate)}],
     }
     payload.update(extra)
-    resp = client.post("/api/sales", json=payload, headers=headers)
-    assert resp.status_code in (200, 201), f"创建销售单失败: {resp.text}"
-    return get_entity_id(resp.json()), resp.json()
+    resp = client.post("/api/invoices/quick", json=payload, headers=headers)
+    assert resp.status_code in (200, 201), f"创建销售单(发票驱动)失败: {resp.text}"
+    rj = resp.json()
+    order_id = _extract_related_order_id(rj)
+    return order_id, rj
 
 
 def api_create_purchase(client, headers, product_id, supplier_id, qty=1, unit_price=10.00,
                         tax_rate=0.03, business_date=None, **extra):
+    """创建采购单（发票驱动：通过 /api/invoices/quick 创建进项发票，自动生成采购单）
+
+    架构改造后 POST /api/purchases 已停用，所有采购单必须由发票驱动创建。
+    unit_price 为不含税单价。
+    """
+    from decimal import Decimal as _D
     tag = uniq("PO")
     now_str = business_date or datetime.now().strftime("%Y-%m-%d")
+    atw = _D(str(qty)) * _D(str(unit_price)) * (1 + _D(str(tax_rate)))
+    awt = _D(str(qty)) * _D(str(unit_price))
+    tax_amt = atw - awt
     payload = {
-        "order_no": f"PO-{tag}", "supplier_id": supplier_id,
-        "items": [{"product_id": product_id, "quantity": qty, "unit_price": unit_price, "tax_rate": tax_rate}],
-        "business_date": now_str,
+        "invoice_no": f"INV-IN-{tag}", "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": str(atw.quantize(_D("0.01"))),
+        "tax_rate": str(tax_rate), "tax_amount": str(tax_amt.quantize(_D("0.01"))),
+        "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+        "issue_date": now_str, "purchase_order_action": "auto_create",
+        "items": [{"product_id": product_id, "quantity": qty, "unit_price": str(unit_price), "tax_rate": str(tax_rate)}],
     }
     payload.update(extra)
-    resp = client.post("/api/purchases", json=payload, headers=headers)
-    assert resp.status_code in (200, 201), f"创建采购单失败: {resp.text}"
-    return get_entity_id(resp.json()), resp.json()
+    resp = client.post("/api/invoices/quick", json=payload, headers=headers)
+    assert resp.status_code in (200, 201), f"创建采购单(发票驱动)失败: {resp.text}"
+    rj = resp.json()
+    order_id = _extract_related_order_id(rj)
+    return order_id, rj
+
+
+def _extract_related_order_id(resp_json):
+    """从发票 API 响应中提取 related_order_id（兼容多种响应格式）"""
+    # OperationResult 格式: {"data": {"related_order_id": ...}}
+    data = resp_json
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        data = data["data"]
+    # AI Gateway 格式: {"ok": true, "entity": {"data": {...}}}
+    if isinstance(data, dict) and "entity" in data and isinstance(data["entity"], dict):
+        data = data["entity"]
+        if "data" in data and isinstance(data["data"], dict):
+            data = data["data"]
+    if isinstance(data, dict) and "related_order_id" in data:
+        return data["related_order_id"]
+    # fallback: get_entity_id
+    return get_entity_id(resp_json)
 
 
 def api_create_invoice_quick(client, headers, product_id, invoice_no=None, direction="in",

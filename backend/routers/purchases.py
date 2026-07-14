@@ -12,7 +12,7 @@ from schemas import PaginatedResponse
 from uow import unit_of_work
 from commands.base import dispatch
 from commands.orders import (
-    CreateOrder, CancelOrder,
+    CancelOrder,
     DeleteOrder, UpdateOrderItems,
     UpdateOrderFields, ReturnOrder,
 )
@@ -67,48 +67,24 @@ def list_purchases(pag: Pagination = Depends(), date_range: DateRange = Depends(
 
 @router.post("")
 def create_purchase(data: schemas.PurchaseOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
-    with unit_of_work(db):
-        try:
-            cmd = CreateOrder(
-                order_type="purchase",
-                account_id=account_id,
-                operator=operator,
-                supplier_id=data.supplier_id,
-                business_date=data.business_date,
-                payment_method=data.payment_method,
-                notes=data.notes,
-                image_url=data.image_url or "",
-                items=[item.to_orm_kwargs() for item in data.items],
-            )
-            order = dispatch(cmd, db)
-        except ValueError as e:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, message=str(e))
-    db.refresh(order)
-    
-    # 构建库存变化信息
-    inventory_changes = []
-    for item in order.items:
-        product = crud.get_product(db, account_id, item.product_id)
-        inventory_changes.append({
-            "product_id": item.product_id,
-            "product_name": product.name if product else f"商品{item.product_id}",
-            "quantity": f"+{item.quantity_l1}"
-        })
-    
-    # 返回 OperationResult 格式
-    result = OperationResult(
-        operation=OperationType.CREATE,
-        entity_type=EntityType.PURCHASE_ORDER,
-        entity_id=order.id,
-        summary=f"采购单 {order.order_no} 创建成功，金额 {order.total_price_l1}，商品数量 {len(order.items)}",
-        ai_hint="采购单已创建，库存已增加。如需付款，请调用 POST /api/payments。",
-        data=_build_purchase_out(order, invoiced=linkage_has_invoice(db, account_id, "purchase_order", order.id)).model_dump(),
-        changes={
-            "inventory": inventory_changes,
-            "payable": {"amount": f"+{order.total_price_l1}"}
-        }
+    """POST /api/purchases 已停用：系统只允许开票订单录入。
+
+    架构改造后，采购业务必须通过 POST /api/invoices（direction='in',
+    purchase_order_action='auto_create'）创建发票，由发票驱动自动生成采购单。
+    这确保发票是唯一真相源，增值税口径与会计口径统一，不存在无票收入兜底。
+    """
+    raise BusinessError(
+        code=ErrorCode.VALIDATION_ERROR,
+        message=(
+            "POST /api/purchases 已停用：系统只允许开票订单录入。"
+            "请通过 POST /api/invoices 创建进项发票（direction='in', purchase_order_action='auto_create'），"
+            "由发票驱动自动生成采购单。"
+        ),
+        ai_instruction=(
+            "STOP_RETRYING. POST /api/purchases 已被禁用。"
+            "请改用 POST /api/invoices，body 中设置 direction='in', purchase_order_action='auto_create'。"
+        ),
     )
-    return result.to_dict()
 
 
 @router.get("/{purchase_id}", response_model=schemas.PurchaseOrderOut)

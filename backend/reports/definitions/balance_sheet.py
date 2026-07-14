@@ -85,8 +85,22 @@ BALANCE_SHEET = [
         transform=OpeningFallback("accounts_receivable_l1"),
     ),
 
-    Field("prepayments", "预付账款",
+    # ── 内部字段：应付账款(2202)借方余额重分类到预付账款 ──
+    # 小企业会计准则要求供应商债权分类为预付账款（资产），
+    # 而非应付账款借方余额（负债为负）。此处自动重分类。
+    Field("_ap_debit_reclassified", "应付账款借方重分类",
+        source=LEDGER_CREDIT(["2202"]),
+        transform=NegativePart(abs=True),
+        visible=False,
+    ),
+
+    Field("_prepaid_1123", "预付账款科目余额",
         source=LEDGER_BALANCE(["1123"]),
+        visible=False,
+    ),
+
+    Field("prepayments", "预付账款",
+        source=SUM_FIELDS(["_prepaid_1123", "_ap_debit_reclassified"]),
     ),
 
     Field("inventory", "存货",
@@ -99,6 +113,18 @@ BALANCE_SHEET = [
         transform=NegativePart(abs=True),
     ),
 
+    # 其他应收款（1221）：核算多缴所得税挂账等债权
+    Field("other_receivable", "其他应收款",
+        source=LEDGER_BALANCE(["1221"]),
+    ),
+
+    # 多缴所得税重分类：222105 借方余额（多缴）应作为资产列示，不应显示为负数负债
+    Field("_income_tax_overpaid", "多缴所得税重分类",
+        source=LEDGER_CREDIT(["222105"]),
+        transform=NegativePart(abs=True),
+        visible=False,
+    ),
+
     Field("deferred_assets", "其他流动资产",
         source=LEDGER_BALANCE(["1901"]),
     ),
@@ -106,6 +132,7 @@ BALANCE_SHEET = [
     Field("total_current_assets", "流动资产合计",
         source=SUM_FIELDS(["monetary_funds", "accounts_receivable",
                            "prepayments", "inventory", "prepaid_tax",
+                           "other_receivable", "_income_tax_overpaid",
                            "deferred_assets"]),
     ),
 
@@ -141,8 +168,15 @@ BALANCE_SHEET = [
     ),
 
     # ── 流动负债 ──
-    Field("accounts_payable", "应付账款",
+    # 内部字段：2202 贷方余额（正常应付），借方余额已重分类到 prepayments
+    Field("_ap_credit_part", "应付账款贷方部分",
         source=LEDGER_CREDIT(["2202"]),
+        transform=PositivePart(),
+        visible=False,
+    ),
+
+    Field("accounts_payable", "应付账款",
+        source=SUM_FIELDS(["_ap_credit_part"]),
         transform=OpeningFallback("accounts_payable_l1"),
     ),
 
@@ -156,8 +190,9 @@ BALANCE_SHEET = [
 
     # ── 应交税费 ──
     # 应交增值税以总账为真相源：销项/进项/转出/未交等科目净额。
-    # 发票口径仅用于 reconciliation 对账，不作为报表主取值，
-    # 否则未开票销售（如现金散客销售）的销项税会被遗漏，导致 BS 不平衡。
+    # 发票口径仅用于 reconciliation 对账，不作为报表主取值。
+    # 架构改造后所有订单均由发票驱动，不存在无票收入，两口径已统一；
+    # 仍保留总账为主取值以保持报表层与凭证层的一致性。
     # 使用 side=None 取净额(d-c)再 *sign，确保退货红冲（对边分录）正确抵消。
     Field("_vat_net", None,
         source=LEDGER_COMPOSITE(parts=[
@@ -167,7 +202,7 @@ BALANCE_SHEET = [
             Part(codes=["222102", "222106"], side=None, sign=-1),
         ]),
     ),
-    Field("vat_payable", "应交增值税",
+    Field("vat_payable_l1", "应交增值税",
         source=SUM_FIELDS(["_vat_net"]),
         transform=PositivePart(),
     ),
@@ -179,13 +214,14 @@ BALANCE_SHEET = [
     ),
     Field("income_tax_liability", "应交所得税",
         source=LEDGER_CREDIT(["222105"]),
+        transform=PositivePart(),  # 借方余额(多缴)不显示为负债，已重分类到 _income_tax_overpaid 资产
     ),
     Field("personal_income_tax_liability", "应交个人所得税",
         source=LEDGER_CREDIT(["222108"]),
     ),
 
     Field("tax_payable", "应交税费合计",
-        source=SUM_FIELDS(["vat_payable", "surcharge_liability",
+        source=SUM_FIELDS(["vat_payable_l1", "surcharge_liability",
                            "income_tax_liability", "personal_income_tax_liability"]),
     ),
 
@@ -218,15 +254,31 @@ BALANCE_SHEET = [
         source=LEDGER_CREDIT(["4104"]),
     ),
 
-    # 当期净利润（月结前来自损益科目，月结后 = 0 避免重复）
+    # 当期净利润（状态机设计，避免与 retained_earnings 双重计算）
+    #
+    # 状态机原理：
+    #   未月结 → P&L 累计净值 = 利润（period_profit 是利润唯一来源，retained_earnings 中 crd(4103)=0）
+    #   已月结 → P&L 累计净值被 period_close 抵消 = 0（period_profit=0，利润切换到 retained_earnings 的 crd(4103)）
+    #   已年结 → 同上，利润在 retained_earnings 的 crd(4104)
+    #
+    # 关键：bucket 必须是 ALL（含 period_close），不能是 PNL_EXCLUDED。
+    # 若改为 PNL_EXCLUDED，period_profit 会读 P&L 业务分录净值（永远=利润，因业务分录不因月结被物理删除），
+    # 与 retained_earnings 的 crd(4103)/crd(4104) 双重计算，total_equity 多算一遍利润。
+    #
+    # prefix_match=True：P&L 明细写在子科目（如 640302 城建税），精确查主科目 6403 会漏掉子科目。
+    # 前缀匹配 6403% 覆盖 640302/640303/640304，会计科目编码体系（4-2-2 结构）保证不会误伤。
+    #
     # side=None 取净额(d-c)，sign=-1 转为 c-d：
     #   收入类 c > d → (c-d) 正值；费用类 d > c → (c-d) 负值
     Field("period_profit", "当期净利润",
-        source=LEDGER_COMPOSITE(parts=[
-            Part(codes=["6001", "6051", "6301", "6111", "6401", "6403",
-                        "6601", "6602", "6603", "6801", "6701", "6711"],
-                 side=None, sign=-1),
-        ]),
+        source=LEDGER_COMPOSITE(
+            parts=[
+                Part(codes=["6001", "6051", "6301", "6111", "6401", "6403",
+                            "6601", "6602", "6603", "6801", "6701", "6711"],
+                     side=None, sign=-1, prefix_match=True),
+            ],
+            bucket=Bucket.ALL,
+        ),
     ),
 
     # 留存收益 = 期初留存 + 本年利润 + 利润分配

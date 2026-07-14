@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 
-def next_order_no(db: Session, prefix: str, business_date: datetime = None) -> str:
+def next_order_no(db: Session, prefix: str, business_date: datetime) -> str:
     """生成采购/销售订单号
 
     格式: {中文前缀}{年}—{月}-{日}-{时}:{分}-{序号}
@@ -19,7 +19,7 @@ def next_order_no(db: Session, prefix: str, business_date: datetime = None) -> s
     prefix_map = {"PO": "CG", "PL": "RG", "SO": "XS", "PS": "XS"}
     cn_prefix = prefix_map.get(prefix, prefix)
 
-    dt = business_date or datetime.now()
+    dt = business_date
     date_part = f"{dt.year}—{dt.month}-{dt.day}"
     time_part = f"{dt.hour:02d}:{dt.minute:02d}"
     pattern = f"{cn_prefix}{dt.year}—{dt.month}-{dt.day}-{dt.hour:02d}:{dt.minute:02d}-%"

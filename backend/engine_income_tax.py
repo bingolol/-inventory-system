@@ -50,7 +50,7 @@ class IncomeTaxEngine:
         account = self.db.query(models.Account).filter(models.Account.id == account_id).first()
         vat_ov = resolve_taxpayer_type_by_date(account, self.db, period_start.date()) if account else None
         profile = build_profile(account, period_start.date(), vat_type_override=vat_ov,
-                                surcharge_halved=account.surcharge_halved if account else None)
+                                surcharge_halved_l3=account.surcharge_halved_l3 if account else None)
 
         sn = LedgerSnapshot(self.db, account_id, bs_cutoff=close_dt,
                             period_start=period_start, period_end=close_dt)

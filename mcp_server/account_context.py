@@ -26,7 +26,8 @@ def init_default_account() -> int:
     env_id = os.environ.get("MCP_ACCOUNT_ID")
     if env_id:
         try:
-            _current_account_id = int(env_id)
+            with _lock:
+                _current_account_id = int(env_id)
             return _current_account_id
         except ValueError:
             pass
@@ -35,7 +36,8 @@ def init_default_account() -> int:
     try:
         account = db.query(models.Account).order_by(models.Account.id.asc()).first()
         if account:
-            _current_account_id = account.id
+            with _lock:
+                _current_account_id = account.id
         return _current_account_id
     finally:
         db.close()

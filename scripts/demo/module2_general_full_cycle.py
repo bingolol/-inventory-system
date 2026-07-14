@@ -218,7 +218,7 @@ class TestGeneralFullCycle:
         r = c.get("/api/tax-report/monthly?year=2026&month=1", headers=HEADERS)
         assert r.status_code == 200, r.text
         tax = r.json()
-        print(f"[增值税] 销项={tax['output_tax']} 进项={tax['input_tax']} 应纳税={tax['tax_payable']}")
+        print(f"[增值税] 销项={tax['output_tax_l1']} 进项={tax['input_tax_l1']} 应纳税={tax['tax_payable']}")
         print("[OK] 第七幕: 税务验证完成")
 
     def test_08_profit_statement(self, client):

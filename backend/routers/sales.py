@@ -12,7 +12,7 @@ from schemas import PaginatedResponse
 from uow import unit_of_work
 from commands.base import dispatch
 from commands.orders import (
-    CreateOrder, CancelOrder, RestoreOrder,
+    CancelOrder, RestoreOrder,
     DeleteOrder, UpdateOrderItems,
     UpdateOrderFields, ReturnOrder,
 )
@@ -67,51 +67,24 @@ def list_sales(pag: Pagination = Depends(), date_range: DateRange = Depends(), s
 
 @router.post("")
 def create_sale(data: schemas.SaleOrderCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
-    with unit_of_work(db):
-        try:
-            cmd = CreateOrder(
-                order_type="sale",
-                account_id=account_id,
-                operator=operator,
-                customer_id=data.customer_id,
-                deduct_inventory=data.deduct_inventory,
-                payment_status=data.payment_status,
-                has_invoice=data.has_invoice,
-                notes=data.notes,
-                image_url=data.image_url or "",
-                total_price=data.total_price,
-                business_date=data.business_date,
-                items=[item.to_orm_kwargs() for item in data.items],
-            )
-            order = dispatch(cmd, db)
-        except ValueError as e:
-            raise BusinessError(code=ErrorCode.VALIDATION_ERROR, data={"details": "创建销售单失败，请检查输入数据"})
-    db.refresh(order)
-    
-    # 构建库存变化信息
-    inventory_changes = []
-    for item in order.items:
-        product = crud.get_product(db, account_id, item.product_id)
-        inventory_changes.append({
-            "product_id": item.product_id,
-            "product_name": product.name if product else f"商品{item.product_id}",
-            "quantity": f"-{item.quantity_l1}"
-        })
-    
-    # 返回 OperationResult 格式
-    result = OperationResult(
-        operation=OperationType.CREATE,
-        entity_type=EntityType.SALE_ORDER,
-        entity_id=order.id,
-        summary=f"销售单 {order.order_no} 创建成功，金额 {order.total_price_l1}，商品数量 {len(order.items)}",
-        ai_hint="销售单已创建，库存已扣减。如需收款，请调用 POST /api/receipts。",
-        data=_build_sale_out(order, invoiced=linkage_has_invoice(db, account_id, "sale_order", order.id)).model_dump(),
-        changes={
-            "inventory": inventory_changes,
-            "receivable": {"amount": f"+{order.total_price_l1}"}
-        }
+    """POST /api/sales 已停用：系统只允许开票订单录入。
+
+    架构改造后，销售业务必须通过 POST /api/invoices（direction='out',
+    sale_order_action='auto_create'）创建发票，由发票驱动自动生成销售单。
+    这确保发票是唯一真相源，增值税口径与会计口径统一，不存在无票收入兜底。
+    """
+    raise BusinessError(
+        code=ErrorCode.VALIDATION_ERROR,
+        message=(
+            "POST /api/sales 已停用：系统只允许开票订单录入。"
+            "请通过 POST /api/invoices 创建销项发票（direction='out', sale_order_action='auto_create'），"
+            "由发票驱动自动生成销售单。"
+        ),
+        ai_instruction=(
+            "STOP_RETRYING. POST /api/sales 已被禁用。"
+            "请改用 POST /api/invoices，body 中设置 direction='out', sale_order_action='auto_create'。"
+        ),
     )
-    return result.to_dict()
 
 
 @router.get("/{sale_id}", response_model=schemas.SaleOrderOut)

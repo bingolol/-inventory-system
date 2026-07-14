@@ -72,7 +72,7 @@ def test_dual_source_both_mode(both_db):
                 ]),
             ),
         ),
-        Field("vat_payable", "应交增值税",
+        Field("vat_payable_l1", "应交增值税",
             source=SUM_FIELDS(["_vat_net"]),
             transform=PositivePart(),
         ),
@@ -108,7 +108,7 @@ def test_dual_source_ledger_mode(both_db):
                 ]),
             ),
         ),
-        Field("vat_payable", "应交增值税",
+        Field("vat_payable_l1", "应交增值税",
             source=SUM_FIELDS(["_vat_net"]),
             transform=PositivePart(),
         ),
@@ -119,5 +119,5 @@ def test_dual_source_ledger_mode(both_db):
     engine = ReportEngine()
     result = engine.execute(fields, sn, source_mode="ledger")
 
-    # 总账口径：222103 credit=1300 → vat_payable = 1300
-    assert abs(float(result["vat_payable"]) - 1300) < 0.02
+    # 总账口径：222103 credit=1300 → vat_payable_l1 = 1300
+    assert abs(float(result["vat_payable_l1"]) - 1300) < 0.02

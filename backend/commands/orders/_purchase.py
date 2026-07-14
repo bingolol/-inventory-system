@@ -67,6 +67,9 @@ def return_purchase_order(db, account_id, operator, order_id, return_date, reaso
         models.Invoice.is_reversed == False,
     ).first()
 
+    if original_invoice and original_invoice.invoice_type == "ordinary":
+        enable_vat_deduction = False
+
     eng = InventoryEngine(db)
     return_id = int(time.time() * 1000)
 

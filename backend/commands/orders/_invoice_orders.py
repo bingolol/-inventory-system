@@ -32,7 +32,6 @@ def _auto_generate_sale_order(db: Any, account_id: int, operator: str,
         db=db, account_id=account_id, operator=operator,
         items=order_items, sale_date=invoice.issue_date_l1,
         customer_id=customer_id,
-        total_price=invoice.amount_with_tax_l1,
         tax_amount=invoice.tax_amount_l1,
         has_invoice=True,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
@@ -41,8 +40,12 @@ def _auto_generate_sale_order(db: Any, account_id: int, operator: str,
 
 
 def _auto_generate_purchase_order(db: Any, account_id: int, operator: str,
-                                  invoice: models.Invoice, items: List[dict]) -> models.PurchaseOrder:
-    """根据进项发票自动生成采购单。"""
+                                  invoice: models.Invoice, items: List[dict],
+                                  payment_method: str = "company") -> models.PurchaseOrder:
+    """根据进项发票自动生成采购单。
+
+    payment_method: company（公司采购，贷 2202）或 private_advance（个人垫付，贷 2241）。
+    """
     supplier_id = None
     supplier = db.query(models.Supplier).filter(
         models.Supplier.account_id == account_id,
@@ -55,8 +58,8 @@ def _auto_generate_purchase_order(db: Any, account_id: int, operator: str,
         db=db, account_id=account_id, operator=operator,
         items=order_items, purchase_date=invoice.issue_date_l1,
         supplier_id=supplier_id,
-        total_price=invoice.amount_with_tax_l1,
         tax_amount=invoice.tax_amount_l1,
+        payment_method=payment_method,
         notes=f"由发票 {invoice.invoice_no} 自动生成",
         auto_generated_from=invoice.invoice_no,
     )

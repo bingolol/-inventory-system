@@ -69,6 +69,9 @@ def _validate_period_by_taxpayer(period: str, tool_name: str = "") -> str:
     一般纳税人按月: YYYY-MM (如 2026-06)
     月结 period 总是 YYYY-MM (与纳税人类型无关)
 
+    注意: 纳税人类型可中途切换，因此 declare_vat/declare_surcharge 接受两种格式，
+    不做纳税人类型 vs 格式的强校验。历史期间的正确类型由后端引擎负责。
+
     返回: taxpayer_type
     抛 BusinessError: 格式不匹配
     """
@@ -83,31 +86,22 @@ def _validate_period_by_taxpayer(period: str, tool_name: str = "") -> str:
     taxpayer_type = tool_dispatcher.run_readonly(_get_taxpayer)
 
     if tool_name == "month_end_close":
-        # 月结总是 YYYY-MM
         if not (len(period) == 7 and period[:4].isdigit() and period[4] == "-" and period[5:7].isdigit()):
             raise BusinessError(
                 code=None,
                 message=f"{tool_name}: period 格式必须是 YYYY-MM (如 2026-07), 收到: {period}",
             )
     elif tool_name in ("declare_vat", "declare_surcharge"):
-        if taxpayer_type == "small_scale":
-            # YYYY-QQ
-            ok = (len(period) == 7 and period[:4].isdigit() and period[4] == "-"
-                  and period[5] == "Q" and period[6].isdigit() and 1 <= int(period[6]) <= 4)
-            if not ok:
-                raise BusinessError(
-                    code=None,
-                    message=f"{tool_name}: 小规模纳税人 period 格式必须是 YYYY-QQ (如 2026-Q2), 收到: {period}",
-                )
-        else:
-            # YYYY-MM
-            ok = (len(period) == 7 and period[:4].isdigit() and period[4] == "-"
-                  and period[5:7].isdigit() and 1 <= int(period[5:7]) <= 12)
-            if not ok:
-                raise BusinessError(
-                    code=None,
-                    message=f"{tool_name}: 一般纳税人 period 格式必须是 YYYY-MM (如 2026-06), 收到: {period}",
-                )
+        # 接受 YYYY-QQ 或 YYYY-MM 两种格式（纳税人类型可中途切换）
+        is_quarterly = (len(period) == 7 and period[:4].isdigit() and period[4] == "-"
+                        and period[5] == "Q" and period[6].isdigit() and 1 <= int(period[6]) <= 4)
+        is_monthly = (len(period) == 7 and period[:4].isdigit() and period[4] == "-"
+                      and period[5:7].isdigit() and 1 <= int(period[5:7]) <= 12)
+        if not is_quarterly and not is_monthly:
+            raise BusinessError(
+                code=None,
+                message=f"{tool_name}: period 格式必须是 YYYY-QQ 或 YYYY-MM, 收到: {period}",
+            )
     return taxpayer_type
 
 
@@ -151,10 +145,19 @@ def _check_business_date(biz_date, tool_name: str) -> tuple[bool, list]:
     # 查该月份是否已月结 (PeriodClose 是否已执行)
     is_closed = False
     def _check_closed(db, aid):
-        from models_finance import AccountMove
+        import models
+        from models_finance import AccountMove, Ledger
         from sqlalchemy import extract
-        # 月份已月结的标志: 该月有 source_model='period_close' 的已过账凭证
+
+        acct = db.query(models.Account).filter(models.Account.id == aid).first()
+        if not acct:
+            return False
+        ledger = db.query(Ledger).filter(Ledger.code == acct.code).first()
+        if not ledger:
+            return False
+
         cnt = db.query(AccountMove).filter(
+            AccountMove.ledger_id == ledger.id,
             AccountMove.source_model == "period_close",
             AccountMove.state == "posted",
             extract("year", AccountMove.date_l1) == biz_date.year,
@@ -398,6 +401,7 @@ def create_sale_order_with_invoice(arguments: dict) -> dict:
         items: list  商品明细 [{product_id, quantity, unit_price, tax_rate, notes?}]
                      unit_price 为含税单价
         invoice_type: str  发票类型 (ordinary/special, 默认 ordinary)
+        payment_method: str  收款方式 (company/private_advance, 默认 company)
         notes: str  备注
     """
     from commands.orders import CreateInvoice
@@ -482,10 +486,19 @@ def create_sale_order_with_invoice(arguments: dict) -> dict:
         sale_order_action="auto_create",
         items=invoice_items,
         notes=arguments.get("notes", ""),
+        payment_method=arguments.get("payment_method", "company"),
     )
-    # 提取关联销售单 ID (invoice.related_order_id), 让 agent 一眼能看到
-    sale_order_id = getattr(result, "related_order_id", None) if result else None
-    invoice_id = getattr(result, "id", None) if result else None
+    # 提取关联销售单 ID, 让 agent 一眼能看到
+    sale_order_id = None
+    invoice_id = None
+    if isinstance(result, dict):
+        invoice_id = result.get("id") or result.get("entity_id")
+        if result.get("related_order_type") == "sale_order":
+            sale_order_id = result.get("related_order_id")
+    elif hasattr(result, "id"):
+        invoice_id = result.id
+        if hasattr(result, "related_order_type") and result.related_order_type == "sale_order":
+            sale_order_id = result.related_order_id
     return {
         "ok": True,
         "operation": "create_sale_order_with_invoice",
@@ -520,16 +533,26 @@ def create_purchase_order_with_invoice(arguments: dict) -> dict:
         purchase_date: str  采购日期 (YYYY-MM-DD)
         items: list  商品明细 [{product_id, quantity, unit_price, tax_rate, notes?}]
         invoice_type: str  发票类型 (默认 ordinary)
+        payment_method: str  付款方式 (company/private_advance, 默认 company)
         notes: str  备注
     """
     from commands.orders import CreateInvoice
 
     supplier_name = arguments.get("supplier_name")
+    supplier_id = arguments.get("supplier_id")
     purchase_date_str = arguments.get("purchase_date")
     items = arguments.get("items", [])
 
-    if not supplier_name:
-        raise BusinessError(code=None, message="supplier_name 必填")
+    if not supplier_name and not supplier_id:
+        raise BusinessError(code=None, message="supplier_name 或 supplier_id 必填")
+    if supplier_id and not supplier_name:
+        def _lookup(db, aid):
+            import models
+            s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id, models.Supplier.account_id == aid).first()
+            return s.name if s else None
+        supplier_name = tool_dispatcher.run_readonly(_lookup)
+        if not supplier_name:
+            raise BusinessError(code=None, message=f"供应商 id={supplier_id} 不存在")
     if not purchase_date_str:
         raise BusinessError(code=None, message="purchase_date 必填 (YYYY-MM-DD)")
     if not items:
@@ -599,6 +622,7 @@ def create_purchase_order_with_invoice(arguments: dict) -> dict:
         purchase_order_action="auto_create",
         items=invoice_items,
         notes=arguments.get("notes", ""),
+        payment_method=arguments.get("payment_method", "company"),
     )
     # 提取关联采购单 ID (invoice.related_order_id), 让 agent 一眼能看到
     purchase_order_id = getattr(result, "related_order_id", None) if result else None
@@ -1040,6 +1064,13 @@ def create_fixed_asset(arguments: dict) -> dict:
             ),
         )
 
+    if is_closed:
+        raise BusinessError(
+            code=None,
+            message=f"业务日期 {purchase_date_str} 所在月份已月结, 禁止直接补录。请走调整凭证或反月结流程。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录固定资产, 需要走调整流程。"},
+        )
+
     data = FixedAssetCreate(
         asset_code=asset_code,
         name=name,
@@ -1103,10 +1134,20 @@ def batch_depreciate(arguments: dict) -> dict:
 
     # 检查目标月份是否已月结 (复用 month_end_close 的逻辑)
     def _check_closed(db, aid):
-        from models_finance import AccountMove
+        import models
+        from models_finance import AccountMove, Ledger
         from sqlalchemy import extract
+
+        acct = db.query(models.Account).filter(models.Account.id == aid).first()
+        if not acct:
+            return False
+        ledger = db.query(Ledger).filter(Ledger.code == acct.code).first()
+        if not ledger:
+            return False
+
         year_part, month_part = period.split("-")
         cnt = db.query(AccountMove).filter(
+            AccountMove.ledger_id == ledger.id,
             AccountMove.source_model == "period_close",
             AccountMove.state == "posted",
             extract("year", AccountMove.date_l1) == int(year_part),
@@ -1207,8 +1248,8 @@ def declare_vat(arguments: dict) -> dict:
         if existing:
             return {
                 "id": existing.id,
-                "total_revenue": float(existing.total_revenue or 0),
-                "vat_payable": float(existing.vat_payable or 0),
+                "total_revenue_l1": float(existing.total_revenue_l1 or 0),
+                "vat_payable_l1": float(existing.vat_payable_l1 or 0),
             }
         return None
 
@@ -1217,7 +1258,7 @@ def declare_vat(arguments: dict) -> dict:
         raise BusinessError(
             code=None,
             message=f"period={period} 已存在 VAT 申报记录 (id={existing_vat['id']}, "
-                    f"应纳增值税={existing_vat['vat_payable']:.2f})。禁止重复申报。"
+                    f"应纳增值税={existing_vat['vat_payable_l1']:.2f})。禁止重复申报。"
                     f"如需重新申报, 请先 reverse 旧申报。",
             data={
                 "existing_declaration": existing_vat,
@@ -1261,21 +1302,23 @@ def declare_surcharge(arguments: dict) -> dict:
     """提交附加税申报 (城建税/教育费附加/地方教育附加)。
 
     对应 sim run_declarations_and_validate.submit_declarations 的 Surcharge 部分。
-    调用路径: dispatch(DeclareSurcharge(period=..., urban_construction_tax=..., ...))
+    调用路径: dispatch(DeclareSurcharge(period=..., urban_construction_tax_l1=..., ...))
 
     附加税申报是 L1 外部输入 (用户实际要交多少税), 不是系统派生值。
-    月结时 engine_tax.calculate_surcharges() 会基于已申报 VAT 自动计提附加税凭证 (L3 派生),
-    但申报本身必须由用户根据税务局实际通知的金额录入。
+    三个税额 (urban_construction_tax_l1/education_surcharge_l1/local_education_surcharge_l1)
+    必须由用户根据增值税报表实际申报得出后录入, 系统不做自动计算、不派生、不从 VAT 反推。
+    系统职责: 将用户输入过账为凭证 (借 640302/640303/640304, 贷 222110/222111/222112),
+    级联重算所得税与期间损益结转, 并在 IS/BS 报表中动态反映。
 
     附加税随增值税申报周期: 小规模按季度, 一般纳税人按月。
     城建税享受六税两费减半, 教育费附加/地方教育附加季度销售额 ≤30 万免征 (财税〔2016〕12号)。
-    agent 应提示用户: 这些免征/减半规则已由月结自动处理, 这里只需录用户实际申报的金额。
+    这些免征/减半规则由用户在申报时自行判断并填入相应金额, 系统不会自动应用。
 
     参数:
         period: str  申报期间 (与 VAT 期间一致)
-        urban_construction_tax: float  城建税金额 (用户从税务局申报表抄录)
-        education_surcharge: float  教育费附加金额
-        local_education_surcharge: float  地方教育附加金额
+        urban_construction_tax_l1: float  城建税金额 (用户从税务局申报表抄录)
+        education_surcharge_l1: float  教育费附加金额
+        local_education_surcharge_l1: float  地方教育附加金额
         notes: str  备注
     """
     from commands.tax_declaration_commands import DeclareSurcharge
@@ -1284,9 +1327,9 @@ def declare_surcharge(arguments: dict) -> dict:
     # 校验 period 格式与纳税人类型匹配 (小规模 YYYY-QQ / 一般纳税人 YYYY-MM)
     _validate_period_by_taxpayer(period, tool_name="declare_surcharge")
 
-    urban = arguments.get("urban_construction_tax")
-    edu = arguments.get("education_surcharge")
-    local_edu = arguments.get("local_education_surcharge")
+    urban = arguments.get("urban_construction_tax_l1")
+    edu = arguments.get("education_surcharge_l1")
+    local_edu = arguments.get("local_education_surcharge_l1")
     dry_run = bool(arguments.get("dry_run", False))
 
     # 重复申报校验: 同一 period 不能重复申报附加税
@@ -1299,9 +1342,9 @@ def declare_surcharge(arguments: dict) -> dict:
         if existing:
             return {
                 "id": existing.id,
-                "urban": float(existing.urban_construction_tax or 0),
-                "edu": float(existing.education_surcharge or 0),
-                "local_edu": float(existing.local_education_surcharge or 0),
+                "urban": float(existing.urban_construction_tax_l1 or 0),
+                "edu": float(existing.education_surcharge_l1 or 0),
+                "local_edu": float(existing.local_education_surcharge_l1 or 0),
             }
         return None
 
@@ -1323,20 +1366,20 @@ def declare_surcharge(arguments: dict) -> dict:
         from policy.vat_facts import load_vat_facts
         import models
         acc = db.query(models.Account).filter(models.Account.id == aid).first()
-        surcharge_halved = bool(acc.surcharge_halved) if acc else False
-        # 查当期 VAT 申报的 vat_payable
+        surcharge_halved_l3 = bool(acc.surcharge_halved_l3) if acc else False
+        # 查当期 VAT 申报的 vat_payable_l1
         vat = db.query(VATDeclaration).filter(
             VATDeclaration.account_id == aid,
             VATDeclaration.period == period,
         ).first()
         if not vat:
             return None
-        vat_payable = Decimal(str(vat.vat_payable or 0))
-        if vat_payable <= 0:
-            return {"urban": 0, "edu": 0, "local_edu": 0, "vat_payable": float(vat_payable),
+        vat_payable_l1 = Decimal(str(vat.vat_payable_l1 or 0))
+        if vat_payable_l1 <= 0:
+            return {"urban": 0, "edu": 0, "local_edu": 0, "vat_payable_l1": float(vat_payable_l1),
                     "note": "VAT 应纳为 0 或负数 (留抵), 无附加税可计提。"}
         facts = load_vat_facts(date.today())
-        urban_rate = Decimal("0.07") * (Decimal("0.5") if surcharge_halved else Decimal("1"))
+        urban_rate = Decimal("0.07") * (Decimal("0.5") if surcharge_halved_l3 else Decimal("1"))
         # 教育附加/地方教育附加: 小规模季度销售额 ≤30 万免征; 一般纳税人不享受
         taxpayer_type = acc.taxpayer_type_l3 if acc else "small_scale"
         # 查季度合计销售额判断是否免征
@@ -1351,19 +1394,19 @@ def declare_surcharge(arguments: dict) -> dict:
             VATDeclaration.account_id == aid,
             VATDeclaration.period.in_(q_periods),
         ).all()
-        quarterly_revenue = sum((Decimal(str(v.total_revenue or 0)) for v in q_vats), Decimal("0"))
+        quarterly_revenue = sum((Decimal(str(v.total_revenue_l1 or 0)) for v in q_vats), Decimal("0"))
         exempt_threshold = Decimal(str(facts.small_scale_quarterly_exemption))
         edu_exempt = (taxpayer_type == "small_scale" and quarterly_revenue <= exempt_threshold)
         edu_rate = Decimal("0") if edu_exempt else Decimal("0.03")
         local_edu_rate = Decimal("0") if edu_exempt else Decimal("0.02")
         return {
-            "urban": float((vat_payable * urban_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
-            "edu": float((vat_payable * edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
-            "local_edu": float((vat_payable * local_edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
-            "vat_payable": float(vat_payable),
+            "urban": float((vat_payable_l1 * urban_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "edu": float((vat_payable_l1 * edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "local_edu": float((vat_payable_l1 * local_edu_rate).quantize(Q2, rounding=ROUND_HALF_UP)),
+            "vat_payable_l1": float(vat_payable_l1),
             "quarterly_revenue": float(quarterly_revenue),
             "edu_exempt": edu_exempt,
-            "surcharge_halved": surcharge_halved,
+            "surcharge_halved_l3": surcharge_halved_l3,
             "note": "公式参考值, 实际金额以税务局申报表为准。"
         }
 
@@ -1376,8 +1419,8 @@ def declare_surcharge(arguments: dict) -> dict:
     if not dry_run and (urban is None or edu is None or local_edu is None):
         raise BusinessError(
             code=None,
-            message="附加税是 L1 用户输入: urban_construction_tax / education_surcharge / "
-                    "local_education_surcharge 三个金额必须由用户提供 (从税务局申报表抄录)。"
+            message="附加税是 L1 用户输入: urban_construction_tax_l1 / education_surcharge_l1 / "
+                    "local_education_surcharge_l1 三个金额必须由用户提供 (从税务局申报表抄录)。"
                     f"参考值 (公式计算, 非强制): {suggested}",
             data={"suggested_amounts": suggested},
         )
@@ -1402,9 +1445,9 @@ def declare_surcharge(arguments: dict) -> dict:
     result = tool_dispatcher.execute_command(
         DeclareSurcharge,
         period=period,
-        urban_construction_tax=Decimal(str(urban)),
-        education_surcharge=Decimal(str(edu)),
-        local_education_surcharge=Decimal(str(local_edu)),
+        urban_construction_tax_l1=Decimal(str(urban)),
+        education_surcharge_l1=Decimal(str(edu)),
+        local_education_surcharge_l1=Decimal(str(local_edu)),
         notes=arguments.get("notes", ""),
     )
     return {
@@ -1414,9 +1457,9 @@ def declare_surcharge(arguments: dict) -> dict:
         "result": _safe_serialize(result),
         "suggested_amounts": suggested,
         "accounting_hint": (
-            "附加税申报 (L1 用户输入): 借:6403 税金及附加 贷:222101/222102/222110。"
-            "金额来自用户从税务局申报表抄录的实际申报值, 不是系统派生。"
-            "月结时 engine_tax 会用 calculate_surcharges 自动计提, 此处仅录入申报值。"
+            "附加税申报 (L1 用户输入): 借:640302/640303/640304 税金及附加 贷:222110/222111/222112 应交税费。"
+            "金额来自用户根据增值税报表实际申报得出后录入, 不是系统派生, 系统不做自动计算。"
+            "系统职责: 过账凭证 + 级联重算所得税与期间损益结转 + 报表动态反映。"
         ),
     }
 
@@ -1443,13 +1486,24 @@ def month_end_close(arguments: dict) -> dict:
     dry_run = bool(arguments.get("dry_run", False))
     # require_confirm: 月结是不可逆写操作, 默认要求用户确认 (传 require_confirm=False 可跳过)
     require_confirm = arguments.get("require_confirm", True)
+    force = bool(arguments.get("force", False))
 
     # 检查目标月份是否已月结
     def _check_closed(db, aid):
-        from models_finance import AccountMove
+        import models
+        from models_finance import AccountMove, Ledger
         from sqlalchemy import extract
+
+        acct = db.query(models.Account).filter(models.Account.id == aid).first()
+        if not acct:
+            return False
+        ledger = db.query(Ledger).filter(Ledger.code == acct.code).first()
+        if not ledger:
+            return False
+
         year_part, month_part = period.split("-")
         cnt = db.query(AccountMove).filter(
+            AccountMove.ledger_id == ledger.id,
             AccountMove.source_model == "period_close",
             AccountMove.state == "posted",
             extract("year", AccountMove.date_l1) == int(year_part),
@@ -1463,7 +1517,7 @@ def month_end_close(arguments: dict) -> dict:
     except Exception:
         pass
 
-    if already_closed and not dry_run:
+    if already_closed and not dry_run and not force:
         raise BusinessError(
             code=None,
             message=f"{period} 已月结, 重复月结会重复结转损益导致报表错乱。",
@@ -1500,6 +1554,7 @@ def month_end_close(arguments: dict) -> dict:
         MonthEndClose,
         period=period,
         taxpayer_type=arguments.get("taxpayer_type", ""),
+        force=force,
     )
     return {
         "ok": True,
@@ -1539,6 +1594,7 @@ def get_balance_sheet(arguments: dict) -> dict:
     if not date_str:
         raise BusinessError(code=None, message="date 必填 (YYYY-MM-DD)")
     reconcile = arguments.get("reconcile", True)
+    summary_only = arguments.get("summary_only", False)
 
     account_id = account_context.require_account_id()
     qd = end_of_day(datetime.strptime(date_str, "%Y-%m-%d"))
@@ -1553,12 +1609,14 @@ def get_balance_sheet(arguments: dict) -> dict:
         summary_keys = [
             "total_assets", "total_liabilities", "total_equity",
             "cash", "inventory", "accounts_receivable", "accounts_payable",
-            "retained_earnings", "vat_payable",
+            "retained_earnings", "vat_payable_l1",
         ]
         summary = {k: values.get(k, 0) for k in summary_keys if k in values}
         out = {"ok": True, "date": date_str, "account_id": account_id,
-               "summary": summary, "balance_sheet": result}
-        if reconcile:
+               "summary": summary}
+        if not summary_only:
+            out["balance_sheet"] = result
+        if reconcile and not summary_only:
             recon = ReportReconciliation(db, sn, report_type="balance_sheet")
             recon_values = _extract_values(result)
             out["reconciliation"] = recon.reconcile(
@@ -1744,7 +1802,7 @@ def get_sale_order(arguments: dict) -> dict:
         rcpt_data = [{
             "id": r.id, "amount": float(r.amount_l1) if r.amount_l1 else 0,
             "receipt_date": r.receipt_date_l1.isoformat() if r.receipt_date_l1 else None,
-            "is_reversed": getattr(r, "is_reversed", False),
+            "is_reversed": (r.amount_l1 or 0) <= 0,
         } for r in receipts]
 
         return {
@@ -1933,7 +1991,7 @@ def _check_reverse_status(entity_type: str, entity_id: int) -> dict:
                 receipts = db.query(models.Receipt).filter(
                     models.Receipt.related_entity_type == "sale_order",
                     models.Receipt.related_entity_id == inv.related_order_id,
-                    models.Receipt.is_reversed == False,
+                    models.Receipt.amount_l1 > 0,
                 ).all()
                 if receipts:
                     r_ids = [r.id for r in receipts]
@@ -1975,7 +2033,7 @@ def _check_reverse_status(entity_type: str, entity_id: int) -> dict:
             original_date = exp.expense_date_l1 if hasattr(exp, "expense_date_l1") else None
             original = {
                 "id": exp.id, "category": exp.category,
-                "amount": float(exp.amount_l3 or 0) if hasattr(exp, "amount_l3") else float(exp.amount or 0),
+                "amount": float(exp.amount_l1 or 0),
                 "is_reversed": already_reversed,
                 "date": original_date.isoformat() if original_date else None,
             }
@@ -2001,17 +2059,23 @@ def _check_reverse_status(entity_type: str, entity_id: int) -> dict:
         # 原单月份已月结检查 (warning, 不阻塞)
         if original_date and not already_reversed:
             try:
-                cnt = db.query(AccountMove).filter(
-                    AccountMove.source_model == "period_close",
-                    AccountMove.state == "posted",
-                    extract("year", AccountMove.date_l1) == original_date.year,
-                    extract("month", AccountMove.date_l1) == original_date.month,
-                ).count()
-                if cnt > 0:
-                    warnings.append(
-                        f"原单日期 {original_date.strftime('%Y-%m')} 所在月份已月结, "
-                        f"红冲会让该月报表失真。如确需纠正, 建议走调整凭证。"
-                    )
+                acct = db.query(models.Account).filter(models.Account.id == aid).first()
+                if acct:
+                    from models_finance import Ledger
+                    ledger = db.query(Ledger).filter(Ledger.code == acct.code).first()
+                    if ledger:
+                        cnt = db.query(AccountMove).filter(
+                            AccountMove.ledger_id == ledger.id,
+                            AccountMove.source_model == "period_close",
+                            AccountMove.state == "posted",
+                            extract("year", AccountMove.date_l1) == original_date.year,
+                            extract("month", AccountMove.date_l1) == original_date.month,
+                        ).count()
+                        if cnt > 0:
+                            warnings.append(
+                                f"原单日期 {original_date.strftime('%Y-%m')} 所在月份已月结, "
+                                f"红冲会让该月报表失真。如确需纠正, 建议走调整凭证。"
+                            )
             except Exception:
                 pass
 
@@ -2252,7 +2316,6 @@ def _add_single_entity(model_cls, arguments: dict, field_name: str, build_dict_f
         obj = model_cls(account_id=account_id, **build_dict_fn(arguments))
         db.add(obj)
         db.flush()
-        from lineage import writes, TIER_L3
         db.commit()
         return {"ok": True, field_name: _safe_serialize(obj)}
     except Exception:
@@ -2372,13 +2435,13 @@ def list_recent_operations(arguments: dict) -> dict:
         if not operation_type or operation_type == "receipt":
             receipts = db.query(models.Receipt).filter(
                 models.Receipt.account_id == aid,
-                models.Receipt.is_reversed == False,
+                models.Receipt.amount_l1 > 0,
             ).order_by(models.Receipt.id.desc()).limit(limit).all()
             for r in receipts:
                 results.append({
                     "type": "receipt",
                     "id": r.id,
-                    "amount": float(r.amount or 0),
+                    "amount": float(r.amount_l1 or 0),
                     "date": r.receipt_date_l1.isoformat() if r.receipt_date_l1 else None,
                     "can_undo": True,
                     "undo_tool": "reverse_receipt",
@@ -2389,13 +2452,13 @@ def list_recent_operations(arguments: dict) -> dict:
         if not operation_type or operation_type == "payment":
             payments = db.query(models.Payment).filter(
                 models.Payment.account_id == aid,
-                models.Payment.is_reversed == False,
+                models.Payment.amount_l1 > 0,
             ).order_by(models.Payment.id.desc()).limit(limit).all()
             for p in payments:
                 results.append({
                     "type": "payment",
                     "id": p.id,
-                    "amount": float(p.amount_l1 or 0) if hasattr(p, "amount_l1") else float(p.amount or 0),
+                    "amount": float(p.amount_l1) if p.amount_l1 is not None else 0,
                     "payment_type": getattr(p, "payment_type", None),
                     "date": p.payment_date_l1.isoformat() if p.payment_date_l1 else None,
                     "can_undo": True,
@@ -2410,7 +2473,7 @@ def list_recent_operations(arguments: dict) -> dict:
                 models.Expense.is_reversed == False,
             ).order_by(models.Expense.id.desc()).limit(limit).all()
             for e in exps:
-                amt = float(e.amount_l3 or 0) if hasattr(e, "amount_l3") else float(e.amount or 0)
+                amt = float(e.amount_l1 or 0)
                 exp_date = getattr(e, "expense_date_l1", None) or getattr(e, "expense_date", None)
                 results.append({
                     "type": "expense",
@@ -2463,6 +2526,224 @@ def undo_last_operation(arguments: dict) -> dict:
         raise BusinessError(code=None, message=f"找不到 undo tool: {undo_tool}")
 
     return handler({undo_param: target["id"], "reason": "undo_last_operation 自动撤销"})
+
+
+# ══════════════════════════════════════════════════════════════
+# P5 补全: 个人垫付 / 发票认证 / 纳税人类型切换 / 销售单列表
+# ══════════════════════════════════════════════════════════════
+
+def create_personal_advance(arguments: dict) -> dict:
+    """创建个人垫付单（老板/员工垫付费用/缴税）。
+
+    调用路径: dispatch(CreatePersonalAdvance(data=PersonalAdvanceCreate(...)))
+    会计影响: 借:debit_account_code 贷:2241 其他应付款。
+
+    参数:
+        advancer_name: str  垫付人姓名
+        amount: float  垫付金额
+        advance_date: str  垫付日期 (YYYY-MM-DD)
+        debit_account_code: str  借方科目 (默认 6601 管理费用)
+            白名单: 6601, 6602, 1405, 1601, 1701, 222103, 222105, 222107, 222110, 1221, 6711
+        description: str  描述
+    """
+    from commands.personal_advance_commands import CreatePersonalAdvance
+    from schemas.personal_advance import PersonalAdvanceCreate
+
+    advancer_name = arguments.get("advancer_name")
+    amount = arguments.get("amount")
+    advance_date_str = arguments.get("advance_date")
+
+    if not advancer_name:
+        raise BusinessError(code=None, message="advancer_name 必填")
+    if amount is None or amount <= 0:
+        raise BusinessError(code=None, message="amount 必填且必须 > 0")
+    if not advance_date_str:
+        raise BusinessError(code=None, message="advance_date 必填 (YYYY-MM-DD)")
+
+    advance_date = _to_datetime(advance_date_str)
+    dry_run = bool(arguments.get("dry_run", False))
+    amt = Decimal(str(amount))
+    debit_code = arguments.get("debit_account_code", "6601")
+
+    is_closed, date_warnings = _check_business_date(advance_date_str, "create_personal_advance")
+    if is_closed and not dry_run:
+        raise BusinessError(
+            code=None,
+            message=f"垫付日期 {advance_date_str} 所在月份已月结, 禁止直接补录。",
+            data={"warnings": date_warnings, "user_message": "这个月份已经月结了, 不能直接补录。"},
+        )
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="create_personal_advance",
+            amount_with_tax=amt,
+            extra={
+                "advancer_name": advancer_name,
+                "advance_date": advance_date_str,
+                "debit_account_code": debit_code,
+                "description": arguments.get("description", ""),
+                "warnings": date_warnings,
+            },
+            accounting_hint=f"借:{debit_code} 贷:2241 其他应付款（{advancer_name}）。",
+        )
+
+    data = PersonalAdvanceCreate(
+        advancer_name=advancer_name,
+        amount=amt,
+        advance_date=advance_date.date(),
+        debit_account_code=debit_code,
+        description=arguments.get("description", ""),
+    )
+
+    result = tool_dispatcher.execute_command(CreatePersonalAdvance, data=data)
+    return {
+        "ok": True,
+        "operation": "create_personal_advance",
+        "result": _safe_serialize(result),
+        "amount": float(amt),
+        "warnings": date_warnings,
+        "accounting_hint": f"借:{debit_code} 贷:2241 其他应付款（{advancer_name}垫付）。",
+    }
+
+
+def certify_invoice(arguments: dict) -> dict:
+    """认证进项发票（将认证状态改为 certified，使进项税可抵扣）。
+
+    调用路径: 直接更新 invoice.certification_status_l3
+
+    参数:
+        invoice_id: int  发票ID
+    """
+    invoice_id = arguments.get("invoice_id")
+    if not invoice_id:
+        raise BusinessError(code=None, message="invoice_id 必填")
+
+    dry_run = bool(arguments.get("dry_run", False))
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="certify_invoice",
+            extra={"invoice_id": invoice_id},
+            accounting_hint="认证后进项税可抵扣: 借:222102 应交税费-进项税额 贷:对应科目。",
+        )
+
+    from database import SessionLocal, _request_write_perm
+    import models
+    account_id = account_context.require_account_id()
+    db = SessionLocal()
+    token = _request_write_perm.set(True)
+    try:
+        inv = db.query(models.Invoice).filter(
+            models.Invoice.id == invoice_id,
+            models.Invoice.account_id == account_id,
+        ).first()
+        if not inv:
+            raise BusinessError(code=None, message=f"发票 id={invoice_id} 不存在")
+        if inv.direction != "in":
+            raise BusinessError(code=None, message="只能认证进项发票 (direction=in)")
+        if inv.invoice_type != "special":
+            raise BusinessError(code=None, message="只能认证专票 (invoice_type=special)")
+        if inv.certification_status_l3 == "certified":
+            db.close()
+            return {"ok": True, "operation": "certify_invoice",
+                    "result": {"status": "already_certified", "invoice_no": inv.invoice_no}}
+        inv.certification_status_l3 = "certified"
+        db.commit()
+        result = {"status": "certified", "invoice_no": inv.invoice_no,
+                  "tax_amount": float(inv.tax_amount_l1) if inv.tax_amount_l1 else 0}
+        return {
+            "ok": True, "operation": "certify_invoice",
+            "result": _safe_serialize(result),
+            "accounting_hint": f"发票 {result['invoice_no']} 认证完成，进项税 {result.get('tax_amount', 0)} 可于下期抵扣。",
+        }
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        _request_write_perm.reset(token)
+        db.close()
+
+
+def switch_taxpayer_type(arguments: dict) -> dict:
+    """切换纳税人类型（小规模/一般纳税人）并记录变更历史。
+
+    调用路径: 更新 Account.taxpayer_type_l3 + 写入 TaxpayerTypeHistory
+
+    参数:
+        taxpayer_type: str  目标类型 (small_scale / general)
+        effective_period: str  生效月份 (YYYY-MM)
+    """
+    taxpayer_type = arguments.get("taxpayer_type")
+    effective_period = arguments.get("effective_period")
+
+    if not taxpayer_type:
+        raise BusinessError(code=None, message="taxpayer_type 必填 (small_scale/general)")
+    if taxpayer_type not in ("small_scale", "general"):
+        raise BusinessError(code=None, message="taxpayer_type 必须为 small_scale 或 general")
+    if not effective_period:
+        raise BusinessError(code=None, message="effective_period 必填 (YYYY-MM)")
+
+    dry_run = bool(arguments.get("dry_run", False))
+
+    if dry_run:
+        return _make_dry_run_result(
+            operation="switch_taxpayer_type",
+            extra={"taxpayer_type": taxpayer_type, "effective_period": effective_period},
+            accounting_hint=f"纳税人类型切换为 {taxpayer_type}，自 {effective_period} 起生效。",
+        )
+
+    from database import SessionLocal, _request_write_perm
+    import models
+    account_id = account_context.require_account_id()
+    db = SessionLocal()
+    token = _request_write_perm.set(True)
+    try:
+        account = db.query(models.Account).filter(models.Account.id == account_id).first()
+        if not account:
+            raise BusinessError(code=None, message="账本不存在")
+        old_type = account.taxpayer_type_l3
+        account.taxpayer_type_l3 = taxpayer_type
+        th = models.TaxpayerTypeHistory(
+            account_id=account_id,
+            taxpayer_type_l3=taxpayer_type,
+            effective_period=effective_period,
+        )
+        db.add(th)
+        db.commit()
+        result = {"old_type": old_type, "new_type": taxpayer_type, "effective_period": effective_period}
+        return {
+            "ok": True, "operation": "switch_taxpayer_type",
+            "result": _safe_serialize(result),
+            "accounting_hint": f"纳税人类型: {old_type} → {taxpayer_type}, 自 {effective_period} 起生效。",
+        }
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        _request_write_perm.reset(token)
+        db.close()
+
+
+def list_sale_orders(arguments: dict) -> dict:
+    """列出当前账本所有销售单（按日期排序），包含 SO 编号、金额、收款状态。
+    
+    用于做收款前查询销售单 ID，避免凭记忆编号。
+    """
+    def _query(db, aid):
+        import models
+        items = db.query(models.SaleOrder).filter(
+            models.SaleOrder.account_id == aid,
+        ).order_by(models.SaleOrder.id.asc()).all()
+        return [{
+            "id": so.id,
+            "order_no": so.order_no,
+            "sale_date": so.sale_date_l1.isoformat() if so.sale_date_l1 else None,
+            "total_price": float(so.total_price_l1) if so.total_price_l1 else 0,
+            "status": so.status,
+            "payment_status": so.payment_status,
+            "customer_id": so.partner_id,
+        } for so in items]
+    return {"ok": True, "sale_orders": tool_dispatcher.run_readonly(_query)}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2562,7 +2843,7 @@ TOOL_TEMPLATES = [
         "description": (
             "用户说「我卖了一笔货」「开张销售单」「录入销售」时用本 tool。"
             "发票驱动: 先创建销项发票, 自动生成销售单。"
-            "agent 只需传含税单价和税率, server 自动算不含税金额和税额。"
+            "用户只需传含税单价和税率, server 自动算不含税金额和税额。"
             "返回: invoice_id, sale_order_id, amount_with_tax, tax_amount, accounting_hint。"
             "必填参数来源: customer_name 从 list_customers 查, product_id 从 list_products 查。"
             "用户不确定时传 dry_run=True 可预演金额和会计影响, 不写库。"
@@ -2581,13 +2862,14 @@ TOOL_TEMPLATES = [
                         "properties": {
                             "product_id": {"type": "integer", "description": "商品 ID (从 list_products 查)"},
                             "quantity": {"type": "number", "description": "数量"},
-                            "unit_price": {"type": "number", "description": "含税单价"},
+                            "unit_price": {"type": "number", "description": "含税单价 (用户只需传含税价, server 自动价税分离, 不含税单价 = 含税 / (1+税率))"},
                             "tax_rate": {"type": "number", "description": "税率数字 (如 0.01 / 0.06 / 0.13), 用户说 6% 传 0.06"},
                             "notes": {"type": "string"},
                         },
                     },
                 },
                 "invoice_type": {"type": "string", "default": "ordinary", "description": "ordinary 普票 / special 专票"},
+                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company", "description": "company=公司收款(借1002) / private_advance=个人垫付(借2241其他应付款)"},
                 "notes": {"type": "string"},
                 "dry_run": {"type": "boolean", "default": False, "description": "True 仅预演金额, 不写库"},
             },
@@ -2661,6 +2943,7 @@ TOOL_TEMPLATES = [
         "description": (
             "用户说「我进了一批货」「采购」「录入采购单」时用本 tool。"
             "发票驱动: 先创建进项发票, 自动生成采购单。"
+            "用户只需传含税单价和税率, server 自动算不含税金额和税额。"
             "会计影响: 借:库存商品+进项税额 贷:应付账款。"
             "小规模纳税人进项税不可抵扣, 含税全额入库存成本。"
             "必填参数 supplier_name 从 list_suppliers 查, product_id 从 list_products 查。"
@@ -2670,6 +2953,7 @@ TOOL_TEMPLATES = [
             "type": "object",
             "properties": {
                 "supplier_name": {"type": "string", "description": "供应商名称 (从 list_suppliers 查)"},
+                "supplier_id": {"type": "integer", "description": "供应商 ID（与 supplier_name 二选一，优先用 ID）"},
                 "purchase_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "items": {
                     "type": "array",
@@ -2678,13 +2962,14 @@ TOOL_TEMPLATES = [
                         "properties": {
                             "product_id": {"type": "integer", "description": "商品 ID"},
                             "quantity": {"type": "number"},
-                            "unit_price": {"type": "number", "description": "含税单价"},
+                            "unit_price": {"type": "number", "description": "含税单价 (用户只需传含税价, server 自动价税分离, 不含税单价 = 含税 / (1+税率))"},
                             "tax_rate": {"type": "number", "description": "税率数字, 用户说 13% 传 0.13"},
                             "notes": {"type": "string"},
                         },
                     },
                 },
                 "invoice_type": {"type": "string", "default": "ordinary"},
+                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company", "description": "company=公司付款(贷2202应付账款) / private_advance=个人垫付(贷2241其他应付款)"},
                 "notes": {"type": "string"},
                 "dry_run": {"type": "boolean", "default": False},
             },
@@ -2708,7 +2993,7 @@ TOOL_TEMPLATES = [
                 "expense_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "description": {"type": "string"},
                 "functional_category": {"type": "string", "enum": ["管理费用", "销售费用", "财务费用"], "default": "管理费用"},
-                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company", "description": "company 公司付款 / private_advance 个人垫付"},
+                "payment_method": {"type": "string", "enum": ["company", "private_advance"], "default": "company", "description": "company=公司付款(贷2202) / private_advance=个人垫付(贷2241其他应付款)"},
                 "dry_run": {"type": "boolean", "default": False},
             },
             "required": ["category", "amount", "expense_date"],
@@ -2809,9 +3094,9 @@ TOOL_TEMPLATES = [
             "type": "object",
             "properties": {
                 "period": {"type": "string", "description": "小规模 YYYY-QQ / 一般纳税人 YYYY-MM"},
-                "urban_construction_tax": {"type": "number", "description": "城建税金额 (用户从税务局申报表抄录)"},
-                "education_surcharge": {"type": "number", "description": "教育费附加金额"},
-                "local_education_surcharge": {"type": "number", "description": "地方教育附加金额"},
+                "urban_construction_tax_l1": {"type": "number", "description": "城建税金额 (用户从税务局申报表抄录)"},
+                "education_surcharge_l1": {"type": "number", "description": "教育费附加金额"},
+                "local_education_surcharge_l1": {"type": "number", "description": "地方教育附加金额"},
                 "notes": {"type": "string"},
                 "dry_run": {"type": "boolean", "default": False, "description": "True 返回 suggested_amounts 供用户参考"},
             },
@@ -2854,6 +3139,7 @@ TOOL_TEMPLATES = [
             "properties": {
                 "date": {"type": "string", "description": "YYYY-MM-DD"},
                 "reconcile": {"type": "boolean", "default": True, "description": "是否返回对账结果"},
+                "summary_only": {"type": "boolean", "default": False, "description": "True 时只返回 summary 关键字段，不返回完整 trace 数据（大幅减少输出量）"},
             },
             "required": ["date"],
         },
@@ -2952,10 +3238,11 @@ TOOL_TEMPLATES = [
             "type": "object",
             "properties": {
                 "invoice_id": {"type": "integer", "description": "原发票 ID (从 list_invoices 查)"},
+                "red_invoice_id": {"type": "integer", "description": "用户已独立录入的红字发票 ID (负数金额, 发票号 H-原号)"},
                 "reason": {"type": "string", "description": "冲红原因 (记入审计日志)"},
                 "dry_run": {"type": "boolean", "default": False, "description": "True 仅检查原单状态, 不实际红冲"},
             },
-            "required": ["invoice_id"],
+            "required": ["invoice_id", "red_invoice_id"],
         },
     },
     {
@@ -3099,6 +3386,80 @@ TOOL_TEMPLATES = [
             },
         },
     },
+    # ── P5 补全: 个人垫付 / 发票认证 / 纳税人类型切换 ──
+    {
+        "name": "create_personal_advance",
+        "description": (
+            "创建个人垫付单（老板/员工替公司垫付费用/缴税）。"
+            "会计影响: 借:debit_account_code 贷:2241 其他应付款。"
+            "debit_account_code 白名单: 6601 管理费用, 6602 销售费用, 1405 库存商品, 1601 固定资产, 1701 无形资产, "
+            "222103/222107 应交增值税, 222105 应交所得税, 222110 城建税, 1221 其他应收款, 6711 营业外支出。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "advancer_name": {"type": "string", "description": "垫付人姓名"},
+                "amount": {"type": "number", "minimum": 0.01, "description": "垫付金额"},
+                "advance_date": {"type": "string", "description": "垫付日期 YYYY-MM-DD"},
+                "debit_account_code": {
+                    "type": "string",
+                    "default": "6601",
+                    "description": "借方科目编码（默认6601管理费用）",
+                },
+                "description": {"type": "string", "description": "描述"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["advancer_name", "amount", "advance_date"],
+        },
+    },
+    {
+        "name": "certify_invoice",
+        "description": (
+            "认证进项专票，认证后进项税额可于下期抵扣。"
+            "只能认证进项(direction=in)专票(invoice_type=special)。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "invoice_id": {"type": "integer", "description": "发票 ID"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["invoice_id"],
+        },
+    },
+    {
+        "name": "switch_taxpayer_type",
+        "description": (
+            "切换纳税人类型（小规模/一般纳税人）。"
+            "切换后增值税税率和申报周期变化，同时记录变更历史供税务稽查。"
+            "危险: 不可逆，切换后一般纳税人转为小规模受限。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "taxpayer_type": {
+                    "type": "string",
+                    "enum": ["small_scale", "general"],
+                    "description": "目标纳税人类型",
+                },
+                "effective_period": {
+                    "type": "string",
+                    "description": "生效月份 YYYY-MM",
+                },
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["taxpayer_type", "effective_period"],
+        },
+    },
+    # ── P5 补全: 销售单列表 ──
+    {
+        "name": "list_sale_orders",
+        "description": "列出当前账本所有销售单（按 ID 排序），含编号/金额/日期/收款状态。做收款前查 SO ID 用。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 # Tool 名 → 实现函数映射
@@ -3140,4 +3501,9 @@ TOOL_HANDLERS = {
     # P4 补全: 上下文恢复
     "list_recent_operations": list_recent_operations,
     "undo_last_operation": undo_last_operation,
+    # P5 补全
+    "create_personal_advance": create_personal_advance,
+    "certify_invoice": certify_invoice,
+    "switch_taxpayer_type": switch_taxpayer_type,
+    "list_sale_orders": list_sale_orders,
 }

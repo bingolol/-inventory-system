@@ -172,19 +172,15 @@ class TestInvoiceAutoGenerateSaleOrder:
         """Behavior 7: 销项发票 sale_order_action=link_existing + related_order_id → 关联已有销售单，不生成新销售单"""
         aid = get_account_id()
         pid = ensure_test_product()
-        # 先手动建一个销售单
-        r_sale = client.post("/api/sales", json={
-            "customer_id": None,
-            "has_invoice": True,
-            "deduct_inventory": True,
-            "payment_status": "unpaid",
-            "business_date": "2026-06-10",
-            "items": [{"product_id": pid, "quantity": 5, "unit_price": "100.00", "tax_rate": "0.03"}],
-        }, headers={"X-Account-ID": str(aid), "X-Operator": "user"})
-        assert r_sale.status_code in (200, 201), r_sale.text
-        existing_sale_id = r_sale.json().get("data", {}).get("id") or r_sale.json().get("id")
+        # 先通过发票驱动自动生成一个销售单（POST /api/sales 已停用）
+        first_payload = _base_out_invoice_payload()
+        r_first = client.post("/api/invoices/quick", json=first_payload,
+                              headers={"X-Account-ID": str(aid), "X-Operator": "user"})
+        assert r_first.status_code == 200, r_first.text
+        existing_sale_id = r_first.json()["data"]["related_order_id"]
+        assert existing_sale_id is not None
 
-        # 录入发票关联到该销售单
+        # 录入第二张发票关联到该销售单
         payload = _base_out_invoice_payload()
         payload["sale_order_action"] = "link_existing"
         payload["related_order_id"] = existing_sale_id

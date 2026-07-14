@@ -33,15 +33,15 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
 
     # 使用 policy_engine 计算增值税（单一计算真相源）
     profile = build_profile(account)
-    carry_forward = compute_carry_forward(db, account, start_date)
+    carry_forward_l1 = compute_carry_forward(db, account, start_date)
     vat_result = policy_vat(
         profile=profile,
-        total_revenue=agg["output_total"],
-        input_tax=agg["input_tax"],
-        output_tax=agg["output_tax"],
+        total_revenue_l1=agg["output_total"],
+        input_tax_l1=agg["input_tax_l1"],
+        output_tax_l1=agg["output_tax_l1"],
         ordinary_revenue=agg["ordinary_revenue"],
         special_revenue=agg["special_revenue"],
-        carry_forward=carry_forward,
+        carry_forward_l1=carry_forward_l1,
     )
 
     invoice_outs = []
@@ -71,14 +71,14 @@ def _calculate_tax_data(db: Session, account_id: int, start_date: datetime, end_
         "account": account,
         "profile": profile,
         "output_total": agg["output_total"].quantize(Q2),
-        "output_tax": agg["output_tax"].quantize(Q2),
+        "output_tax_l1": agg["output_tax_l1"].quantize(Q2),
         "input_total": agg["input_total"].quantize(Q2),
-        "input_tax": agg["input_tax"].quantize(Q2),
+        "input_tax_l1": agg["input_tax_l1"].quantize(Q2),
         "tax_payable": vat_result.tax_payable.quantize(Q2),
         "tax_payable_gross": vat_result.tax_payable_gross.quantize(Q2),
         "tax_reduction": vat_result.tax_reduction,
         "reduction_item": vat_result.reduction_item,
-        "carry_forward": carry_forward.quantize(Q2),
+        "carry_forward_l1": carry_forward_l1.quantize(Q2),
         "invoice_list": invoice_outs,
         "period_start": start_date.strftime("%Y-%m-%d"),
         "period_end": (end_date - timedelta(days=1)).strftime("%Y-%m-%d"),
@@ -112,9 +112,9 @@ async def get_tax_report(
         period_end=data["period_end"],
         taxpayer_type=data["profile"].vat_type,
         output_total=data["output_total"],
-        output_tax=data["output_tax"],
+        output_tax_l1=data["output_tax_l1"],
         input_total=data["input_total"],
-        input_tax=data["input_tax"],
+        input_tax_l1=data["input_tax_l1"],
         tax_payable=data["tax_payable"],
         invoice_list=data["invoice_list"]
     )
@@ -146,9 +146,9 @@ async def get_tax_report_monthly(
         period_end=data["period_end"],
         taxpayer_type=data["profile"].vat_type,
         output_total=data["output_total"],
-        output_tax=data["output_tax"],
+        output_tax_l1=data["output_tax_l1"],
         input_total=data["input_total"],
-        input_tax=data["input_tax"],
+        input_tax_l1=data["input_tax_l1"],
         tax_payable=data["tax_payable"],
         invoice_list=data["invoice_list"]
     )

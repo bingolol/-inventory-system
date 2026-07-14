@@ -11,7 +11,7 @@ class TestVATDeclaration:
     """VAT 申报声明"""
 
     def test_declare_vat_creates_snapshot(self, client):
-        """提交 VAT 申报 → 锁定快照，返回 vat_payable"""
+        """提交 VAT 申报 → 锁定快照，返回 vat_payable_l1"""
         resp = client.post("/api/tax/declare?force=true", json={
             "period": "2026-Q2",
             "taxpayer_type": "small_scale",
@@ -21,7 +21,7 @@ class TestVATDeclaration:
         assert data["ok"] is True
         assert "data" in data
         assert data["data"]["period"] == "2026-Q2"
-        assert isinstance(data["data"]["vat_payable"], float)
+        assert isinstance(data["data"]["vat_payable_l1"], float)
 
     def test_declare_duplicate_period_fails(self, client):
         """同一期间重复提交 VAT 申报 → 409"""
@@ -55,9 +55,9 @@ class TestSurchargeDeclaration:
         """未提交 VAT 就录附加税 → 报错"""
         resp = client.post("/api/tax/surcharge-declaration", json={
             "period": "2026-Q3",
-            "urban_construction_tax": 15.89,
-            "education_surcharge": 6.81,
-            "local_education_surcharge": 4.54,
+            "urban_construction_tax_l1": 15.89,
+            "education_surcharge_l1": 6.81,
+            "local_education_surcharge_l1": 4.54,
         }, headers=HEADERS)
         assert resp.status_code == 422, f"应报错但没有: {resp.text}"
         assert "VAT 尚未申报" in resp.text
@@ -66,9 +66,9 @@ class TestSurchargeDeclaration:
         """提交 VAT 后录入附加税 → 成功过账"""
         resp = client.post("/api/tax/surcharge-declaration", json={
             "period": "2026-Q2",
-            "urban_construction_tax": 15.89,
-            "education_surcharge": 6.81,
-            "local_education_surcharge": 4.54,
+            "urban_construction_tax_l1": 15.89,
+            "education_surcharge_l1": 6.81,
+            "local_education_surcharge_l1": 4.54,
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"录入附加税失败: {resp.text}"
         data = resp.json()

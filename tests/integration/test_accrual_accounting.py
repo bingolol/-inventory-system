@@ -25,6 +25,20 @@ from finance_integration import CHART_OF_ACCOUNTS
 from tests.helpers import get_entity_id
 
 
+def _extract_related_order_id(resp_json):
+    """从发票 API 响应中提取 related_order_id（兼容 OperationResult 和 AI Gateway 格式）"""
+    data = resp_json
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        data = data["data"]
+    if isinstance(data, dict) and "entity" in data and isinstance(data["entity"], dict):
+        data = data["entity"]
+        if "data" in data and isinstance(data["data"], dict):
+            data = data["data"]
+    if isinstance(data, dict) and "related_order_id" in data and data["related_order_id"]:
+        return data["related_order_id"]
+    return get_entity_id(resp_json)
+
+
 # 测试数据库
 TEST_DB_FILE = os.path.join(tempfile.gettempdir(), f"test_accrual_{uuid.uuid4().hex[:8]}.db")
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
@@ -367,18 +381,22 @@ def test_create_purchase_accrual(client):
         "sale_price": 150
     }, headers={"X-Account-ID": "1"})
 
-    # 创建采购单
-    response = client.post("/api/purchases", json={
-        "supplier_id": 1,
-        "items": [{"product_id": 1, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
-        "payment_method": "company",
-        "business_date": "2026-06-19"
+    # 创建采购单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 100 * 100 = 10000
+    response = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-IN-ACCRUAL-PUR1",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": "10000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "供应商A", "seller_name": "供应商A", "buyer_name": "本公司",
+        "issue_date": "2026-06-19", "purchase_order_action": "auto_create",
+        "items": [{"product_id": 1, "quantity": 100, "unit_price": "100.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    data = response.json()
-    inner = data.get("data", data)
-    assert inner["payment_status"] == "unpaid"  # 权责发生制：采购发生时未付款
+    purchase_id = _extract_related_order_id(response.json())
+    # 验证：采购发生时未付款（权责发生制）
+    pur_resp = client.get(f"/api/purchases/{purchase_id}", headers={"X-Account-ID": "1"})
+    assert pur_resp.json()["payment_status"] == "unpaid"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -409,17 +427,19 @@ def test_pay_purchase(client):
     }, headers={"X-Account-ID": "1"})
     product_id = product_resp.json()["entity_id"]
 
-    # 创建采购单
-    purchase_resp = client.post("/api/purchases", json={
-        "supplier_id": supplier_id,
-        "items": [{"product_id": product_id, "quantity": 200, "unit_price": 50, "tax_rate": 0.13}],
-        "payment_method": "company",
-        "business_date": "2026-06-19"
+    # 创建采购单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 200 * 50 = 10000
+    purchase_resp = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-IN-ACCRUAL-PAY1",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": "10000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "供应商C", "seller_name": "供应商C", "buyer_name": "本公司",
+        "issue_date": "2026-06-19", "purchase_order_action": "auto_create",
+        "items": [{"product_id": product_id, "quantity": 200, "unit_price": "50.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
     assert purchase_resp.status_code == 200
-    _pd = purchase_resp.json()
-    purchase_id = _pd.get("data", _pd)["id"]
+    purchase_id = _extract_related_order_id(purchase_resp.json())
 
     # 采购付款
     payment_resp = client.post("/api/payments", json={
@@ -467,25 +487,33 @@ def test_create_sale_accrual(client):
         "sale_price": 150
     }, headers={"X-Account-ID": "1"})
 
-    # 先采购入库
-    client.post("/api/purchases", json={
-        "supplier_id": 1,
-        "items": [{"product_id": 1, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
-        "payment_method": "company",
-        "business_date": "2026-06-18"
+    # 先采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 100 * 100 = 10000
+    client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-IN-ACCRUAL-SALE1",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": "10000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "供应商X", "seller_name": "供应商X", "buyer_name": "本公司",
+        "issue_date": "2026-06-18", "purchase_order_action": "auto_create",
+        "items": [{"product_id": 1, "quantity": 100, "unit_price": "100.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
-    # 创建销售单
-    response = client.post("/api/sales", json={
-        "customer_id": 1,
-        "has_invoice": True,
-        "items": [{"product_id": 1, "quantity": 50, "unit_price": 150, "tax_rate": 0.13}],
-        "business_date": "2026-06-19"
+    # 创建销售单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 50 * 150 = 7500
+    response = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-OUT-ACCRUAL-SALE1",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": "7500.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "客户A", "seller_name": "本公司", "buyer_name": "客户A",
+        "issue_date": "2026-06-19", "sale_order_action": "auto_create",
+        "items": [{"product_id": 1, "quantity": 50, "unit_price": "150.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert data.get("data", data)["payment_status"] == "unpaid"  # 权责发生制：销售发生时未收款
+    sale_id = _extract_related_order_id(response.json())
+    # 验证：销售发生时未收款（权责发生制）
+    sale_detail = client.get(f"/api/sales/{sale_id}", headers={"X-Account-ID": "1"})
+    assert sale_detail.json()["payment_status"] == "unpaid"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -521,25 +549,30 @@ def test_receive_sale(client):
         "sale_price": 120
     }, headers={"X-Account-ID": "1"})
 
-    # 先采购入库
-    client.post("/api/purchases", json={
-        "supplier_id": 1,
-        "items": [{"product_id": 1, "quantity": 200, "unit_price": 80, "tax_rate": 0.13}],
-        "payment_method": "company",
-        "business_date": "2026-06-18"
+    # 先采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 200 * 80 = 16000
+    client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-IN-ACCRUAL-RECV1",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": "16000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "供应商Y", "seller_name": "供应商Y", "buyer_name": "本公司",
+        "issue_date": "2026-06-18", "purchase_order_action": "auto_create",
+        "items": [{"product_id": 1, "quantity": 200, "unit_price": "80.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
-    # 创建销售单
-    sale_resp = client.post("/api/sales", json={
-        "customer_id": 1,
-        "has_invoice": True,
-        "items": [{"product_id": 1, "quantity": 100, "unit_price": 120, "tax_rate": 0.13}],
-        "business_date": "2026-06-19"
+    # 创建销售单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+    # 不含税合计 = 100 * 120 = 12000
+    sale_resp = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-OUT-ACCRUAL-RECV1",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": "12000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "客户B", "seller_name": "本公司", "buyer_name": "客户B",
+        "issue_date": "2026-06-19", "sale_order_action": "auto_create",
+        "items": [{"product_id": 1, "quantity": 100, "unit_price": "120.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
 
     assert sale_resp.status_code == 200
-    _sd2 = sale_resp.json()
-    sale_id = _sd2.get("data", _sd2)["id"]
+    sale_id = _extract_related_order_id(sale_resp.json())
 
     # 销售收款
     receipt_resp = client.post("/api/receipts", json={
@@ -959,18 +992,21 @@ def test_full_business_flow(client):
     assert product_resp.status_code == 200
     product_id = product_resp.json()["entity_id"]
 
-    # ── 5. 采购入库（未付款）──
-    purchase_resp = client.post("/api/purchases", json={
-        "supplier_id": supplier_id,
-        "items": [{"product_id": product_id, "quantity": 100, "unit_price": 100, "tax_rate": 0.13}],
-        "payment_method": "company",
-        "business_date": "2026-06-10"
+    # ── 5. 采购入库（未付款）（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）──
+    # 不含税合计 = 100 * 100 = 10000
+    purchase_resp = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-IN-ACCRUAL-FULL1",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": "10000.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "供应商A", "seller_name": "供应商A", "buyer_name": "本公司",
+        "issue_date": "2026-06-10", "purchase_order_action": "auto_create",
+        "items": [{"product_id": product_id, "quantity": 100, "unit_price": "100.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
     assert purchase_resp.status_code == 200
-    _pd2 = purchase_resp.json()
-    _pdata = _pd2.get("data", _pd2)
-    purchase_id = _pdata["id"]
-    assert _pdata["payment_status"] == "unpaid"
+    purchase_id = _extract_related_order_id(purchase_resp.json())
+    # 验证：采购发生时未付款（权责发生制）
+    _pur_resp = client.get(f"/api/purchases/{purchase_id}", headers={"X-Account-ID": "1"})
+    assert _pur_resp.json()["payment_status"] == "unpaid"
 
     # ── 6. 采购付款 ──
     purchase_payment_resp = client.post("/api/payments", json={
@@ -985,18 +1021,21 @@ def test_full_business_flow(client):
     }, headers={"X-Account-ID": "1"})
     assert purchase_payment_resp.status_code == 200
 
-    # ── 7. 销售出库（未收款）──
-    sale_resp = client.post("/api/sales", json={
-        "customer_id": customer_id,
-        "has_invoice": True,
-        "items": [{"product_id": product_id, "quantity": 50, "unit_price": 150, "tax_rate": 0.13}],
-        "business_date": "2026-06-20"
+    # ── 7. 销售出库（未收款）（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）──
+    # 不含税合计 = 50 * 150 = 7500
+    sale_resp = client.post("/api/invoices/quick", json={
+        "invoice_no": "INV-OUT-ACCRUAL-FULL1",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": "7500.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": "客户A", "seller_name": "本公司", "buyer_name": "客户A",
+        "issue_date": "2026-06-20", "sale_order_action": "auto_create",
+        "items": [{"product_id": product_id, "quantity": 50, "unit_price": "150.00", "tax_rate": "0"}],
     }, headers={"X-Account-ID": "1"})
     assert sale_resp.status_code == 200
-    _sd3 = sale_resp.json()
-    _sdata = _sd3.get("data", _sd3)
-    sale_id = _sdata["id"]
-    assert _sdata["payment_status"] == "unpaid"
+    sale_id = _extract_related_order_id(sale_resp.json())
+    # 验证：销售发生时未收款（权责发生制）
+    _sale_resp = client.get(f"/api/sales/{sale_id}", headers={"X-Account-ID": "1"})
+    assert _sale_resp.json()["payment_status"] == "unpaid"
 
     # ── 8. 销售收款 ──
     sale_receipt_resp = client.post("/api/receipts", json={

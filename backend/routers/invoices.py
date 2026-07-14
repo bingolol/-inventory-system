@@ -225,6 +225,7 @@ async def quick_create_invoice(
                     items=[it.model_dump() for it in invoice.items],
                     sale_order_action=invoice.sale_order_action,
                     purchase_order_action=invoice.purchase_order_action,
+                    payment_method=invoice.payment_method or "company",
                     related_order_id=invoice.related_order_id,
                     related_order_type=invoice.related_order_type,
                     related_original_invoice_id=invoice.related_original_invoice_id,
@@ -253,6 +254,8 @@ async def quick_create_invoice(
         data=_invoice_to_out(db_invoice).model_dump(),
     )
     out = op.to_dict()
+    if db_invoice.related_order_id and db_invoice.related_order_type == "sale_order":
+        out["sale_order_id"] = db_invoice.related_order_id
     if db_asset is not None:
         out["data"]["fixed_asset"] = {
             "id": db_asset.id,

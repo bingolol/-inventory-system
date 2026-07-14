@@ -55,6 +55,8 @@ class Part:
     codes: List[str]
     side: str       # "debit" | "credit"
     sign: int = 1   # +1 或 -1
+    prefix_match: bool = False  # True=前缀匹配(含子科目,如 6001 匹配 600101/600102...)
+                                 # False=精确匹配科目编码
 
 
 @dataclass

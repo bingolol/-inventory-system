@@ -17,7 +17,6 @@ from typing import Any
 
 from database import SessionLocal, _request_write_perm
 from commands.base import dispatch
-from commands import base as commands_base
 from errors import BusinessError
 
 

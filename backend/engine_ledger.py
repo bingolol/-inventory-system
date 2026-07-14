@@ -125,6 +125,8 @@ class LedgerEngine:
                     LedgerAccountBalance.ledger_account_id == account.id
                 ).first()
                 return balance_row.balance_l4 if balance_row else Decimal("0")
+                # NOTE: 叶子科目无 balance_l4 缓存时可能是未初始化，但报表查询不应中断。
+                # 若需严格校验，调用方应预先检查 LedgerAccountBalance 表。
             else:
                 leaf_ids = self._get_descendant_leaf_ids(account.id)
                 if not leaf_ids:

@@ -184,7 +184,7 @@ def test_depreciation_sum_of_years_zero_life(engine):
 def test_calculate_vat_small_scale_basic(engine):
     """小规模纳税人：不含税销售额100000，征收率3%，减按1%"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
+        total_revenue_l1=Decimal('100000'),
         taxpayer_type='small_scale'
     )
     # 季度≤30万：普票免税，未传 ordinary/special 默认全部为普票 → tax_payable=0
@@ -197,7 +197,7 @@ def test_calculate_vat_small_scale_basic(engine):
 def test_calculate_vat_small_scale_monthly_exemption(engine):
     """小规模纳税人：季度销售额≤30万，普票免征增值税"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('300000'),  # 季度30万
+        total_revenue_l1=Decimal('300000'),  # 季度30万
         taxpayer_type='small_scale'
     )
     # 季度≤30万：普票免税 → 应纳税额=0
@@ -209,7 +209,7 @@ def test_calculate_vat_invalid_type(engine):
     """无效纳税人类型 → 抛出异常"""
     with pytest.raises(AccountingError) as exc_info:
         engine.calculate_vat(
-            total_revenue=Decimal('100000'),
+            total_revenue_l1=Decimal('100000'),
             taxpayer_type='invalid'
         )
     assert exc_info.value.code == AccountingErrorCode.VAT_TAXPAYER_TYPE_INVALID
@@ -223,10 +223,10 @@ def test_calculate_vat_invalid_type(engine):
 def test_calculate_vat_general_taxpayer_basic(engine):
     """一般纳税人：销项税额 - 进项税额 = 应纳税额"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),  # 不含税销售额
+        total_revenue_l1=Decimal('100000'),  # 不含税销售额
         taxpayer_type='general',
-        input_tax=Decimal('8000'),  # 进项税额
-        output_tax=Decimal('13000'),  # 销项税额（发票明细汇总）
+        input_tax_l1=Decimal('8000'),  # 进项税额
+        output_tax_l1=Decimal('13000'),  # 销项税额（发票明细汇总）
     )
     # 销项税额 = 13000
     # 应纳税额 = 13000 - 8000 = 5000
@@ -239,10 +239,10 @@ def test_calculate_vat_general_taxpayer_basic(engine):
 def test_calculate_vat_general_taxpayer_zero_input(engine):
     """一般纳税人：无进项税额"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
+        total_revenue_l1=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('0'),
-        output_tax=Decimal('13000'),
+        input_tax_l1=Decimal('0'),
+        output_tax_l1=Decimal('13000'),
     )
     # 销项税额 = 13000
     # 应纳税额 = 13000 - 0 = 13000
@@ -254,10 +254,10 @@ def test_calculate_vat_general_taxpayer_zero_input(engine):
 def test_calculate_vat_general_taxpayer_surcharge(engine):
     """一般纳税人：增值税计算（附加税已由 SurchargeDeclaration L1 录入替代）"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
+        total_revenue_l1=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('8000'),
-        output_tax=Decimal('13000'),
+        input_tax_l1=Decimal('8000'),
+        output_tax_l1=Decimal('13000'),
     )
     # 应纳税额 = 5000
     assert result.tax_payable == Decimal('5000.00')
@@ -268,10 +268,10 @@ def test_calculate_vat_general_taxpayer_surcharge(engine):
 def test_calculate_vat_general_taxpayer_carry_forward(engine):
     """一般纳税人：结转到下期抵扣"""
     result = engine.calculate_vat(
-        total_revenue=Decimal('100000'),
+        total_revenue_l1=Decimal('100000'),
         taxpayer_type='general',
-        input_tax=Decimal('15000'),  # 进项 > 销项
-        output_tax=Decimal('13000'),
+        input_tax_l1=Decimal('15000'),  # 进项 > 销项
+        output_tax_l1=Decimal('13000'),
     )
     assert result.tax_payable == Decimal('0.00')  # 留抵，应纳税额=0
     # 附加税已迁移至 SurchargeDeclaration L1 用户录入，引擎不再计算

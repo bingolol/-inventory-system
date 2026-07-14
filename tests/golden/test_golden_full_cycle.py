@@ -271,6 +271,7 @@ class TestFullCycle:
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             purchases=[Purchase(QTY, UC, VAT_RATE)],
             sales=[Sale(SQTY, UP, VAT_RATE)],
             returns=[
@@ -283,6 +284,8 @@ class TestFullCycle:
                 Expense(UTILITIES, paid=True),  # 水电费现金支付
             ],
             employee_funded_expenses=[
+                # 员工垫付 1000 → 报销 1000 → 红冲报销 1000
+                # 净效果：费用确认 1000，仍欠员工 1000，银行无净流出
                 EmployeeFundedExpense(ADV_TAX, reimbursed=ADV_TAX, reversed_reimbursement=ADV_TAX),
             ],
             cash_flows=CashFlow(

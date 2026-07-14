@@ -193,7 +193,7 @@ class DeleteProductHandler(CommandHandler):
 class AdjustInventory(Command):
     product_id: int = 0
     quantity: float = 0.0
-    adjust_date: Optional[str] = None
+    adjust_date: str = ""  # 必填，YYYY-MM-DD
     reason: Optional[str] = None  # 报损原因（减少库存时必填）
     # 盘盈入库时若商品无 average_cost 且无 purchase_price，必须显式提供 unit_cost
     # 否则零成本入库会污染 StockMove.total_cost_l2 和后续 COGS
@@ -287,7 +287,10 @@ class AdjustInventoryHandler(CommandHandler):
                             "average_cost": float(unit_cost),
                         },
                     )
-            move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d") if cmd.adjust_date else datetime.now()
+            if not cmd.adjust_date:
+                raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                    message="库存调整日期(adjust_date)必填，格式 YYYY-MM-DD")
+            move_date = datetime.strptime(cmd.adjust_date, "%Y-%m-%d")
             if delta > 0:
                 engine.inbound(
                     account_id=cmd.account_id, product_id=cmd.product_id,
@@ -309,7 +312,7 @@ class AdjustInventoryHandler(CommandHandler):
             if value > 0:
                 from finance_integration import post_journal
                 from datetime import date
-                journal_date = cmd.adjust_date if cmd.adjust_date else date.today().isoformat()
+                journal_date = cmd.adjust_date
                 if delta < 0:
                     # 修复 #8：盘亏先挂 1901 待处理财产损溢，查明原因后再转入费用
                     lines = [

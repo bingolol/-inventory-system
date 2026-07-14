@@ -64,7 +64,13 @@ class CreateExpenseHandler(CommandHandler):
         db.add(db_expense)
         db.flush()
 
-        expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category, "6601")
+        import logging
+        _logger = logging.getLogger(__name__)
+        expense_code = EXPENSE_ACCOUNT_CODE_MAP.get(db_expense.functional_category)
+        if expense_code is None:
+            _logger.warning("费用功能分类 '%s' 未在映射表中找到，回退到 6601 管理费用。费用ID=%d",
+                            db_expense.functional_category, db_expense.id)
+            expense_code = "6601"
         credit_code = "2241" if db_expense.payment_method == "private_advance" else "2211" if db_expense.category == "工资" else "2202"
         post_journal(db, account_id, "expense", {
             "amount": db_expense.amount_l1,

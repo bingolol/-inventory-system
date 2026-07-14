@@ -57,43 +57,48 @@ def ids(client):
 # 1. 采购验证（金额、税额、价税合计）
 # ═══════════════════════════════════════════════════════════════
 def test_purchase_amount_tax(client, ids):
-    """验证采购金额、税额、价税合计"""
+    """验证采购金额、税额、价税合计（小规模纳税人：tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）"""
     # 硬编码输入
     QTY = 100
     PRICE = 100.00
-    TAX_RATE = 0.13
-    
+    TAX_RATE = 0  # 小规模纳税人
+
     # 硬编码计算公式
-    AMOUNT = Decimal(str(QTY)) * Decimal(str(PRICE))
-    TAX = round2(AMOUNT * Decimal(str(TAX_RATE)))
-    TOTAL_WITH_TAX = AMOUNT + TAX
-    
-    # 执行采购
-    resp = client.post("/api/purchases", json={
-        "supplier_id": ids["sid"],
-        "payment_method": "company",
-        "payment_status": "paid",
-        "business_date": "2026-01-05T10:00:00",
-        "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": PRICE, "tax_rate": TAX_RATE}]
+    AMOUNT = Decimal(str(QTY)) * Decimal(str(PRICE))  # 10000
+    TAX = Decimal("0.00")
+    TOTAL_WITH_TAX = AMOUNT  # 小规模纳税人：价税合计 = 不含税合计
+
+    # 查询供应商名（发票驱动需要 counterparty_name 匹配供应商）
+    sup_resp = client.get(f"/api/suppliers/{ids['sid']}", headers=HEADERS)
+    sup_name = sup_resp.json().get("name", "测试供应商")
+
+    # 发票驱动创建采购
+    global _inv_counter
+    _inv_counter += 1
+    resp = client.post("/api/invoices/quick", json={
+        "invoice_no": f"INV-IN-AMT-{int(time.time())}-{_inv_counter}",
+        "direction": "in", "invoice_type": "ordinary",
+        "amount_with_tax": str(TOTAL_WITH_TAX), "tax_rate": str(TAX_RATE), "tax_amount": str(TAX),
+        "counterparty_name": sup_name, "seller_name": sup_name, "buyer_name": "本公司",
+        "issue_date": "2026-01-05",
+        "purchase_order_action": "auto_create",
+        "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": str(PRICE), "tax_rate": str(TAX_RATE)}],
     }, headers=HEADERS)
-    assert resp.status_code in (200, 201)
-    
-    # 获取实际值
+    assert resp.status_code in (200, 201), f"创建采购失败: {resp.text}"
+
+    # 获取实际值（发票返回字段）
     data = extract_data(resp.json())
-    actual_amount = Decimal(str(data.get("items", [{}])[0].get("total_price", 0)))
-    actual_total = Decimal(str(data.get("total_price", 0)))
-    
-    # 计算实际税额
-    actual_tax = round2(actual_amount * Decimal(str(TAX_RATE)))
-    actual_total_with_tax = actual_amount + actual_tax
-    
+    actual_amount = Decimal(str(data.get("amount_without_tax", 0)))
+    actual_tax = Decimal(str(data.get("tax_amount", 0)))
+    actual_total_with_tax = Decimal(str(data.get("amount_with_tax", 0)))
+
     # 验证
     print(f"\n=== 采购验证 ===")
     print(f"数量: {QTY}, 单价: {PRICE}, 税率: {TAX_RATE}")
     print(f"预期金额: {AMOUNT}, 实际: {actual_amount}, 差异: {abs(AMOUNT - actual_amount)}")
     print(f"预期税额: {TAX}, 实际: {actual_tax}, 差异: {abs(TAX - actual_tax)}")
     print(f"预期价税合计: {TOTAL_WITH_TAX}, 实际: {actual_total_with_tax}, 差异: {abs(TOTAL_WITH_TAX - actual_total_with_tax)}")
-    
+
     assert actual_amount == AMOUNT, f"金额错误: {AMOUNT} != {actual_amount}"
     assert actual_tax == TAX, f"税额错误: {TAX} != {actual_tax}"
     assert actual_total_with_tax == TOTAL_WITH_TAX, f"价税合计错误: {TOTAL_WITH_TAX} != {actual_total_with_tax}"
@@ -103,43 +108,48 @@ def test_purchase_amount_tax(client, ids):
 # 2. 销售验证（金额、税额、价税合计）
 # ═══════════════════════════════════════════════════════════════
 def test_sale_amount_tax(client, ids):
-    """验证销售金额、税额、价税合计"""
+    """验证销售金额、税额、价税合计（小规模纳税人：tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）"""
     # 硬编码输入
     QTY = 30
     PRICE = 150.00
-    TAX_RATE = 0.01
-    
+    TAX_RATE = 0  # 小规模纳税人
+
     # 硬编码计算公式
-    AMOUNT = Decimal(str(QTY)) * Decimal(str(PRICE))
-    TAX = round2(AMOUNT * Decimal(str(TAX_RATE)))
-    TOTAL_WITH_TAX = AMOUNT + TAX
-    
-    # 执行销售
-    resp = client.post("/api/sales", json={
-        "customer_id": ids["cid"], "has_invoice": True,
-        "deduct_inventory": True,
-        "payment_status": "paid",
-        "business_date": "2026-01-15T10:00:00",
-        "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": PRICE, "tax_rate": TAX_RATE}]
+    AMOUNT = Decimal(str(QTY)) * Decimal(str(PRICE))  # 4500
+    TAX = Decimal("0.00")
+    TOTAL_WITH_TAX = AMOUNT  # 小规模纳税人：价税合计 = 不含税合计
+
+    # 查询客户名（发票驱动需要 counterparty_name 匹配客户）
+    cust_resp = client.get(f"/api/customers/{ids['cid']}", headers=HEADERS)
+    cust_name = cust_resp.json().get("name", "测试客户")
+
+    # 发票驱动创建销售
+    global _inv_counter
+    _inv_counter += 1
+    resp = client.post("/api/invoices/quick", json={
+        "invoice_no": f"INV-OUT-AMT-{int(time.time())}-{_inv_counter}",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": str(TOTAL_WITH_TAX), "tax_rate": str(TAX_RATE), "tax_amount": str(TAX),
+        "counterparty_name": cust_name, "seller_name": "本公司", "buyer_name": cust_name,
+        "issue_date": "2026-01-15",
+        "sale_order_action": "auto_create",
+        "items": [{"product_id": ids["pid"], "quantity": QTY, "unit_price": str(PRICE), "tax_rate": str(TAX_RATE)}],
     }, headers=HEADERS)
-    assert resp.status_code in (200, 201)
-    
-    # 获取实际值
+    assert resp.status_code in (200, 201), f"创建销售失败: {resp.text}"
+
+    # 获取实际值（发票返回字段）
     data = extract_data(resp.json())
-    actual_amount = Decimal(str(data.get("items", [{}])[0].get("total_price", 0)))
-    actual_total = Decimal(str(data.get("total_price", 0)))
-    
-    # 计算实际税额
-    actual_tax = round2(actual_amount * Decimal(str(TAX_RATE)))
-    actual_total_with_tax = actual_amount + actual_tax
-    
+    actual_amount = Decimal(str(data.get("amount_without_tax", 0)))
+    actual_tax = Decimal(str(data.get("tax_amount", 0)))
+    actual_total_with_tax = Decimal(str(data.get("amount_with_tax", 0)))
+
     # 验证
     print(f"\n=== 销售验证 ===")
     print(f"数量: {QTY}, 单价: {PRICE}, 税率: {TAX_RATE}")
     print(f"预期金额: {AMOUNT}, 实际: {actual_amount}, 差异: {abs(AMOUNT - actual_amount)}")
     print(f"预期税额: {TAX}, 实际: {actual_tax}, 差异: {abs(TAX - actual_tax)}")
     print(f"预期价税合计: {TOTAL_WITH_TAX}, 实际: {actual_total_with_tax}, 差异: {abs(TOTAL_WITH_TAX - actual_total_with_tax)}")
-    
+
     assert actual_amount == AMOUNT, f"金额错误: {AMOUNT} != {actual_amount}"
     assert actual_tax == TAX, f"税额错误: {TAX} != {actual_tax}"
     assert actual_total_with_tax == TOTAL_WITH_TAX, f"价税合计错误: {TOTAL_WITH_TAX} != {actual_total_with_tax}"
@@ -170,45 +180,56 @@ def test_inventory(client, ids):
 # 4. 退货验证
 # ═══════════════════════════════════════════════════════════════
 def test_return(client, ids):
-    """验证退货库存回补"""
+    """验证退货库存回补（小规模纳税人：tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）"""
     # 硬编码输入
     RETURN_QTY = 10
-    
+
     # 获取退货前库存
     stock_before = get_stock(client, ids["pid"])
-    
-    # 创建销售单
-    resp = client.post("/api/sales", json={
-        "customer_id": ids["cid"], "has_invoice": True,
-        "deduct_inventory": True,
-        "payment_status": "paid",
-        "business_date": "2026-02-01T10:00:00",
-        "items": [{"product_id": ids["pid"], "quantity": RETURN_QTY, "unit_price": 150.00, "tax_rate": 0.01}]
+
+    # 查询客户名（发票驱动需要 counterparty_name 匹配客户）
+    cust_resp = client.get(f"/api/customers/{ids['cid']}", headers=HEADERS)
+    cust_name = cust_resp.json().get("name", "测试客户")
+
+    # 发票驱动创建销售单（小规模纳税人：tax_rate=0, tax_amount=0）
+    # 不含税合计 = 10 * 150 = 1500
+    global _inv_counter
+    _inv_counter += 1
+    resp = client.post("/api/invoices/quick", json={
+        "invoice_no": f"INV-OUT-RET-{int(time.time())}-{_inv_counter}",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": "1500.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": cust_name, "seller_name": "本公司", "buyer_name": cust_name,
+        "issue_date": "2026-02-01",
+        "sale_order_action": "auto_create",
+        "items": [{"product_id": ids["pid"], "quantity": RETURN_QTY, "unit_price": "150.00", "tax_rate": "0"}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201)
-    sale_id = extract_data(resp.json()).get("id")
-    
+    # 从发票响应中提取销售单 id（related_order_id）
+    data = extract_data(resp.json())
+    sale_id = data.get("related_order_id") or data.get("id")
+
     # 销售后库存
     stock_after_sale = get_stock(client, ids["pid"])
-    
+
     # 取消销售单（退货）
     resp = client.post(f"/api/sales/{sale_id}/cancel", headers=HEADERS)
     assert resp.status_code == 200
-    
+
     # 退货后库存
     stock_after_return = get_stock(client, ids["pid"])
-    
+
     # 硬编码预期
     expected_after_sale = stock_before - RETURN_QTY
     expected_after_return = stock_after_sale + RETURN_QTY
-    
+
     # 验证
     print(f"\n=== 退货验证 ===")
     print(f"退货数量: {RETURN_QTY}")
     print(f"退货前: {stock_before}")
     print(f"预期销售后: {expected_after_sale}, 实际: {stock_after_sale}, 差异: {abs(expected_after_sale - stock_after_sale)}")
     print(f"预期退货后: {expected_after_return}, 实际: {stock_after_return}, 差异: {abs(expected_after_return - stock_after_return)}")
-    
+
     assert stock_after_sale == expected_after_sale, f"销售后库存错误: {expected_after_sale} != {stock_after_sale}"
     assert stock_after_return == expected_after_return, f"退货后库存错误: {expected_after_return} != {stock_after_return}"
 
@@ -218,14 +239,15 @@ def test_return(client, ids):
 # ═══════════════════════════════════════════════════════════════
 def test_invoice(client):
     """验证发票金额计算"""
-    # 硬编码输入
-    AMOUNT_WITH_TAX = 10100.00
-    TAX_RATE = 0.01
+    # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0
+    # items: 1 * 10000.00 = 10000（不含税合计）
+    AMOUNT_WITH_TAX = 10000.00
+    TAX_RATE = 0  # 小规模纳税人：tax_rate=0 才能通过 BR-27 校验（tax_amount=0）
     pid = ensure_test_product(1)
 
-    # 硬编码计算公式
-    WITHOUT_TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) / (1 + Decimal(str(TAX_RATE))))
-    TAX = round2(Decimal(str(AMOUNT_WITH_TAX)) - WITHOUT_TAX)
+    # 小规模纳税人规则：tax_amount=0, amount_with_tax=不含税合计
+    WITHOUT_TAX = Decimal(str(AMOUNT_WITH_TAX))
+    TAX = Decimal("0.00")
     BALANCE = WITHOUT_TAX + TAX
 
     # 执行
@@ -304,17 +326,17 @@ def test_vat(client):
     assert resp.status_code == 200
     data = resp.json()
 
-    output_tax = round2(Decimal(str(data.get("output_tax", 0))))
-    input_tax = round2(Decimal(str(data.get("input_tax", 0))))
+    output_tax_l1 = round2(Decimal(str(data.get("output_tax_l1", 0))))
+    input_tax_l1 = round2(Decimal(str(data.get("input_tax_l1", 0))))
     tax_payable = round2(Decimal(str(data.get("tax_payable", 0))))
 
     print(f"\n=== 增值税验证 ===")
-    print(f"销项税额: {output_tax}")
-    print(f"进项税额: {input_tax}")
+    print(f"销项税额: {output_tax_l1}")
+    print(f"进项税额: {input_tax_l1}")
     print(f"应纳税: {tax_payable}")
 
-    assert "output_tax" in data
-    assert "input_tax" in data
+    assert "output_tax_l1" in data
+    assert "input_tax_l1" in data
     assert "tax_payable" in data
     assert tax_payable >= 0
 
@@ -330,7 +352,7 @@ def test_income_tax(client):
     data = resp.json()
     
     # 获取实际值
-    revenue = round2(Decimal(str(data.get("total_revenue", 0))))
+    revenue = round2(Decimal(str(data.get("total_revenue_l1", 0))))
     cost = round2(Decimal(str(data.get("total_cost", 0))))
     expenses = round2(Decimal(str(data.get("operating_expenses", 0))))
     profit = round2(Decimal(str(data.get("taxable_income", 0))))
@@ -396,7 +418,7 @@ def test_income_statement(client):
     
     if resp.status_code == 200:
         data = resp.json()
-        revenue = round2(Decimal(str(data.get("revenue", data.get("total_revenue", 0)))))
+        revenue = round2(Decimal(str(data.get("revenue", data.get("total_revenue_l1", 0)))))
         cost = round2(Decimal(str(data.get("cost_of_goods_sold", data.get("cost", data.get("total_cost", 0))))))
         expenses = round2(Decimal(str(data.get("total_operating_expenses", 0))))
         gross_profit = round2(Decimal(str(data.get("gross_profit", 0))))
@@ -424,7 +446,7 @@ def test_income_tax_report(client):
     resp = client.get("/api/income-tax-report", params={"year": 2026, "quarter": 1}, headers=HEADERS)
 
     if resp.status_code == 200:
-        tax_revenue = round2(Decimal(str(resp.json().get("total_revenue", 0))))
+        tax_revenue = round2(Decimal(str(resp.json().get("total_revenue_l1", 0))))
 
         print(f"\n=== 所得税报表验证 ===")
         print(f"税务口径收入: {tax_revenue}")

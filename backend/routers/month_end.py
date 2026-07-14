@@ -15,6 +15,7 @@ router = APIRouter()
 
 class MonthEndCloseRequest(BaseModel):
     period: str  # YYYY-MM
+    force: bool = False  # 强制重跑:冲红旧 period_close/year_close 凭证后重做
 
     @field_validator("period")
     @classmethod
@@ -37,5 +38,6 @@ def month_end_close(
             account_id=account_id,
             operator=operator,
             period=body.period,
+            force=body.force,
         ), db)
     return result

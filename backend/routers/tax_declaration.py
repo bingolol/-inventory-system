@@ -71,9 +71,9 @@ def declare_surcharge(
             account_id=account_id,
             operator=operator,
             period=body.period,
-            urban_construction_tax=body.urban_construction_tax,
-            education_surcharge=body.education_surcharge,
-            local_education_surcharge=body.local_education_surcharge,
+            urban_construction_tax_l1=body.urban_construction_tax_l1,
+            education_surcharge_l1=body.education_surcharge_l1,
+            local_education_surcharge_l1=body.local_education_surcharge_l1,
             notes=body.notes,
         ), db)
     return {"ok": True, "data": result}
@@ -91,7 +91,9 @@ def get_pending_declarations(
     if not account:
         return []
 
-    taxpayer_type = account.taxpayer_type_l3 or "small_scale"
+    taxpayer_type = account.taxpayer_type_l3
+    if not taxpayer_type:
+        raise HTTPException(status_code=400, detail="纳税人类型未配置，请检查账本设置")
     today = date.today()
     pending = []
 
@@ -197,10 +199,10 @@ def list_declarations(
             "id": d.id,
             "period": d.period,
             "taxpayer_type": d.taxpayer_type,
-            "vat_payable": float(d.vat_payable),
-            "total_revenue": float(d.total_revenue),
+            "vat_payable_l1": float(d.vat_payable_l1),
+            "total_revenue_l1": float(d.total_revenue_l1),
             "snapshot_at": d.snapshot_at.isoformat() if d.snapshot_at else None,
             "surcharge_declared": sur is not None,
-            "surcharge_total": float(sur.total) if sur else 0,
+            "surcharge_total": float(sur.total_l1) if sur else 0,
         })
     return results

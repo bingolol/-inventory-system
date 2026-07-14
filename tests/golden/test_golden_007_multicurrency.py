@@ -46,7 +46,7 @@ class TestGolden007MultiCurrency:
         app.dependency_overrides.clear()
 
     def test_multi_currency(self, client):
-        c = client; s = {}
+        pytest.skip("多币种业务暂时不涵盖，避免假绿灯（原测试用 if r.status_code==200 吞失败且独立引擎未覆盖多币种费用）")
 
         # ── 期初建账 §84 ──
         r = c.post("/api/bank-accounts", json={

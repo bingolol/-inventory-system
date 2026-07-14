@@ -171,7 +171,7 @@ const openPaymentDialog = async (row) => {
     bank_account_id: null,
     description: `费用 ${row.category} 付款`
   }
-  try { const r = await bankAccountsApi.getBankAccounts(); bankAccounts.value = r?.items || [] } catch (e) { console.error('[Expenses] 加载银行账户失败', e) }
+  try { const r = await bankAccountsApi.getBankAccounts(); bankAccounts.value = r?.items || [] } catch (e) { bankAccounts.value = []; ElMessage.warning('银行账户列表加载失败') }
   paymentDialogVisible.value = true
 }
 

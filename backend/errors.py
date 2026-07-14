@@ -44,6 +44,9 @@ class ErrorCode(str, Enum):
     PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
     PRODUCT_HAS_TRANSACTIONS = "PRODUCT_HAS_TRANSACTIONS"
 
+    # 账本 (5.5xxx)
+    ACCOUNT_HAS_BUSINESS_DATA = "ACCOUNT_HAS_BUSINESS_DATA"
+
     # 合作伙伴 (6xxx)
     SUPPLIER_HAS_ORDERS = "SUPPLIER_HAS_ORDERS"
     CUSTOMER_HAS_ORDERS = "CUSTOMER_HAS_ORDERS"
@@ -159,6 +162,13 @@ ERROR_REGISTRY: dict[ErrorCode, tuple[int, ActionType, str, str]] = {
         409, ActionType.USER_CONFIRM,
         "该商品存在 {purchase_count} 条采购记录和 {sale_count} 条销售记录，无法删除",
         "STOP_RETRYING. 商品有业务记录，无法删除。请向用户说明情况，询问是否停用而非删除。"
+    ),
+
+    # 账本
+    ErrorCode.ACCOUNT_HAS_BUSINESS_DATA: (
+        409, ActionType.USER_CONFIRM,
+        "账本存在 {count} 条{label}，无法删除",
+        "STOP_RETRYING. 账本有关联业务数据，无法删除。请先清理关联数据或向用户确认是否停用账本。"
     ),
 
     # 合作伙伴

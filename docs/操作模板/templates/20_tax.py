@@ -16,9 +16,9 @@ def get_quarterly_tax_report(year, quarter):
 
     返回字段：
         output_total: 销项不含税合计
-        output_tax: 销项税额（含红字发票负数冲减）
+        output_tax_l1: 销项税额（含红字发票负数冲减）
         input_total: 进项不含税合计
-        input_tax: 进项税额（一般纳税人仅算已认证专票）
+        input_tax_l1: 进项税额（一般纳税人仅算已认证专票）
         tax_payable: 应纳税额（= 销项 - 进项，可为负=留抵）
         invoice_list: 期间内所有发票明细
     """
@@ -37,7 +37,7 @@ def get_monthly_tax_report(year, month):
 
 def check_tax_consistency(period, sales, output_vat, input_vat,
                           unpaid_vat, income_tax, surcharge,
-                          vat_payable, gross_profit):
+                          vat_payable_l1, gross_profit):
     """执行税务核对：验证账本数据与预期一致。
 
     走 GET /api/tax/check?period=&sales=&output_vat=&...
@@ -52,7 +52,7 @@ def check_tax_consistency(period, sales, output_vat, input_vat,
         unpaid_vat: 预期未交增值税（= max(销项-进项, 0)，留抵时为 0）
         income_tax: 预期所得税
         surcharge: 预期附加税合计
-        vat_payable: 预期应交增值税（同 unpaid_vat）
+        vat_payable_l1: 预期应交增值税（同 unpaid_vat）
         gross_profit: 预期利润总额
 
     返回字段：
@@ -63,7 +63,7 @@ def check_tax_consistency(period, sales, output_vat, input_vat,
         f"/api/tax/check?period={period}"
         f"&sales={sales}&output_vat={output_vat}&input_vat={input_vat}"
         f"&unpaid_vat={unpaid_vat}&income_tax={income_tax}&surcharge={surcharge}"
-        f"&vat_payable={vat_payable}&gross_profit={gross_profit}"
+        f"&vat_payable_l1={vat_payable_l1}&gross_profit={gross_profit}"
     )
 
 
@@ -74,8 +74,8 @@ if __name__ == "__main__":
 
     print("1. 查询 Q2 增值税报表")
     tax = get_quarterly_tax_report(year=2026, quarter=2)
-    print(f"   销项税额：{tax.get('output_tax')}")
-    print(f"   进项税额：{tax.get('input_tax')}")
+    print(f"   销项税额：{tax.get('output_tax_l1')}")
+    print(f"   进项税额：{tax.get('input_tax_l1')}")
     print(f"   应纳税额：{tax.get('tax_payable')}（负数=留抵）")
 
     print("\n2. 执行税务核对")
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         unpaid_vat=0,
         income_tax=3767.50,
         surcharge=0,
-        vat_payable=0,
+        vat_payable_l1=0,
         gross_profit=14950,
     )
     print(f"   all_passed={check.get('all_passed')}")

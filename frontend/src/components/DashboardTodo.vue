@@ -53,7 +53,7 @@ onMounted(async () => {
     const r = await getPendingDeclarations()
     pendingDeclarations.value = r || []
   } catch (e) {
-    // 静默失败，不阻塞页面
+    pendingDeclarations.value = []
   }
 })
 

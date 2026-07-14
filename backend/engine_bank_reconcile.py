@@ -473,7 +473,8 @@ class BankReconcileEngine:
             self._models.Account.id == self.account_id).first()
         ledger = account and self.db.query(Ledger).filter(Ledger.code == account.code).first()
         if not ledger:
-            return Decimal("0")
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message="账本不存在，无法计算银行账面余额")
         d = to_decimal(self.db.query(sqlfunc.coalesce(sqlfunc.sum(AccountMoveLine.debit_l2), 0)).join(
             LedgerAccount, AccountMoveLine.ledger_account_id == LedgerAccount.id
         ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id).filter(

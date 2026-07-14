@@ -29,7 +29,7 @@ class CreateOrder(Command):
     customer_id: Optional[int] = None
     deduct_inventory: bool = True
     payment_status: str = PaymentStatus.UNPAID
-    has_invoice: bool = True  # 销售单是否已开发票；Schema 层已改为必填，命令层保留默认兼容旧测试
+    has_invoice: bool = True  # 已废弃：架构改造后所有订单必须由发票驱动，此字段仅作向后兼容保留
     # purchase fields
     supplier_id: Optional[int] = None
     payment_method: str = "company"
@@ -40,7 +40,7 @@ class CreateOrder(Command):
     total_price: Optional[Decimal] = None
     tax_amount: Optional[Decimal] = None
     items: List[dict] = field(default_factory=list)
-    auto_generated_from: Optional[str] = None
+    auto_generated_from: Optional[str] = None  # 发票驱动路径标识，CreateOrderHandler 据此放行
 
 
 @register(CreateOrder)
@@ -48,6 +48,25 @@ class CreateOrderHandler(CommandHandler):
     @reads("Product.track_inventory_l3", tier=TIER_L3, source="policy")
     @reads("Account.taxpayer_type_l3", tier=TIER_L3, source="policy")
     def handle(self, cmd: CreateOrder, db: Any) -> Any:
+        # 架构门禁（project_memory「禁止直接使用 CreateOrder」）：
+        # 销售/采购业务必须走 CreateInvoice(direction='out'/'in', sale_order_action='auto_create') 路径，
+        # 由发票驱动自动生成订单，确保发票是唯一真相源、增值税口径与会计口径统一。
+        # 仅允许发票驱动路径（auto_generated_from 非空）通过；直接 CreateOrder 抛错。
+        if not cmd.auto_generated_from:
+            direction = 'out' if cmd.order_type == 'sale' else 'in'
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=(
+                    f"禁止直接创建{cmd.order_type}订单：系统只允许开票订单录入。"
+                    f"请通过 POST /api/invoices（direction='{direction}'，"
+                    f"sale_order_action='auto_create' / purchase_order_action='auto_create'）创建发票，由发票自动生成订单。"
+                ),
+                ai_instruction=(
+                    f"STOP_RETRYING. CreateOrder 直接调用已被禁用。"
+                    f"请改用 CreateInvoice(direction='{direction}', "
+                    f"{'sale_order_action' if cmd.order_type == 'sale' else 'purchase_order_action'}='auto_create')。"
+                ),
+            )
         if cmd.order_type == "sale":
             return OrderLifecycle.create_sale_order(
                 db=db, account_id=cmd.account_id, operator=cmd.operator,

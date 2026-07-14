@@ -136,8 +136,8 @@ def _sql_ledger_query(db, ledger, codes: List[str], bucket: Bucket,
     from sqlalchemy import func
 
     q = db.query(
-        func.sum(AccountMoveLine.debit_l2).label("d"),
-        func.sum(AccountMoveLine.credit_l2).label("c"),
+        func.coalesce(func.sum(AccountMoveLine.debit_l2), 0).label("d"),
+        func.coalesce(func.sum(AccountMoveLine.credit_l2), 0).label("c"),
     ).select_from(LedgerAccount
     ).join(AccountMoveLine, AccountMoveLine.ledger_account_id == LedgerAccount.id
     ).join(AccountMove, AccountMoveLine.move_id == AccountMove.id
@@ -163,7 +163,7 @@ def _sql_ledger_query(db, ledger, codes: List[str], bucket: Bucket,
     # "all" 不过滤
 
     row = q.one()
-    return Decimal(str(row.d or 0)), Decimal(str(row.c or 0))
+    return Decimal(str(row.d)), Decimal(str(row.c))
 
 
 def _sql_invoice_tax_net(db, account_id: int, bs_cutoff=None) -> Decimal:
@@ -172,11 +172,11 @@ def _sql_invoice_tax_net(db, account_id: int, bs_cutoff=None) -> Decimal:
     from sqlalchemy import func
     from enums import InvoiceDirection, InvoiceType, CertificationStatus
 
-    q_out = db.query(func.sum(Invoice.tax_amount_l1)).filter(
+    q_out = db.query(func.coalesce(func.sum(Invoice.tax_amount_l1), 0)).filter(
         Invoice.account_id == account_id,
         Invoice.direction == InvoiceDirection.OUT,
     )
-    q_in = db.query(func.sum(Invoice.tax_amount_l1)).filter(
+    q_in = db.query(func.coalesce(func.sum(Invoice.tax_amount_l1), 0)).filter(
         Invoice.account_id == account_id,
         Invoice.direction == InvoiceDirection.IN,
         Invoice.invoice_type == InvoiceType.SPECIAL,
@@ -186,8 +186,8 @@ def _sql_invoice_tax_net(db, account_id: int, bs_cutoff=None) -> Decimal:
         q_out = q_out.filter(Invoice.issue_date_l1 <= bs_cutoff)
         q_in = q_in.filter(Invoice.issue_date_l1 <= bs_cutoff)
 
-    out_tax = Decimal(str(q_out.scalar() or 0))
-    in_tax = Decimal(str(q_in.scalar() or 0))
+    out_tax = Decimal(str(q_out.scalar()))
+    in_tax = Decimal(str(q_in.scalar()))
     return out_tax - in_tax
 
 
@@ -232,16 +232,16 @@ def _sql_bank_txns_value(db, account_id: int, bs_cutoff=None) -> Decimal:
     from sqlalchemy import func, case
 
     q = db.query(
-        func.sum(
+        func.coalesce(func.sum(
             case(
                 (BankTransaction.transaction_type == 'inflow', BankTransaction.amount_l2),
                 else_=-BankTransaction.amount_l2,
             )
-        )
+        ), 0)
     ).filter(BankTransaction.account_id == account_id)
     if bs_cutoff is not None:
         q = q.filter(BankTransaction.transaction_date_l1 <= bs_cutoff)
-    return Decimal(str(q.scalar() or 0))
+    return Decimal(str(q.scalar()))
 
 
 def _sql_cash_txns_value(db, account_id: int, bs_cutoff=None) -> Decimal:
@@ -250,16 +250,16 @@ def _sql_cash_txns_value(db, account_id: int, bs_cutoff=None) -> Decimal:
     from sqlalchemy import func, case
 
     q = db.query(
-        func.sum(
+        func.coalesce(func.sum(
             case(
                 (CashFlowTransaction.transaction_type == 'inflow', CashFlowTransaction.amount_l2),
                 else_=-CashFlowTransaction.amount_l2,
             )
-        )
+        ), 0)
     ).filter(CashFlowTransaction.account_id == account_id)
     if bs_cutoff is not None:
         q = q.filter(CashFlowTransaction.transaction_date_l1 <= bs_cutoff)
-    return Decimal(str(q.scalar() or 0))
+    return Decimal(str(q.scalar()))
 
 
 # ═══════════════════════════════════════════════════════════════

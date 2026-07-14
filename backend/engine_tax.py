@@ -39,8 +39,8 @@ class TaxAccrualEngine:
         ).first()
         vat_type_ov = resolve_taxpayer_type_by_date(account, self.db, period_start.date()) if account else None
         profile = build_profile(account, period_start.date(), vat_type_override=vat_type_ov,
-                                surcharge_halved=account.surcharge_halved if account else None) if account else EntityProfile(
-            vat_type="small_scale", income_type="small_micro", surcharge_halved=True, effective_date=period_start.date()
+                                surcharge_halved_l3=account.surcharge_halved_l3 if account else None) if account else EntityProfile(
+            vat_type="small_scale", income_type="small_micro", surcharge_halved_l3=True, effective_date=period_start.date()
         )
         ledger = account and self.db.query(Ledger).filter(
             Ledger.code == account.code
@@ -57,7 +57,7 @@ class TaxAccrualEngine:
             _, output_vat = sn.biz_dc("222103", period_start, close_dt)
             curr_vat = output_vat
             input_vat = Decimal("0")
-            carry_forward = Decimal("0")
+            carry_forward_l1 = Decimal("0")
         else:
             out_d, out_c = sn.biz_dc("222101", period_start, close_dt)
             output_vat = out_c - out_d
@@ -67,9 +67,9 @@ class TaxAccrualEngine:
             prev_input_end = period_start - timedelta(seconds=1)
             prev_input_total = sn.bal_at("222102", prev_input_end)
             prev_output_total = sn.crd_at("222101", prev_input_end)
-            carry_forward = max(prev_input_total - prev_output_total, Decimal("0"))
+            carry_forward_l1 = max(prev_input_total - prev_output_total, Decimal("0"))
 
-            curr_vat = max(output_vat - carry_forward - input_vat, Decimal("0"))
+            curr_vat = max(output_vat - carry_forward_l1 - input_vat, Decimal("0"))
 
         if curr_vat > Decimal("0"):
             if profile.vat_type != "small_scale":
@@ -89,10 +89,15 @@ class TaxAccrualEngine:
                 import models
                 quarter_start_month = period_start.month - 2
                 q_start = datetime(period_start.year, quarter_start_month, 1, 0, 0, 0)
+                # 兼容 issue_date_l1 存储为 date 或 datetime 的混合情况
+                def _to_datetime(d):
+                    if hasattr(d, 'hour'):
+                        return d
+                    return datetime(d.year, d.month, d.day)
                 invs = [inv for inv in sn.invoices()
                         if inv.direction == InvoiceDirection.OUT
-                        and inv.issue_date_l1 >= q_start
-                        and inv.issue_date_l1 <= close_dt]
+                        and _to_datetime(inv.issue_date_l1) >= q_start
+                        and _to_datetime(inv.issue_date_l1) <= close_dt]
 
                 quarterly_revenue = _d(sum(_d(inv.amount_without_tax_l1) for inv in invs))
 

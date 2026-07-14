@@ -10,6 +10,7 @@
 
 运行：pytest tests/invariants/test_truth_source_invariants.py -v
 """
+import uuid
 import pytest
 from decimal import Decimal
 from datetime import datetime
@@ -17,11 +18,10 @@ from datetime import datetime
 pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
 from commands.base import dispatch
-from commands.orders import CreateOrder, ReturnOrder
-from models import Account, StockMove, Inventory, Invoice
-from enums import InvoiceDirection, CertificationStatus
+from commands.orders import CreateInvoice, ReturnOrder
+from models import Account, StockMove, Inventory, PurchaseOrder
 from models_finance import AccountMove, AccountMoveLine, LedgerAccount
-from tests.factories import make_product, make_supplier
+from tests.factories import make_product
 from utils import Q2
 
 PURCHASE_DATE = datetime(2026, 6, 10)
@@ -71,62 +71,50 @@ def _line_amount(lines, account_code, ledger_db):
     return debit, credit
 
 
-def _create_invoice_for_order(db, order, supplier):
-    """为采购单创建进项发票（测试辅助函数）"""
-    total_amt = sum(Decimal(str(it.total_price_l1)) for it in order.items)
-    tax_amt = sum(
-        Decimal(str(it.total_price_l1)) * Decimal(str(it.tax_rate_l1))
-        for it in order.items
-    ).quantize(Q2)
-    inv = Invoice(
-        account_id=order.account_id,
-        invoice_no=f"INV-{order.id}",
-        direction=InvoiceDirection.IN,
-        invoice_type="special",
-        tax_rate_l1=Decimal("0.13"),
-        amount_without_tax_l1=total_amt,
-        tax_amount_l1=tax_amt,
-        amount_with_tax_l1=(total_amt + tax_amt).quantize(Q2),
-        counterparty_name=supplier.name if supplier else "",
-        seller_name=supplier.name if supplier else "",
-        buyer_name="测试公司",
-        issue_date_l1=PURCHASE_DATE,
-        certification_status_l3=CertificationStatus.CERTIFIED,
-        related_order_id=order.id,
-        related_order_type="purchase_order",
-        notes="测试发票",
-    )
-    db.add(inv)
-    db.flush()
+def _create_purchase_invoice(db, pid, qty, unit_price, tax_rate):
+    """创建进项发票并自动生成采购单，返回 Invoice。
+
+    发票是进项税真相源：unit_price 为不含税单价，金额三段由 qty×unit_price 推导。
+    """
+    unit_price = Decimal(str(unit_price))
+    tax_rate = Decimal(str(tax_rate))
+    amount_without_tax = (Decimal(str(qty)) * unit_price).quantize(Q2)
+    tax_amount = (amount_without_tax * tax_rate).quantize(Q2)
+    amount_with_tax = (amount_without_tax + tax_amount).quantize(Q2)
+    return dispatch(CreateInvoice(
+        account_id=1, operator="test",
+        invoice_no=f"INV-TS-{uuid.uuid4().hex[:8]}",
+        direction="in", invoice_type="special",
+        tax_rate=tax_rate,
+        amount_without_tax=amount_without_tax,
+        tax_amount=tax_amount,
+        amount_with_tax=amount_with_tax,
+        counterparty_name="测试供应商",
+        seller_name="测试供应商", buyer_name="本公司",
+        issue_date=PURCHASE_DATE.strftime("%Y-%m-%d"),
+        purchase_order_action="auto_create",
+        items=[{"product_id": pid, "quantity": qty,
+                "unit_price": str(unit_price), "tax_rate": str(tax_rate)}],
+    ), db)
 
 
 def _setup_diluted_stock(db):
-    """搭建"均价被稀释"的测试场景。
+    """搭建"均价被稀释"的测试场景（不含税口径）。
 
-    先入低价货 5 件单价 500 → 库存 5 件均价 500
-    再入高价货 A 10 件单价 1000 → A 入库时均价 = (2500+10000)/15 = 833.33
-    → A 的 StockMove.unit_cost = 833.33（被稀释），但 A 的原发票单价是 1000
+    先入低价货 5 件单价 500 → 库存 5 件，不含税均价 500
+    再入高价货 A 10 件单价 1000 → A 入库时不含税均价 = (2500+10000)/15 = 833.33
+    → A 的 StockMove.unit_cost = 833.33（被稀释），但 A 的原入库不含税单价是 1000
 
     返回 (product, order_a) — order_a 是被退货的采购单。
     """
     p = make_product(db, account_id=1, purchase_price=Decimal("1000"), sale_price=Decimal("1500"))
-    s = make_supplier(db, account_id=1)
 
     # 1. 先入低价货（稀释均价）
-    o1 = dispatch(CreateOrder(order_type="purchase", 
-        account_id=1, operator="test",
-        supplier_id=s.id, business_date=PURCHASE_DATE,
-        items=[{"product_id": p.id, "quantity_l1": 5, "unit_price_l1": 500, "tax_rate_l1": 0.13}],
-    ), db)
-    _create_invoice_for_order(db, o1, s)
+    _create_purchase_invoice(db, p.id, 5, Decimal("500"), Decimal("0.13"))
 
     # 2. 再入高价货 A（A 的 unit_cost 被稀释到 833.33）
-    order_a = dispatch(CreateOrder(order_type="purchase", 
-        account_id=1, operator="test",
-        supplier_id=s.id, business_date=PURCHASE_DATE,
-        items=[{"product_id": p.id, "quantity_l1": 10, "unit_price_l1": 1000, "tax_rate_l1": 0.13}],
-    ), db)
-    _create_invoice_for_order(db, order_a, s)
+    invoice_a = _create_purchase_invoice(db, p.id, 10, Decimal("1000"), Decimal("0.13"))
+    order_a = db.query(PurchaseOrder).filter(PurchaseOrder.id == invoice_a.related_order_id).first()
 
     return p, order_a
 
@@ -134,10 +122,10 @@ def _setup_diluted_stock(db):
 class Test采购退货借贷同源:
     """不变量：采购退货的借方应付 / 贷方库存 / 贷方税额 必须用同一数据源（原发票单价）
 
-    场景：先入低价 5×500 → 再入高价 A 10×1000
-    → A 的 StockMove.unit_cost 被稀释为 833.33（≠ 原发票单价 1000）
+    场景：先入低价 5×500 → 再入高价 A 10×1000（均为不含税口径）
+    → A 的 StockMove.unit_cost 被稀释为 833.33（≠ 原入库不含税单价 1000）
     → 退货 A 中 1 件
-    → 必须用 A 的原发票单价 1000，不能用稀释后的 avg_cost 833.33
+    → 退货凭证必须用 A 的原发票不含税单价 1000，不能用稀释后的 avg_cost 833.33
     """
 
     def test_场景验证_A的unit_cost被稀释(self, db, general_account):
@@ -160,7 +148,7 @@ class Test采购退货借贷同源:
         """
         p, order_a = _setup_diluted_stock(db)
 
-        ret = dispatch(ReturnOrder(order_type="purchase", 
+        ret = dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -181,7 +169,7 @@ class Test采购退货借贷同源:
         """不变量：Cr 222102 进项税额转出 = 1000 × 0.13 = 130"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnOrder(order_type="purchase", 
+        dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -199,7 +187,7 @@ class Test采购退货借贷同源:
         """不变量：Dr 2202 应付 = 1000 × 1.13 = 1130"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnOrder(order_type="purchase", 
+        dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -217,7 +205,7 @@ class Test采购退货借贷同源:
         """综合不变量：Dr 2202 == Cr 1405 + Cr 222102，且都基于原发票单价"""
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnOrder(order_type="purchase", 
+        dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -243,8 +231,8 @@ class Test采购退货借贷同源:
 class Test反向StockMove同源:
     """不变量：反向 StockMove.total_cost 必须按原入库 total_cost 比例分摊
 
-    场景：先入低价 5×500 → 再入高价 A 10×1000
-    → A 的 StockMove.total_cost = 10000（原发票金额），unit_cost = 833.33（稀释后）
+    场景：先入低价 5×500 → 再入高价 A 10×1000（均为不含税口径）
+    → A 的 StockMove.total_cost = 10000（原入库不含税金额），unit_cost = 833.33（稀释后）
     → 退货 A 中 1 件
     → 反向 StockMove.total_cost 必须是 1000（=10000/10×1），不是 833.33
     """
@@ -252,7 +240,7 @@ class Test反向StockMove同源:
     def test_反向StockMove总成本等于原入库按比例分摊(self, db, general_account):
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnOrder(order_type="purchase", 
+        dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",
@@ -266,7 +254,7 @@ class Test反向StockMove同源:
         ).first()
         assert rev_move, "应生成反向 StockMove"
 
-        # 反向 total_cost = 原入库单价 × 退货数量 = 1000
+        # 反向 total_cost = 原入库不含税单价 × 退货数量 = 1000
         assert rev_move.total_cost_l2 == Decimal("1000.00"), (
             f"反向 StockMove.total_cost 必须按原入库金额比例分摊："
             f"期望 1000.00，实际 {rev_move.total_cost_l2}。"
@@ -280,7 +268,7 @@ class Test反向StockMove同源:
         """
         p, order_a = _setup_diluted_stock(db)
 
-        dispatch(ReturnOrder(order_type="purchase", 
+        dispatch(ReturnOrder(order_type="purchase",
             account_id=1, operator="test",
             order_id=order_a.id,
             return_date="2026-06-20",

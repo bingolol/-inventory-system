@@ -11,6 +11,7 @@
 3. 跑 MCP stdio main loop
 """
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -39,8 +40,18 @@ from . import tool_dispatcher
 from . import resources as resources_mod
 from . import prompts as prompts_mod
 from errors import BusinessError
+from database import init_db
 
 logger = logging.getLogger("mcp_server")
+
+# 初始化数据库 (WAL 模式 + 自动迁移 + 触发器, 幂等)
+def _init_database():
+    """确保数据库 schema 最新、WAL 模式已开启、写保护触发器已就绪。"""
+    try:
+        init_db()
+        logger.info("MCP server 数据库初始化完成 (WAL + 迁移 + 触发器)")
+    except Exception as e:
+        logger.warning(f"数据库初始化失败: {e}")
 
 # 初始化账本上下文
 def _init_context():
@@ -92,11 +103,9 @@ async def call_tool(name: str, arguments: dict):
 
     try:
         result = handler(arguments)
-        import json
         return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, default=str))]
     except BusinessError as e:
         err = tool_dispatcher.format_business_error(e)
-        import json
         return CallToolResult(
             isError=True,
             content=[TextContent(
@@ -143,7 +152,6 @@ async def read_resource(uri) -> str:
     uri_str = str(uri)
     try:
         result = resources_mod.read_resource(uri_str)
-        import json
         return json.dumps(result, ensure_ascii=False, default=str)
     except Exception as e:
         logger.exception(f"read_resource {uri_str} 失败")
@@ -208,6 +216,7 @@ async def main():
         stream=sys.stderr,
     )
 
+    _init_database()
     _init_context()
 
     async with stdio_server() as (read_stream, write_stream):

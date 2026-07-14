@@ -1,6 +1,6 @@
 import contextvars
 import re
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session, DeclarativeBase
 from sqlalchemy.sql.dml import Update, Delete, Insert
 from errors import BusinessError, ErrorCode
@@ -73,6 +73,15 @@ def _make_engine(db_url: str):
     return e
 
 
+def _enable_wal(engine):
+    """SQLite WAL 模式：读写不互斥，始终读到最新已提交数据。"""
+    import re
+    if re.search(r'sqlite', str(engine.url), re.IGNORECASE):
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
+
+
 _engine = _make_engine(DATABASE_URL)
 
 
@@ -124,6 +133,7 @@ def get_db():
 
 
 def init_db():
+    _enable_wal(_engine)
     import models
     import models_finance
     import models_bank

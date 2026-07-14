@@ -166,7 +166,7 @@ function calculateTotalEquity(r) {
 async function loadData() {
   historyLoading.value = true
   try { const res = await financeApi.getOpeningBalances(); historyList.value = res.items || res }
-  catch (e) { console.error('加载失败:', e) }
+  catch (e) { form.value = {}; ElMessage.warning('期初余额加载失败') }
   finally { historyLoading.value = false }
 }
 

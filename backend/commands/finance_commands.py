@@ -466,7 +466,9 @@ class UpdateCashFlowTransactionHandler(CommandHandler):
             transaction.related_entity_id = cmd.related_entity_id
 
         # 4. 重新生成总账凭证
-        counter_account = getattr(cmd, "counter_account_code", None) or "2202"
+        counter_account = getattr(cmd, "counter_account_code", None)
+        if not counter_account:
+            counter_account = "2202"
         if not counter_account or counter_account == "2202":
             mapping = {
                 ("operating", "inflow"): "6001",

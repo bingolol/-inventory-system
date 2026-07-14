@@ -97,6 +97,8 @@ def delete_account(db: Session, account_id: int, operator: str = "system") -> bo
         return False
 
     # 检查各关联表是否还有数据
+    # 注意：OperationLog 是元数据（delete_account 自身会写日志），必须放最后检查，
+    # 否则会先于 BankAccount 等真实业务表触发，导致错误消息与实际阻塞原因不符。
     checks = [
         (models.Product, "商品"),
         (models.Supplier, "供应商"),
@@ -108,7 +110,6 @@ def delete_account(db: Session, account_id: int, operator: str = "system") -> bo
         (models.PersonalTransaction, "个人流水"),
         (models.OpeningBalance, "期初余额"),
         (models.Inventory, "库存"),
-        (models.OperationLog, "操作日志"),
         (models.CashFlowTransaction, "现金流"),
         (models.BankAccount, "银行账户"),
         (models.BankTransaction, "银行流水"),
@@ -116,12 +117,17 @@ def delete_account(db: Session, account_id: int, operator: str = "system") -> bo
         (models.Receipt, "收款记录"),
         (models.FixedAsset, "固定资产"),
         (models.IntangibleAsset, "无形资产"),
+        (models.OperationLog, "操作日志"),
     ]
     for model, label in checks:
         if hasattr(model, 'account_id'):
             count = db.query(model).filter(model.account_id == account_id).count()
             if count > 0:
-                raise BusinessError(code=ErrorCode.PRODUCT_HAS_TRANSACTIONS, data={"count": count, "label": label})
+                raise BusinessError(
+                    code=ErrorCode.ACCOUNT_HAS_BUSINESS_DATA,
+                    message=f"账本存在 {count} 条{label}，无法删除",
+                    data={"count": count, "label": label},
+                )
 
     log_op(db, account_id, "delete", "account", account_id, f"删除账本: {account.name}", operator=operator)
     db.delete(account)

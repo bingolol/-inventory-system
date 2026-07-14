@@ -22,49 +22,49 @@ from utils import _d, Q2
 def build_module_vat(db: Session, account_id: int, start_date: datetime, end_date: datetime, account):
     agg = aggregate_vat_invoices(db, account_id, start_date, end_date)
     profile = build_profile(account, ref_date=start_date.date())
-    carry_forward = compute_carry_forward(db, account, start_date)
+    carry_forward_l1 = compute_carry_forward(db, account, start_date)
 
     vat_result = policy_vat(
-        profile=profile, total_revenue=agg["output_total"],
-        input_tax=agg["input_tax"], output_tax=agg["output_tax"],
+        profile=profile, total_revenue_l1=agg["output_total"],
+        input_tax_l1=agg["input_tax_l1"], output_tax_l1=agg["output_tax_l1"],
         ordinary_revenue=agg["ordinary_revenue"], special_revenue=agg["special_revenue"],
-        carry_forward=carry_forward,
+        carry_forward_l1=carry_forward_l1,
     )
 
-    total_revenue = agg["output_total"].quantize(Q2)
+    total_revenue_l1 = agg["output_total"].quantize(Q2)
     ordinary_rev = agg["ordinary_revenue"].quantize(Q2)
     special_rev = agg["special_revenue"].quantize(Q2)
     exemption_threshold = float(VAT_SMALL_SCALE_QUARTERLY_EXEMPTION.value)
-    is_under = float(total_revenue) <= exemption_threshold
+    is_under = float(total_revenue_l1) <= exemption_threshold
 
     return {
         "taxpayer_type": profile.vat_type,
         "taxpayer_type_label": "小规模纳税人" if profile.vat_type == "small_scale" else "一般纳税人",
-        "quarterly_total": float(total_revenue),
+        "quarterly_total": float(total_revenue_l1),
         "exemption_threshold": exemption_threshold, "is_under_threshold": is_under,
         "ordinary_revenue": float(ordinary_rev),
         "ordinary_tax": float(vat_result.tax_payable_gross.quantize(Q2)),
         "special_revenue": float(special_rev),
         "special_tax_rate": float(VAT_SMALL_SCALE_REDUCED_RATE.value) if profile.vat_type == "small_scale" else None,
-        "vat_payable": float(vat_result.tax_payable.quantize(Q2)),
+        "vat_payable_l1": float(vat_result.tax_payable.quantize(Q2)),
         "reduction_item": vat_result.reduction_item,
-        "input_tax": float(agg["input_tax"].quantize(Q2)),
-        "output_tax": float(agg["output_tax"].quantize(Q2)) if profile.vat_type == "general" else None,
-        "carry_forward": float(carry_forward.quantize(Q2)) if profile.vat_type == "general" else None,
+        "input_tax_l1": float(agg["input_tax_l1"].quantize(Q2)),
+        "output_tax_l1": float(agg["output_tax_l1"].quantize(Q2)) if profile.vat_type == "general" else None,
+        "carry_forward_l1": float(carry_forward_l1.quantize(Q2)) if profile.vat_type == "general" else None,
     }
 
 
-def build_module_surcharge(vat_payable: float, surcharge_halved: bool):
+def build_module_surcharge(vat_payable_l1: float, surcharge_halved_l3: bool):
     """附加税 = 城建税 + 教育费附加 + 地方教育附加，附在增值税之上。
 
     税率从 policy/surcharge_facts.py 事实源读取，禁止硬编码。
     """
     facts = load_surcharge_facts()
     full_rate = facts.total_rate
-    halving = facts.halving_factor if surcharge_halved else Decimal("1")
+    halving = facts.halving_factor if surcharge_halved_l3 else Decimal("1")
     effective_rate = full_rate * halving
 
-    base = Decimal(str(vat_payable or 0))
+    base = Decimal(str(vat_payable_l1 or 0))
     total = (base * effective_rate).quantize(Q2)
 
     def _item(name: str, rate: Decimal, law: str) -> dict:
@@ -78,13 +78,13 @@ def build_module_surcharge(vat_payable: float, surcharge_halved: bool):
     ]
 
     return {
-        "vat_payable": float(base),
+        "vat_payable_l1": float(base),
         "breakdown": breakdown,
         "total": float(total),
         "full_rate": f"{float(full_rate) * 100:.0f}%",
         "effective_rate": f"{float(effective_rate) * 100:.1f}%",
-        "is_halved": surcharge_halved,
-        "reduction_note": "您是小型微利企业/个体工商户/小规模纳税人，享受六税两费减半征收。" if surcharge_halved else "按法定税率全额征收。",
+        "is_halved": surcharge_halved_l3,
+        "reduction_note": "您是小型微利企业/个体工商户/小规模纳税人，享受六税两费减半征收。" if surcharge_halved_l3 else "按法定税率全额征收。",
     }
 
 

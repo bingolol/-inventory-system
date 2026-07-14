@@ -13,6 +13,7 @@ from reports.dsl import (
     LEDGER_COMPOSITE, LEDGER_PERIOD, SUM_FIELDS, ESCAPE_HATCH,
     SubaccountFallback,
 )
+from crud.finance._profit import SURCHARGE_SUB_CODES
 
 
 def _resolve_cumulative_profit(snapshot):
@@ -48,23 +49,23 @@ INCOME_STATEMENT = [
         source=LEDGER_PERIOD(["6603"], bucket=Bucket.PNL_EXCLUDED),
     ),
 
-    # 6403 主科目余额为 0 时回退到子科目（640302/303/304）
+    # 6403 主科目余额为 0 时回退到子科目（与 _profit.py SURCHARGE_SUB_CODES 同源，11 个子科目）
     Field("tax_surcharges", "税金及附加",
         source=LEDGER_PERIOD(["6403"], bucket=Bucket.PNL_EXCLUDED),
-        transform=SubaccountFallback(["640302", "640303", "640304"]),
+        transform=SubaccountFallback(SURCHARGE_SUB_CODES),
     ),
 
     # ── 附加税明细 ──
     Field("consumption_tax", "消费税",
         source=LEDGER_PERIOD(["640301"], bucket=Bucket.PNL_EXCLUDED),
     ),
-    Field("urban_construction_tax", "城建税",
+    Field("urban_construction_tax_l1", "城建税",
         source=LEDGER_PERIOD(["640302"], bucket=Bucket.PNL_EXCLUDED),
     ),
-    Field("education_surcharge", "教育费附加",
+    Field("education_surcharge_l1", "教育费附加",
         source=LEDGER_PERIOD(["640303"], bucket=Bucket.PNL_EXCLUDED),
     ),
-    Field("local_education_surcharge", "地方教育附加",
+    Field("local_education_surcharge_l1", "地方教育附加",
         source=LEDGER_PERIOD(["640304"], bucket=Bucket.PNL_EXCLUDED),
     ),
     Field("depreciation_expense", "折旧费用",

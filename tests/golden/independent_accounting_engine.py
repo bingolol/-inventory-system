@@ -69,12 +69,15 @@ class FixedAsset:
     periods_depreciated: 已计提折旧期数（默认 1 期）
     tax_rate: 进项税率，默认 0；需要价税分离时传 0.13
     salvage_rate: 残值率，默认 0
+    paid: 是否已现金支付（默认 False=赊购）；
+          True=已付现，减少银行存款，不形成应付账款
     """
     original_value: Decimal
     useful_life_months: int
     periods_depreciated: int = 1
     tax_rate: Decimal = Decimal("0")
     salvage_rate: Decimal = Decimal("0")
+    paid: bool = False
 
 
 @dataclass
@@ -111,7 +114,12 @@ class EmployeeFundedExpense:
     """员工垫付费用。
 
     员工先代企业支付费用，企业后报销。
-    净效果：
+    语义示例：amount=1000, reimbursed=1000, reversed_reimbursement=1000
+    表示"员工垫付 1000 → 企业报销 1000 → 红冲报销 1000"
+    净效果：费用仍确认 1000，企业仍欠员工 1000（报销被红冲），
+    银行存款无净流出（报销付款被红冲抵销）。
+
+    净效果（一般情况）：
     - 费用 += amount
     - 其他应付款（对员工） += amount - reimbursed + reversed_reimbursement
     - 银行存款 -= reimbursed - reversed_reimbursement
@@ -140,6 +148,7 @@ class BalanceSheet:
     accounts_receivable: Decimal
     inventory: Decimal
     prepaid_tax: Decimal
+    prepayments: Decimal
     fixed_assets_original: Decimal
     accumulated_depreciation: Decimal
     fixed_assets_net: Decimal
@@ -147,7 +156,7 @@ class BalanceSheet:
 
     accounts_payable: Decimal
     other_payable: Decimal
-    vat_payable: Decimal
+    vat_payable_l1: Decimal
     tax_surcharge_payable: Decimal
     income_tax_liability: Decimal
     total_liabilities: Decimal
@@ -237,8 +246,8 @@ def calculate(facts: Facts) -> ExpectedReports:
 
     revenue = Decimal("0")
     cogs = Decimal("0")
-    input_tax = Decimal("0")
-    output_tax = Decimal("0")
+    input_tax_l1 = Decimal("0")
+    output_tax_l1 = Decimal("0")
     accounts_payable = Decimal("0")
     accounts_receivable = Decimal("0")
 
@@ -249,7 +258,7 @@ def calculate(facts: Facts) -> ExpectedReports:
         if facts.enable_vat_deduction:
             tax = _q(amount * p.tax_rate)
             inv_value += amount
-            input_tax += tax
+            input_tax_l1 += tax
             accounts_payable += amount + tax
         else:
             # 小规模纳税人：价税合一全额入库存，无进项税
@@ -265,7 +274,7 @@ def calculate(facts: Facts) -> ExpectedReports:
         if facts.enable_vat_deduction:
             tax = _q(amount * r.tax_rate)
             inv_value -= amount
-            input_tax -= tax
+            input_tax_l1 -= tax
             accounts_payable -= amount + tax
         else:
             inv_value -= amount
@@ -279,7 +288,7 @@ def calculate(facts: Facts) -> ExpectedReports:
         if facts.enable_vat_deduction:
             tax = _q(amount * s.tax_rate)
             revenue += amount
-            output_tax += tax
+            output_tax_l1 += tax
             accounts_receivable += amount + tax
         else:
             # 小规模纳税人：收入为含税全额，无销项税
@@ -301,7 +310,7 @@ def calculate(facts: Facts) -> ExpectedReports:
         if facts.enable_vat_deduction:
             tax = _q(amount * r.tax_rate)
             revenue -= amount
-            output_tax -= tax
+            output_tax_l1 -= tax
             accounts_receivable -= amount + tax
         else:
             revenue -= amount
@@ -320,16 +329,23 @@ def calculate(facts: Facts) -> ExpectedReports:
     fixed_assets_original = Decimal("0")
     accumulated_depreciation = Decimal("0")
     depreciation_expense = Decimal("0")
+    cash_fa_payment = Decimal("0")  # 现金购买固定资产的支出
     for fa in facts.fixed_assets:
         fixed_assets_original += fa.original_value
 
-        # 进项税与应付（默认赊购）
+        # 进项税与应付（默认赊购；paid=True 时为现金购买）
         if facts.enable_vat_deduction:
             fa_tax = _q(fa.original_value * fa.tax_rate)
-            input_tax += fa_tax
-            accounts_payable += fa.original_value + fa_tax
+            input_tax_l1 += fa_tax
+            if fa.paid:
+                cash_fa_payment += fa.original_value + fa_tax  # 现金支付
+            else:
+                accounts_payable += fa.original_value + fa_tax  # 赊购
         else:
-            accounts_payable += fa.original_value
+            if fa.paid:
+                cash_fa_payment += fa.original_value
+            else:
+                accounts_payable += fa.original_value
 
         # 直线法折旧：原值×(1-残值率)÷使用年限
         monthly = _q(fa.original_value * (Decimal("1") - fa.salvage_rate) / Decimal(str(fa.useful_life_months)))
@@ -351,9 +367,11 @@ def calculate(facts: Facts) -> ExpectedReports:
         else:
             accounts_payable += e.amount  # 挂账，形成应付账款
 
-    # ═══ 对供应商多付款：银行存款已付，但费用/采购不确认，形成预付/应收═══
+    # ═══ 对供应商多付款：银行存款已付，但费用/采购不确认，形成预付账款（资产）═══
+    # 依据：小企业会计准则 1123 预付账款是独立资产科目，不应塞进应付账款做负数。
+    prepayments = Decimal("0")
     for sop in facts.supplier_overpayments:
-        accounts_payable -= sop.amount  # 借方余额，表示对供应商的债权
+        prepayments += sop.amount
 
     # ═══ 员工垫付费用：费用已发生，负债对象为员工，报销时减少银行存款═══
     other_payable = Decimal("0")
@@ -377,6 +395,7 @@ def calculate(facts: Facts) -> ExpectedReports:
         + facts.cash_flows.sale_receipt
         - cash_expenses
         - employee_reimbursement
+        - cash_fa_payment
         - sum(sop.amount for sop in facts.supplier_overpayments)
         - facts.bank_fees
     )
@@ -384,21 +403,35 @@ def calculate(facts: Facts) -> ExpectedReports:
     # ═══ 增值税：销项税 - 进项税═══
     # 依据：§3 应交增值税 = 销项税额 - 进项税额。
     if facts.enable_vat_deduction:
-        vat_net = output_tax - input_tax
-        vat_payable = max(vat_net, Decimal("0"))
+        vat_net = output_tax_l1 - input_tax_l1
+        vat_payable_l1 = max(vat_net, Decimal("0"))
         prepaid_tax = max(-vat_net, Decimal("0"))
     else:
-        vat_payable = Decimal("0")
+        vat_payable_l1 = Decimal("0")
         prepaid_tax = Decimal("0")
 
     # ═══ 所得税：利润总额 × 税率（小微企业实际税负）═══
     # 依据：§7.1 所得税费用按应纳税所得额与实际税负计算。
+    # 小微企业优惠：利润≤300万适用 5%（或 10%）实际税负；超过 300万按 25%。
+    # 独立会计师应从税务局核定单确认实际税负，不应依赖默认值。
+    #
+    # 符号约定：本独立引擎中 depreciation_expense/financial_expenses 等费用类字段
+    # 均为正数（累加后从收入中减去），与系统报表中费用显示为负数的约定相反。
+    # 两种约定对 net_profit 的计算结果一致，对照表生成时需对费用类字段取绝对值比较。
     profit_before_tax = _q(
         revenue - cogs - operating_expenses - depreciation_expense
         - taxes_and_surcharges - financial_expenses
     )
     income_tax = _q(profit_before_tax * facts.income_tax_rate) if profit_before_tax > 0 else Decimal("0")
     net_profit = _q(profit_before_tax - income_tax)
+
+    # 超限警告：利润超过 300 万但税率仍是默认 5%，提示可能不适用小微企业优惠
+    _tax_warnings = []
+    if profit_before_tax > Decimal("3000000") and facts.income_tax_rate == Decimal("0.05"):
+        _tax_warnings.append(
+            f"利润总额 {profit_before_tax} 超过 300 万，默认 5% 小微税率可能不适用，"
+            "应按 25% 税率重新计算（独立会计师需从税务局核定单确认）"
+        )
 
     # ═══ 资产负债表═══
     fixed_assets_net = fixed_assets_original - accumulated_depreciation
@@ -407,13 +440,14 @@ def calculate(facts: Facts) -> ExpectedReports:
         + max(accounts_receivable, Decimal("0"))
         + inv_value
         + prepaid_tax
+        + prepayments
         + fixed_assets_net
     )
 
     total_liabilities = (
         accounts_payable
         + max(other_payable, Decimal("0"))
-        + vat_payable
+        + vat_payable_l1
         + tax_surcharge_payable
         + income_tax
     )
@@ -427,13 +461,14 @@ def calculate(facts: Facts) -> ExpectedReports:
         accounts_receivable=_q(max(accounts_receivable, Decimal("0"))),
         inventory=_q(inv_value),
         prepaid_tax=_q(prepaid_tax),
+        prepayments=_q(prepayments),
         fixed_assets_original=_q(fixed_assets_original),
         accumulated_depreciation=_q(accumulated_depreciation),
         fixed_assets_net=_q(fixed_assets_net),
         total_assets=_q(total_assets),
         accounts_payable=_q(accounts_payable),
         other_payable=_q(max(other_payable, Decimal("0"))),
-        vat_payable=_q(vat_payable),
+        vat_payable_l1=_q(vat_payable_l1),
         tax_surcharge_payable=_q(tax_surcharge_payable),
         income_tax_liability=_q(income_tax),
         total_liabilities=_q(total_liabilities),
@@ -458,7 +493,7 @@ def calculate(facts: Facts) -> ExpectedReports:
 
     # ═══ 勾稽校验：资产 = 负债 + 权益；净利润 = 留存收益增加额═══
     # 依据：§84 资产负债表平衡公式；利润表净利润 = 留存收益本期增加。
-    messages = []
+    messages = list(_tax_warnings)  # 先装入税率超限警告（非阻塞）
     ok = True
     if bs.total_assets != bs.total_liabilities_and_equity:
         ok = False

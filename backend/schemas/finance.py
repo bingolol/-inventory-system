@@ -87,6 +87,8 @@ class FixedAssetBase(BaseModel):
 class FixedAssetCreate(FixedAssetBase):
     tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=1, max_digits=5, decimal_places=2,
         description="增值税税率（一般纳税人价税分离用，0=不分离）")
+    payment_method: str = Field(default="company", pattern="^(company|private_advance)$",
+        description="付款方式: company=公司付款(贷2202应付账款) | private_advance=个人垫付(贷2241其他应付款)")
 
 
 class FixedAssetUpdate(BaseModel):
@@ -185,9 +187,9 @@ class TaxReport(BaseModel):
     period_end: str
     taxpayer_type: str
     output_total: Decimal
-    output_tax: Decimal
+    output_tax_l1: Decimal
     input_total: Decimal
-    input_tax: Decimal
+    input_tax_l1: Decimal
     tax_payable: Decimal
     invoice_list: List[InvoiceOut]
 
@@ -199,9 +201,9 @@ class TaxReportMonth(BaseModel):
     period_end: str
     taxpayer_type: str
     output_total: Decimal
-    output_tax: Decimal
+    output_tax_l1: Decimal
     input_total: Decimal
-    input_tax: Decimal
+    input_tax_l1: Decimal
     tax_payable: Decimal
     invoice_list: List[InvoiceOut]
 
@@ -214,7 +216,7 @@ class VATDeclaration(BaseModel):
     period_start: str
     period_end: str
     # 一、计税依据
-    total_revenue: Decimal = Decimal('0')  # 应税不含税销售额
+    total_revenue_l1: Decimal = Decimal('0')  # 应税不含税销售额
     tax_rate: Decimal = VAT_SMALL_SCALE_SYNDICATED_RATE.value    # 征收率（从政策事实源取值）
     tax_reduction: Decimal = Decimal('0')  # 减免税额
     # 二、税款计算
@@ -236,7 +238,7 @@ class IncomeTaxReport(BaseModel):
     account_id: int
     # ── 会计准则口径核心字段（利润表说话）──
     # 收入
-    total_revenue: Decimal  # 利润表营业收入（总账 6001+6051 贷方净额）
+    total_revenue_l1: Decimal  # 利润表营业收入（总账 6001+6051 贷方净额）
     # 成本
     total_cost: Decimal     # 利润表营业成本（总账 6401 借方净额）
     # 费用
@@ -422,11 +424,11 @@ class VATDeclarationOut(BaseModel):
     id: int
     period: str
     taxpayer_type: str
-    total_revenue: Decimal = Decimal("0")
-    output_tax: Decimal = Decimal("0")
-    input_tax: Decimal = Decimal("0")
-    vat_payable: Decimal = Decimal("0")
-    carry_forward: Decimal = Decimal("0")
+    total_revenue_l1: Decimal = Decimal("0")
+    output_tax_l1: Decimal = Decimal("0")
+    input_tax_l1: Decimal = Decimal("0")
+    vat_payable_l1: Decimal = Decimal("0")
+    carry_forward_l1: Decimal = Decimal("0")
     period_start: str
     period_end: str
     snapshot_at: datetime
@@ -436,20 +438,20 @@ class VATDeclarationOut(BaseModel):
 
 class SurchargeDeclarationCreate(BaseModel):
     period: str
-    urban_construction_tax: Decimal = Decimal("0")
-    education_surcharge: Decimal = Decimal("0")
-    local_education_surcharge: Decimal = Decimal("0")
+    urban_construction_tax_l1: Decimal = Decimal("0")
+    education_surcharge_l1: Decimal = Decimal("0")
+    local_education_surcharge_l1: Decimal = Decimal("0")
     notes: str = ""
 
 
 class SurchargeDeclarationOut(BaseModel):
     id: int
     period: str
-    vat_payable: Decimal
-    urban_construction_tax: Decimal
-    education_surcharge: Decimal
-    local_education_surcharge: Decimal
-    total: Decimal
+    vat_payable_l1: Decimal
+    urban_construction_tax_l1: Decimal
+    education_surcharge_l1: Decimal
+    local_education_surcharge_l1: Decimal
+    total_l1: Decimal
     status: str
     declared_at: datetime
 

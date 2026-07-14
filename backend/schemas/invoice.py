@@ -80,7 +80,8 @@ class InvoiceItemCreate(BaseModel):
     """发票商品明细行"""
     product_id: int
     quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6,
+        description="不含税单价。发票行金额 = quantity × unit_price（不含税）")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2,
         description="行项税率，必填。一般纳税人13%/9%/6%，小规模1%，出口0%")
 
@@ -103,6 +104,8 @@ class InvoiceQuickCreate(BaseModel):
         description="销项发票必填：link_existing=关联已有销售单, auto_create=自动生成销售单")
     purchase_order_action: Optional[str] = Field(None, pattern="^(link_existing|auto_create)$",
         description="进项发票必填：link_existing=关联已有采购单, auto_create=自动生成采购单")
+    payment_method: Optional[str] = Field(None, pattern="^(company|private_advance)$",
+        description="进项发票自动生成采购单的付款方式：company=公司采购(贷2202), private_advance=个人垫付(贷2241)。默认 company")
     related_order_id: Optional[int] = Field(None, description="关联订单ID（link_existing时必填）")
     related_order_type: Optional[str] = Field(None, pattern="^(sale_order|purchase_order|expense|fixed_asset)$")
     related_original_invoice_id: Optional[int] = Field(None, description="红字发票关联的原发票ID")

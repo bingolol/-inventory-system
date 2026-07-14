@@ -48,7 +48,10 @@ class DeclareVATHandler(CommandHandler):
             raise BusinessError(code=ErrorCode.NOT_FOUND, message="账本不存在")
 
         # 解析期间
-        taxpayer_type = cmd.taxpayer_type or account.taxpayer_type_l3 or "small_scale"
+        taxpayer_type = cmd.taxpayer_type or account.taxpayer_type_l3
+        if not taxpayer_type:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message="纳税人类型未配置")
         if taxpayer_type == "small_scale":
             parts = cmd.period.split("-Q")
             if len(parts) != 2:
@@ -100,26 +103,26 @@ class DeclareVATHandler(CommandHandler):
         # 锁定快照：读取当前 VAT 数据
         agg = aggregate_vat_invoices(db, cmd.account_id, period_start, period_end)
         profile = build_profile(account, ref_date=period_start.date())
-        carry_forward = compute_carry_forward(db, account, period_start)
+        carry_forward_l1 = compute_carry_forward(db, account, period_start)
         vat_result = policy_vat(
             profile=profile,
-            total_revenue=agg["output_total"],
-            input_tax=agg["input_tax"],
-            output_tax=agg["output_tax"],
+            total_revenue_l1=agg["output_total"],
+            input_tax_l1=agg["input_tax_l1"],
+            output_tax_l1=agg["output_tax_l1"],
             ordinary_revenue=agg["ordinary_revenue"],
             special_revenue=agg["special_revenue"],
-            carry_forward=carry_forward,
+            carry_forward_l1=carry_forward_l1,
         )
 
         declaration = VATDeclaration(
             account_id=cmd.account_id,
             period=cmd.period,
             taxpayer_type=taxpayer_type,
-            total_revenue=vat_result.total_revenue.quantize(Q2),
-            output_tax=vat_result.tax_payable_gross.quantize(Q2),
-            input_tax=agg["input_tax"].quantize(Q2),
-            vat_payable=vat_result.tax_payable.quantize(Q2),
-            carry_forward=carry_forward.quantize(Q2),
+            total_revenue_l1=vat_result.total_revenue_l1.quantize(Q2),
+            output_tax_l1=vat_result.tax_payable_gross.quantize(Q2),
+            input_tax_l1=agg["input_tax_l1"].quantize(Q2),
+            vat_payable_l1=vat_result.tax_payable.quantize(Q2),
+            carry_forward_l1=carry_forward_l1.quantize(Q2),
             period_start=period_start.date(),
             period_end=period_end.date(),
             snapshot_at=datetime.now(),
@@ -150,15 +153,29 @@ class DeclareVATHandler(CommandHandler):
              f"VAT 申报声明: 期间={cmd.period}, 应缴={vat_result.tax_payable}", operator=cmd.operator)
         db.flush()
 
+        # 未认证进项发票提示：列出可抵扣但未认证的专票
+        uncertified = []
+        for inv in agg["in_invoices"]:
+            if inv.invoice_type == "special" and inv.certification_status_l3 != "certified":
+                uncertified.append({
+                    "invoice_no": inv.invoice_no,
+                    "issue_date": inv.issue_date_l1.strftime("%Y-%m-%d") if inv.issue_date_l1 else None,
+                    "amount_without_tax": float(_d(inv.amount_without_tax_l1)),
+                    "tax_amount": float(_d(inv.tax_amount_l1)),
+                    "certification_status": inv.certification_status_l3,
+                    "hint": "该专票尚未认证，认证后可在下期抵扣进项税额",
+                })
+
         return {
             "id": declaration.id,
             "period": cmd.period,
-            "vat_payable": float(vat_result.tax_payable.quantize(Q2)),
-            "total_revenue": float(vat_result.total_revenue.quantize(Q2)),
-            "output_tax": float(vat_result.tax_payable_gross.quantize(Q2)),
-            "input_tax": float(agg["input_tax"].quantize(Q2)),
-            "carry_forward": float(carry_forward.quantize(Q2)),
+            "vat_payable_l1": float(vat_result.tax_payable.quantize(Q2)),
+            "total_revenue_l1": float(vat_result.total_revenue_l1.quantize(Q2)),
+            "output_tax_l1": float(vat_result.tax_payable_gross.quantize(Q2)),
+            "input_tax_l1": float(agg["input_tax_l1"].quantize(Q2)),
+            "carry_forward_l1": float(carry_forward_l1.quantize(Q2)),
             "snapshot_at": declaration.snapshot_at.isoformat(),
+            "uncertified_invoices": uncertified,
         }
 
 
@@ -167,9 +184,9 @@ class DeclareVATHandler(CommandHandler):
 @dataclass
 class DeclareSurcharge(Command):
     period: str = ""
-    urban_construction_tax: Decimal = Decimal("0")
-    education_surcharge: Decimal = Decimal("0")
-    local_education_surcharge: Decimal = Decimal("0")
+    urban_construction_tax_l1: Decimal = Decimal("0")
+    education_surcharge_l1: Decimal = Decimal("0")
+    local_education_surcharge_l1: Decimal = Decimal("0")
     notes: str = ""
 
 
@@ -197,11 +214,11 @@ class DeclareSurchargeHandler(CommandHandler):
             SurchargeDeclaration.period == cmd.period,
         ).first()
 
-        total = cmd.urban_construction_tax + cmd.education_surcharge + cmd.local_education_surcharge
+        total = cmd.urban_construction_tax_l1 + cmd.education_surcharge_l1 + cmd.local_education_surcharge_l1
 
         if existing:
             # 已有 → 冲红旧凭证 + 重建（BR-REV: 替代旧 delta 模式，避免凭证累计叠加）
-            old_total = existing.total
+            old_total = existing.total_l1
             delta = total - old_total
             if abs(delta) <= Q2:
                 return {
@@ -215,15 +232,15 @@ class DeclareSurchargeHandler(CommandHandler):
             reverse_journal(db, cmd.account_id, "tax_surcharge",
                             period_hash(cmd.period, "surcharge"), force=True)
             # 更新声明值
-            existing.urban_construction_tax = cmd.urban_construction_tax
-            existing.education_surcharge = cmd.education_surcharge
-            existing.local_education_surcharge = cmd.local_education_surcharge
-            existing.total = total
+            existing.urban_construction_tax_l1 = cmd.urban_construction_tax_l1
+            existing.education_surcharge_l1 = cmd.education_surcharge_l1
+            existing.local_education_surcharge_l1 = cmd.local_education_surcharge_l1
+            existing.total_l1 = total
             existing.notes = cmd.notes or existing.notes
             db.flush()
             # 重新过账（force=True 跳过幂等防御）
             _post_surcharge_journal(db, cmd.account_id, cmd.period, vat_decl.period_end,
-                                     cmd.urban_construction_tax, cmd.education_surcharge, cmd.local_education_surcharge)
+                                     cmd.urban_construction_tax_l1, cmd.education_surcharge_l1, cmd.local_education_surcharge_l1)
             _cascade_fix(db, cmd.account_id, cmd.period)
             log_op(db, cmd.account_id, "update", "surcharge_declaration", existing.id,
                  f"附加税更新(冲红+重建): 期间={cmd.period}, 金额={total}", operator=cmd.operator)
@@ -240,11 +257,11 @@ class DeclareSurchargeHandler(CommandHandler):
             account_id=cmd.account_id,
             period=cmd.period,
             vat_declaration_id=vat_decl.id,
-            vat_payable=vat_decl.vat_payable,
-            urban_construction_tax=cmd.urban_construction_tax,
-            education_surcharge=cmd.education_surcharge,
-            local_education_surcharge=cmd.local_education_surcharge,
-            total=total,
+            vat_payable_l1=vat_decl.vat_payable_l1,
+            urban_construction_tax_l1=cmd.urban_construction_tax_l1,
+            education_surcharge_l1=cmd.education_surcharge_l1,
+            local_education_surcharge_l1=cmd.local_education_surcharge_l1,
+            total_l1=total,
             notes=cmd.notes,
             status="posted",
         )
@@ -253,7 +270,7 @@ class DeclareSurchargeHandler(CommandHandler):
 
         # 过账附加税分录
         _post_surcharge_journal(db, cmd.account_id, cmd.period, vat_decl.period_end,
-                                 cmd.urban_construction_tax, cmd.education_surcharge, cmd.local_education_surcharge)
+                                 cmd.urban_construction_tax_l1, cmd.education_surcharge_l1, cmd.local_education_surcharge_l1)
 
         # 级联修正
         fix_result = _cascade_fix(db, cmd.account_id, cmd.period)
@@ -265,10 +282,10 @@ class DeclareSurchargeHandler(CommandHandler):
         return {
             "id": declaration.id,
             "period": cmd.period,
-            "vat_payable": float(vat_decl.vat_payable),
-            "urban_construction_tax": float(cmd.urban_construction_tax),
-            "education_surcharge": float(cmd.education_surcharge),
-            "local_education_surcharge": float(cmd.local_education_surcharge),
+            "vat_payable_l1": float(vat_decl.vat_payable_l1),
+            "urban_construction_tax_l1": float(cmd.urban_construction_tax_l1),
+            "education_surcharge_l1": float(cmd.education_surcharge_l1),
+            "local_education_surcharge_l1": float(cmd.local_education_surcharge_l1),
             "total": float(total),
             "posted": "new",
             "cascade": fix_result,
@@ -348,8 +365,11 @@ def _cascade_fix(db: Session, account_id: int, period: str) -> dict:
                         "source_id": period_hash(monthly_period, "income_rev"),
                     }, force=True)
                 result["income_tax_adjusted"] = float(r.delta_l2)
+        except BusinessError:
+            raise
         except Exception:
             logger.exception("_cascade_fix income_tax adjustment failed for period=%s", period)
+            raise
 
     # ── 第 2 步：重跑 period_close（将调整后的 6701 余额结转到 4103）──
     close_exists = db.query(AccountMove).filter(

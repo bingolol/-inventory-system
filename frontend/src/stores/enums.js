@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { ElMessage } from 'element-plus'
 import commonApi from '../api/common'
 import { useAccountStore } from './account'
 
@@ -6,6 +7,7 @@ export const useEnumsStore = defineStore('enums', {
   state: () => ({
     enums: null,  // { values: {...}, labels: {...} }
     loaded: false,
+    error: false,
     loadedAccountId: ''  // 记录当前枚举对应的账本ID
   }),
 
@@ -130,7 +132,8 @@ export const useEnumsStore = defineStore('enums', {
         this.loaded = true
         this.loadedAccountId = currentId
       } catch (e) {
-        console.error('[EnumsStore] 获取枚举失败:', e)
+        this.error = true
+        ElMessage.warning('系统选项加载失败，请刷新页面重试')
       }
     },
 

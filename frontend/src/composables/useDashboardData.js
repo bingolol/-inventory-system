@@ -15,12 +15,13 @@ export function useDashboardData() {
   const trendData = ref([])
   const alerts = ref([])
   const trendDays = ref(7)
+  const errors = ref({ profit: false, inventory: false, receivable: false, tax: false, trend: false })
 
   async function loadProfit() {
     const range = getMonthRange()
     const [profitRes, expRes] = await Promise.all([
-      financeApi.getProfitReport({ start_date: range.start, end_date: range.end }).catch(() => null),
-      expensesApi.getExpenses({ year: range.year, limit: 99999 }).catch(() => null)
+      financeApi.getProfitReport({ start_date: range.start, end_date: range.end }).catch(() => { errors.value.profit = true; return null }),
+      expensesApi.getExpenses({ year: range.year, limit: 99999 }).catch(() => { errors.value.profit = true; return null })
     ])
     const rev = Number(profitRes?.total_revenue ?? 0)
     const cost = Number(profitRes?.total_cost ?? 0)
@@ -44,8 +45,8 @@ export function useDashboardData() {
 
   async function loadInventory() {
     const [overview, alertList] = await Promise.all([
-      financeApi.getOverview().catch(() => null),
-      productsApi.getAlerts().catch(() => [])
+      financeApi.getOverview().catch(() => { errors.value.inventory = true; return null }),
+      productsApi.getAlerts().catch(() => { errors.value.inventory = true; return [] })
     ])
     alerts.value = Array.isArray(alertList) ? alertList : []
     inventory.value = {
@@ -59,8 +60,8 @@ export function useDashboardData() {
 
   async function loadReceivable() {
     const [salesRes, purchRes] = await Promise.all([
-      ordersApi.getSales({ page: 1, page_size: 1000 }).catch(() => null),
-      ordersApi.getPurchases({ page: 1, page_size: 1000 }).catch(() => null)
+      ordersApi.getSales({ page: 1, page_size: 1000 }).catch(() => { errors.value.receivable = true; return null }),
+      ordersApi.getPurchases({ page: 1, page_size: 1000 }).catch(() => { errors.value.receivable = true; return null })
     ])
     const saleItems = Array.isArray(salesRes?.items) ? salesRes.items : []
     const purchItems = Array.isArray(purchRes?.items) ? purchRes.items : []
@@ -82,8 +83,8 @@ export function useDashboardData() {
     const month = range.month
     const quarter = currentQuarter()
     const [vatRes, incomeRes] = await Promise.all([
-      invoicesApi.getTaxReportMonthly(year, month).catch(() => null),
-      invoicesApi.getIncomeTaxReport(year, quarter).catch(() => null)
+      invoicesApi.getTaxReportMonthly(year, month).catch(() => { errors.value.tax = true; return null }),
+      invoicesApi.getIncomeTaxReport(year, quarter).catch(() => { errors.value.tax = true; return null })
     ])
     const vat = Number(vatRes?.tax_payable ?? 0)
     const incomeTax = Number(incomeRes?.tax_amount ?? 0)
@@ -100,6 +101,7 @@ export function useDashboardData() {
     try {
       trendData.value = await financeApi.getTrend({ days: d })
     } catch (e) {
+      errors.value.trend = true
       trendData.value = []
     }
   }
@@ -130,6 +132,7 @@ export function useDashboardData() {
     alerts,
     trendData,
     trendDays,
+    errors,
     loadAll,
     loadTrend,
     reload

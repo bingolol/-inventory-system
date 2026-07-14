@@ -252,8 +252,8 @@ class TestIncomeStatementCalculation:
         if resp.status_code == 200:
             data = resp.json()
             # 验证利润表结构
-            assert "revenue" in data or "total_revenue" in data, "利润表缺少营业收入"
-            assert "net_profit" in data or "total_revenue" in data, "利润表缺少净利润"
+            assert "revenue" in data or "total_revenue_l1" in data, "利润表缺少营业收入"
+            assert "net_profit" in data or "total_revenue_l1" in data, "利润表缺少净利润"
 
     def test_income_statement_detail(self, client):
         """利润表明细计算验证"""
@@ -285,8 +285,8 @@ class TestVATCalculation:
         data = resp.json()
         
         # 验证增值税计算结构
-        assert "output_tax" in data, "增值税报表缺少销项税额"
-        assert "input_tax" in data, "增值税报表缺少进项税额"
+        assert "output_tax_l1" in data, "增值税报表缺少销项税额"
+        assert "input_tax_l1" in data, "增值税报表缺少进项税额"
 
     def test_vat_calculation_q2(self, client):
         """Q2增值税计算校验"""
@@ -297,8 +297,8 @@ class TestVATCalculation:
         data = resp.json()
         
         # 验证增值税计算逻辑
-        output_tax = Decimal(str(data.get("output_tax", 0)))
-        input_tax = Decimal(str(data.get("input_tax", 0)))
+        output_tax_l1 = Decimal(str(data.get("output_tax_l1", 0)))
+        input_tax_l1 = Decimal(str(data.get("input_tax_l1", 0)))
         payable = Decimal(str(data.get("tax_payable", 0)))
         
         # 小规模纳税人: 应纳增值税 = 不含税销售额 × 征收率
@@ -309,7 +309,7 @@ class TestVATCalculation:
         _tp = _tacc.taxpayer_type_l3 if _tacc else "small_scale"
         _tdb.close()
         if _tp == "general":
-            expected_payable = max(output_tax - input_tax, Decimal('0'))
+            expected_payable = max(output_tax_l1 - input_tax_l1, Decimal('0'))
             assert abs(payable - expected_payable) <= Decimal('0.01'), \
                 f"增值税计算错误: 预期{expected_payable}, 实际{payable}"
 
@@ -322,7 +322,7 @@ class TestVATCalculation:
         data = resp.json()
         
         # 验证报表字段
-        expected_fields = ["output_tax", "input_tax", "tax_payable"]
+        expected_fields = ["output_tax_l1", "input_tax_l1", "tax_payable"]
         for field in expected_fields:
             assert field in data, f"增值税报表缺少{field}字段"
 
@@ -342,7 +342,7 @@ class TestIncomeTaxCalculation:
         data = resp.json()
         
         # 验证所得税计算结构
-        assert "total_revenue" in data, "所得税报表缺少收入"
+        assert "total_revenue_l1" in data, "所得税报表缺少收入"
         assert "tax_amount" in data, "所得税报表缺少应纳税额"
 
     def test_income_tax_small_micro_enterprise(self, client):
@@ -371,7 +371,7 @@ class TestIncomeTaxCalculation:
         data = resp.json()
         
         # 验证报表字段
-        expected_fields = ["total_revenue", "total_cost", "taxable_income", "tax_amount"]
+        expected_fields = ["total_revenue_l1", "total_cost", "taxable_income", "tax_amount"]
         for field in expected_fields:
             assert field in data, f"所得税报表缺少{field}字段"
 
@@ -534,7 +534,7 @@ class TestAccountingCaliberCalculation:
         data = resp.json()
 
         # 核心字段来自利润表
-        assert "total_revenue" in data, "所得税报表缺少营业收入"
+        assert "total_revenue_l1" in data, "所得税报表缺少营业收入"
         assert "total_cost" in data, "所得税报表缺少营业成本"
         assert "gross_profit" in data, "所得税报表缺少利润总额"
         assert "taxable_income" in data, "所得税报表缺少应纳税所得额"

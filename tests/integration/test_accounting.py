@@ -88,13 +88,23 @@ class TestAccountingEquation:
         }, headers=HEADERS)
         pid = resp.json()["entity_id"]
 
-        # 创建采购单（使用 balance-sheet 查询日期范围内的日期）
-        resp = client.post("/api/purchases", json={
-            "supplier_id": None,
-            "business_date": TODAY,
-            "items": [{"product_id": pid, "quantity": 10, "unit_price": 10, "tax_rate": 0.13}],
+        # 创建采购单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 10 * 10 = 100
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-PUR-{pid}",
+            "direction": "in",
+            "invoice_type": "ordinary",
+            "amount_with_tax": "100.00",
+            "tax_rate": "0",
+            "tax_amount": "0.00",
+            "counterparty_name": "测试供应商",
+            "seller_name": "测试供应商",
+            "buyer_name": "本公司",
+            "issue_date": TODAY,
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 10, "unit_price": "10.00", "tax_rate": "0"}],
         }, headers=HEADERS)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
         bs = self._bs(client)
         assert bs["total_assets"] == bs["total_liabilities_and_equity"]
@@ -111,18 +121,38 @@ class TestAccountingEquation:
         }, headers=HEADERS)
         pid = resp.json()["entity_id"]
 
-        # 采购入库
-        client.post("/api/purchases", json={
-            "supplier_id": None,
-            "business_date": TODAY,
-            "items": [{"product_id": pid, "quantity": 20, "unit_price": 10, "tax_rate": 0.13}],
+        # 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 20 * 10 = 200
+        client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-SALE-{pid}",
+            "direction": "in",
+            "invoice_type": "ordinary",
+            "amount_with_tax": "200.00",
+            "tax_rate": "0",
+            "tax_amount": "0.00",
+            "counterparty_name": "测试供应商",
+            "seller_name": "测试供应商",
+            "buyer_name": "本公司",
+            "issue_date": TODAY,
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 20, "unit_price": "10.00", "tax_rate": "0"}],
         }, headers=HEADERS)
 
-        # 销售出库
-        resp = client.post("/api/sales", json={
-            "has_invoice": True,
-            "business_date": "2026-06-24",
-            "items": [{"product_id": pid, "quantity": 5, "unit_price": 20, "tax_rate": 0.13}],
+        # 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 5 * 20 = 100
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-SALE-{pid}",
+            "direction": "out",
+            "invoice_type": "ordinary",
+            "amount_with_tax": "100.00",
+            "tax_rate": "0",
+            "tax_amount": "0.00",
+            "counterparty_name": "测试客户",
+            "seller_name": "本公司",
+            "buyer_name": "测试客户",
+            "issue_date": "2026-06-24",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 5, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code == 200, resp.text
 
@@ -161,21 +191,35 @@ class TestAccountingEquation:
         }, headers=HEADERS)
         pid1, pid2 = r1.json()["entity_id"], r2.json()["entity_id"]
 
-        # 采购两批
-        client.post("/api/purchases", json={
-            "business_date": TODAY,
-            "items": [{"product_id": pid1, "quantity": 10, "unit_price": 10, "tax_rate": 0.13}],
+        # 采购两批（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 采购1: 10 * 10 = 100
+        client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-MULTI1-{pid1}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "100.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": TODAY, "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid1, "quantity": 10, "unit_price": "10.00", "tax_rate": "0"}],
         }, headers=HEADERS)
-        client.post("/api/purchases", json={
-            "business_date": TODAY,
-            "items": [{"product_id": pid2, "quantity": 5, "unit_price": 50, "tax_rate": 0.13}],
+        # 采购2: 5 * 50 = 250
+        client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-MULTI2-{pid2}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "250.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": TODAY, "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid2, "quantity": 5, "unit_price": "50.00", "tax_rate": "0"}],
         }, headers=HEADERS)
 
-        # 销售
-        client.post("/api/sales", json={
-            "has_invoice": True,
-            "business_date": "2026-06-24",
-            "items": [{"product_id": pid1, "quantity": 3, "unit_price": 20, "tax_rate": 0.13}],
+        # 销售（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 销售: 3 * 20 = 60
+        client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-MULTI-{pid1}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "60.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "测试客户", "seller_name": "本公司", "buyer_name": "测试客户",
+            "issue_date": "2026-06-24", "sale_order_action": "auto_create",
+            "items": [{"product_id": pid1, "quantity": 3, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=HEADERS)
 
         # 费用

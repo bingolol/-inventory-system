@@ -73,13 +73,13 @@ class TestCheckAmortization:
 @pytest.mark.golden
 class TestCheckVat:
     def test_vat_general(self, client):
-        resp = client.get("/api/accounting/vat?total_revenue=100000&taxpayer_type=general&input_tax=3000&output_tax=13000", headers=HEADERS)
+        resp = client.get("/api/accounting/vat?total_revenue_l1=100000&taxpayer_type=general&input_tax_l1=3000&output_tax_l1=13000", headers=HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True
 
     def test_vat_small_scale(self, client):
-        resp = client.get("/api/accounting/vat?total_revenue=100000&taxpayer_type=small_scale", headers=HEADERS)
+        resp = client.get("/api/accounting/vat?total_revenue_l1=100000&taxpayer_type=small_scale", headers=HEADERS)
         assert resp.status_code == 200
         assert resp.json()["valid"] is True
 

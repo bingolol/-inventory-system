@@ -21,7 +21,8 @@ _item_to_orm_mapper = SchemaMapper([
 class PurchaseItemCreate(BaseModel):
     product_id: int
     quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6,
+        description="不含税单价。行金额 = quantity × unit_price，税额另计。")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
 
     def to_orm_kwargs(self) -> dict:
@@ -97,7 +98,8 @@ class PurchaseOrderOut(BaseModel):
 class SaleItemCreate(BaseModel):
     product_id: int
     quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6)
+    unit_price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=6,
+        description="不含税单价。行金额 = quantity × unit_price，税额另计。")
     tax_rate: Decimal = Field(..., ge=0, le=1, max_digits=12, decimal_places=2)
 
     def to_orm_kwargs(self) -> dict:

@@ -1,7 +1,17 @@
 """
-GOLDEN TEST 006 — 银行对账 §6.1 银行流水核销
+GOLDEN TEST 006 — 供应商多付款（费用冲红不冲付款）§48 应付账款
+
+场景：已付款费用被冲红（仅冲费用，不冲付款），
+净效果是企业对供应商享有债权（银行存款已付，费用不再确认），
+预付账款（资产）增加。
 
 验证方式：只通过报表 API 比对系统输出与独立计算引擎的预期值。
+
+L1/L2 职责分离说明：
+- L1 输入用系统 API 必填字段（functional_category/payment_method 等），
+  这些是系统内部概念，不影响独立计算；
+- L2 独立引擎只用 amount 和 paid 两个事实做独立计算，不依赖系统内部字段；
+- 独立会计师从原始凭证能确认的事实：费用 600 元已通过银行付款，后费用被冲红。
 """
 import pytest
 from decimal import Decimal
@@ -22,7 +32,7 @@ BANK_OPEN = Decimal("10000")
 EXPENSE_AMOUNT = Decimal("600")
 
 
-class TestGolden006Reconcile:
+class TestGolden006SupplierOverpayment:
     @pytest.fixture(autouse=True)
     def setup(self, monkeypatch):
         monkeypatch.setattr(database, '_engine', _engine)
@@ -46,7 +56,7 @@ class TestGolden006Reconcile:
         Base.metadata.drop_all(bind=_engine)
         app.dependency_overrides.clear()
 
-    def test_bank_reconcile_flow(self, client):
+    def test_supplier_overpayment_flow(self, client):
         c = client; s = {}
 
         # ── 期初建账 §84 ──
@@ -82,25 +92,11 @@ class TestGolden006Reconcile:
         }, headers=H)
         assert r.status_code == 200
 
-        # Step 2: 银行对账标记
-        db = _SessionLocal()
-        try:
-            from models import BankTransaction
-            txns = db.query(BankTransaction).filter(
-                BankTransaction.bank_account_id == s["bank_id"]
-            ).all()
-            assert len(txns) >= 1, "§6.1 应有银行流水"
-            for txn in txns:
-                txn.is_reconciled = True
-                txn.reconciled_at = "2026-01-11T00:00:00"
-            db.commit()
-        finally: db.close()
-
-        # Step 3: 冲红费用
+        # Step 2: 冲红费用
         r = c.post(f"/api/expenses/{s['expense_id']}/reverse", headers=H)
         assert r.status_code == 200, r.text
 
-        # Step 4: 月结
+        # Step 3: 月结
         r = c.post("/api/finance/month-close", json={"period": "2026-01"}, headers=H)
         assert r.status_code == 200, r.text
 
@@ -108,6 +104,8 @@ class TestGolden006Reconcile:
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
+            # SupplierOverpayment 场景：银行存款已付，费用不确认，预付账款（资产）增加
             supplier_overpayments=[SupplierOverpayment(EXPENSE_AMOUNT)],
         ))
         assert expected.interlock_ok, expected.interlock_messages
@@ -128,6 +126,9 @@ class TestGolden006Reconcile:
             f"§84权益合计: 实际{bs['total_equity']} != 期望{expected.balance_sheet.total_equity}"
         assert abs(Decimal(str(bs["monetary_funds"])) - expected.balance_sheet.monetary_funds) <= tol, \
             f"§84货币资金: 实际{bs['monetary_funds']} != 期望{expected.balance_sheet.monetary_funds}"
+        # 预付账款（对供应商债权）应为 EXPENSE_AMOUNT=600，accounts_payable 应为 0
+        assert abs(Decimal(str(bs["prepayments"])) - expected.balance_sheet.prepayments) <= tol, \
+            f"§84预付账款: 实际{bs['prepayments']} != 期望{expected.balance_sheet.prepayments}"
         assert abs(Decimal(str(bs["accounts_payable"])) - expected.balance_sheet.accounts_payable) <= tol, \
             f"§84应付账款: 实际{bs['accounts_payable']} != 期望{expected.balance_sheet.accounts_payable}"
         assert abs(Decimal(str(bs["retained_earnings"])) - expected.balance_sheet.retained_earnings) <= tol, \

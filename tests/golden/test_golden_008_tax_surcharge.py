@@ -48,7 +48,7 @@ class TestGolden008:
             acc = db.query(models.Account).first()
             acc.taxpayer_type_l3 = "general"
             acc.enable_vat_deduction = True
-            acc.surcharge_halved = True
+            acc.surcharge_halved_l3 = True
             db.commit()
         finally: db.close()
         def _g():
@@ -176,34 +176,11 @@ class TestGolden008:
         }, headers=H)
         assert r.status_code == 200, r.text
 
-        # Step 8: VAT 申报
-        r = c.post("/api/tax/declare", json={
-            "period": "2026-01", "taxpayer_type": "general",
-        }, headers=H)
-        assert r.status_code == 200, f"VAT申报失败: {r.text}"
-        vat_result = r.json().get("data", r.json())
-        vat_payable = (sale_tax - purchase_tax - (FA_ORIG * VAT_RATE).quantize(Decimal("0.01")))
-        assert abs(Decimal(str(vat_result["vat_payable"])) - vat_payable) <= Decimal("0.05"), \
-            f"VAT申报应交增值税: 实际{vat_result['vat_payable']} != 期望{vat_payable}"
-
-        # Step 9: 附加税录入
-        r = c.post("/api/tax/surcharge-declaration", json={
-            "period": "2026-01",
-            "urban_construction_tax": float(SURCHARGE_URBAN),
-            "education_surcharge": float(SURCHARGE_EDU),
-            "local_education_surcharge": float(SURCHARGE_LOCAL_EDU),
-            "notes": "税务局核定附加税（六税两费减半）",
-        }, headers=H)
-        assert r.status_code == 200, f"附加税录入失败: {r.text}"
-
-        # Step 10: 月结
-        r = c.post("/api/finance/month-close", json={"period": "2026-01"}, headers=H)
-        assert r.status_code == 200, f"月结失败: {r.text}"
-
         # ═══ L2 独立计算期望值 ═══
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             purchases=[Purchase(Decimal(QTY_BUY), UNIT_COST, VAT_RATE)],
             sales=[Sale(Decimal(QTY_SELL), UNIT_PRICE, VAT_RATE)],
             fixed_assets=[FixedAsset(FA_ORIG, FA_MONTHS, tax_rate=VAT_RATE)],
@@ -211,6 +188,30 @@ class TestGolden008:
             taxes_and_surcharges=TaxesAndSurcharges(SURCHARGE_URBAN, SURCHARGE_EDU, SURCHARGE_LOCAL_EDU),
         ))
         assert expected.interlock_ok, expected.interlock_messages
+
+        # Step 8: VAT 申报
+        r = c.post("/api/tax/declare", json={
+            "period": "2026-01", "taxpayer_type": "general",
+        }, headers=H)
+        assert r.status_code == 200, f"VAT申报失败: {r.text}"
+        vat_result = r.json().get("data", r.json())
+        # VAT 申报应交增值税 = 销项税 - 进项税（含固定资产进项税），与独立引擎一致
+        assert abs(Decimal(str(vat_result["vat_payable_l1"])) - expected.balance_sheet.vat_payable_l1) <= Decimal("0.01"), \
+            f"VAT申报应交增值税: 实际{vat_result['vat_payable_l1']} != 期望{expected.balance_sheet.vat_payable_l1}"
+
+        # Step 9: 附加税录入
+        r = c.post("/api/tax/surcharge-declaration", json={
+            "period": "2026-01",
+            "urban_construction_tax_l1": float(SURCHARGE_URBAN),
+            "education_surcharge_l1": float(SURCHARGE_EDU),
+            "local_education_surcharge_l1": float(SURCHARGE_LOCAL_EDU),
+            "notes": "税务局核定附加税（六税两费减半）",
+        }, headers=H)
+        assert r.status_code == 200, f"附加税录入失败: {r.text}"
+
+        # Step 10: 月结
+        r = c.post("/api/finance/month-close", json={"period": "2026-01"}, headers=H)
+        assert r.status_code == 200, f"月结失败: {r.text}"
 
         # ═══ L3 报表 API 验证 ═══
         r = c.get("/api/financial-reports/balance-sheet?date=2026-01-31", headers=H)
@@ -234,10 +235,13 @@ class TestGolden008:
             f"§84固定资产净值: 实际{bs['fixed_assets_net']} != 期望{expected.balance_sheet.fixed_assets_net}"
         assert abs(Decimal(str(bs["accounts_payable"])) - expected.balance_sheet.accounts_payable) <= tol, \
             f"§84应付账款: 实际{bs['accounts_payable']} != 期望{expected.balance_sheet.accounts_payable}"
-        assert abs(Decimal(str(bs["vat_payable"])) - expected.balance_sheet.vat_payable) <= tol, \
-            f"§84应交增值税: 实际{bs['vat_payable']} != 期望{expected.balance_sheet.vat_payable}"
-        assert abs(Decimal(str(bs.get("surcharge_liability", 0))) - expected.balance_sheet.tax_surcharge_payable) <= tol, \
-            f"§84附加税负债: 实际{bs.get('surcharge_liability', 0)} != 期望{expected.balance_sheet.tax_surcharge_payable}"
+        assert abs(Decimal(str(bs["vat_payable_l1"])) - expected.balance_sheet.vat_payable_l1) <= tol, \
+            f"§84应交增值税: 实际{bs['vat_payable_l1']} != 期望{expected.balance_sheet.vat_payable_l1}"
+        # VAT 申报结果与月结后报表应交增值税必须一致（月结不应改变 VAT 负债）
+        assert abs(Decimal(str(bs["vat_payable_l1"])) - Decimal(str(vat_result["vat_payable_l1"]))) <= tol, \
+            f"VAT口径不一致: 申报{vat_result['vat_payable_l1']} != 报表{bs['vat_payable_l1']}"
+        assert abs(Decimal(str(bs["surcharge_liability"])) - expected.balance_sheet.tax_surcharge_payable) <= tol, \
+            f"§84附加税负债: 实际{bs['surcharge_liability']} != 期望{expected.balance_sheet.tax_surcharge_payable}"
         assert abs(Decimal(str(bs["income_tax_liability"])) - expected.balance_sheet.income_tax_liability) <= tol, \
             f"§84应交所得税: 实际{bs['income_tax_liability']} != 期望{expected.balance_sheet.income_tax_liability}"
         assert abs(Decimal(str(bs["retained_earnings"])) - expected.balance_sheet.retained_earnings) <= tol, \
@@ -247,9 +251,9 @@ class TestGolden008:
             f"§84营业收入: 实际{pl['revenue']} != 期望{expected.income_statement.revenue}"
         assert abs(Decimal(str(pl["cost_of_goods_sold"])) - expected.income_statement.cost_of_goods_sold) <= tol, \
             f"§84营业成本: 实际{pl['cost_of_goods_sold']} != 期望{expected.income_statement.cost_of_goods_sold}"
-        assert abs(Decimal(str(pl.get("tax_surcharges", 0))) - expected.income_statement.taxes_and_surcharges) <= tol, \
-            f"§84税金及附加: 实际{pl.get('tax_surcharges', 0)} != 期望{expected.income_statement.taxes_and_surcharges}"
-        assert abs(Decimal(str(pl.get("income_tax_expense", 0))) - expected.income_statement.income_tax) <= tol, \
-            f"§84所得税费用: 实际{pl.get('income_tax_expense', 0)} != 期望{expected.income_statement.income_tax}"
+        assert abs(Decimal(str(pl["tax_surcharges"])) - expected.income_statement.taxes_and_surcharges) <= tol, \
+            f"§84税金及附加: 实际{pl['tax_surcharges']} != 期望{expected.income_statement.taxes_and_surcharges}"
+        assert abs(Decimal(str(pl["income_tax_expense"])) - expected.income_statement.income_tax) <= tol, \
+            f"§84所得税费用: 实际{pl['income_tax_expense']} != 期望{expected.income_statement.income_tax}"
         assert abs(Decimal(str(pl["net_profit"])) - expected.income_statement.net_profit) <= tol, \
             f"§84净利润: 实际{pl['net_profit']} != 期望{expected.income_statement.net_profit}"

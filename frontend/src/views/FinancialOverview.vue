@@ -1,5 +1,10 @@
 <template>
   <div class="fo" v-loading="loading">
+    <el-alert v-if="loadErrors" type="warning" :closable="false" show-icon style="margin-bottom:12px;">
+      <template #title>
+        部分数据加载失败，<el-button type="primary" link @click="loadAll">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- Row 1 -->
     <div class="fo-bh"><span class="fo-bt">核心指标</span></div>
     <div class="fo-row">
@@ -86,6 +91,7 @@ import { today, monthStart, currentQuarter } from '../utils/date'
 
 const router = useRouter()
 const loading = ref(false)
+const loadErrors = ref(false)
 const reportDate = ref(today())
 const summary = ref(null)
 const income = ref(null)
@@ -123,18 +129,19 @@ const health = computed(() => {
 
 async function loadAll() {
   loading.value = true
+  loadErrors.value = false
   const r = getRange()
   const q = currentQuarter()
   try {
     const [s, inc, cf, inv, al, vat, it, ex] = await Promise.all([
-      financeApi.getFinancialSummary(reportDate.value).catch(() => null),
-      financeApi.getIncomeStatement(r.start, r.end).catch(() => null),
-      financeApi.getCashFlowStatement(r.start, r.end).catch(() => null),
-      financeApi.getOverview().catch(() => null),
-      productsApi.getAlerts().catch(() => []),
-      invoicesApi.getTaxReportMonthly(r.year, r.month).catch(() => null),
-      invoicesApi.getIncomeTaxReport(r.year, q).catch(() => null),
-      expensesApi.getExpenses({ year: r.year, limit: 100 }).catch(() => ({ items: [] })),
+      financeApi.getFinancialSummary(reportDate.value).catch(() => { loadErrors.value = true; return null }),
+      financeApi.getIncomeStatement(r.start, r.end).catch(() => { loadErrors.value = true; return null }),
+      financeApi.getCashFlowStatement(r.start, r.end).catch(() => { loadErrors.value = true; return null }),
+      financeApi.getOverview().catch(() => { loadErrors.value = true; return null }),
+      productsApi.getAlerts().catch(() => { loadErrors.value = true; return [] }),
+      invoicesApi.getTaxReportMonthly(r.year, r.month).catch(() => { loadErrors.value = true; return null }),
+      invoicesApi.getIncomeTaxReport(r.year, q).catch(() => { loadErrors.value = true; return null }),
+      expensesApi.getExpenses({ year: r.year, limit: 100 }).catch(() => { loadErrors.value = true; return ({ items: [] }) }),
     ])
     summary.value = s; income.value = inc; cashFlow.value = cf
     inventory.value = { total_stock_value: Number(inv?.total_stock_value ?? 0), total_quantity: Number(inv?.total_inventory_quantity ?? 0) }

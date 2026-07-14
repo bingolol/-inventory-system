@@ -272,7 +272,15 @@ class ReportEngine:
                     else:
                         d, c, ids = snapshot.trace_per_dc(code, start, end)
                 else:
-                    d, c, ids = snapshot.trace_cum_dc(code)
+                    # cumulative mode（BS 无 period_start/end）
+                    # 注意：此分支忽略 source.bucket 声明（见 balance_sheet.py period_profit 注释）。
+                    # period_profit 通过 bucket=ALL + trace_cum_dc 实现状态机：
+                    # 未月结时 P&L 累计净值=利润；已月结后被 period_close 抵消=0，利润切换到 retained_earnings(crd 4103/4104)。
+                    # 切勿让 bucket=PNL_EXCLUDED 在此分支生效，否则同一笔利润同时计入 period_profit 和 retained_earnings，双重计算。
+                    if part.prefix_match:
+                        d, c, ids = snapshot.trace_cum_dc_prefix(code)
+                    else:
+                        d, c, ids = snapshot.trace_cum_dc(code)
 
                 if part.side == "debit":
                     value += d * part.sign
@@ -330,21 +338,21 @@ class ReportEngine:
         """发票表：销项税额 - 进项税额。返回 (value, [invoice_ids])"""
         from enums import InvoiceDirection, InvoiceType, CertificationStatus
 
-        output_tax = Decimal("0")
-        input_tax = Decimal("0")
+        output_tax_l1 = Decimal("0")
+        input_tax_l1 = Decimal("0")
         invoice_ids = []
 
         for inv in snapshot.invoices():
             if inv.direction == InvoiceDirection.OUT:
-                output_tax += _d(inv.tax_amount_l1)
+                output_tax_l1 += _d(inv.tax_amount_l1)
                 invoice_ids.append(inv.id)
             elif (inv.direction == InvoiceDirection.IN
                   and inv.invoice_type == InvoiceType.SPECIAL
                   and inv.certification_status_l3 == CertificationStatus.CERTIFIED):
-                input_tax += _d(inv.tax_amount_l1)
+                input_tax_l1 += _d(inv.tax_amount_l1)
                 invoice_ids.append(inv.id)
 
-        return output_tax - input_tax, invoice_ids
+        return output_tax_l1 - input_tax_l1, invoice_ids
 
     def _resolve_stock_moves(self, snapshot) -> tuple:
         """库存流水聚合：按产品汇总，正库存余额 * 加权平均成本"""

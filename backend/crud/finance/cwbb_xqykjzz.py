@@ -9,8 +9,10 @@ from decimal import Decimal
 from typing import Literal
 from sqlalchemy.orm import Session
 
-from utils import _d, Q2
-from .balance_sheet import generate_balance_sheet
+from utils import _d, Q2, end_of_day
+from reports.engine import ReportEngine
+from reports.definitions.balance_sheet import BALANCE_SHEET
+from ._snapshot import LedgerSnapshot
 from .income_statement import generate_income_statement
 from .cash_flow import generate_cash_flow_statement
 
@@ -84,10 +86,12 @@ def generate_cwbb_xqykjzz(
     prior_start = periods["prior_year_start"]
     prior_end = periods["prior_year_end"]
 
-    # 期末资产负债表
-    bs_end = generate_balance_sheet(db, account_id, end_date)
-    # 年初资产负债表取上年末余额，避免1月1日交易被计入年初数
-    bs_start = generate_balance_sheet(db, account_id, prior_end)
+    # 期末资产负债表（DSL 报表引擎）
+    end_dt = end_of_day(datetime.strptime(end_date, "%Y-%m-%d"))
+    prior_dt = end_of_day(datetime.strptime(prior_end, "%Y-%m-%d"))
+    engine = ReportEngine()
+    bs_end = engine.execute(BALANCE_SHEET, LedgerSnapshot(db, account_id, bs_cutoff=end_dt))
+    bs_start = engine.execute(BALANCE_SHEET, LedgerSnapshot(db, account_id, bs_cutoff=prior_dt))
 
     # 利润表
     is_period = generate_income_statement(db, account_id, start_date, end_date)
@@ -154,7 +158,7 @@ def generate_cwbb_xqykjzz(
         bs_item(5, "预付账款", "prepayments", "prepayments"),
         bs_item(6, "应收股利", None, None),
         bs_item(7, "应收利息", None, None),
-        bs_item(8, "其他应收款", None, None),
+        bs_item(8, "其他应收款", "other_receivable", "other_receivable"),
         bs_item(9, "存货", "inventory", "inventory"),
         bs_item(10, "其中：原材料", None, None),
         bs_item(11, "在产品", None, None),
@@ -209,11 +213,11 @@ def generate_cwbb_xqykjzz(
         is_item(3, "税金及附加", "tax_surcharges", "tax_surcharges", "tax_surcharges"),
         is_item(4, "其中：消费税", "consumption_tax", "consumption_tax", "consumption_tax"),
         is_item(5, "营业税", None, None, None),
-        is_item(6, "城市维护建设税", "urban_construction_tax", "urban_construction_tax", "urban_construction_tax"),
+        is_item(6, "城市维护建设税", "urban_construction_tax_l1", "urban_construction_tax_l1", "urban_construction_tax_l1"),
         is_item(7, "资源税", "resource_tax", "resource_tax", "resource_tax"),
         is_item(8, "土地增值税", "land_appreciation_tax", "land_appreciation_tax", "land_appreciation_tax"),
         is_item(9, "城镇土地使用税、房产税、车船税、印花税", ["property_tax", "land_use_tax", "vehicle_vessel_tax", "stamp_tax"], ["property_tax", "land_use_tax", "vehicle_vessel_tax", "stamp_tax"], ["property_tax", "land_use_tax", "vehicle_vessel_tax", "stamp_tax"]),
-        is_item(10, "教育费附加、矿产资源补偿费、排污费", ["education_surcharge", "local_education_surcharge", "environmental_tax"], ["education_surcharge", "local_education_surcharge", "environmental_tax"], ["education_surcharge", "local_education_surcharge", "environmental_tax"]),
+        is_item(10, "教育费附加、矿产资源补偿费、排污费", ["education_surcharge_l1", "local_education_surcharge_l1", "environmental_tax"], ["education_surcharge_l1", "local_education_surcharge_l1", "environmental_tax"], ["education_surcharge_l1", "local_education_surcharge_l1", "environmental_tax"]),
         is_item(11, "销售费用", "selling_expenses", "selling_expenses", "selling_expenses"),
         is_item(12, "其中：商品维修费", None, None, None),
         is_item(13, "广告费和业务宣传费", None, None, None),

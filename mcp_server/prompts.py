@@ -36,7 +36,7 @@ def _load_context(account_id: int) -> dict:
             "entity_profile": {
                 "vat_type": getattr(profile, "vat_type", None),
                 "income_type": getattr(profile, "income_type", None),
-                "surcharge_halved": getattr(profile, "surcharge_halved", None),
+                "surcharge_halved_l3": getattr(profile, "surcharge_halved_l3", None),
             },
             "vat_facts": {
                 "small_scale_reduced_rate": str(facts.small_scale_reduced_rate),
@@ -88,7 +88,30 @@ def _system_overview(ctx: dict, arguments: dict) -> dict:
 当前账本: {ctx.get('account_name', '未知')} (id={ctx.get('account_id', '?')})
 纳税人类型: {taxpayer} (增值税: {vat_type})
 
-## 工具分类 (共 30 个)
+## 选工具速查表（先对号入座，再填参数）
+- 录销售 → create_sale_order_with_invoice(customer_name, sale_date, items)
+- 录采购 → create_purchase_order_with_invoice(supplier_name, purchase_date, items, [payment_method])
+- 录收款 → create_receipt(receipt_type, amount, receipt_date, related_entity_type, related_entity_id, [bank_account_id])
+- 录付款 → create_payment(payment_type, amount, payment_date, related_entity_type, related_entity_id, [bank_account_id, withholding_tax_amount])
+- 录费用 → create_expense(category, amount, expense_date, [payment_method, functional_category, description])
+- 录银行手续费/利息 → create_bank_entry(entry_type, amount, transaction_date, [description, bank_account_id])
+- 录固定资产 → create_fixed_asset(name, cost, purchase_date, [salvage_rate, useful_life, category])
+- 折旧计提 → batch_depreciate(period)
+- 月结 → month_end_close(period, [taxpayer_type, require_confirm])
+- 增值税申报 → declare_vat(period, [taxpayer_type])
+- 附加税申报 → declare_surcharge(period, urban_construction_tax_l1, education_surcharge_l1, local_education_surcharge_l1)
+- 红冲发票 → reverse_invoice(invoice_id, red_invoice_id, [reason])
+- 红冲单据 → reverse_expense/reverse_receipt/reverse_payment(receipt_id/expense_id/payment_id)
+- 查数据 → 所有 list_*/get_* 开头
+
+## 工具分类 (共 33 个)
+
+## ⚠️ 价税分离规则 (录发票前必读)
+- **用户给的都是含税金额**。你在 item.unit_price 里填含税单价即可。
+- Server 自动做价税分离: 不含税金额 = 含税金额 / (1 + 税率), 税额 = 含税金额 - 不含税金额。
+- 发票的 amount_without_tax / tax_amount / amount_with_tax 三个字段由 server 自动计算, **你无需也不应手动传**。
+- 后端 schema 的 unit_price 是不含税的（server 内部转换）, 你不用管。
+- **举例**: 用户说"单价 100 元, 税率 13%", 你传 unit_price=100, tax_rate=0.13。Server 自动算: 不含税=88.50, 税额=11.50, 含税=100.00。
 
 ### 读操作 (无副作用, 可随时调)
 - list_products / list_customers / list_suppliers / list_bank_accounts: 查主数据
@@ -167,12 +190,12 @@ def _guide_month_close(ctx: dict, arguments: dict) -> dict:
 - 纳税人类型: {taxpayer} (增值税类型: {vat_type})
 - 适用政策: 小规模减按 1% 征收, 季度销售额 ≤30 万普票免征; 一般纳税人 13%/9%/6%/0%
 
-月结 5 步流程 (必须按顺序执行):
-1. **折旧/摊销计提** — FixedAssetEngine.batch_depreciate(period) + IntangibleAssetEngine.batch_amortize(period)
-2. **税务计提** — TaxAccrualEngine.execute(account_id, period) 生成增值税/附加税/所得税凭证
-3. **损益结转** — PeriodCloseEngine.execute(account_id, period) 收入/费用结转到 4103 本年利润
-4. **年结 (仅 12 月)** — 4103 → 4104 未分配利润
-5. **税务核对** — TaxCheckEngine.execute(period) 8 项核对
+月结 5 步流程 (必须按顺序执行, 通过 month_end_close 工具一键完成):
+1. **折旧/摊销计提** — batch_depreciate 工具 (固定资产折旧) + 无形资产摊销 (month_end_close 内部执行)
+2. **税务计提** — month_end_close 内部生成增值税/附加税/所得税凭证
+3. **损益结转** — month_end_close 内部执行, 收入/费用结转到 4103 本年利润
+4. **年结 (仅 12 月)** — month_end_close 内部追加 4103 → 4104 未分配利润
+5. **税务核对** — month_end_close 内部执行 8 项核对
 
 铁律:
 - 月结顺序不可调换 (折旧影响利润 → 影响所得税)
@@ -340,7 +363,7 @@ def _guide_tax_declaration(ctx: dict, arguments: dict) -> dict:
 - 教育费附加/地方教育附加季度销售额 ≤30 万免征 (财税〔2016〕12号)
 
 铁律:
-- VAT 申报删除前必须调用 reverse_journal('vat_transfer_out', declaration_id, force=True)
+- VAT 申报删除前必须先通过对应的 API 端点冲红 (后端内部操作, Agent 不可直接调用)
 - 发票是 VAT 数据真相源, 总账仅为镜像
 - 申报期间格式必须匹配纳税人类型 (小规模按季, 一般纳税人按月)
 
@@ -369,16 +392,16 @@ def _guide_surcharge_declaration(ctx: dict, arguments: dict) -> dict:
 
     profile = ctx.get("entity_profile", {})
     taxpayer = ctx.get("taxpayer_type", "未知")
-    surcharge_halved = profile.get("surcharge_halved", False)
+    surcharge_halved_l3 = profile.get("surcharge_halved_l3", False)
 
     system_prompt = f"""你是会计助手, 正在引导用户完成附加税申报。
 
-当前账本: {ctx.get('account_name', '未知')} (纳税人类型: {taxpayer}, 六税两费减半: {surcharge_halved})
+当前账本: {ctx.get('account_name', '未知')} (纳税人类型: {taxpayer}, 六税两费减半: {surcharge_halved_l3})
 
 ## 核心原则: 附加税是 L1 用户输入
 
 附加税金额必须由用户**从税务局申报表抄录实际金额**, 不是系统派生。
-- engine_tax.calculate_surcharges (月结时自动计提) 是 L3 派生, 用于账务处理
+- 附加税计提 (月结时在 month_end_close 内部执行) 用于账务处理
 - declare_surcharge (本申报) 是 L1 外部输入, 金额来自用户
 
 ## 申报流程

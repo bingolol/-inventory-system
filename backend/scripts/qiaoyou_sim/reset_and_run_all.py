@@ -46,7 +46,7 @@ def create_account_and_admin():
             type="company",
             code="qiaoyou",
             taxpayer_type_l3="small_scale",
-            surcharge_halved=True,  # 小型微利企业，附加税减半
+            surcharge_halved_l3=True,  # 小型微利企业，附加税减半
         )
         db.add(acc)
         db.flush()
@@ -190,7 +190,7 @@ def run_month_close():
                 close_engine = PeriodCloseEngine(db)
                 close_result = close_engine.execute(ACCOUNT_ID, period, force=False)
                 if close_result.get("status") == "ok":
-                    print(f"  损益结转: 收入={close_result['total_revenue']:.2f} "
+                    print(f"  损益结转: 收入={close_result['total_revenue_l1']:.2f} "
                           f"费用={close_result['total_expense']:.2f} "
                           f"净利润={close_result['net_profit']:.2f}")
                 else:

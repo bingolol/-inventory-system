@@ -91,8 +91,9 @@ class SaleIntakeAdapter(OrderIntakeAdapter):
             "status": self.initial_status,
             "notes": notes,
             "image_url": image_url,
+            "auto_generated_from": kwargs.get("auto_generated_from"),
             "total_price_l1": Decimal("0"),
-            "tax_amount_l1": _d(kwargs.get("tax_amount")) if kwargs.get("tax_amount") is not None else Decimal("0"),
+            "tax_amount_l1": _d(kwargs.get("tax_amount")),
             self.date_field: date_value,
         }
 
@@ -140,8 +141,9 @@ class PurchaseIntakeAdapter(OrderIntakeAdapter):
             "status": self.initial_status,
             "notes": notes,
             "image_url": image_url,
+            "auto_generated_from": kwargs.get("auto_generated_from"),
             "total_price_l1": Decimal("0"),
-            "tax_amount_l1": _d(kwargs.get("tax_amount")) if kwargs.get("tax_amount") is not None else Decimal("0"),
+            "tax_amount_l1": _d(kwargs.get("tax_amount")),
             self.date_field: date_value,
         }
 
@@ -197,6 +199,19 @@ class OrderIntake:
         auto_generated_from: Optional[str] = None,
         **type_kwargs,
     ) -> Any:
+        # 深度防御（project_memory「禁止直接使用 CreateOrder」）：
+        # OrderIntake 是订单创建的最终汇聚点，防御任何绕过 CreateOrderHandler 的直接调用。
+        # 仅允许发票驱动路径（auto_generated_from 非空）通过。
+        if not auto_generated_from:
+            raise BusinessError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message=(
+                    f"{self.adapter.order_type_label}必须由发票驱动创建，禁止无发票订单录入。"
+                    f"请通过 CreateInvoice(direction={'out' if isinstance(self.adapter, SaleIntakeAdapter) else 'in'}, "
+                    f"{'sale_order_action' if isinstance(self.adapter, SaleIntakeAdapter) else 'purchase_order_action'}='auto_create') 创建。"
+                ),
+                ai_instruction="STOP_RETRYING. OrderIntake 拒绝无 auto_generated_from 的直接调用。",
+            )
         self._validate_items(items)
         date_value = self._parse_date(business_date)
         if order_no is None:
@@ -237,8 +252,11 @@ class OrderIntake:
             db.add(item)
 
         final_total = sum(_d(it["total_price_l1"]) for it in items_data)
-        order.total_price_l1 = (_d(total_price) if total_price is not None else (final_total + total_tax)).quantize(Q2)
-        order.tax_amount_l1 = (_d(tax_amount) if tax_amount is not None else total_tax).quantize(Q2)
+        # total_price_l1 必须与 tax_amount_l1 用同一税额源，避免口径不一致
+        # （小规模纳税人 _calculate_items 的 total_tax=0，但发票传入的 tax_amount=30）
+        resolved_tax = _d(tax_amount) if tax_amount is not None else total_tax
+        order.total_price_l1 = (_d(total_price) if total_price is not None else (final_total + resolved_tax)).quantize(Q2)
+        order.tax_amount_l1 = resolved_tax.quantize(Q2)
         db.flush()
 
         self.adapter.apply_status_transition(order)

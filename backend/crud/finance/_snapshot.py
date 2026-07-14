@@ -268,6 +268,26 @@ class LedgerSnapshot:
                 ids.append(item.aml_id)
         return d, c, ids
 
+    def trace_cum_dc_prefix(self, code: str) -> Tuple[Decimal, Decimal, List[int]]:
+        """前缀匹配累计 (debit, credit, [aml_ids]) 截止 bs_cutoff。
+
+        匹配 code 及其所有子科目（LIKE 'code%'）。用于 BS period_profit：
+        P&L 主科目（如 6403 税金及附加）的明细写在子科目（640302 城建税/640303 教育费附加/640304 地方教育附加），
+        精确查主科目会漏掉子科目余额。会计科目编码体系（4-2-2 结构）保证前缀匹配不会误伤。
+        """
+        d = Decimal("0")
+        c = Decimal("0")
+        ids: List[int] = []
+        cutoff = self._bs_cutoff
+        for full_code, items in self._trace_rows_by_code.items():
+            if full_code == code or full_code.startswith(code):
+                for item in items:
+                    if cutoff is not None and item.date_l1 is not None and self._date_le(item.date_l1, cutoff):
+                        d += item.debit_l2
+                        c += item.credit_l2
+                        ids.append(item.aml_id)
+        return d, c, ids
+
     def trace_cum_dc_at(self, code: str, cutoff: datetime) -> Tuple[Decimal, Decimal, List[int]]:
         """任意截止日的累计 (debit, credit, [aml_ids])。"""
         d = Decimal("0")

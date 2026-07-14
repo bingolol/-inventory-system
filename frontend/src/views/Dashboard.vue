@@ -1,5 +1,10 @@
 <template>
   <div class="d" v-loading="loading">
+    <el-alert v-if="errors.profit || errors.inventory || errors.receivable || errors.tax" type="warning" :closable="false" show-icon style="margin-bottom:12px;">
+      <template #title>
+        部分数据加载失败，<el-button type="primary" link @click="loadAll">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- Row 1: 4 metrics -->
     <div class="d-row">
       <div class="d-c">
@@ -132,7 +137,7 @@ import DashboardTodo from '../components/DashboardTodo.vue'
 
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 const router = useRouter()
-const { loading, profitLoss, inventory, receivable, alerts, trendData, loadAll } = useDashboardData()
+const { loading, profitLoss, inventory, receivable, alerts, trendData, errors, loadAll } = useDashboardData()
 
 const trendOption = computed(() => {
   const d = trendData.value

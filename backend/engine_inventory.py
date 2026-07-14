@@ -205,7 +205,10 @@ class InventoryEngine:
             raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
                                 data={"details": f"库存不足: {product.name} 当前库存{inv.quantity_l4}, 需要出库{quantity}"})
 
-        unit_cost = inv.average_cost_l4 or Decimal("0")
+        if inv.average_cost_l4 is None:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                data={"details": f"商品 {product.name} 库存平均成本未初始化，无法计算出库成本"})
+        unit_cost = inv.average_cost_l4
         out_qty = Decimal(str(quantity))
         out_cost = (out_qty * unit_cost).quantize(Q2)
 

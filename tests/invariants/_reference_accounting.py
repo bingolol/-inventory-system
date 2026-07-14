@@ -131,9 +131,9 @@ def sale_receivable(unit_price, qty, tax_rate, general_taxpayer: bool = True,
         general_taxpayer: 纳税人开关。True=一般纳税人（开），False=小规模纳税人（闭）
     """
     revenue = sale_revenue(unit_price, qty)
-    output_tax = sale_output_tax(unit_price, qty, tax_rate, general_taxpayer,
+    output_tax_l1 = sale_output_tax(unit_price, qty, tax_rate, general_taxpayer,
                                   is_special_invoice, quarterly_revenue)
-    return _q2(revenue + output_tax)
+    return _q2(revenue + output_tax_l1)
 
 
 # ──────────────────────────────────────────────────────────────

@@ -35,7 +35,6 @@ OPERATOR = "test"
 class TestProductCommands:
     """商品命令合规测试"""
 
-    @pytest.mark.xfail(reason="BR-7 冲突: 创建商品时 Inventory 记录总是被同步创建", strict=False)
     def test_create_product_no_inventory(self, db):
         """创建商品不产生库存记录"""
         product = dispatch(CreateProduct(
@@ -55,7 +54,6 @@ class TestProductCommands:
         ).first()
         assert inv is None, "商品创建不应产生库存记录"
 
-    @pytest.mark.xfail(reason="AdjustInventory 不接受 reason 参数", strict=False)
     def test_inventory_non_negative(self, db):
         """库存调整不能导致负数"""
         from models import Product
@@ -74,7 +72,6 @@ class TestProductCommands:
             ), db)
         assert "库存" in str(exc.value)
 
-    @pytest.mark.xfail(reason="AdjustInventory 不接受 reason 参数", strict=False)
     def test_adjustment_positive_ok(self, db):
         """正向库存调整正常执行"""
         product = dispatch(CreateProduct(
@@ -87,6 +84,7 @@ class TestProductCommands:
         result = dispatch(AdjustInventory(
             account_id=ACCOUNT_ID, operator=OPERATOR,
             product_id=product.id, quantity=100,
+            adjust_date="2026-01-15",
             reason="初始化",
         ), db)
         db.commit()

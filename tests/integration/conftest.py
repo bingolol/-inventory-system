@@ -1,51 +1,91 @@
-"""集成测试公共 fixture"""
+"""集成测试公共 fixture
+
+所有集成测试统一使用独立临时 SQLite 数据库，绝不触碰生产数据库 backend/inventory.db。
+
+关键设计：在模块加载时创建临时库并 monkeypatch database 模块，
+确保所有后续 `from database import SessionLocal` 导入拿到的都是临时库版本。
+"""
+import os
+import sys
+import uuid
+import atexit
+import tempfile
+
+# ═══ 确保 backend 在 sys.path 中 ═══
+_BACKEND = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
+if _BACKEND not in sys.path:
+    sys.path.insert(0, _BACKEND)
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import database
+from database import Base, get_db, init_db
+
+# ═══ 模块加载时：创建临时库 + monkeypatch database 模块 ═══
+_TEMP_DB_PATH = os.path.join(tempfile.gettempdir(), f"test_integration_{uuid.uuid4().hex}.db")
+_temp_engine = create_engine(f"sqlite:///{_TEMP_DB_PATH}", connect_args={"check_same_thread": False})
+_TempSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_temp_engine)
+
+database._engine = _temp_engine
+database.SessionLocal = _TempSessionLocal
+
+Base.metadata.create_all(bind=_temp_engine)
+init_db()
+
+# 测试结束后清理临时库文件
+def _cleanup_temp_db():
+    try:
+        os.unlink(_TEMP_DB_PATH)
+    except OSError:
+        pass
+
+atexit.register(_cleanup_temp_db)
+
+# ═══ fixtures ═══
 import pytest
 from fastapi.testclient import TestClient
-from database import SessionLocal, set_maintenance_mode, init_db
+from main import app
+from factories import ensure_default_account
 
 
-@pytest.fixture(autouse=True)
-def ensure_account():
-    """确保 Account(id=1) 和 Ledger/LedgerAccount 存在（集成测试使用真实 DB 时需要）"""
-    set_maintenance_mode(True)
+@pytest.fixture(scope="class", autouse=True)
+def _reset_db():
+    """每个测试类前：清空所有表数据，重新初始化默认账本
+
+    使用 class scope 允许同一类内的方法共享数据（如 test_01 创建 → test_02 查询）。
+    不同类/独立函数各得独立 DB。
+    """
+    # 删除 + 重建所有表（相当于完整的数据库重置）
+    Base.metadata.drop_all(bind=_temp_engine)
+    Base.metadata.create_all(bind=_temp_engine)
+    init_db()
+
+    # 每次函数都创建默认账本
+    db = database.SessionLocal()
     try:
-        init_db()
-        # init_db 会在 finally 中关闭维护模式，恢复以保证后续 ORM 写入被放行
-        set_maintenance_mode(True)
-        from models import Account
-        from models_finance import Ledger, LedgerAccount, LedgerAccountBalance
-        from finance_integration import CHART_OF_ACCOUNTS
-        db = SessionLocal()
+        ensure_default_account(db)
+    finally:
+        db.close()
+
+    # 每次函数重新覆盖依赖注入
+    def _get_db():
+        db = database.SessionLocal()
         try:
-            acc = db.query(Account).filter(Account.id == 1).first()
-            if not acc:
-                acc = Account(id=1, name="测试账本", code="test", type="company", taxpayer_type_l3="small_scale")
-                db.add(acc)
-                db.flush()
-            ledger = db.query(Ledger).filter(Ledger.code == acc.code).first()
-            if not ledger:
-                ledger = Ledger(code=acc.code, name=acc.name, type=acc.type or "company", taxpayer_type_l3=acc.taxpayer_type_l3 or "small_scale")
-                db.add(ledger)
-                db.flush()
-                for code, name, atype in CHART_OF_ACCOUNTS:
-                    la = LedgerAccount(ledger_id=ledger.id, code=code, name=name, account_type=atype, is_leaf=True, is_active=True)
-                    db.add(la)
-                    db.flush()
-                    db.add(LedgerAccountBalance(ledger_account_id=la.id, balance_l4=0, debit_total_l4=0, credit_total_l4=0))
-            db.commit()
-        except Exception:
-            import traceback, logging
-            logging.getLogger("inventory").error(f"ensure_account fixture failed: {traceback.format_exc()}")
-            raise
+            yield db
         finally:
             db.close()
-    finally:
-        set_maintenance_mode(False)
+    app.dependency_overrides[get_db] = _get_db
+
+    yield
+
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def db():
-    session = SessionLocal()
+    """返回当前测试的隔离数据库 session"""
+    session = database.SessionLocal()
     try:
         yield session
     finally:
@@ -54,7 +94,6 @@ def db():
 
 @pytest.fixture(scope="module")
 def client():
-    from main import app
     with TestClient(app) as c:
         c.headers.update({"X-Operator": "user"})
         yield c

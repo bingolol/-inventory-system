@@ -87,8 +87,7 @@ def classify_bank_transaction(db: Session, tx) -> str:
         # 个人垫付/还款属于经营活动其他
         return "CF02" if is_inflow else "CF06"
 
-    # 根据原始 flow_category 兜底
-    category = tx.flow_category_l2 or FlowCategory.OPERATING
+    category = tx.flow_category_l2
     if category == FlowCategory.INVESTING:
         if is_inflow:
             return "CF08"  # 投资收回（无法细分时统归入此）
@@ -120,7 +119,7 @@ def classify_cash_flow_transaction(tx) -> str:
         return tx.cash_flow_item_code_l2
 
     is_inflow = tx.type == "inflow"
-    category = tx.flow_category_l2 or FlowCategory.OPERATING
+    category = tx.flow_category_l2
 
     if category == FlowCategory.INVESTING:
         return "CF08" if is_inflow else "CF12"

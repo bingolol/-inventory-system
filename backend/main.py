@@ -23,12 +23,18 @@ from errors import BusinessError, ErrorCode, ERROR_STATUS_MAP
 from accounting_engine import AccountingError
 from routers import products, suppliers, customers, purchases, sales, inventory, reports, export, logs, personal, invoices, tax, income_tax, expenses, opening_balances, financial_reports, cash_flows, backup, reconciliations, confirm, fixed_assets, bank_accounts, bank_transactions, payments, receipts, check, accounting_check, ai_capabilities, auth, bootstrap, finance, month_end, tax_check, bank_reconcile, personal_advances, accounting_guide, tax_declaration
 
+# Windows 重定向 stdout/stderr 时 sys.stdout.encoding 为 GBK，
+# 导致 StreamHandler 输出中文乱码。强制 UTF-8 输出流。
+import io
+_stream_handler = logging.StreamHandler(
+    io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     handlers=[
         logging.FileHandler(workspace.get_log_path(), encoding='utf-8'),
-        logging.StreamHandler()
+        _stream_handler,
     ]
 )
 logger = logging.getLogger("inventory")
@@ -473,6 +479,10 @@ if os.path.exists(frontend_dist):
     app.mount("/", NoCacheStaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 if __name__ == "__main__":
+    # ── 单实例保护：探测端口，已占用则提示退出 ──
+    from single_instance import check as check_port
+    check_port()
+
     import sys
     import uvicorn
     is_dev = (

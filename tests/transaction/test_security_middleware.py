@@ -87,10 +87,31 @@ class TestBootstrap:
 
     def test_bootstrap_init_creates_account(self, client):
         """首次 init 创建账本 + 科目 + 用户"""
-        from database import SessionLocal, set_maintenance_mode
+        from database import SessionLocal, set_maintenance_mode, get_engine
         from models import Account, User
         set_maintenance_mode(True)
         db = SessionLocal()
+        # 先清理所有关联表，避免删 Account 后留下孤儿 Inventory/Product/StockMove 数据
+        # 污染后续集成测试（如 AS-03 库存校验因 StockMove 缺失而误报）
+        raw = get_engine().raw_connection()
+        raw.execute("PRAGMA foreign_keys=OFF")
+        for tname in ["operation_logs", "cash_flow_transactions", "bank_transactions",
+                      "receipts", "payments", "invoice_items", "invoices",
+                      "sale_items", "sale_orders", "purchase_items", "purchase_orders",
+                      "expenses", "personal_transactions", "opening_balances",
+                      "fixed_asset_depreciations", "fixed_assets",
+                      "intangible_asset_amortizations", "intangible_assets",
+                      "stock_moves", "inventory", "bank_accounts",
+                      "account_move_lines", "account_moves",
+                      "ledger_account_balances", "ledger_accounts", "ledgers",
+                      "products", "suppliers", "customers", "taxpayer_type_histories"]:
+            try:
+                raw.execute(f"DELETE FROM {tname}")
+            except Exception:
+                pass
+        raw.execute("PRAGMA foreign_keys=ON")
+        raw.commit()
+        raw.close()
         db.query(User).delete()
         db.query(Account).delete()
         db.commit()

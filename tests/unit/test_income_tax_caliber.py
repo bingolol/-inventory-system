@@ -96,7 +96,7 @@ class TestIncomeTaxCaliber:
             year=2026, quarter=None, db=db, account_id=1
         ))
         # 营业收入 = 总账 6001 贷方 = 10000
-        assert report.total_revenue == Decimal("10000.00")
+        assert report.total_revenue_l1 == Decimal("10000.00")
         # 营业成本 = 总账 6401 借方 = 5000
         assert report.total_cost == Decimal("5000.00")
         # 毛利 = 10000 - 5000 = 5000

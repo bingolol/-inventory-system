@@ -69,7 +69,9 @@ def check_depreciation(
         fa = db.query(models.FixedAsset).filter(
             models.FixedAsset.account_id == account_id,
         ).first()
-        salvage_rate = fa.salvage_rate_l3 if fa and fa.salvage_rate_l3 is not None else Decimal("0.05")
+        salvage_rate = fa.salvage_rate_l3 if fa and fa.salvage_rate_l3 is not None else None
+        if salvage_rate is None:
+            raise HTTPException(status_code=400, detail="无法确定残值率：请先创建固定资产或显式传入 salvage_rate 参数")
     else:
         salvage_rate = Decimal(str(salvage_rate))
     violations = []
@@ -225,10 +227,10 @@ def check_balance_sheet(
 
 @router.get("/vat")
 def check_vat(
-    total_revenue: Decimal = Query(..., description="不含税销售额"),
+    total_revenue_l1: Decimal = Query(..., description="不含税销售额"),
     taxpayer_type: Optional[str] = Query(default=None, description="纳税人类型: small_scale/general（不传则从账本配置读取）"),
-    input_tax: Decimal = Query(default=Decimal("0"), description="进项税额（一般纳税人）"),
-    output_tax: Optional[Decimal] = Query(default=None, description="销项税额（一般纳税人必填，取自发票明细汇总）"),
+    input_tax_l1: Decimal = Query(default=Decimal("0"), description="进项税额（一般纳税人）"),
+    output_tax_l1: Optional[Decimal] = Query(default=None, description="销项税额（一般纳税人必填，取自发票明细汇总）"),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db),
 ):
@@ -247,15 +249,15 @@ def check_vat(
         profile = EntityProfile(
             vat_type=taxpayer_type,
             income_type="small_micro" if taxpayer_type == "small_scale" else "general",
-            surcharge_halved=taxpayer_type == "small_scale",
+            surcharge_halved_l3=taxpayer_type == "small_scale",
             effective_date=date.today(),
         )
-        result = policy_vat(profile, total_revenue, input_tax, output_tax)
+        result = policy_vat(profile, total_revenue_l1, input_tax_l1, output_tax_l1)
 
         return {
             "valid": True,
             "result": {
-                "total_revenue": float(result.total_revenue),
+                "total_revenue_l1": float(result.total_revenue_l1),
                 "tax_rate": float(result.tax_rate),
                 "tax_payable_gross": float(result.tax_payable_gross),
                 "tax_payable": float(result.tax_payable),
@@ -264,7 +266,7 @@ def check_vat(
                 f"纳税人类型：{taxpayer_type}",
                 f"税率：{result.tax_rate}",
                 f"销项税额：{result.tax_payable_gross}",
-                f"进项税额：{input_tax}",
+                f"进项税额：{input_tax_l1}",
                 f"应纳税额：{result.tax_payable}",
             ],
             "ai_instruction": "增值税计算正确，可以继续。"
@@ -301,7 +303,7 @@ def check_income_tax(
             vat_type="" if taxpayer_type == "personal" else "general",
             income_type="personal" if taxpayer_type == "personal"
                 else ("small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"),
-            surcharge_halved=taxpayer_type in ("small_scale", "small_micro", "personal"),
+            surcharge_halved_l3=taxpayer_type in ("small_scale", "small_micro", "personal"),
             effective_date=date.today(),
         )
         result = policy_income_tax(profile, profit)

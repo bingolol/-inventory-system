@@ -152,7 +152,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import partnersApi from '../api/partners'
 import { formatMoney, formatDate, splitOrderNo } from '../utils/format'
@@ -221,7 +221,7 @@ function showCreate() {
 function showEdit(row) {
   const defaults = props.orderType === 'sale'
     ? { customer_name: row[term.value.partnerPropName] || '', has_invoice: row.has_invoice, payment_status: row.payment_status, notes: row.notes || '', image_url: row.image_url || '', total_price: Number(row.total_price) || null }
-    : { supplier_id: row.supplier_id, tax_rate: Number(row.tax_rate) || 0.13, has_invoice: row.has_invoice, payment_method: row.payment_method, payment_status: row.payment_status || 'unpaid', notes: row.notes || '', image_url: row.image_url || '' }
+    : { supplier_id: row.supplier_id, tax_rate: row.tax_rate != null ? Number(row.tax_rate) : undefined, has_invoice: row.has_invoice, payment_method: row.payment_method, payment_status: row.payment_status || 'unpaid', notes: row.notes || '', image_url: row.image_url || '' }
   orderForm.setEditForm(row, defaults)
   orderForm.editDialogVisible.value = true
   loadPartnerOptions()

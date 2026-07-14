@@ -46,6 +46,9 @@ def get_balance_sheet(
     sn = LedgerSnapshot(db, account_id, bs_cutoff=qd)
     engine = ReportEngine()
     result = engine.execute(BALANCE_SHEET, sn, trace=trace, source_mode=source_mode)
+    ta = result.get("total_assets", 0) if not trace else result["total_assets"]["value"]
+    tle = result.get("total_liabilities_and_equity", 0) if not trace else result["total_liabilities_and_equity"]["value"]
+    result["balanced"] = abs(float(ta) - float(tle)) < 0.01
     if reconcile:
         # 对账用 invoice 口径（避免 source_mode=both 导致 engine_values 嵌套）
         recon_values = _extract_values_for_reconcile(result)

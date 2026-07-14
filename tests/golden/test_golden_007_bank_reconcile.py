@@ -107,6 +107,7 @@ class TestGolden007:
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             bank_fees=BANK_FEE,
         ))
         assert expected.interlock_ok, expected.interlock_messages
@@ -132,5 +133,8 @@ class TestGolden007:
 
         assert abs(Decimal(str(pl["revenue"])) - expected.income_statement.revenue) <= tol, \
             f"§84营业收入: 实际{pl['revenue']} != 期望{expected.income_statement.revenue}"
+        # 银行手续费必须被系统从对账单正确提取并计入财务费用
+        assert abs(Decimal(str(pl["financial_expenses"])) - expected.income_statement.financial_expenses) <= tol, \
+            f"§84财务费用: 实际{pl['financial_expenses']} != 期望{expected.income_statement.financial_expenses}"
         assert abs(Decimal(str(pl["net_profit"])) - expected.income_statement.net_profit) <= tol, \
             f"§84净利润: 实际{pl['net_profit']} != 期望{expected.income_statement.net_profit}"

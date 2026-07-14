@@ -82,6 +82,7 @@ class TestGolden003:
         expected = calculate(Facts(
             opening_bank=Decimal("100000"),
             opening_paid_in_capital=Decimal("100000"),
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             fixed_assets=[FixedAsset(ORIGINAL, MONTHS, periods_depreciated=PERIODS, salvage_rate=SALVAGE)],
         ))
         assert expected.interlock_ok, expected.interlock_messages

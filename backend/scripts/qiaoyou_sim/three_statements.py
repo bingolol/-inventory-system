@@ -66,7 +66,7 @@ def print_balance_sheet(db, account_id, date_str):
         ("  其他应付款", bs.get("other_payable")),
         ("  应付职工薪酬", bs.get("salaries_payable")),
         ("  应交税费", bs.get("tax_payable")),
-        ("    其中：应交增值税", bs.get("vat_payable")),
+        ("    其中：应交增值税", bs.get("vat_payable_l1")),
         ("          附加税", bs.get("surcharge_liability")),
         ("          所得税", bs.get("income_tax_liability")),
         ("          个人所得税", bs.get("personal_income_tax_liability")),
@@ -135,9 +135,9 @@ def print_income_statement(db, account_id, start, end):
 
     print(f"\n  税金及附加明细：")
     detail_labels = {
-        "urban_construction_tax": "  城建税",
-        "education_surcharge": "  教育费附加",
-        "local_education_surcharge": "  地方教育费附加",
+        "urban_construction_tax_l1": "  城建税",
+        "education_surcharge_l1": "  教育费附加",
+        "local_education_surcharge_l1": "  地方教育费附加",
         "stamp_tax": "  印花税",
     }
     for key, lbl in detail_labels.items():

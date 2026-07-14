@@ -244,7 +244,8 @@ def check_as04(db: Session, context: dict) -> List[RuleViolation]:
         SaleOrder.sale_date_l1 <= end_date,
     ).scalar() or Decimal("0")
 
-    # 此处不直接报违规(差异可能来自未开票销售),仅当差异 > 容忍值时提示
+    # 架构改造后所有销售订单均由发票驱动，order_total 与发票总额应一致。
+    # 此处不直接报违规(差异可能来自退货红冲时序),仅当差异 > 容忍值时提示
     # 真正的违规是报表读 Σ(SaleOrder) 而非总账,由 AS-08/10 静态校验覆盖
     # 这里校验总账 6001 是否有数据(若期间有销售但 6001 为 0,说明未过账)
     if order_total > 0 and ledger_credit == 0:

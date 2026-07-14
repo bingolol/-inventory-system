@@ -1,4 +1,8 @@
-"""TDD: 销售单创建 → 自动生成会计凭证 + 库存出库流水"""
+"""TDD: 销售单创建 → 自动生成会计凭证 + 库存出库流水
+
+架构改造后，销售单必须由销项发票驱动创建（CreateInvoice direction='out',
+sale_order_action='auto_create'），禁止直接 CreateOrder。
+"""
 import pytest
 from datetime import datetime
 from decimal import Decimal
@@ -8,7 +12,7 @@ from models_finance import (
     Ledger, LedgerAccount, AccountMove, AccountMoveLine,
 )
 from commands.base import dispatch
-from commands.orders import CreateOrder
+from commands.orders import CreateInvoice
 from enums import OrderStatus
 
 
@@ -66,25 +70,33 @@ def product(db):
 
 
 class TestSaleCreateTriggersAccounting:
-    """创建销售单 → 会计凭证 + 库存出库"""
+    """创建销售单（发票驱动）→ 会计凭证 + 库存出库"""
 
     def test_creates_revenue_and_cogs_journal(self, db, account, accts, product):
-        cmd = CreateOrder(order_type="sale", 
+        invoice = dispatch(CreateInvoice(
             account_id=1,
             operator="test",
-            customer_id=1,
-            business_date=datetime(2026, 6, 1),
+            invoice_no="TEST-INV-SALE-001",
+            direction="out",
+            invoice_type="ordinary",
+            tax_rate=Decimal("0.13"),
+            amount_without_tax=Decimal("200.00"),
+            tax_amount=Decimal("26.00"),
+            amount_with_tax=Decimal("226.00"),
+            counterparty_name="测试客户",
+            issue_date="2026-06-01",
+            sale_order_action="auto_create",
             items=[{
                 "product_id": 1,
-                "quantity_l1": 10,
-                "unit_price_l1": "20.00",
-                "tax_rate_l1": "0.13",
+                "quantity": 10,
+                "unit_price": "20.00",
+                "tax_rate": "0.13",
             }],
-            tax_amount=Decimal("26.00"),
-            total_price=Decimal("226.00"),
-        )
-        order = dispatch(cmd, db)
+        ), db)
         db.flush()
+        order = db.query(SaleOrder).filter(
+            SaleOrder.id == invoice.related_order_id
+        ).first()
 
         moves = db.query(AccountMove).filter(
             AccountMove.source_model == "sale_order",

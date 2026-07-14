@@ -51,15 +51,18 @@ class Test创建采购单:
     def test_api_create_success(self, client):
         sid, _ = api_create_supplier(client, HEADERS)
         pid, _ = api_create_product(client, HEADERS)
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "items": [{"product_id": pid, "quantity": 3, "unit_price": 15, "tax_rate": 0.13}],
-            "notes": "测试采购单",
-            "business_date": "2026-06-01",
+        amount = 3 * 15  # 不含税合计
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-IN-API"), "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 3, "unit_price": "15", "tax_rate": "0"}],
         }, headers=HEADERS)
-        assert resp.status_code in (200, 201)
-        data = resp.json()
-        assert "entity_id" in data or "id" in data
+        assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
+        data = resp.json()["data"]
+        assert data["related_order_type"] == "purchase_order"
+        assert data["related_order_id"] is not None
 
 
 class Test查询采购单:
@@ -89,13 +92,16 @@ class Test查询采购单:
     def test_get_created_purchase(self, client):
         sid, _ = api_create_supplier(client, HEADERS)
         pid, _ = api_create_product(client, HEADERS)
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "items": [{"product_id": pid, "quantity": 5, "unit_price": 10, "tax_rate": 0.13}],
-            "business_date": "2026-06-01",
+        amount = 5 * 10  # 不含税合计
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-IN-GET"), "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 5, "unit_price": "10", "tax_rate": "0"}],
         }, headers=HEADERS)
-        assert resp.status_code in (200, 201)
-        purchase_id = get_entity_id(resp.json())
+        assert resp.status_code in (200, 201), f"采购失败: {resp.text}"
+        purchase_id = resp.json()["data"]["related_order_id"]
         resp2 = client.get(f"/api/purchases/{purchase_id}", headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -128,12 +134,15 @@ class Test取消采购单:
 
         sid, _ = api_create_supplier(client, HEADERS)
         pid, _ = api_create_product(client, HEADERS)
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 10, "tax_rate": 0.13}],
-            "business_date": "2026-06-01",
+        amount = 1 * 10  # 不含税合计
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-IN-CNL"), "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10", "tax_rate": "0"}],
         }, headers=HEADERS)
-        purchase_id = get_entity_id(resp.json())
+        purchase_id = resp.json()["data"]["related_order_id"]
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -158,12 +167,15 @@ class Test删除采购单:
     def test_delete_with_items_blocked(self, client):
         sid, _ = api_create_supplier(client, HEADERS)
         pid, _ = api_create_product(client, HEADERS)
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": 10, "tax_rate": 0.13}],
-            "business_date": "2026-06-01",
+        amount = 1 * 10  # 不含税合计
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-IN-DL"), "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "10", "tax_rate": "0"}],
         }, headers=HEADERS)
-        purchase_id = get_entity_id(resp.json())
+        purchase_id = resp.json()["data"]["related_order_id"]
         resp2 = client.post(f"/api/purchases/{purchase_id}/cancel", headers=HEADERS)
         assert resp2.status_code == 200
 
@@ -227,11 +239,14 @@ class Test更新采购单:
     def test_update_status_to_cancelled(self, client):
         sid, _ = api_create_supplier(client, HEADERS)
         pid, _ = api_create_product(client, HEADERS)
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "items": [{"product_id": pid, "quantity": 2, "unit_price": 10, "tax_rate": 0.13}],
-            "business_date": "2026-06-01",
+        amount = 2 * 10  # 不含税合计
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": uniq("INV-IN-UPD"), "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": str(amount), "tax_rate": "0", "tax_amount": "0",
+            "counterparty_name": "测试供应商", "seller_name": "测试供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-01", "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 2, "unit_price": "10", "tax_rate": "0"}],
         }, headers=HEADERS)
-        purchase_id = get_entity_id(resp.json())
+        purchase_id = resp.json()["data"]["related_order_id"]
         resp2 = client.put(f"/api/purchases/{purchase_id}", json={"status": "cancelled"}, headers=HEADERS)
         assert resp2.status_code == 200

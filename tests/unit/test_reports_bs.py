@@ -137,7 +137,7 @@ def test_bs_self_balanced(bs_test_db):
     assert new["monetary_funds"] >= 0
     assert new["accounts_receivable"] >= 0
     assert new["paid_in_capital"] >= 0
-    assert new["vat_payable"] >= 0
+    assert new["vat_payable_l1"] >= 0
     assert float(new["tax_payable"]) > 0
 
 

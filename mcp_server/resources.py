@@ -92,7 +92,7 @@ def _read_vat_applicable(query: dict) -> dict:
         if not acc:
             raise ValueError(f"账本 {account_id} 不存在")
         taxpayer_type = acc.taxpayer_type_l3 or "small_scale"
-        surcharge_halved = bool(acc.surcharge_halved)
+        surcharge_halved_l3 = bool(acc.surcharge_halved_l3)
 
         # 推算当前季度所有期间
         if "Q" in period:  # 2026-Q2
@@ -108,13 +108,13 @@ def _read_vat_applicable(query: dict) -> dict:
             else:
                 q_periods = [f"{year_str}-{m:02d}" for m in range((q_num-1)*3+1, q_num*3+1)]
 
-        # 查该季度所有 VAT 申报的 total_revenue 合计
+        # 查该季度所有 VAT 申报的 total_revenue_l1 合计
         q_vats = db.query(VATDeclaration).filter(
             VATDeclaration.account_id == account_id,
             VATDeclaration.period.in_(q_periods),
         ).all()
-        quarterly_revenue = sum((Decimal(str(v.total_revenue or 0)) for v in q_vats), Decimal("0"))
-        quarterly_vat = sum((Decimal(str(v.vat_payable or 0)) for v in q_vats), Decimal("0"))
+        quarterly_revenue = sum((Decimal(str(v.total_revenue_l1 or 0)) for v in q_vats), Decimal("0"))
+        quarterly_vat = sum((Decimal(str(v.vat_payable_l1 or 0)) for v in q_vats), Decimal("0"))
 
         # 政策快照
         facts = load_vat_facts(date.today())
@@ -133,7 +133,7 @@ def _read_vat_applicable(query: dict) -> dict:
         return {
             "period": period,
             "taxpayer_type": taxpayer_type,
-            "surcharge_halved": surcharge_halved,
+            "surcharge_halved_l3": surcharge_halved_l3,
             "quarterly_revenue": float(quarterly_revenue),
             "quarterly_vat_payable": float(quarterly_vat),
             "exempt_threshold": float(exempt_threshold),

@@ -32,8 +32,8 @@ _engine = AccountingEngine()
 
 def _date_iso(value) -> str:
     if value is None:
-        from datetime import date as _date
-        return _date.today().isoformat()
+        raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                            data={"details": "发票日期不可为空"})
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d")
     return str(value)[:10]
@@ -68,6 +68,8 @@ class CreateInvoice(Command):
     items: List[dict] = field(default_factory=list)
     sale_order_action: Optional[str] = None
     purchase_order_action: Optional[str] = None
+    # 进项发票自动生成采购单的付款方式：company（公司采购，贷 2202）或 private_advance（个人垫付，贷 2241）
+    payment_method: str = "company"
 
 
 @register(CreateInvoice)
@@ -170,7 +172,8 @@ class CreateInvoiceHandler(CommandHandler):
                 db_invoice.related_order_id = cmd.related_order_id
             elif cmd.purchase_order_action == "auto_create":
                 purchase_order = _invoice_orders._auto_generate_purchase_order(
-                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items
+                    db, cmd.account_id, cmd.operator, db_invoice, cmd.items,
+                    payment_method=cmd.payment_method,
                 )
                 db_invoice.related_order_type = "purchase_order"
                 db_invoice.related_order_id = purchase_order.id
@@ -423,7 +426,7 @@ class CreateInvoiceWithFixedAssetHandler(CommandHandler):
             name=cmd.asset_name,
             category=cmd.category,
             original_value_l1=asset_original_value,
-            salvage_rate_l3=to_decimal(cmd.salvage_rate) if cmd.salvage_rate is not None else Decimal('0.05'),
+            salvage_rate_l3=to_decimal(cmd.salvage_rate),
             useful_life_l3=cmd.useful_life,
             depreciation_method_l3=cmd.depreciation_method,
             start_date_l1=start_date,

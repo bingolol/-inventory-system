@@ -159,6 +159,7 @@ class TestGolden002:
         expected = calculate(Facts(
             opening_bank=Decimal("10000"),
             opening_paid_in_capital=Decimal("10000"),
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             purchases=[Purchase(QTY, UC, VAT_RATE)],
             sales=[Sale(SQTY, UP, VAT_RATE)],
             returns=[Return("purchase", RQTY, UC, Decimal("0"), VAT_RATE)],

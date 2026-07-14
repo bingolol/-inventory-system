@@ -78,6 +78,7 @@ def create_fixed_asset(
             "date": data.start_date,
             "source_model": "fixed_asset",
             "source_id": asset.id,
+            "payment_method": data.payment_method,
         }
         if tax_amount > 0:
             journal_source["tax_amount"] = tax_amount

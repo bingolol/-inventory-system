@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 import models
 from enums import FlowCategory
 from utils import _d, Q2, end_of_day
-from errors import BusinessError, ErrorCode
 from lineage import reads, TIER_L1, TIER_L2, TIER_L4
 
 from ._snapshot import LedgerSnapshot
@@ -78,22 +77,10 @@ def generate_cash_flow_statement(db: Session, account_id: int, start_date: str, 
     net_cash_flow = net_operating + net_investing + net_financing
     ending_cash_balance = beginning_cash_balance + net_cash_flow
 
-    # ── 余额校验 ──
-    expected_ending_balance = beginning_cash_balance + net_cash_flow
-    if abs(ending_cash_balance - expected_ending_balance) > Decimal('0.01'):
-        raise BusinessError(
-            code=ErrorCode.CASH_FLOW_STATEMENT_INVALID,
-            message=f"现金流量表公式错误：期末余额 {ending_cash_balance} ≠ 期初余额 {beginning_cash_balance} + 净现金流量 {net_cash_flow}",
-            data={"ending_cash_balance": float(ending_cash_balance), "beginning_cash_balance": float(beginning_cash_balance), "net_cash_flow": float(net_cash_flow)}
-        )
-
-    expected_net_cash_flow = net_operating + net_investing + net_financing
-    if abs(net_cash_flow - expected_net_cash_flow) > Decimal('0.01'):
-        raise BusinessError(
-            code=ErrorCode.CASH_FLOW_STATEMENT_INVALID,
-            message=f"现金流量表公式错误：净现金流量 {net_cash_flow} ≠ 经营活动净额 {net_operating} + 投资活动净额 {net_investing} + 筹资活动净额 {net_financing}",
-            data={"net_cash_flow": float(net_cash_flow), "net_operating": float(net_operating), "net_investing": float(net_investing), "net_financing": float(net_financing)}
-        )
+    # 注：原此处有"期末余额 vs 期初+净流量"和"净流量 vs 三类合计"两处校验，
+    # 但校验两边用的是同一批变量做同公式计算，恒等永不失败，属虚假安全感，已移除。
+    # 现金流真校验应由独立路径（如总账 1001/1002 余额 vs 期末现金余额）实现，
+    # 见 reconcile.py 的双路径对账机制。
 
     cf_details = {code: amount.quantize(Q2) for code, amount in cf_items.items()}
 

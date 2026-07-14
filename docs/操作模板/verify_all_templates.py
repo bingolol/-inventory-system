@@ -439,16 +439,16 @@ check("19 试算 balanced=True", trial_data.get("balanced") is True,
 
 print("\n=== 20 税务 ===")
 tax_q = t20.get_quarterly_tax_report(year=2026, quarter=2)
-check("20 季度增值税报表", isinstance(tax_q, dict) and "output_tax" in tax_q,
+check("20 季度增值税报表", isinstance(tax_q, dict) and "output_tax_l1" in tax_q,
       f"返回: {str(tax_q)[:200]}")
 
 tax_m = t20.get_monthly_tax_report(year=2026, month=6)
-check("20 月度增值税报表", isinstance(tax_m, dict) and "output_tax" in tax_m,
+check("20 月度增值税报表", isinstance(tax_m, dict) and "output_tax_l1" in tax_m,
       f"返回: {str(tax_m)[:200]}")
 
 tax_check = t20.check_tax_consistency(
     period="2026-06", sales=2000, output_vat=120, input_vat=1300,
-    unpaid_vat=0, income_tax=0, surcharge=0, vat_payable=0, gross_profit=2000,
+    unpaid_vat=0, income_tax=0, surcharge=0, vat_payable_l1=0, gross_profit=2000,
 )
 check("20 税务核对", isinstance(tax_check, dict),
       f"返回: {str(tax_check)[:200]}")

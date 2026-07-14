@@ -15,6 +15,7 @@ from errors import BusinessError, ErrorCode
 class MonthEndClose(Command):
     period: str = ""                   # YYYY-MM
     taxpayer_type: str = ""            # 空则从 Account 读取
+    force: bool = False                # 强制重跑 period_close(冲红旧凭证后重做)
 
 
 @register(MonthEndClose)
@@ -53,7 +54,8 @@ class MonthEndCloseHandler(CommandHandler):
 
         # ── 损益结转（月结最后一步，在税务计提之后）──
         # 将收入/费用科目余额结转到 4103（本年利润），12月额外年结 4103→4104
-        close_result = orch.close_period(cmd.period, force=False)
+        # force=True 时冲红旧 period_close/year_close 凭证后重做(用于补录附加税后重算)
+        close_result = orch.close_period(cmd.period, force=cmd.force)
         result["period_close"] = close_result
 
         # ── 月结后自动税务核对（必须在日志 flush 前执行）──

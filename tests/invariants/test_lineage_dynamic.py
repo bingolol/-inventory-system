@@ -9,17 +9,20 @@
 
 运行：pytest tests/invariants/test_lineage_dynamic.py -v
 """
+import uuid
 import pytest
 from decimal import Decimal
 from datetime import datetime
 
 pytestmark = pytest.mark.usefixtures("bootstrap_db")
 
-from models import Account, StockMove, SaleItem, PurchaseItem
+from models import Account, StockMove, SaleItem, PurchaseItem, PurchaseOrder, SaleOrder
 from models_finance import AccountMove, AccountMoveLine
-from commands.orders._lifecycle import OrderLifecycle
+from commands.base import dispatch
+from commands.orders import CreateInvoice
 from engine_inventory import InventoryEngine
-from tests.factories import make_product, make_supplier, make_customer
+from tests.factories import make_product
+from utils import Q2
 
 
 PURCHASE_DATE = datetime(2026, 6, 10)
@@ -43,6 +46,56 @@ def _make_product_with_stock(db, aid, qty=100):
         db.add(inv)
         db.flush()
     return pid
+
+
+def _create_purchase_via_invoice(db, aid, pid, qty, unit_price, tax_rate):
+    """通过进项发票驱动创建采购单，返回 PurchaseOrder。"""
+    unit_price = Decimal(str(unit_price))
+    tax_rate = Decimal(str(tax_rate))
+    amount_without_tax = (Decimal(str(qty)) * unit_price).quantize(Q2)
+    tax_amount = (amount_without_tax * tax_rate).quantize(Q2)
+    amount_with_tax = (amount_without_tax + tax_amount).quantize(Q2)
+    inv = dispatch(CreateInvoice(
+        account_id=aid, operator="tester",
+        invoice_no=f"INV-LD-PUR-{uuid.uuid4().hex[:8]}",
+        direction="in", invoice_type="ordinary",
+        tax_rate=tax_rate,
+        amount_without_tax=amount_without_tax,
+        tax_amount=tax_amount,
+        amount_with_tax=amount_with_tax,
+        counterparty_name="测试供应商",
+        seller_name="测试供应商", buyer_name="本公司",
+        issue_date=PURCHASE_DATE.strftime("%Y-%m-%d"),
+        purchase_order_action="auto_create",
+        items=[{"product_id": pid, "quantity": qty,
+                "unit_price": str(unit_price), "tax_rate": str(tax_rate)}],
+    ), db)
+    return db.query(PurchaseOrder).filter(PurchaseOrder.id == inv.related_order_id).first()
+
+
+def _create_sale_via_invoice(db, aid, pid, qty, unit_price, tax_rate):
+    """通过销项发票驱动创建销售单，返回 SaleOrder。"""
+    unit_price = Decimal(str(unit_price))
+    tax_rate = Decimal(str(tax_rate))
+    amount_without_tax = (Decimal(str(qty)) * unit_price).quantize(Q2)
+    tax_amount = (amount_without_tax * tax_rate).quantize(Q2)
+    amount_with_tax = (amount_without_tax + tax_amount).quantize(Q2)
+    inv = dispatch(CreateInvoice(
+        account_id=aid, operator="tester",
+        invoice_no=f"INV-LD-SALE-{uuid.uuid4().hex[:8]}",
+        direction="out", invoice_type="ordinary",
+        tax_rate=tax_rate,
+        amount_without_tax=amount_without_tax,
+        tax_amount=tax_amount,
+        amount_with_tax=amount_with_tax,
+        counterparty_name="测试客户",
+        seller_name="本公司", buyer_name="测试客户",
+        issue_date=SALE_DATE.strftime("%Y-%m-%d"),
+        sale_order_action="auto_create",
+        items=[{"product_id": pid, "quantity": qty,
+                "unit_price": str(unit_price), "tax_rate": str(tax_rate)}],
+    ), db)
+    return db.query(SaleOrder).filter(SaleOrder.id == inv.related_order_id).first()
 
 
 class TestStockMoveWrites:
@@ -87,15 +140,9 @@ class TestStockMoveWrites:
 
     def test_reverse_writes_stockmove(self, db):
         aid = _aid(db)
-        sid = make_supplier(db, account_id=aid).id
         pid = make_product(db, account_id=aid).id
-        # 通过真实采购单生成原始 StockMove，reverse 才能取到业务日期
-        order = OrderLifecycle.create_purchase_order(
-            db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity_l1": 10, "unit_price_l1": Decimal("50"),
-                    "tax_rate_l1": Decimal("0.01")}],
-            purchase_date=PURCHASE_DATE, supplier_id=sid,
-        )
+        # 通过进项发票驱动生成采购单 + 原始 StockMove，reverse 才能取到业务日期
+        order = _create_purchase_via_invoice(db, aid, pid, 10, Decimal("50"), Decimal("0.01"))
         InventoryEngine(db).reverse(
             account_id=aid, product_id=pid, quantity=3,
             unit_cost=Decimal("50"), source_type="purchase_order",
@@ -113,15 +160,9 @@ class TestOrderLifecycleWrites:
 
     def test_create_purchase_writes_items(self, db):
         aid = _aid(db)
-        sid = make_supplier(db, account_id=aid).id
         pid = make_product(db, account_id=aid).id
 
-        order = OrderLifecycle.create_purchase_order(
-            db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity_l1": 5, "unit_price_l1": Decimal("80"),
-                    "tax_rate_l1": Decimal("0.01")}],
-            purchase_date=PURCHASE_DATE, supplier_id=sid,
-        )
+        order = _create_purchase_via_invoice(db, aid, pid, 5, Decimal("80"), Decimal("0.01"))
 
         items = db.query(PurchaseItem).filter(PurchaseItem.order_id == order.id).all()
         assert len(items) == 1
@@ -136,15 +177,9 @@ class TestOrderLifecycleWrites:
 
     def test_create_sale_writes_items(self, db):
         aid = _aid(db)
-        cid = make_customer(db, account_id=aid).id
         pid = _make_product_with_stock(db, aid)
 
-        order = OrderLifecycle.create_sale_order(
-            db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity_l1": 3, "unit_price_l1": Decimal("150"),
-                    "tax_rate_l1": Decimal("0.01")}],
-            sale_date=SALE_DATE, customer_id=cid,
-        )
+        order = _create_sale_via_invoice(db, aid, pid, 3, Decimal("150"), Decimal("0.01"))
 
         items = db.query(SaleItem).filter(SaleItem.order_id == order.id).all()
         assert len(items) == 1
@@ -152,15 +187,9 @@ class TestOrderLifecycleWrites:
 
     def test_create_purchase_writes_accountmove(self, db):
         aid = _aid(db)
-        sid = make_supplier(db, account_id=aid).id
         pid = make_product(db, account_id=aid).id
 
-        order = OrderLifecycle.create_purchase_order(
-            db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity_l1": 2, "unit_price_l1": Decimal("100"),
-                    "tax_rate_l1": Decimal("0.01")}],
-            purchase_date=PURCHASE_DATE, supplier_id=sid,
-        )
+        order = _create_purchase_via_invoice(db, aid, pid, 2, Decimal("100"), Decimal("0.01"))
 
         am = db.query(AccountMove).filter(
             AccountMove.source_model == "purchase_order",
@@ -170,15 +199,9 @@ class TestOrderLifecycleWrites:
 
     def test_create_sale_writes_accountmove(self, db):
         aid = _aid(db)
-        cid = make_customer(db, account_id=aid).id
         pid = _make_product_with_stock(db, aid)
 
-        order = OrderLifecycle.create_sale_order(
-            db=db, account_id=aid, operator="tester",
-            items=[{"product_id": pid, "quantity_l1": 1, "unit_price_l1": Decimal("200"),
-                    "tax_rate_l1": Decimal("0.01")}],
-            sale_date=SALE_DATE, customer_id=cid,
-        )
+        order = _create_sale_via_invoice(db, aid, pid, 1, Decimal("200"), Decimal("0.01"))
 
         am = db.query(AccountMove).filter(
             AccountMove.source_model == "sale_order",

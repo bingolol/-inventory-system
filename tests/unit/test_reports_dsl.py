@@ -59,7 +59,7 @@ def test_dual_source():
 
 
 def test_transform_positive_part():
-    f = Field(key="vat_payable", label="应交增值税",
+    f = Field(key="vat_payable_l1", label="应交增值税",
               source=SUM_FIELDS(["_vat_net"]),
               transform=PositivePart())
     assert f.transform.formula == Formula.POSITIVE_PART

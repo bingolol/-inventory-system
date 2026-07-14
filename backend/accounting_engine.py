@@ -156,7 +156,7 @@ class AmortizationResult:
 @dataclass
 class VATResult:
     """增值税计算结果（附加税已迁移至 SurchargeDeclaration L1 录入）"""
-    total_revenue: Decimal
+    total_revenue_l1: Decimal
     tax_rate: Decimal
     tax_payable_gross: Decimal
     tax_reduction: Decimal
@@ -498,13 +498,13 @@ class AccountingEngine:
 
     def calculate_vat(
         self,
-        total_revenue: Decimal,
+        total_revenue_l1: Decimal,
         taxpayer_type: str,
-        input_tax: Decimal = Decimal('0'),
-        output_tax: Decimal = None,
+        input_tax_l1: Decimal = Decimal('0'),
+        output_tax_l1: Decimal = None,
         ordinary_revenue: Decimal = Decimal('0'),
         special_revenue: Decimal = Decimal('0'),
-        carry_forward: Decimal = Decimal('0')
+        carry_forward_l1: Decimal = Decimal('0')
     ) -> VATResult:
         """[DEPRECATED] 计算增值税 — 已迁移至 policy.policy_engine.calculate_vat
 
@@ -528,17 +528,17 @@ class AccountingEngine:
         profile = EntityProfile(
             vat_type=taxpayer_type,
             income_type="small_micro" if taxpayer_type == "small_scale" else "general",
-            surcharge_halved=taxpayer_type in SURCHARGE_HALVED_TYPES,
+            surcharge_halved_l3=taxpayer_type in SURCHARGE_HALVED_TYPES,
             effective_date=date.today(),
         )
         return _new_calculate_vat(
             profile=profile,
-            total_revenue=total_revenue,
-            input_tax=input_tax,
-            output_tax=output_tax,
+            total_revenue_l1=total_revenue_l1,
+            input_tax_l1=input_tax_l1,
+            output_tax_l1=output_tax_l1,
             ordinary_revenue=ordinary_revenue,
             special_revenue=special_revenue,
-            carry_forward=carry_forward,
+            carry_forward_l1=carry_forward_l1,
         )
 
     # ═══════════════════════════════════════════════════════════
@@ -566,7 +566,7 @@ class AccountingEngine:
             vat_type="" if entity_type == "personal" else "general",
             income_type="personal" if entity_type == "personal"
                 else ("small_micro" if taxpayer_type in ("small_scale", "small_micro") else "general"),
-            surcharge_halved=taxpayer_type in ("small_scale", "small_micro") or entity_type == "personal",
+            surcharge_halved_l3=taxpayer_type in ("small_scale", "small_micro") or entity_type == "personal",
             effective_date=date.today(),
         )
         return _new_calculate_income_tax(

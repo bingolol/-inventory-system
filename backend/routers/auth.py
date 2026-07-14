@@ -49,7 +49,7 @@ def register(body: LoginRequest, db: Session = Depends(get_db)):
 
     account = db.query(models.Account).first()
     if account is None:
-        account = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved=False)
+        account = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved_l3=False)
         db.add(account)
         db.flush()
 
@@ -176,7 +176,7 @@ def auto_login(db: Session = Depends(get_db)):
     from models import Account
     acct = db.query(Account).first()
     if acct is None:
-        acct = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved=False)
+        acct = Account(name="默认账本", type="company", code="default", taxpayer_type_l3="small_scale", surcharge_halved_l3=False)
         db.add(acct)
         db.flush()
     salt = _generate_salt()

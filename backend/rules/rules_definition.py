@@ -316,7 +316,7 @@ Rule(
         "税率从 Account.taxpayer_type_l3 推导或 InvoiceItem.tax_rate_l1 读取",
     ],
     prohibited=[
-        "total_revenue × Decimal('0.13') 硬编码估算销项税",
+        "total_revenue_l1 × Decimal('0.13') 硬编码估算销项税",
         "无票收入强制计提销项税 (BR-4 故意设计不强制)",
     ],
     severity=SEVERITY_ERROR,

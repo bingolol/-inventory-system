@@ -94,7 +94,8 @@ class IntangibleAssetEngine(BaseAssetEngine):
         net_value = original - accumulated
 
         if disposal_date is None:
-            disposal_date = date.today()
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                data={"details": f"无形资产处置日期不可为空: id={asset_id}"})
 
         source = {
             "original_value": original,

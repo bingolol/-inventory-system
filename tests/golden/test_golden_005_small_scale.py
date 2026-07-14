@@ -2,6 +2,10 @@
 GOLDEN TEST 005 — 小规模纳税人买卖 §1.3 存货 §5.1 销售 §7.1 成本 §84 报表
 
 验证方式：只通过报表 API 比对系统输出与独立计算引擎的预期值。
+
+限制说明：本测试用 tax_rate=0 创建发票，未覆盖小规模纳税人季度销售额≤30万
+普通发票免征 VAT 场景（财税〔2023〕1号）。独立引擎 enable_vat_deduction=False
+时 vat_payable_l1 恒为 0，无法发现系统错误计提 VAT 的问题。免征场景需独立测试。
 """
 import pytest
 from decimal import Decimal
@@ -141,6 +145,7 @@ class TestSmallScaleTrade:
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             enable_vat_deduction=False,
             purchases=[Purchase(QTY, UC, Decimal("0"))],
             sales=[Sale(SQTY, UP, Decimal("0"))],

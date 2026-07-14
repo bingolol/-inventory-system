@@ -119,7 +119,7 @@ for period,pt,pu,iv,st,su,ov,pdt,sdt,wdt,wage,rdt,rent,udt,util in PLAN:
     gp=round(float(Decimal(str(su))-Decimal(str(pu))-Decimal(str(wage))-Decimal(str(rent))-Decimal(str(util))-Decimal(str(sur))),2)
     ch=TaxCheckEngine(db,aid).execute(period,{
         "sales":su,"output_vat":ov,"input_vat":iv,"unpaid_vat":cum_vat,
-        "income_tax":it_delta,"surcharge":sur,"vat_payable":r["curr_vat"],"gross_profit":gp,
+        "income_tax":it_delta,"surcharge":sur,"vat_payable_l1":r["curr_vat"],"gross_profit":gp,
     })
     
     # 累计汇总

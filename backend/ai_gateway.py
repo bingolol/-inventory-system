@@ -121,6 +121,9 @@ AI_CAPABILITIES: list[Capability] = [
     Capability("POST",   "/api/bank-accounts",       "创建银行账户", params_hint="bank_name,account_number"),
     # ── 月末结账 ──
     Capability("POST",   "/api/finance/month-close", "月末结账（自动算税+生成凭证）", params_hint="period:YYYY-MM"),
+    # ── 税务申报（月结前后需要 AI 可调）──
+    Capability("POST",   "/api/tax/surcharge-declaration", "申报附加税（城建税/教育费附加/地方教育附加）", params_hint="period,urban_construction_tax_l1,education_surcharge_l1,local_education_surcharge_l1"),
+    Capability("POST",   "/api/tax/declare",               "增值税申报（小规模按季，一般纳税人按月）", params_hint="period,taxpayer_type"),
     # ── 银行对账 ──
     Capability("POST",   "/api/bank/statement",      "导入银行对账单"),
     Capability("POST",   "/api/bank/reconcile",      "执行银行对账", params_hint="period:YYYY-MM"),

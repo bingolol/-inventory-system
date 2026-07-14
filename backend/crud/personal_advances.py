@@ -76,8 +76,8 @@ def get_personal_advance_summary(db: Session, account_id: int):
     rows = db.query(
         models.PersonalAdvance.advancer_name.label("advancer_name"),
         sqlfunc.count(models.PersonalAdvance.id).label("advance_count"),
-        sqlfunc.sum(models.PersonalAdvance.amount_l1).label("total_amount"),
-        sqlfunc.sum(models.PersonalAdvance.paid_amount_l4).label("paid_amount"),
+        sqlfunc.coalesce(sqlfunc.sum(models.PersonalAdvance.amount_l1), 0).label("total_amount"),
+        sqlfunc.coalesce(sqlfunc.sum(models.PersonalAdvance.paid_amount_l4), 0).label("paid_amount"),
     ).filter(
         models.PersonalAdvance.account_id == account_id,
         models.PersonalAdvance.is_reversed == False,
@@ -85,8 +85,9 @@ def get_personal_advance_summary(db: Session, account_id: int):
 
     result = []
     for r in rows:
-        total = _d(r.total_amount or 0).quantize(Q2)
-        paid = _d(r.paid_amount or 0).quantize(Q2)
+        total = _d(r.total_amount).quantize(Q2)
+        paid = _d(r.paid_amount).quantize(Q2)
+        # NOTE: SQL 层 coalesce 确保不返回 None，amount_l1/paid_amount_l4 不可为 NULL
         result.append(schemas.PersonalAdvanceSummary(
             advancer_name=r.advancer_name,
             advance_count=int(r.advance_count or 0),
@@ -103,15 +104,16 @@ def get_personal_advance_totals(db: Session, account_id: int):
     用于列表页顶部统计卡片，以及作为 2241 科目余额的对照（应相等）。
     """
     row = db.query(
-        sqlfunc.sum(models.PersonalAdvance.amount_l1).label("total_amount"),
-        sqlfunc.sum(models.PersonalAdvance.paid_amount_l4).label("paid_amount"),
+        sqlfunc.coalesce(sqlfunc.sum(models.PersonalAdvance.amount_l1), 0).label("total_amount"),
+        sqlfunc.coalesce(sqlfunc.sum(models.PersonalAdvance.paid_amount_l4), 0).label("paid_amount"),
     ).filter(
         models.PersonalAdvance.account_id == account_id,
         models.PersonalAdvance.is_reversed == False,
     ).first()
 
-    total = _d(row.total_amount or 0).quantize(Q2)
-    paid = _d(row.paid_amount or 0).quantize(Q2)
+    total = _d(row.total_amount).quantize(Q2)
+    paid = _d(row.paid_amount).quantize(Q2)
+    # NOTE: SQL 层 coalesce 确保不返回 None，amount_l1/paid_amount_l4 不可为 NULL
     return {
         "total_amount": total,
         "paid_amount": paid,

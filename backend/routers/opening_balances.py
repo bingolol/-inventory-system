@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from decimal import Decimal
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from account_dep import get_account_id, get_operator
@@ -39,6 +40,16 @@ def _build_ob_out(opening_balance):
 @router.post("")
 def create_opening_balance(data: schemas.OpeningBalanceCreate, account_id: int = Depends(get_account_id), operator: str = Depends(get_operator), db: Session = Depends(get_db)):
     """创建期初余额"""
+    # M15: 防止全部字段为 0 的静默空期初（通常意味着前端漏传）
+    numeric_fields = [
+        data.cash_balance, data.bank_balance, data.accounts_receivable,
+        data.inventory_value, data.fixed_assets_original, data.accumulated_depreciation,
+        data.intangible_assets_original, data.accumulated_amortization,
+        data.accounts_payable, data.tax_payable, data.long_term_borrowings,
+        data.paid_in_capital, data.retained_earnings,
+    ]
+    if all(f == Decimal('0') for f in numeric_fields):
+        raise HTTPException(status_code=400, detail="期初余额全部为 0，请确认是否遗漏了数据。若确实为 0，请至少填写一项非零记录。")
     with unit_of_work(db):
         cmd = CreateOpeningBalance(
             account_id=account_id,

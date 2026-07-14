@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 
 import models
-from enums import (OrderStatus, InvoiceDirection, InvoiceType,
+from enums import (InvoiceDirection, InvoiceType,
                    CertificationStatus, TaxpayerType)
 from utils import _d, Q2
 from utils.period import quarter_bounds
@@ -78,24 +78,19 @@ def compute_vat_prepaid(db, account_id, year, quarter):
 @reads("Invoice.certification_status_l3", tier=TIER_L3, source="policy")
 @reads("Invoice.amount_without_tax_l1", tier=TIER_L1, source="external")
 @reads("Invoice.tax_amount_l1", tier=TIER_L1, source="external")
-@reads("SaleOrder.has_invoice_l1", tier=TIER_L1, source="external")
-@reads("SaleOrder.total_price_l1", tier=TIER_L1, source="external")
-@reads("SaleOrder.tax_amount_l1", tier=TIER_L1, source="external")
-@reads("SaleItem.tax_rate_l1", tier=TIER_L1, source="external")
 def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, end_date_exclusive: datetime):
-    """汇总一个增值税属期内的发票数据（销项 + 进项抵扣）+ 未开票收入 —— 单一真相源。
+    """汇总一个增值税属期内的发票数据（销项 + 进项抵扣）—— 单一真相源。
 
-    被 routers/tax.py（报表页）与 generate_vat_declaration（申报表）共用，
-    避免双轨计算导致一般纳税人进项抵扣在某一路径遗漏（历史 bug：
-    generate_vat_declaration 未传 input_tax，造成一般纳税人应纳税额虚高、
-    附加税虚高，并经 generate_income_tax_prepayment 传播至所得税）。
+    被 routers/tax.py（报表页）与 generate_vat_declaration（申报表）、
+    engine_tax_check（税务核对）共用，避免双轨计算导致一般纳税人进项抵扣
+    在某一路径遗漏（历史 bug：generate_vat_declaration 未传 input_tax_l1，
+    造成一般纳税人应纳税额虚高、附加税虚高，并经 generate_income_tax_prepayment 传播至所得税）。
 
     日期边界：左闭右开 [start_date, end_date_exclusive)。
     进项抵扣规则：仅一般纳税人，且仅已认证的增值税专用发票可抵扣。
 
-    未开票收入：散客现金销售(has_invoice_l1=False)仍需申报销项税(业务因果链 A1)。
-    从 SaleOrder + SaleItem 汇总不含税收入和销项税,与已开票收入合并。
-    未开票收入按普通收入处理(享受小规模季度≤30万免税判定)。
+    架构约束（project_memory）：只允许开票订单录入，不存在无票收入兜底。
+    所有提交给税务局的报表必须且仅从发票表取数。
     """
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     if not account:
@@ -111,41 +106,19 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
     output_total = Decimal('0')
     ordinary_revenue = Decimal('0')
     special_revenue = Decimal('0')
-    output_tax = Decimal('0')
+    output_tax_l1 = Decimal('0')
     for inv in out_invoices:
         rev = _d(inv.amount_without_tax_l1)
         output_total += rev
-        output_tax += _d(inv.tax_amount_l1)
+        output_tax_l1 += _d(inv.tax_amount_l1)
         # 按发票类型拆分：小规模普票可享受免税，专票不享受
         if inv.invoice_type == InvoiceType.SPECIAL:
             special_revenue += rev
         else:
             ordinary_revenue += rev
 
-    # 未开票收入:散客现金销售(has_invoice_l1=False)仍需申报销项税(业务因果链 A1)
-    unrecorded_orders = db.query(models.SaleOrder).filter(
-        models.SaleOrder.account_id == account_id,
-        models.SaleOrder.has_invoice_l1 == False,  # noqa: E712
-        models.SaleOrder.sale_date_l1 >= start_date,
-        models.SaleOrder.sale_date_l1 < end_date_exclusive,
-        models.SaleOrder.status != OrderStatus.CANCELLED,
-    ).all()
-
-    unrecorded_revenue = Decimal('0')
-    unrecorded_tax = Decimal('0')
-    for order in unrecorded_orders:
-        order_total = _d(order.total_price_l1)
-        order_tax = _d(order.tax_amount_l1)
-        unrecorded_revenue += (order_total - order_tax)
-        unrecorded_tax += order_tax
-
-    # 未开票收入按普通收入处理(享受小规模季度≤30万免税判定)
-    output_total += unrecorded_revenue
-    ordinary_revenue += unrecorded_revenue
-    output_tax += unrecorded_tax
-
     input_total = Decimal('0')
-    input_tax = Decimal('0')
+    input_tax_l1 = Decimal('0')
     in_invoices = []
     if account.taxpayer_type_l3 == TaxpayerType.GENERAL:
         in_invoices = db.query(models.Invoice).filter(
@@ -158,21 +131,18 @@ def aggregate_vat_invoices(db: Session, account_id: int, start_date: datetime, e
             # 进项抵扣：仅已认证的增值税专用发票
             if inv.invoice_type == InvoiceType.SPECIAL and inv.certification_status_l3 == CertificationStatus.CERTIFIED:
                 input_total += _d(inv.amount_without_tax_l1)
-                input_tax += _d(inv.tax_amount_l1)
+                input_tax_l1 += _d(inv.tax_amount_l1)
 
     return {
         "account": account,
         "out_invoices": out_invoices,
         "in_invoices": in_invoices,
-        "unrecorded_orders": unrecorded_orders,
         "output_total": output_total,
         "ordinary_revenue": ordinary_revenue,
         "special_revenue": special_revenue,
-        "output_tax": output_tax,
-        "unrecorded_revenue": unrecorded_revenue,
-        "unrecorded_tax": unrecorded_tax,
+        "output_tax_l1": output_tax_l1,
         "input_total": input_total,
-        "input_tax": input_tax,
+        "input_tax_l1": input_tax_l1,
     }
 
 
@@ -187,15 +157,15 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
     account = agg["account"]
 
     profile = build_profile(account)
-    carry_forward = compute_carry_forward(db, account, start_date)
+    carry_forward_l1 = compute_carry_forward(db, account, start_date)
     vat_result = policy_vat(
         profile=profile,
-        total_revenue=agg["output_total"],
-        input_tax=agg["input_tax"],
-        output_tax=agg["output_tax"],
+        total_revenue_l1=agg["output_total"],
+        input_tax_l1=agg["input_tax_l1"],
+        output_tax_l1=agg["output_tax_l1"],
         ordinary_revenue=agg["ordinary_revenue"],
         special_revenue=agg["special_revenue"],
-        carry_forward=carry_forward,
+        carry_forward_l1=carry_forward_l1,
     )
 
     # 已预缴税额（从之前的季度申报）
@@ -209,9 +179,9 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "quarter": quarter,
         "period_start": start_date.strftime("%Y-%m-%d"),
         "period_end": (end_date_exclusive - timedelta(days=1)).strftime("%Y-%m-%d"),
-        "total_revenue": vat_result.total_revenue.quantize(Q2),
-        "input_tax": agg["input_tax"].quantize(Q2),
-        "carry_forward": carry_forward.quantize(Q2),
+        "total_revenue_l1": vat_result.total_revenue_l1.quantize(Q2),
+        "input_tax_l1": agg["input_tax_l1"].quantize(Q2),
+        "carry_forward_l1": carry_forward_l1.quantize(Q2),
         "tax_rate": vat_result.tax_rate,
         "tax_payable_gross": vat_result.tax_payable_gross,
         "tax_reduction": vat_result.tax_reduction,
@@ -221,9 +191,6 @@ def generate_vat_declaration(db: Session, account_id: int, year: int, quarter: i
         "reduction_item": vat_result.reduction_item,
         "reduction_amount": vat_result.reduction_amount,
         "invoice_list": agg["out_invoices"],
-        "unrecorded_revenue": agg["unrecorded_revenue"].quantize(Q2),
-        "unrecorded_tax": agg["unrecorded_tax"].quantize(Q2),
-        "unrecorded_order_count": len(agg["unrecorded_orders"]),
     }
 
 
@@ -263,7 +230,7 @@ def generate_income_tax_prepayment(db: Session, account_id: int, year: int, quar
     profile = build_profile(account) if account else None
     if profile is None:
         from policy.entity_profile import EntityProfile
-        profile = EntityProfile(vat_type="small_scale", income_type="small_micro", surcharge_halved=True, effective_date=start_date.date())
+        profile = EntityProfile(vat_type="small_scale", income_type="small_micro", surcharge_halved_l3=True, effective_date=start_date.date())
     ledger = db.query(Ledger).filter(Ledger.code == account.code).first() if account else None
     tax_result = policy_income_tax(
         profile=profile,

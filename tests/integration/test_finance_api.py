@@ -19,13 +19,25 @@ def _get_sid(client, tag):
 
 
 def _create_sale(client, pid: int, cid: int) -> dict:
-    resp = client.post("/api/sales", json={
-        "customer_id": cid,
-        "has_invoice": True,
-        "deduct_inventory": True,
-        "payment_status": "unpaid",
-        "business_date": "2026-06-15T10:00:00",
-        "items": [{"product_id": pid, "quantity": 2, "unit_price": 100, "tax_rate": 0.01}],
+    """发票驱动创建销售单（小规模纳税人：tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+
+    通过 /api/invoices/quick 创建销项发票，自动生成销售单。
+    counterparty_name 必须与 cid 对应的客户名一致，确保销售单关联到正确客户。
+    """
+    # 查询客户名（发票驱动需要 counterparty_name 匹配客户）
+    cust_resp = client.get(f"/api/customers/{cid}", headers=HEADERS)
+    cust_name = cust_resp.json().get("name", f"客户{cid}")
+
+    # 不含税合计 = 2 * 100 = 200
+    resp = client.post("/api/invoices/quick", json={
+        "invoice_no": f"INV-OUT-FIN-{cid}-{pid}",
+        "direction": "out", "invoice_type": "ordinary",
+        "amount_with_tax": "200.00", "tax_rate": "0", "tax_amount": "0.00",
+        "counterparty_name": cust_name,
+        "seller_name": "本公司", "buyer_name": cust_name,
+        "issue_date": "2026-06-15",
+        "sale_order_action": "auto_create",
+        "items": [{"product_id": pid, "quantity": 2, "unit_price": "100.00", "tax_rate": "0"}],
     }, headers=HEADERS)
     assert resp.status_code in (200, 201), f"创建销售失败: {resp.text}"
     return resp.json()
@@ -66,12 +78,16 @@ class TestJournalMoves:
         cid = _get_cid(client, "JM1")
         _create_sale(client, pid, cid)
 
-        resp = client.get("/api/finance/journal/moves", headers=HEADERS)
+        # 用 move_type 过滤直接查销售凭证，避免被堆积的 opening_balance 凭证挤出分页
+        resp = client.get("/api/finance/journal/moves",
+                          params={"move_type": "sale_order"},
+                          headers=HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] >= 1
-        sale_moves = [m for m in data["items"] if m["move_type"] == "sale_order"]
+        sale_moves = data["items"]
         assert len(sale_moves) >= 1
+        assert all(m["move_type"] == "sale_order" for m in sale_moves)
 
     def test_filter_by_move_type(self, client):
         resp = client.get("/api/finance/journal/moves",
@@ -163,11 +179,21 @@ class TestPartnerReceivable:
         pid = ensure_test_product(1)
         sid = _get_sid(client, "SP1")
 
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "payment_method": "company",
-            "business_date": "2026-06-10T10:00:00",
-            "items": [{"product_id": pid, "quantity": 5, "unit_price": 50, "tax_rate": 0.13}],
+        # 查询供应商名（发票驱动需要 counterparty_name 匹配供应商）
+        sup_resp = client.get(f"/api/suppliers/{sid}", headers=HEADERS)
+        sup_name = sup_resp.json().get("name", f"供应商{sid}")
+
+        # 发票驱动创建采购单（小规模纳税人：tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 5 * 50 = 250
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-FIN-{sid}-{pid}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "250.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": sup_name,
+            "seller_name": sup_name, "buyer_name": "本公司",
+            "issue_date": "2026-06-10",
+            "purchase_order_action": "auto_create",
+            "items": [{"product_id": pid, "quantity": 5, "unit_price": "50.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"创建采购失败: {resp.text}"
 

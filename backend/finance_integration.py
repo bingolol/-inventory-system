@@ -112,11 +112,17 @@ def get_or_create_ledger_id(db: Session, account_id: int) -> int:
         )
     ledger = db.query(Ledger).filter(Ledger.code == account.code).first()
     if not ledger:
+        if not account.type:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message="账本类型(account.type)未配置")
+        if not account.taxpayer_type_l3:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                message="纳税人类型(account.taxpayer_type_l3)未配置")
         ledger = Ledger(
             name=account.name,
-            type=account.type or "company",
+            type=account.type,
             code=account.code,
-            taxpayer_type_l3=account.taxpayer_type_l3 or "small_scale",
+            taxpayer_type_l3=account.taxpayer_type_l3,
         )
         db.add(ledger)
         db.flush()

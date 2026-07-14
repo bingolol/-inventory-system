@@ -196,7 +196,7 @@ const loadAccounts = async () => {
     accounts.value = await accountsApi.getAccounts()
     accountStore.setAccounts(accounts.value)
     if (!accountStore.currentAccountId && accounts.value.length > 0) accountStore.setCurrentAccount(accounts.value[0].id)
-  } catch (e) { console.error('加载账本列表失败:', e) }
+  } catch (e) { ElMessage.error('加载账本列表失败，请刷新页面重试') }
 }
 
 const handleMenuSelect = (index) => { if (index !== route.path) router.push(index) }

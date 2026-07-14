@@ -356,7 +356,7 @@ inventory-system/
 │   │   └── definitions/
 │   ├── policy/             # 税务政策
 │   │   ├── entity_profile.py / policy_engine.py / vat_facts.py
-│   │   ├── declaration_mapper.py / income_tax_facts.py
+│   │   ├── surcharge_facts.py / declaration_mapper.py / income_tax_facts.py
 │   ├── rules/              # 运行时校验
 │   │   ├── dsl.py / journal_rules.py / rules_definition.py
 │   │   ├── runtime_checks.py / validator.py
@@ -543,6 +543,36 @@ inventory-system/
 - **读取**：引擎层（`engine_finance`、`engine_inventory`、`tax_declarations`）只读实体上的 `tax_amount_l1`，严禁调用 `split()`/`combine()`。
 - **退货**：退货单的税额按原单税额 ×（退货金额/原单金额）比例计算，不重新推导。
 - **禁止**：`split()` 和 `combine()` 不可出现在 `backend/engine_*.py` 或 `backend/crud/finance/*.py` 的 import 中。
+- **固定资产发票**：`CreateInvoiceWithFixedAsset` 的 `tax_amount` 改为显式传入（BR-27 强化），系统不再从含税金额+税率推导。
+
+### BR-28: 折旧公式 — useful_life 为月数，salvage_rate 必填（2026-07-10 确立）
+
+`straight_line_depreciation()` 的 `useful_life` 语义修正为**月**数，不再是"年×12"：
+
+| 旧公式 | 新公式 | 说明 |
+|--------|--------|------|
+| `÷ (useful_life × 12)` | `÷ useful_life` | useful_life 为月数（模型注释同步） |
+| `salvage_rate = Decimal("0")` 可选 | 必填参数 | 调用方必须显式传入，避免按无残值全额折旧 |
+| `engine_intangible_asset.py` 未传 | 显式传 `Decimal("0")` | 无形资产无残值，传 0 |
+
+- `cost_engine.py` `straight_line_depreciation()`：`salvage_rate` 从 `=Decimal("0")` 改为必填
+- `rules_definition.py` 规则定义同步更新
+- `runtime_checks.py` AS-05 校验同步
+- `FixedAssetBase.salvage_rate` / `InvoiceWithFixedAssetCreate.salvage_rate` / `FixedAssetBlock.salvage_rate` 从 `Field(default=0.05)` 改为必填
+
+### BR-29: 税率字段必填（2026-07-10 确立）
+
+`PurchaseItem.tax_rate_l1`、`SaleItem.tax_rate_l1`、`InvoiceItem.tax_rate_l1` 不再有默认值（分别为 0.13/0.01/0.01），前端/API 调用方必须显式传入：
+
+| 字段 | 旧默认值 | 新行为 |
+|------|---------|--------|
+| `PurchaseItem.tax_rate_l1` | 0.13 | 必填 |
+| `SaleItem.tax_rate_l1` | 0.01 | 必填 |
+| `InvoiceItem.tax_rate_l1` | 0.01 | 必填 |
+
+命令层（`_lifecycle.py`、`_purchase.py`、`_sale.py`、`_invoice.py`）已移除所有 `it.get('tax_rate', default)` 兜底逻辑，改为直接 `it['tax_rate']`。Schema 层对应 `Field(default=...)` → `Field(...)`。
+
+**例外**：销售/采购退货的 `return_sale_order()`/`return_purchase_order()` 不走 items 创建，退货税额按比例计算，不涉及 tax_rate 默认值。
 
 ### BR-18: 红字发票冲红
 
@@ -646,7 +676,7 @@ BS 和利润表必须覆盖科目表中全部损益类科目：
 
 BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 + 营业外收入 - 营业外支出`
 
-### BR-25: 附加税减半独立配置（2026-07-05 重构）
+### BR-25: 附加税减半独立配置 + 事实源集中管理（2026-07-05 重构 / 2026-07-10 强化）
 
 附加税减半判定不再跟随 `income_type`（所得税小型微利），而是独立从 `Account.surcharge_halved` 字段读取：
 
@@ -657,7 +687,9 @@ BS 利润公式：`收入 - 成本 - 期间费用 - 税金及附加 - 所得税 
 
 **待实现**：`POST /api/finance/assess-surcharge` 年末自动评估路由 + `policy/annual_revenue_assessment.py`。当前需手动通过 API 更新 `Account.surcharge_halved`。
 
-**教育费附加/地方教育附加季度免征**（财税〔2016〕12 号）：季度不含税销售额 ≤ 30 万时，教育费附加（3%）和地方教育附加（2%）免征，城建税（7%）照常征收。`policy/vat_facts.py` 定义 `VAT_SMALL_SCALE_QUARTERLY_EXEMPTION` 常量，`policy/policy_engine.py` 的 `calculate_surcharges()` 通过 `vat_facts.small_scale_quarterly_exemption` 读取门槛值并接收 `quarterly_revenue` 参数，月结时由 `engine_tax.py` 计算季度销售额并传入。
+**附加税税率事实源集中管理**：所有附加税税率（城建税 7%/5%/1%、教育费附加 3%、地方教育附加 2%）从 `policy/surcharge_facts.py` 读取，`accounting_guide/tax_modules.py` 等模块不再硬编码 `Decimal("0.07")` / `Decimal("0.12")` 等字面量。加征比例（六税两费减半 0.5）也记录在 `surcharge_facts.py` 中。`surcharge_facts.py` 仅提供政策参考常量，不参与附加税额计算。
+
+**教育费附加/地方教育附加季度免征**（财税〔2016〕12 号）：季度不含税销售额 ≤ 30 万时，教育费附加（3%）和地方教育附加（2%）免征，城建税（7%）照常征收。`policy/vat_facts.py` 定义 `VAT_SMALL_SCALE_QUARTERLY_EXEMPTION` 常量供政策参考。**附加税额为 L1 外部输入**：由用户在 `declare_surcharge` 接口显式输入 `urban_construction_tax`/`education_surcharge`/`local_education_surcharge` 三个税额（依据用户根据增值税报表实际申报得出），系统不做自动计算、不派生、不从 VAT 反推。系统职责仅限于：将用户输入的三个税额过账为凭证（借 640302/640303/640304，贷 222110/222111/222112）、级联重算所得税与期间损益结转、在报表中动态反映（IS 的 `tax_surcharges` 字段读 6403 子科目，BS 的 `surcharge_liability` 字段读 222110/111/112 贷方余额）。月结引擎 `engine_tax.py` 不包含附加税计算或计提逻辑。
 
 ### BR-24: 其他应付款/个人垫付模块
 

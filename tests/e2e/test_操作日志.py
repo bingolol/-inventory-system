@@ -71,6 +71,27 @@ def _get_entity_id(resp_json):
     return None
 
 
+def _extract_sale_id_from_invoice(resp_json):
+    """从发票驱动响应中提取销售单 ID（related_order_id）
+
+    发票驱动方式返回发票数据，其中 related_order_id 是自动生成的销售单 ID。
+    """
+    data = resp_json
+    if isinstance(data, dict):
+        # OperationResult 格式: {success, data: {related_order_id, ...}}
+        if "data" in data and isinstance(data["data"], dict):
+            data = data["data"]
+        # AI Gateway 格式: {ok, entity: {data: {related_order_id, ...}}}
+        if "entity" in data and isinstance(data["entity"], dict):
+            data = data["entity"]
+            if "data" in data and isinstance(data["data"], dict):
+                data = data["data"]
+        if "related_order_id" in data and data["related_order_id"]:
+            return data["related_order_id"]
+    # fallback: 用 _get_entity_id
+    return _get_entity_id(resp_json)
+
+
 @pytest.fixture(scope="module")
 def client():
     """全 module 共享的 TestClient"""
@@ -279,20 +300,22 @@ class TestE2EWithOperatorPropagation:
         assert resp_cust.status_code in (200, 201)
         customer_id = _get_entity_id(resp_cust.json())
 
-        # AI 创建销售单
+        # AI 创建销售单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 1 * 20 = 20
+        cust_name = f"销售测试客户-{UNIQUE}"
         headers_ai = {**HEADERS_BASE, "X-Operator": "ai"}
-        resp = client.post("/api/sales", json={
-            "customer_id": customer_id,
-            "deduct_inventory": False,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-05-19T10:00:00",
-            "items": [
-                {"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-E2E-AI-{UNIQUE}-{product_id}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "20.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": cust_name,
+            "seller_name": "本公司", "buyer_name": cust_name,
+            "issue_date": "2026-05-19",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": product_id, "quantity": 1, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=headers_ai)
         assert resp.status_code in (200, 201), f"AI 创建销售单失败: {resp.text}"
-        sale_id = _get_entity_id(resp.json())
+        sale_id = _extract_sale_id_from_invoice(resp.json())
 
         # 验证日志：本次测试创建的日志都应标记为 ai
         # 用 id > max_id 过滤掉历史脏数据
@@ -438,21 +461,23 @@ class TestE2EAISaleLifecycle:
         assert r.status_code in (200, 201), f"客户创建失败: {r.text}"
         customer_id = _get_entity_id(r.json())
 
-        # 3. AI 创建销售单
+        # 3. AI 创建销售单（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 1 * 20 = 20
         request_time = datetime.now()
+        cust_name = f"AI创建销售单测试客户-{UNIQUE}"
         headers_ai = {**HEADERS_BASE, "X-Operator": "ai"}
-        r = client.post("/api/sales", json={
-            "customer_id": customer_id,
-            "deduct_inventory": False,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-05-19T10:00:00",
-            "items": [
-                {"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+        r = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-E2E-LIFE-{UNIQUE}-{product_id}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "20.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": cust_name,
+            "seller_name": "本公司", "buyer_name": cust_name,
+            "issue_date": "2026-05-19",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": product_id, "quantity": 1, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=headers_ai)
         assert r.status_code in (200, 201), f"AI 销售单创建失败: {r.text}"
-        sale_id = _get_entity_id(r.json())
+        sale_id = _extract_sale_id_from_invoice(r.json())
         after_request_time = datetime.now()
 
         # 4. 查询所有本次产生的销售单日志
@@ -521,15 +546,17 @@ class TestE2EAISaleLifecycle:
         }, headers=HEADERS_BASE)
         customer_id = _get_entity_id(r.json())
 
-        r = client.post("/api/sales", json={
-            "customer_id": customer_id,
-            "deduct_inventory": False,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-05-19T10:00:00",
-            "items": [{"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}]
+        r = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-E2E-AICANCEL-{UNIQUE}-{product_id}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "20.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": f"AI取消测试客户-{UNIQUE}",
+            "seller_name": "本公司", "buyer_name": f"AI取消测试客户-{UNIQUE}",
+            "issue_date": "2026-05-19",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": product_id, "quantity": 1, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=HEADERS_BASE)
-        sale_id = _get_entity_id(r.json())
+        sale_id = _extract_sale_id_from_invoice(r.json())
 
         # AI 取消（危险操作，先 pending 再确认）
         headers_ai = {**HEADERS_BASE, "X-Operator": "ai"}
@@ -564,15 +591,17 @@ class TestE2EAISaleLifecycle:
         }, headers=HEADERS_BASE)
         customer_id = _get_entity_id(r.json())
 
-        r = client.post("/api/sales", json={
-            "customer_id": customer_id,
-            "deduct_inventory": False,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-05-19T10:00:00",
-            "items": [{"product_id": product_id, "quantity": 1, "unit_price": 20.00, "tax_rate": 0.01}]
+        r = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-E2E-USERCANCEL-{UNIQUE}-{product_id}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "20.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": f"User取消测试客户-{UNIQUE}",
+            "seller_name": "本公司", "buyer_name": f"User取消测试客户-{UNIQUE}",
+            "issue_date": "2026-05-19",
+            "sale_order_action": "auto_create",
+            "items": [{"product_id": product_id, "quantity": 1, "unit_price": "20.00", "tax_rate": "0"}],
         }, headers=HEADERS_BASE)
-        sale_id = _get_entity_id(r.json())
+        sale_id = _extract_sale_id_from_invoice(r.json())
 
         # 记录取消前最大 id
         db = SessionLocal()

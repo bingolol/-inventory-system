@@ -97,7 +97,7 @@ async def get_income_tax_report(
         year=year,
         quarter=quarter,
         account_id=account_id,
-        total_revenue=revenue.quantize(Q2),
+        total_revenue_l1=revenue.quantize(Q2),
         total_cost=cost.quantize(Q2),
         operating_expenses=expenses.quantize(Q2),
         gross_profit=data["gross_profit"].quantize(Q2),

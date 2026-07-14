@@ -536,7 +536,7 @@ print("试算平衡:", json.dumps(trial, ensure_ascii=False)[:800])
 section("16. 税务核对8项")
 # 利润总额 = 营业利润(14950) = 收入-成本-费用(含个人垫付5000, 含手续费50, 不含利息120冲减)
 exp_gross_profit = 198000 - 135000 - 3000 - 45000 - 50  # = 14950
-tax_check = get(f"/api/tax/check?period=2026-06&sales={exp_revenue}&output_vat={exp_output_vat}&input_vat={exp_input_vat}&unpaid_vat={exp_vat}&income_tax={exp_income_tax}&surcharge={exp_surcharge}&vat_payable={exp_vat}&gross_profit={exp_gross_profit}")
+tax_check = get(f"/api/tax/check?period=2026-06&sales={exp_revenue}&output_vat={exp_output_vat}&input_vat={exp_input_vat}&unpaid_vat={exp_vat}&income_tax={exp_income_tax}&surcharge={exp_surcharge}&vat_payable_l1={exp_vat}&gross_profit={exp_gross_profit}")
 print("税务核对:", json.dumps(tax_check, ensure_ascii=False)[:800])
 check("税务核对全通过", True, tax_check.get("all_passed", False))
 
@@ -547,8 +547,8 @@ print("季度税务:", json.dumps(tax_report, ensure_ascii=False)[:600])
 # 销售3退5件@1600×13% = 退货税额1040 → 红字销项发票 tax_amount=-1040
 # 净销项税 = 11700 + 10920 + 4160 - 1040(红字) = 25740
 exp_quarter_output_vat = 11700 + 10920 + 4160 - 1040  # 净额=25740
-check("季度销项税", exp_quarter_output_vat, tax_report.get("output_tax", 0))
-check("季度进项税", exp_input_vat, tax_report.get("input_tax", 0))
+check("季度销项税", exp_quarter_output_vat, tax_report.get("output_tax_l1", 0))
+check("季度进项税", exp_input_vat, tax_report.get("input_tax_l1", 0))
 
 # ══════════════════════════════════════════════════════════
 # 汇总

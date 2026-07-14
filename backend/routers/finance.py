@@ -244,7 +244,7 @@ def get_trial_balance(
 def get_partner_receivable(
     partner_id: int,
     partner_type: str = Query(..., pattern="^(customer|supplier)$"),
-    as_of_date: Optional[str] = Query(None, description="截止日期 YYYY-MM-DD，默认今天"),
+    as_of_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="截止日期 YYYY-MM-DD"),
     db: Session = Depends(get_db),
     account_id: int = Depends(get_account_id),
 ):
@@ -252,7 +252,7 @@ def get_partner_receivable(
     ledger_id = get_ledger_id(db, account_id)
     engine = ReceivableEngine(db)
 
-    as_of = as_of_date or date.today().isoformat()
+    as_of = as_of_date
     acct_type = "asset_receivable" if partner_type == "customer" else "liability_payable"
 
     balance = engine.get_partner_balance(

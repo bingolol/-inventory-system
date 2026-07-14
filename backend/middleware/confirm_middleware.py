@@ -27,15 +27,15 @@ logger = logging.getLogger("inventory")
 
 @contextmanager
 def _bypass_write_guard():
-    """临时放行 ORM/SQL/DDL 写拦截
+    """放行 ORM/SQL/DDL 写拦截（长期机制，非临时）
 
-    ConfirmStore 在以下场景必须直接写 SQL：
+    ConfirmStore 在以下场景必须直接写 SQL（这些调用发生在 WritePermissionMiddleware 之外，
+    或需要执行 DDL，而 DDL 只能由 maintenance_mode 绕过，contextvar 无效）：
       1. 模块导入时建表（_init_db，DDL）—— 还在 WritePermissionMiddleware 之外
       2. AIGatewayMiddleware 调用 put() 暂存待确认请求 —— 还在 WritePermissionMiddleware 之外
       3. confirm 路由调用 remove/cleanup_expired
 
-    DDL（CREATE TABLE）只能由 maintenance_mode 绕过（contextvar 无效），
-    因此统一使用 set_maintenance_mode。操作均为单条短 SQL，影响窗口极小。
+    操作均为单条短 SQL，影响窗口极小。这是 ConfirmStore 的核心依赖，不可删除。
     """
     from database import set_maintenance_mode
     set_maintenance_mode(True)

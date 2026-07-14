@@ -44,10 +44,13 @@ class JournalEngine:
         self._validate(lines, validation)
 
         date_val = source.get("date")
+        if date_val is None:
+            raise BusinessError(code=ErrorCode.VALIDATION_ERROR,
+                                data={"details": "凭证日期不可为空，请确保源单据有业务日期"})
         if isinstance(date_val, date) and not isinstance(date_val, str):
             date_str = date_val.isoformat()
         else:
-            date_str = str(date_val or "")
+            date_str = str(date_val)
 
         move_name = source.get("move_name")
         name = move_name if move_name else generate_voucher_number(self.db, ledger_id, journal_code, date_str)
@@ -177,7 +180,7 @@ class JournalEngine:
 
     def _build_purchase_order(self, source):
         self._check_required(source, ["partner_id", "total_with_tax",
-                                       "total_without_tax", "tax_amount"])
+                                       "total_without_tax", "tax_amount", "items"])
 
         total_with_tax = Decimal(str(source["total_with_tax"]))
         total_without_tax = Decimal(str(source["total_without_tax"]))
@@ -188,16 +191,36 @@ class JournalEngine:
         acct_conf = source.get("account_config", {})
         enable_vat_deduction = acct_conf.get("enable_vat_deduction") if "account_config" in source else True
 
-        # 小规模纳税人：全额进成本（价税合计）；一般纳税人：不含税金额进成本
-        inventory_cost = total_with_tax if not enable_vat_deduction else total_without_tax
-        lines = [
-            {"account_code": "1405", "debit": inventory_cost, "credit": Decimal("0")},
-            {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
-             "partner_id": source["partner_id"], "partner_type": "supplier"},
-        ]
+        items = source["items"]
+        inventory_cost = Decimal("0")
+        service_cost = Decimal("0")
 
+        for item in items:
+            if enable_vat_deduction:
+                line_cost = Decimal(str(item["total_price"]))
+            else:
+                line_cost = Decimal(str(item["total_with_tax"]))
+            if item["track_inventory"]:
+                inventory_cost += line_cost
+            else:
+                service_cost += line_cost
+
+        if inventory_cost == service_cost == Decimal("0"):
+            raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH,
+                                  "采购凭证 items 金额拆分结果均为 0")
+
+        payment_method = source.get("payment_method", "company")
+        ap_account = "2241" if payment_method == "private_advance" else "2202"
+
+        lines = []
+        if inventory_cost > 0:
+            lines.append({"account_code": "1405", "debit": inventory_cost, "credit": Decimal("0")})
+        if service_cost > 0:
+            lines.append({"account_code": "6601", "debit": service_cost, "credit": Decimal("0")})
         if enable_vat_deduction and tax_amount > 0:
-            lines.insert(1, {"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
+            lines.append({"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
+        lines.append({"account_code": ap_account, "debit": Decimal("0"), "credit": total_with_tax,
+                      "partner_id": source["partner_id"], "partner_type": "supplier"})
 
         return lines, "PURCHASE", {"balance_check": True}
 
@@ -327,16 +350,21 @@ class JournalEngine:
     def _build_asset_purchase(self, source, asset_account_code: str):
         """资产采购入账：借:asset_account_code（固定资产/无形资产，不含税）
                           借:222102（进项税额）
-                          贷:2202（应付账款，价税合计）
+                          贷:2202（应付账款，公司采购）或 2241（其他应付款，个人垫付）
 
         小规模纳税人：全额进资产（价税合计），不抵扣进项税。
         一般纳税人：不含税金额进资产，税额单列 222102 抵扣。
+
+        payment_method:
+          company（默认）→ 贷 2202 应付账款（partner_type=supplier）
+          private_advance → 贷 2241 其他应付款（partner_type=advancer）
         """
         self._check_required(source, ["original_value", "asset_id"])
         original = Decimal(str(source["original_value"]))
         tax_amount = Decimal(str(source.get("tax_amount", 0)))
         total_with_tax = Decimal(str(source.get("amount_with_tax", original + tax_amount)))
         partner_id = source.get("partner_id")
+        payment_method = source.get("payment_method", "company")
 
         self._validate_amount(original, tax_amount, total_with_tax)
 
@@ -346,10 +374,18 @@ class JournalEngine:
         # 小规模：全额进资产；一般纳税人：不含税进资产
         asset_cost = total_with_tax if not enable_vat_deduction else original
 
+        # 贷方科目：个人垫付贷 2241 其他应付款，公司采购贷 2202 应付账款
+        if payment_method == "private_advance":
+            credit_code = "2241"
+            partner_type = "advancer"
+        else:
+            credit_code = "2202"
+            partner_type = "supplier"
+
         lines = [
             {"account_code": asset_account_code, "debit": asset_cost, "credit": Decimal("0")},
-            {"account_code": "2202", "debit": Decimal("0"), "credit": total_with_tax,
-             "partner_id": partner_id, "partner_type": "supplier"},
+            {"account_code": credit_code, "debit": Decimal("0"), "credit": total_with_tax,
+             "partner_id": partner_id, "partner_type": partner_type},
         ]
         if enable_vat_deduction and tax_amount > 0:
             lines.insert(1, {"account_code": "222102", "debit": tax_amount, "credit": Decimal("0")})
@@ -396,33 +432,20 @@ class JournalEngine:
             ], "GEN", {"balance_check": True}
 
     def _build_tax_surcharge(self, source):
-        """计提附加税
-
-        兼容旧模式：source["amount"] 单金额 → 6403/222104。
-        新模式：source["taxes"] = {expense_code: amount, ...}，分别计入明细科目。
-        """
-        if "taxes" in source:
-            lines = []
-            for expense_code, amount in source["taxes"].items():
-                amount = Decimal(str(amount))
-                if amount <= Decimal("0"):
-                    continue
-                # expense_code 形如 "640302"，对应 payable_code "222110"
-                payable_code = TAX_SURCHARGE_EXPENSE_TO_PAYABLE.get(expense_code)
-                if not payable_code:
-                    raise BusinessError(code=ErrorCode.RULE_VIOLATION, message=f"附加税明细科目 {expense_code} 未配置对应应交科目")
-                lines.append({"account_code": expense_code, "debit": amount, "credit": Decimal("0")})
-                lines.append({"account_code": payable_code, "debit": Decimal("0"), "credit": amount})
-            if not lines:
-                return [], "TAX", {"balance_check": False}
-            return lines, "TAX", {"balance_check": True}
-
-        self._check_required(source, ["amount"])
-        amount = Decimal(str(source["amount"]))
-        return [
-            {"account_code": "6403", "debit": amount, "credit": Decimal("0")},
-            {"account_code": "222104", "debit": Decimal("0"), "credit": amount},
-        ], "TAX", {"balance_check": True}
+        self._check_required(source, ["taxes"])
+        lines = []
+        for expense_code, amount in source["taxes"].items():
+            amount = Decimal(str(amount))
+            if amount <= Decimal("0"):
+                continue
+            payable_code = TAX_SURCHARGE_EXPENSE_TO_PAYABLE.get(expense_code)
+            if not payable_code:
+                raise BusinessError(code=ErrorCode.RULE_VIOLATION, message=f"附加税明细科目 {expense_code} 未配置对应应交科目")
+            lines.append({"account_code": expense_code, "debit": amount, "credit": Decimal("0")})
+            lines.append({"account_code": payable_code, "debit": Decimal("0"), "credit": amount})
+        if not lines:
+            return [], "TAX", {"balance_check": False}
+        return lines, "TAX", {"balance_check": True}
 
     def _build_tax_income(self, source):
         """计提所得税：借:6801（所得税费用）贷:222105（应交所得税）"""

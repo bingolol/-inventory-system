@@ -95,13 +95,13 @@ class TestFullTaxScenario:
         assert report["year"] == 2026
         assert report["quarter"] == 2
         # 销项税额至少含本场景的 100.00
-        assert float(report["output_tax"]) >= 100.00
+        assert float(report["output_tax_l1"]) >= 100.00
         # 销项不含税收入至少 10000
         assert float(report["output_total"]) >= 10000.00
 
     def test_05_vat_check_endpoint_consistent(self, client):
         """会计预检查:增值税计算与引擎一致"""
-        r = client.get("/api/accounting/vat?total_revenue=10000&taxpayer_type=small_scale&ordinary_revenue=10000&special_revenue=0",
+        r = client.get("/api/accounting/vat?total_revenue_l1=10000&taxpayer_type=small_scale&ordinary_revenue=10000&special_revenue=0",
                        headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 200
         data = r.json()
@@ -177,7 +177,7 @@ class TestAccountingErrorGuidance:
 
     def test_invalid_tax_rate_guided(self, client):
         """非法纳税人类型 → 422 + 法规依据 + 计算明细"""
-        r = client.get("/api/accounting/vat?total_revenue=100&taxpayer_type=invalid",
+        r = client.get("/api/accounting/vat?total_revenue_l1=100&taxpayer_type=invalid",
                        headers={"X-Account-ID": str(get_account_id())})
         assert r.status_code == 422
         err = r.json()["error"]

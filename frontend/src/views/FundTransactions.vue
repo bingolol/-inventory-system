@@ -177,7 +177,7 @@ const loadReferences = async () => {
     }
     const baR = await bankAccountsApi.getBankAccounts()
     bankAccounts.value = baR?.items || []
-  } catch (e) { /* ignore */ }
+  } catch (e) { ElMessage.warning('关联单据加载失败，部分参考选项不可用') }
 }
 
 const onModeChange = () => {

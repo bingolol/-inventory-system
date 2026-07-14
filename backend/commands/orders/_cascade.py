@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List
 
 import models
 from enums import OrderStatus, InvoiceType
+from operation_result import EntityType
 from utils import to_decimal, Q2
 from errors import BusinessError, ErrorCode
 from policy.entity_profile import build_profile
@@ -52,7 +53,10 @@ def resolve_reversal(db, account_id, operator, invoice, red_invoice, reason) -> 
 
 @register_cascade_strategy("sale_order")
 def _cascade_sale(db, account_id, operator, invoice, red_invoice, reason) -> List[str]:
-    """销项发票冲红级联 — 销售凭证冲红 + 库存回退（支持部分退货）"""
+    """销项发票冲红级联 — 销售凭证冲红 + 库存回退（支持部分退货）
+
+    BR-REV: 必须先级联冲红关联收款，否则收款凭证残留、银行余额不回滚、BS 应收/银行不符。
+    """
     from engine_finance import FinanceEngine
     from engine_inventory import InventoryEngine
     from finance_integration import post_journal
@@ -62,6 +66,22 @@ def _cascade_sale(db, account_id, operator, invoice, red_invoice, reason) -> Lis
         models.SaleOrder.id == invoice.related_order_id,
         models.SaleOrder.account_id == account_id,
     ).first()
+
+    # ── 级联冲红关联收款 ──
+    # project_memory 约束：reverse_invoice must check associated receipts。
+    # 若有未冲红收款，自动级联冲红（与销售凭证/库存自动冲红风格一致）。
+    # Receipt 无 is_reversed 字段，冲红后 amount_l1 为负数，用 amount_l1 > 0 筛选未冲红收款。
+    if sale_order:
+        unreversed_receipts = db.query(models.Receipt).filter(
+            models.Receipt.account_id == account_id,
+            models.Receipt.related_entity_type == EntityType.SALE_ORDER,
+            models.Receipt.related_entity_id == sale_order.id,
+            models.Receipt.amount_l1 > 0,
+        ).all()
+        if unreversed_receipts:
+            from commands.reversal_ops import reverse_receipts
+            reverse_receipts(db, account_id, sale_order.id)
+            lines.append(f"级联冲红收款 {len(unreversed_receipts)} 笔")
 
     if sale_order and sale_order.status == OrderStatus.CANCELLED:
         lines.append("销售单已取消（凭证库存已冲红，跳过）")

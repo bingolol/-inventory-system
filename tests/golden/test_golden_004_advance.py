@@ -116,6 +116,7 @@ class TestGolden004:
         expected = calculate(Facts(
             opening_bank=BANK_OPEN,
             opening_paid_in_capital=BANK_OPEN,
+            income_tax_rate=Decimal("0.05"),  # 小微企业实际税负（独立从税务局核定单确认）
             employee_funded_expenses=[EmployeeFundedExpense(ADV_AMOUNT, reimbursed=REPAY_FIRST + REPAY_FULL, reversed_reimbursement=REPAY_FIRST)],
         ))
         assert expected.interlock_ok, expected.interlock_messages

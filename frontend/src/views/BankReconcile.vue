@@ -3,7 +3,7 @@
     <StatCards :items="[
       { label: '对账期间', value: period, color: 'primary' },
       { label: '调节表状态', value: reconciliation?.status || '-', color: statusColor },
-      { label: '是否平衡', value: reconciliation?.balanced ? '平衡 ✅' : '不平衡 ❌', color: reconciliation?.balanced ? 'success' : 'danger' }
+      { label: '是否平衡', value: reconciliation?.balanced === true ? '平衡 ✅' : reconciliation?.balanced === false ? '不平衡 ❌' : '-', color: reconciliation?.balanced === true ? 'success' : reconciliation?.balanced === false ? 'danger' : 'text-placeholder' }
     ]" />
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
@@ -15,7 +15,7 @@
       <el-button size="small" @click="showBankEntryDialog">银行手续费/利息</el-button>
     </div>
 
-    <div v-if="reconciliation" class="box" style="margin-bottom:16px;">
+    <div v-if="reconciliation?.id" class="box" style="margin-bottom:16px;">
       <div class="bh"><span class="bt">调节表摘要</span></div>
       <table class="tbl">
         <tr><th>项目</th><th>金额</th></tr>
@@ -111,8 +111,8 @@ const bankEntryForm = ref({
 })
 
 const statusColor = computed(() => {
-  if (!reconciliation.value) return 'text-placeholder'
-  const s = reconciliation.value.status
+  const s = reconciliation.value?.status
+  if (!s) return 'text-placeholder'
   if (s === 'confirmed') return 'success'
   if (s === 'pending') return 'warning'
   return 'primary'
@@ -124,14 +124,14 @@ const loadReconciliation = async () => {
   try {
     const r = await bankReconcileApi.getReconciliation(period.value)
     if (r.exists === false) {
-      reconciliation.value = null
+      reconciliation.value = { status: null, balanced: null }
       statementImported.value = false
     } else {
       reconciliation.value = r
       statementImported.value = true
     }
   } catch (e) {
-    reconciliation.value = null
+    reconciliation.value = { status: null, balanced: null }
     statementImported.value = false
     if (e?.response?.data?.error?.code !== 'BANK_ACCOUNT_NOT_FOUND') {
       handleError(e, { defaultMsg: '获取对账结果失败' })

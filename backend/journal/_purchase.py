@@ -34,9 +34,10 @@ def _build_purchase_order(self, source):
         else:
             service_cost += line_cost
 
-    # 向下兼容：无 items 或没有拆分出有效金额时全部进 1405
-    if not items or (inventory_cost == 0 and service_cost == 0):
-        inventory_cost = total_with_tax if not enable_vat_deduction else total_without_tax
+    if not items:
+        raise AccountingError(AccountingErrorCode.INVALID_SOURCE, "采购凭证缺少 items，无法确定科目归属")
+    if inventory_cost == 0 and service_cost == 0:
+        raise AccountingError(AccountingErrorCode.AMOUNT_MISMATCH, "采购凭证 items 金额拆分结果均为 0")
 
     lines = []
     if inventory_cost > 0:

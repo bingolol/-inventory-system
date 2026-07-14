@@ -94,6 +94,19 @@ def _db():
     return _SessionLocal()
 
 
+def _extract_invoice_and_order_id(resp_json):
+    """从发票驱动响应中提取 (invoice_id, related_order_id)"""
+    invoice_id = resp_json.get("entity_id") if isinstance(resp_json, dict) else None
+    data = resp_json.get("data", {}) if isinstance(resp_json, dict) else {}
+    if isinstance(data, dict):
+        if not invoice_id:
+            invoice_id = data.get("id")
+        order_id = data.get("related_order_id")
+    else:
+        order_id = None
+    return invoice_id, order_id
+
+
 def _ledger_balance(db, account_code: str) -> Decimal:
     """按科目编码查询期末余额（借正贷负）。"""
     la = db.query(LedgerAccount).filter(LedgerAccount.code == account_code).first()
@@ -224,19 +237,22 @@ class TestGeneralTaxpayerFullCycle:
 
         purchase_ids = []
         for idx, (day, qty, price, amount, tax, total) in enumerate(purchases, 1):
-            r = c.post("/api/purchases", json={
-                "supplier_id": s["supplier_id"],
-                "items": [{
-                    "product_id": s["pid"],
-                    "quantity": qty,
-                    "unit_price": float(price),
-                    "tax_rate": 0.13,
-                }],
-                "business_date": f"2026-01-{day:02d}T10:00:00",
+            r = c.post("/api/invoices/quick", json={
+                "invoice_no": f"INV-IN-{UNIQUE}-{idx}",
+                "direction": "in", "invoice_type": "special",
+                "amount_with_tax": str(total), "tax_rate": "0.13", "tax_amount": str(tax),
+                "counterparty_name": f"供应商A-{UNIQUE}",
+                "seller_name": f"供应商A-{UNIQUE}", "buyer_name": "本公司",
+                "issue_date": f"2026-01-{day:02d}",
+                "purchase_order_action": "auto_create",
+                "items": [{"product_id": s["pid"], "quantity": qty, "unit_price": str(price), "tax_rate": "0.13"}],
             }, headers=HEADERS)
-            assert r.status_code == 200, r.text
-            pid = r.json()["entity_id"]
+            assert r.status_code in (200, 201), r.text
+            inv_id, pid = _extract_invoice_and_order_id(r.json())
             purchase_ids.append(pid)
+            # 认证进项专票（一般纳税人抵扣必需）
+            c.post(f"/api/invoices/{inv_id}/certify",
+                   json={"certification_date": f"2026-01-{day:02d}"}, headers=HEADERS)
 
             # 真相源：StockMove
             db = _db()
@@ -337,21 +353,18 @@ class TestGeneralTaxpayerFullCycle:
 
         sale_ids = []
         for idx, (day, qty, price, revenue, tax, total) in enumerate(sales, 1):
-            r = c.post("/api/sales", json={
-                "customer_id": s["customer_id"],
-                "has_invoice": True,
-                "deduct_inventory": True,
-                "payment_status": "unpaid",
-                "business_date": f"2026-01-{day:02d}T10:00:00",
-                "items": [{
-                    "product_id": s["pid"],
-                    "quantity": qty,
-                    "unit_price": float(price),
-                    "tax_rate": 0.13,
-                }],
+            r = c.post("/api/invoices/quick", json={
+                "invoice_no": f"INV-OUT-{UNIQUE}-{idx}",
+                "direction": "out", "invoice_type": "ordinary",
+                "amount_with_tax": str(total), "tax_rate": "0.13", "tax_amount": str(tax),
+                "counterparty_name": f"客户B-{UNIQUE}",
+                "seller_name": "本公司", "buyer_name": f"客户B-{UNIQUE}",
+                "issue_date": f"2026-01-{day:02d}",
+                "sale_order_action": "auto_create",
+                "items": [{"product_id": s["pid"], "quantity": qty, "unit_price": str(price), "tax_rate": "0.13"}],
             }, headers=HEADERS)
-            assert r.status_code == 200, r.text
-            sid = r.json()["entity_id"]
+            assert r.status_code in (200, 201), r.text
+            _, sid = _extract_invoice_and_order_id(r.json())
             sale_ids.append(sid)
 
             db = _db()
@@ -381,7 +394,7 @@ class TestGeneralTaxpayerFullCycle:
                 db.close()
 
         total_sold = sum(s[1] for s in sales)             # 300
-        total_revenue = sum(s[3] for s in sales)          # 62,400
+        total_revenue_l1 = sum(s[3] for s in sales)          # 62,400
         total_output_tax = sum(s[4] for s in sales)       # 8,112
         total_ar = sum(s[5] for s in sales)               # 70,512
         total_cogs = total_sold * Decimal("100")          # 30,000
@@ -398,7 +411,7 @@ class TestGeneralTaxpayerFullCycle:
             assert Decimal(str(inv.total_value_l4)) == ending_inventory_value
 
             assert _ledger_balance(db, "1122") == total_ar, f"应收账款应为{total_ar}"
-            assert _credit_balance(db, "6001") == total_revenue, f"主营业务收入应为{total_revenue}"
+            assert _credit_balance(db, "6001") == total_revenue_l1, f"主营业务收入应为{total_revenue_l1}"
             assert _credit_balance(db, "222101") == total_output_tax, f"销项税额应为{total_output_tax}"
             assert _ledger_balance(db, "6401") == total_cogs, f"主营业务成本应为{total_cogs}"
             assert _ledger_balance(db, "1405") == ending_inventory_value, f"库存商品应为{ending_inventory_value}"
@@ -407,7 +420,7 @@ class TestGeneralTaxpayerFullCycle:
         finally:
             db.close()
 
-        print(f"✅ 第四幕完成：3次销售出库，共 {total_sold} 件，收入 {total_revenue}，COGS {total_cogs}")
+        print(f"✅ 第四幕完成：3次销售出库，共 {total_sold} 件，收入 {total_revenue_l1}，COGS {total_cogs}")
 
         # ═══════════════════════════════════════════
         # 第五幕：3次销售收款
@@ -498,45 +511,14 @@ class TestGeneralTaxpayerFullCycle:
         # 第七幕：增值税验证
         # ═══════════════════════════════════════════
 
-        for idx, (day, qty, price, amount, tax, total) in enumerate(purchases, 1):
-            r = c.post("/api/invoices", json={
-                "invoice_no": f"INV-IN-{UNIQUE}-{idx}",
-                "direction": "in",
-                "invoice_type": "special",
-                "amount_without_tax": float(amount),
-                "tax_rate": 0.13,
-                "tax_amount": float(tax),
-                "amount_with_tax": float(total),
-                "counterparty_name": f"供应商A-{UNIQUE}",
-                "issue_date": f"2026-01-{day:02d}",
-                "related_order_id": purchase_ids[idx - 1],
-                "related_order_type": "purchase_order",
-                "certification_status": "certified",
-            }, headers=HEADERS)
-            assert r.status_code in (200, 201), r.text
-
-        for idx, (day, qty, price, revenue, tax, total) in enumerate(sales, 1):
-            r = c.post("/api/invoices", json={
-                "invoice_no": f"INV-OUT-{UNIQUE}-{idx}",
-                "direction": "out",
-                "invoice_type": "ordinary",
-                "amount_without_tax": float(revenue),
-                "tax_rate": 0.13,
-                "tax_amount": float(tax),
-                "amount_with_tax": float(total),
-                "counterparty_name": f"客户B-{UNIQUE}",
-                "issue_date": f"2026-01-{day:02d}",
-                "related_order_id": sale_ids[idx - 1],
-                "related_order_type": "sale_order",
-                "certification_status": "n_a",
-            }, headers=HEADERS)
-            assert r.status_code in (200, 201), r.text
+        # 发票已在第二幕（进项）和第四幕（销项）通过发票驱动方式创建，
+        # 进项专票已认证，此处直接验证税务报表。
 
         r = c.get("/api/tax-report/monthly?year=2026&month=1", headers=HEADERS)
         assert r.status_code == 200, r.text
         tax = r.json()
-        assert Decimal(str(tax["output_tax"])) == total_output_tax, f"销项税={tax['output_tax']}"
-        assert Decimal(str(tax["input_tax"])) == total_input_tax, f"进项税={tax['input_tax']}"
+        assert Decimal(str(tax["output_tax_l1"])) == total_output_tax, f"销项税={tax['output_tax_l1']}"
+        assert Decimal(str(tax["input_tax_l1"])) == total_input_tax, f"进项税={tax['input_tax_l1']}"
         expected_tax_payable = total_output_tax - total_input_tax
         assert Decimal(str(tax["tax_payable"])) == expected_tax_payable, f"应纳增值税={tax['tax_payable']}"
 
@@ -551,8 +533,8 @@ class TestGeneralTaxpayerFullCycle:
         assert r.status_code == 200, r.text
         pl = r.json()
 
-        expected_net_profit = total_revenue - total_cogs - Decimal("2000")
-        assert Decimal(str(pl["revenue"])) == total_revenue
+        expected_net_profit = total_revenue_l1 - total_cogs - Decimal("2000")
+        assert Decimal(str(pl["revenue"])) == total_revenue_l1
         assert Decimal(str(pl["cost_of_goods_sold"])) == total_cogs
         assert Decimal(str(pl["administrative_expenses"])) == Decimal("2000.00")
         assert Decimal(str(pl["net_profit"])) == expected_net_profit
@@ -597,7 +579,7 @@ class TestGeneralTaxpayerFullCycle:
         print(f"\n{'='*60}")
         print(f"🏁 全场景测试完成")
         print(f"期末现金：{expected_cash} | 库存：{ending_inventory_qty}件 | 存货价值：{ending_inventory_value}")
-        print(f"营业收入：{total_revenue} | 营业成本：{total_cogs} | 管理费用：2000")
+        print(f"营业收入：{total_revenue_l1} | 营业成本：{total_cogs} | 管理费用：2000")
         print(f"净利润：{expected_net_profit}")
         print(f"销项税：{total_output_tax} | 进项税：{total_input_tax} | 应纳增值税：{expected_tax_payable}")
         print(f"{'='*60}")

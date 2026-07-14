@@ -153,38 +153,42 @@ class TestMonthlyBusinessCycle:
         sid = created_data["supplier_id"]
         svc_id = created_data["product_svc_id"]
 
-        # 1月5日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-01-05T10:00:00",
+        # 1月5日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 500*10 + 10*50 = 5000 + 500 = 5500
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-JAN-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "5500.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-01-05", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 500, "unit_price": 10.00, "tax_rate": 0.13},
-                {"product_id": svc_id, "quantity": 10, "unit_price": 50.00, "tax_rate": 0.06},
-            ]
+                {"product_id": pid, "quantity": 500, "unit_price": "10.00", "tax_rate": "0"},
+                {"product_id": svc_id, "quantity": 10, "unit_price": "50.00", "tax_rate": "0"},
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月采购失败: {resp.text}"
-        created_data["jan_purchase_id"] = get_entity_id(resp.json())
+        _d = extract_data(resp.json())
+        created_data["jan_purchase_id"] = _d.get("related_order_id") or get_entity_id(resp.json())
 
         # 验证库存增加
         qty = get_stock(client, pid)
         assert qty >= 500, f"1月采购后库存应>=500，实际为{qty}"
 
-        # 1月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-01-10T10:00:00",
+        # 1月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 100*20 = 2000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-JAN-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "2000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-01-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 100, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 100, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销售失败: {resp.text}"
-        created_data["jan_sale_id"] = get_entity_id(resp.json())
+        _d = extract_data(resp.json())
+        created_data["jan_sale_id"] = _d.get("related_order_id") or get_entity_id(resp.json())
 
         # 验证库存减少
         qty_after = get_stock(client, pid)
@@ -202,24 +206,26 @@ class TestMonthlyBusinessCycle:
         assert resp.status_code in (200, 201), f"1月费用失败: {resp.text}"
 
         # 1月20日: 录入进项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JAN-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "5650.00", "tax_rate": "0.13", "tax_amount": "650.00",
+            "amount_with_tax": "5000.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-01-20",
             "purchase_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月进项发票失败: {resp.text}"
 
         # 1月25日: 录入销项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JAN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "2020.00", "tax_rate": "0.01", "tax_amount": "20.00",
+            "amount_with_tax": "2000.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-01-25",
             "sale_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0.01"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "2000.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"1月销项发票失败: {resp.text}"
         data = extract_data(resp.json())
@@ -231,29 +237,31 @@ class TestMonthlyBusinessCycle:
         cid = created_data["customer_id"]
         sid = created_data["supplier_id"]
 
-        # 2月3日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-02-03T10:00:00",
+        # 2月3日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 300*10 = 3000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-FEB-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "3000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-02-03", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 300, "unit_price": 10.00, "tax_rate": 0.13}
-            ]
+                {"product_id": pid, "quantity": 300, "unit_price": "10.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"2月采购失败: {resp.text}"
 
-        # 2月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-02-10T10:00:00",
+        # 2月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 150*20 = 3000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-FEB-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "3000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-02-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 150, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 150, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"2月销售失败: {resp.text}"
 
@@ -274,29 +282,31 @@ class TestMonthlyBusinessCycle:
         cid = created_data["customer_id"]
         sid = created_data["supplier_id"]
 
-        # 3月5日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-03-05T10:00:00",
+        # 3月5日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 400*10 = 4000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-MAR-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "4000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-03-05", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 400, "unit_price": 10.00, "tax_rate": 0.13}
-            ]
+                {"product_id": pid, "quantity": 400, "unit_price": "10.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月采购失败: {resp.text}"
 
-        # 3月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-03-10T10:00:00",
+        # 3月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 200*20 = 4000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-MAR-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "4000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-03-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 200, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 200, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销售失败: {resp.text}"
 
@@ -312,24 +322,26 @@ class TestMonthlyBusinessCycle:
         assert resp.status_code in (200, 201), f"3月水电费失败: {resp.text}"
 
         # 3月20日: 录入进项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-MAR-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "4520.00", "tax_rate": "0.13", "tax_amount": "520.00",
+            "amount_with_tax": "4000.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-03-20",
             "purchase_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.13"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月进项发票失败: {resp.text}"
 
         # 3月25日: 录入销项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-MAR-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "4040.00", "tax_rate": "0.01", "tax_amount": "40.00",
+            "amount_with_tax": "4000.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-03-25",
             "sale_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0.01"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4000.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"3月销项发票失败: {resp.text}"
         data = extract_data(resp.json())
@@ -341,29 +353,31 @@ class TestMonthlyBusinessCycle:
         cid = created_data["customer_id"]
         sid = created_data["supplier_id"]
 
-        # 4月5日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-04-05T10:00:00",
+        # 4月5日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 350*10 = 3500
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-APR-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "3500.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-04-05", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 350, "unit_price": 10.00, "tax_rate": 0.13}
-            ]
+                {"product_id": pid, "quantity": 350, "unit_price": "10.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"4月采购失败: {resp.text}"
 
-        # 4月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-04-10T10:00:00",
+        # 4月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 180*20 = 3600
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-APR-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "3600.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-04-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 180, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 180, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"4月销售失败: {resp.text}"
 
@@ -384,29 +398,31 @@ class TestMonthlyBusinessCycle:
         cid = created_data["customer_id"]
         sid = created_data["supplier_id"]
 
-        # 5月5日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-05-05T10:00:00",
+        # 5月5日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 300*10 = 3000
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-MAY-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "3000.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-05-05", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 300, "unit_price": 10.00, "tax_rate": 0.13}
-            ]
+                {"product_id": pid, "quantity": 300, "unit_price": "10.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"5月采购失败: {resp.text}"
 
-        # 5月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-05-10T10:00:00",
+        # 5月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 160*20 = 3200
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-MAY-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "3200.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-05-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 160, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 160, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"5月销售失败: {resp.text}"
 
@@ -427,29 +443,31 @@ class TestMonthlyBusinessCycle:
         cid = created_data["customer_id"]
         sid = created_data["supplier_id"]
 
-        # 6月5日: 采购入库
-        resp = client.post("/api/purchases", json={
-            "supplier_id": sid,
-            "has_invoice": True,
-            "payment_method": "company",
-            "payment_status": "paid",
-            "business_date": "2026-06-05T10:00:00",
+        # 6月5日: 采购入库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 450*10 = 4500
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-IN-JUN-PUR-{UNIQUE}",
+            "direction": "in", "invoice_type": "ordinary",
+            "amount_with_tax": "4500.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
+            "issue_date": "2026-06-05", "purchase_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 450, "unit_price": 10.00, "tax_rate": 0.13}
-            ]
+                {"product_id": pid, "quantity": 450, "unit_price": "10.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月采购失败: {resp.text}"
 
-        # 6月10日: 销售出库
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": True,
-            "payment_status": "paid",
-            "business_date": "2026-06-10T10:00:00",
+        # 6月10日: 销售出库（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0, amount_with_tax=不含税合计）
+        # 不含税合计 = 220*20 = 4400
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-JUN-SALE-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "4400.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-06-10", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 220, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 220, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销售失败: {resp.text}"
 
@@ -465,24 +483,26 @@ class TestMonthlyBusinessCycle:
         assert resp.status_code in (200, 201), f"6月维修费失败: {resp.text}"
 
         # 6月20日: 录入进项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"IN-JUN-{UNIQUE}", "direction": "in", "invoice_type": "special",
-            "amount_with_tax": "5650.00", "tax_rate": "0.13", "tax_amount": "650.00",
+            "amount_with_tax": "5000.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟供应商", "seller_name": "模拟供应商", "buyer_name": "本公司",
             "issue_date": "2026-06-20",
             "purchase_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0.13"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "5000.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月进项发票失败: {resp.text}"
 
         # 6月25日: 录入销项发票
+        # 小规模纳税人：amount_with_tax=不含税合计, tax_amount=0.00, tax_rate=0（BR-27）
         resp = client.post("/api/invoices/quick", json={
             "invoice_no": f"OUT-JUN-{UNIQUE}", "direction": "out", "invoice_type": "ordinary",
-            "amount_with_tax": "4440.00", "tax_rate": "0.01", "tax_amount": "43.96",
+            "amount_with_tax": "4400.00", "tax_rate": "0", "tax_amount": "0.00",
             "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
             "issue_date": "2026-06-25",
             "sale_order_action": "auto_create",
-            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0.01"}],
+            "items": [{"product_id": pid, "quantity": 1, "unit_price": "4400.00", "tax_rate": "0"}],
         }, headers=HEADERS)
         assert resp.status_code in (200, 201), f"6月销项发票失败: {resp.text}"
         data = extract_data(resp.json())
@@ -502,7 +522,7 @@ class TestTaxReporting:
         assert resp.status_code == 200, f"Q1增值税报表失败: {resp.text}"
         data = resp.json()
         # 验证报表结构
-        assert "sales_tax" in data or "output_tax" in data, "Q1增值税报表缺少销项税数据"
+        assert "sales_tax" in data or "output_tax_l1" in data, "Q1增值税报表缺少销项税数据"
 
     def test_q1_income_tax_report(self, client):
         """Q1企业所得税报表"""
@@ -517,7 +537,7 @@ class TestTaxReporting:
         assert resp.status_code == 200, f"Q2增值税报表失败: {resp.text}"
         data = resp.json()
         # 验证报表结构
-        assert "sales_tax" in data or "output_tax" in data, "Q2增值税报表缺少销项税数据"
+        assert "sales_tax" in data or "output_tax_l1" in data, "Q2增值税报表缺少销项税数据"
 
     def test_q2_income_tax_report(self, client):
         """Q2企业所得税报表"""
@@ -693,55 +713,52 @@ class TestBoundaryConditions:
     """边界条件测试"""
 
     def test_zero_quantity_sale(self, client, created_data):
-        """测试零数量销售"""
+        """测试零数量销售（发票驱动：quantity=0 应被 schema 拒绝）"""
         pid = created_data["product_track_id"]
-        cid = created_data["customer_id"]
         
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-06-30T10:00:00",
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-ZERO-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "0.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-06-30", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 0, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 0, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
-        # 零数量销售应该被拒绝或允许，取决于业务规则
+        # 零数量销售应该被拒绝（schema 校验 quantity > 0）
         assert resp.status_code in (200, 201, 400, 422), f"零数量销售响应异常: {resp.status_code}"
 
     def test_negative_quantity_sale(self, client, created_data):
-        """测试负数量销售"""
+        """测试负数量销售（发票驱动：quantity=-5 应被 schema 拒绝）"""
         pid = created_data["product_track_id"]
-        cid = created_data["customer_id"]
         
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-06-30T11:00:00",
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-NEG-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "-100.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-06-30", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": -5, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": -5, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
-        # 负数量销售应该被拒绝
+        # 负数量销售应该被拒绝（schema 校验 quantity > 0）
         assert resp.status_code in (400, 422), f"负数量销售应被拒绝，实际状态码: {resp.status_code}"
 
     def test_large_quantity_sale(self, client, created_data):
-        """测试超大数量销售（超出库存）"""
+        """测试超大数量销售（超出库存，发票驱动）"""
         pid = created_data["product_track_id"]
-        cid = created_data["customer_id"]
         
-        resp = client.post("/api/sales", json={
-            "customer_id": cid,
-            "deduct_inventory": True,
-            "has_invoice": False,
-            "payment_status": "unpaid",
-            "business_date": "2026-06-30T12:00:00",
+        resp = client.post("/api/invoices/quick", json={
+            "invoice_no": f"INV-OUT-BIG-{UNIQUE}",
+            "direction": "out", "invoice_type": "ordinary",
+            "amount_with_tax": "1999980.00", "tax_rate": "0", "tax_amount": "0.00",
+            "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+            "issue_date": "2026-06-30", "sale_order_action": "auto_create",
             "items": [
-                {"product_id": pid, "quantity": 99999, "unit_price": 20.00, "tax_rate": 0.01}
-            ]
+                {"product_id": pid, "quantity": 99999, "unit_price": "20.00", "tax_rate": "0"}
+            ],
         }, headers=HEADERS)
         # 超大数量销售应该被拒绝（库存不足）
         assert resp.status_code in (400, 422), f"超大数量销售应被拒绝，实际状态码: {resp.status_code}"
@@ -754,27 +771,27 @@ class TestConcurrency:
     """并发操作测试"""
 
     def test_concurrent_sales(self, client, created_data):
-        """测试并发销售（模拟多用户同时操作）"""
+        """测试并发销售（模拟多用户同时操作，发票驱动）"""
         pid = created_data["product_track_id"]
-        cid = created_data["customer_id"]
         
         # 获取当前库存
         qty = get_stock(client, pid)
         if qty < 10:
             pytest.skip("库存不足，跳过并发测试")
         
-        # 尝试同时销售5个
+        # 尝试同时销售5个（发票驱动：小规模纳税人 tax_rate=0, tax_amount=0）
+        # 不含税合计 = 2*20 = 40
         results = []
         for i in range(5):
-            resp = client.post("/api/sales", json={
-                "customer_id": cid,
-                "deduct_inventory": True,
-                "has_invoice": False,
-                "payment_status": "unpaid",
-                "business_date": f"2026-06-30T{13+i}:00:00",
+            resp = client.post("/api/invoices/quick", json={
+                "invoice_no": f"INV-OUT-CONC-{UNIQUE}-{i}",
+                "direction": "out", "invoice_type": "ordinary",
+                "amount_with_tax": "40.00", "tax_rate": "0", "tax_amount": "0.00",
+                "counterparty_name": "模拟客户", "seller_name": "本公司", "buyer_name": "模拟客户",
+                "issue_date": "2026-06-30", "sale_order_action": "auto_create",
                 "items": [
-                    {"product_id": pid, "quantity": 2, "unit_price": 20.00, "tax_rate": 0.01}
-                ]
+                    {"product_id": pid, "quantity": 2, "unit_price": "20.00", "tax_rate": "0"}
+                ],
             }, headers=HEADERS)
             results.append(resp.status_code)
         

@@ -42,7 +42,7 @@ class Account(Base):
     taxpayer_type_l3 = Column(String(20), nullable=False, default="small_scale", comment="[L3-政策] 纳税人类型: small_scale / general", info={"tier":"L3","source":"policy"})
     taxpayer_id_l1 = Column(String(50), nullable=True, comment="[L1-外部] 纳税人识别号（统一社会信用代码）", info={"tier":"L1","source":"external"})
     taxpayer_name_l1 = Column(String(200), nullable=True, comment="[L1-外部] 纳税人名称", info={"tier":"L1","source":"external"})
-    surcharge_halved = Column(Boolean, default=False, comment="附加税减半标志（创建账本时配置，年末评估更新）")
+    surcharge_halved_l3 = Column(Boolean, default=False, comment="[L3-政策] 附加税减半标志（创建账本时配置，年末评估更新）", info={"tier":"L3","source":"policy"})
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -246,6 +246,7 @@ class PurchaseOrder(Base):
     payment_method = Column(String(20), nullable=False, default=PaymentMethod.COMPANY, comment="支付方式: company / private_advance")
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="付款状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
+    auto_generated_from = Column(String(50), nullable=True, default=None, comment="关联发票号 (发票驱动创建订单时填入)")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
     purchase_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 采购日期（BR-21必填，禁止ORM层默认值）", info={"tier":"L1","source":"external"})
@@ -286,9 +287,10 @@ class SaleOrder(Base):
     order_type = Column(String(20), nullable=False, default=OrderType.RETAIL, comment="单据类型: retail")
     total_price_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 订单总额（价税合计）", info={"tier":"L1","source":"external"})
     tax_amount_l1 = Column(Numeric(12, 2), default=Decimal('0'), comment="[L1-外部] 增值税额", info={"tier":"L1","source":"external"})
-    has_invoice_l1 = Column(Boolean, nullable=False, default=True, comment="[L1-外部] 是否已开发票(散客现金销售=False,未开票收入仍需申报销项税)", info={"tier":"L1","source":"external"})
+    has_invoice_l1 = Column(Boolean, nullable=False, default=True, comment="[L1-外部] 是否已开发票(架构改造后恒为True,所有订单必须由发票驱动)", info={"tier":"L1","source":"external"})
     payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID, comment="支付状态: paid / unpaid")
     status = Column(String(20), default=OrderStatus.COMPLETED, comment="状态: pending/completed/cancelled")
+    auto_generated_from = Column(String(50), nullable=True, default=None, comment="关联发票号 (发票驱动创建订单时填入)")
     notes = Column(Text, default="", comment="备注")
     image_url = Column(String(500), default="", comment="附件图片URL")
     sale_date_l1 = Column(DateTime, nullable=False, comment="[L1-外部] 销售日期（BR-21必填，禁止ORM层默认值）", info={"tier":"L1","source":"external"})
@@ -687,3 +689,27 @@ for _table, _msg in _IMMUTABLE_TABLES.items():
             raise BusinessError(code=ErrorCode.DATA_INTEGRITY_ERROR, data={"details": msg})
         return _raise
     event.listens_for(_table, 'before_update')(_make_guard(_msg))
+
+
+# ═══════════════════════════════════════════════════════════
+# Re-export 金融模型，避免 from models_finance import X 的困惑
+# ═══════════════════════════════════════════════════════════
+from models_finance import (  # noqa: E402
+    AccountJournal,
+    AccountMove,
+    AccountMoveLine,
+    AccountPartialReconcile,
+    AccountPeriod,
+    BadDebt,
+    Ledger,
+    LedgerAccount,
+    LedgerAccountBalance,
+    PurchaseEstimate,
+    PurchaseEstimateItem,
+    PurchaseReturn,
+    SaleReturn,
+    SaleReturnItem,
+    SurchargeDeclaration,
+    VATDeclaration,
+    VoucherSequence,
+)

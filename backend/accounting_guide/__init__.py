@@ -41,7 +41,7 @@ async def get_accounting_guide(
     m1 = build_module_basics(db, account_id, start_date, end_date)
     m2 = build_module_vat(db, account_id, start_date, end_date, account)
     m3 = build_module_income_tax(db, account_id, start_date, end_date, account)
-    m4 = build_module_surcharge(m2["vat_payable"], profile.surcharge_halved)
+    m4 = build_module_surcharge(m2["vat_payable_l1"], profile.surcharge_halved_l3)
     m5 = build_module_month_close()
     m6 = build_module_expenses()
     m7 = build_module_cogs()
@@ -59,7 +59,7 @@ async def get_accounting_guide(
                 "small_micro": "小型微利企业（5%）",
                 "general": "一般企业（25%）",
             }.get(profile.income_type, "未知"),
-            "surcharge_halved": profile.surcharge_halved,
+            "surcharge_halved_l3": profile.surcharge_halved_l3,
         },
         "period": {
             "year": year, "quarter": quarter, "label": f"{year}年第{quarter}季度",

@@ -167,6 +167,9 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
 
     prepayments = sn.bal("1123").quantize(Q2)
 
+    # 其他应收款 = 总账 1221
+    other_receivable = sn.bal("1221").quantize(Q2)
+
     # ── 非流动资产 ──
     fixed_assets_original = sn.bal("1601").quantize(Q2)
     accumulated_depreciation = sn.crd("1602").quantize(Q2)
@@ -192,10 +195,10 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     vat_debit_balance = (sn.bal("222102") + sn.bal("222106")).quantize(Q2)
     vat_net = vat_credit - vat_debit_balance
     if vat_net > 0:
-        vat_payable = vat_net
+        vat_payable_l1 = vat_net
         prepaid_tax = Decimal("0")
     else:
-        vat_payable = Decimal("0")
+        vat_payable_l1 = Decimal("0")
         prepaid_tax = (-vat_net).quantize(Q2)
 
     surcharge_liability = (sn.crd("222104") + sn.crd("222110") + sn.crd("222111")
@@ -204,14 +207,33 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
                            + sn.crd("222118") + sn.crd("222119") + sn.crd("222120")).quantize(Q2)
     income_tax_liability = sn.crd("222105").quantize(Q2)
     personal_income_tax_liability = sn.crd("222108").quantize(Q2)
-    tax_payable = (vat_payable + surcharge_liability + income_tax_liability + personal_income_tax_liability).quantize(Q2)
+    tax_payable = (vat_payable_l1 + surcharge_liability + income_tax_liability + personal_income_tax_liability).quantize(Q2)
 
     # ── 非流动负债 ──
     long_term_borrowings = sn.crd("2501").quantize(Q2)
 
-    # ── 利润构成（用于报表附注展示）──
+    # ── 利润构成 ──
+    # 复用 _profit.compute_cumulative_profit 统一损益计算（单一真相源），
+    # 避免 BS 自行编写科目组合公式与 IS/engine_tax 漂移。
+    # compute_cumulative_profit 返回利润总额（未减所得税），BS 需净利润故再减所得税。
     op_open = opening_date
     op_end = query_end
+    from ._profit import compute_cumulative_profit
+    profit_before_tax = compute_cumulative_profit(sn, op_open, op_end)
+    it_d, it_c = sn.pnl_dc("6801", op_open, op_end)
+    income_tax_expense = (it_d - it_c).quantize(Q2)
+    period_profit = (profit_before_tax - income_tax_expense).quantize(Q2)
+
+    # ── 避免与 retained_earnings 双重计算 ──
+    # 状态机设计（与 DSL 引擎 reports/definitions/balance_sheet.py 一致）：
+    #   未月结 → 4103 余额=0，period_profit 是利润唯一来源
+    #   已月结 → 4103 余额=本年累计利润，period_profit 必须置 0（利润已结转到 4103，不能再算一遍）
+    # 否则 total_equity = retained_earnings(含4103) + period_profit(仍=利润) 会双重计算
+    current_year_profit_check = sn.crd("4103").quantize(Q2)
+    if current_year_profit_check != 0:
+        period_profit = Decimal("0")
+
+    # 附注展示字段（从 snapshot 取数，与 compute_cumulative_profit 同源）
     rev_d, rev_c = sn.pnl_dc("6001", op_open, op_end)
     other_rev_d, other_rev_c = sn.pnl_dc("6051", op_open, op_end)
     period_revenue = (rev_c - rev_d + other_rev_c - other_rev_d).quantize(Q2)
@@ -224,24 +246,23 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     dep_d, dep_c = sn.pnl_dc("1602", op_open, op_end)
     depreciation_expense = dep_c.quantize(Q2)
     amortization_expense = Decimal("0")
-    surcharge_expense = Decimal("0")
-    for sc in ["6403", "640301", "640302", "640303", "640304", "640305",
-               "640306", "640307", "640308", "640309", "640310", "640311"]:
-        sd, sc_v = sn.pnl_dc(sc, op_open, op_end)
-        surcharge_expense += sd - sc_v
-    surcharge_expense = surcharge_expense.quantize(Q2)
-    it_d, it_c = sn.pnl_dc("6801", op_open, op_end)
-    income_tax_expense = (it_d - it_c).quantize(Q2)
     noi_d, noi_c = sn.pnl_dc("6301", op_open, op_end)
     ado_d, ado_c = sn.pnl_dc("6111", op_open, op_end)
     non_operating_income = (noi_c + ado_c).quantize(Q2)
     noe_d, noe_c = sn.pnl_dc("6701", op_open, op_end)
     adl_d, adl_c = sn.pnl_dc("6711", op_open, op_end)
     non_operating_expense = (noe_d + adl_d).quantize(Q2)
-
-    period_profit = (period_revenue - period_cogs - period_expenses
-                     - surcharge_expense - income_tax_expense
-                     + non_operating_income - non_operating_expense)
+    # 6403 税金及附加：互斥回退（与 _profit.py compute_cumulative_profit 一致）
+    # 主科目余额非0时直接用主科目，为0时才汇总子科目，避免主+子双重计算
+    from ._profit import SURCHARGE_SUB_CODES
+    sur_main_d, sur_main_c = sn.pnl_dc("6403", op_open, op_end)
+    surcharge_expense = (sur_main_d - sur_main_c).quantize(Q2)
+    if surcharge_expense == Decimal("0"):
+        sur_sub_total = Decimal("0")
+        for sc in SURCHARGE_SUB_CODES:
+            sd, sc_v = sn.pnl_dc(sc, op_open, op_end)
+            sur_sub_total += sd - sc_v
+        surcharge_expense = sur_sub_total.quantize(Q2)
 
     paid_in_capital = sn.crd("3001").quantize(Q2)
     current_year_profit = sn.crd("4103").quantize(Q2)
@@ -254,6 +275,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
     # ── 汇总 ──
     total_current_assets = (ending_cash + ending_bank + accounts_receivable
                             + prepayments + inventory_value + prepaid_tax
+                            + other_receivable
                             + sn.bal("1901").quantize(Q2))
     total_assets = total_current_assets + total_non_current_assets
     total_non_current_liabilities = long_term_borrowings
@@ -270,6 +292,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         # 资产
         "monetary_funds": (ending_cash + ending_bank).quantize(Q2),
         "accounts_receivable": accounts_receivable.quantize(Q2),
+        "other_receivable": other_receivable.quantize(Q2),
         "prepayments": prepayments.quantize(Q2),
         "inventory": inventory_value.quantize(Q2),
         "total_current_assets": total_current_assets.quantize(Q2),
@@ -285,7 +308,7 @@ def generate_balance_sheet(db: Session, account_id: int, date: str):
         "accounts_payable": accounts_payable.quantize(Q2),
         "other_payable": other_payable.quantize(Q2),
         "tax_payable": tax_payable.quantize(Q2),
-        "vat_payable": vat_payable.quantize(Q2),
+        "vat_payable_l1": vat_payable_l1.quantize(Q2),
         "surcharge_liability": surcharge_liability.quantize(Q2),
         "income_tax_liability": income_tax_liability.quantize(Q2),
         "personal_income_tax_liability": personal_income_tax_liability.quantize(Q2),

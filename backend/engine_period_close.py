@@ -42,7 +42,7 @@ logger = logging.getLogger("inventory")
 class PeriodCloseEngine:
 
     INCOME_CODES = ["6001", "6051", "6301"]
-    EXPENSE_CODES = ["6401", "6403", "6601", "6602", "6603", "6701", "6801"]
+    EXPENSE_CODES = ["6401", "6403", "6601", "6602", "6603", "6701", "6711", "6801"]
 
     def __init__(self, db: Session):
         self.db = db
@@ -109,7 +109,7 @@ class PeriodCloseEngine:
 
         # ── 第 3 步：取损益科目余额（按子科目分别列出）──
         lines = []
-        total_revenue = Decimal("0")
+        total_revenue_l1 = Decimal("0")
         total_expense = Decimal("0")
 
         for code in self.INCOME_CODES:
@@ -124,7 +124,7 @@ class PeriodCloseEngine:
                     else:
                         lines.append({"account_code": sub_code,
                                       "debit": Decimal("0"), "credit": abs(amt)})
-                    total_revenue += amt
+                    total_revenue_l1 += amt
 
         for code in self.EXPENSE_CODES:
             # 费用类：借方余额 → 贷方结转
@@ -141,7 +141,7 @@ class PeriodCloseEngine:
                     total_expense += amt
 
         # ── 第 4 步：差额进 4103 ──
-        net_profit = total_revenue - total_expense
+        net_profit = total_revenue_l1 - total_expense
         if abs(net_profit) >= Decimal("0.01"):
             if net_profit > 0:
                 lines.append({"account_code": "4103",
@@ -160,7 +160,7 @@ class PeriodCloseEngine:
                 "source_model": "period_close",
                 "source_id": period_hash(period, "period_close"),
             }, force=force)
-            logger.info(f"损益结转 {period}: 收入={total_revenue:.2f} 费用={total_expense:.2f} 净利润={net_profit:.2f}")
+            logger.info(f"损益结转 {period}: 收入={total_revenue_l1:.2f} 费用={total_expense:.2f} 净利润={net_profit:.2f}")
 
         # ── 第 6 步：12月额外 year_close ──
         year_close_result = None
@@ -172,7 +172,7 @@ class PeriodCloseEngine:
         return {
             "status": "ok",
             "period": period,
-            "total_revenue": float(total_revenue),
+            "total_revenue_l1": float(total_revenue_l1),
             "total_expense": float(total_expense),
             "net_profit": float(net_profit),
             "year_close": year_close_result,

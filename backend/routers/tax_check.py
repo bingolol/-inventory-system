@@ -30,7 +30,7 @@ def tax_check(
     declared_unpaid_vat: Optional[float] = Query(None, alias="unpaid_vat"),
     declared_income_tax: Optional[float] = Query(None, alias="income_tax"),
     declared_surcharge: Optional[float] = Query(None, alias="surcharge"),
-    declared_vat_payable: Optional[float] = Query(None, alias="vat_payable"),
+    declared_vat_payable: Optional[float] = Query(None, alias="vat_payable_l1"),
     declared_gross_profit: Optional[float] = Query(None, alias="gross_profit"),
     account_id: int = Depends(get_account_id),
     db: Session = Depends(get_db),
@@ -40,7 +40,7 @@ def tax_check(
         ("sales", declared_sales), ("output_vat", declared_output_vat),
         ("input_vat", declared_input_vat), ("unpaid_vat", declared_unpaid_vat),
         ("income_tax", declared_income_tax), ("surcharge", declared_surcharge),
-        ("vat_payable", declared_vat_payable), ("gross_profit", declared_gross_profit),
+        ("vat_payable_l1", declared_vat_payable), ("gross_profit", declared_gross_profit),
     ]:
         if val is not None:
             declared[key] = val

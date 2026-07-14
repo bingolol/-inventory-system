@@ -47,7 +47,7 @@ def submit_declarations():
                         period=period,
                         taxpayer_type=taxpayer_type,
                     ), db)
-                dprint(f"  VAT: vat_payable={result.get('vat_payable', 0):.2f}")
+                dprint(f"  VAT: vat_payable_l1={result.get('vat_payable_l1', 0):.2f}")
             except Exception as e:
                 dprint(f"  VAT: skip ({e})")
 
@@ -57,9 +57,9 @@ def submit_declarations():
                         account_id=ACCOUNT_ID,
                         operator="sim",
                         period=period,
-                        urban_construction_tax=urban,
-                        education_surcharge=edu,
-                        local_education_surcharge=local_edu,
+                        urban_construction_tax_l1=urban,
+                        education_surcharge_l1=edu,
+                        local_education_surcharge_l1=local_edu,
                     ), db)
                 dprint(f"  Surcharge: total={result.get('total', 0):.2f}, posted={result.get('posted')}")
                 cascade = result.get("cascade", {})
