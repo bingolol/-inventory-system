@@ -499,6 +499,6 @@ async def delete_invoice(
         entity_id=invoice_id,
         summary=f"发票已废弃删除",
         ai_hint="请使用冲红接口。",
-        data={"invoice_id": invoice_id, "invoice_no": invoice.invoice_no}
+        data={"invoice_id": invoice_id, "invoice_no": invoice_id}
     )
     return result.to_dict()

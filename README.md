@@ -1,179 +1,168 @@
-<<<<<<< Updated upstream
-﻿---
-doc-type: reference
----
-# 杩涢攢瀛樼鐞嗙郴缁燂紙Inventory System锛?
-=======
----
-doc-type: reference
----
-
 ---
 doc-type: reference
 ---
 
 # 进销存管理系统（Inventory System）
->>>>>>> Stashed changes
 
-> 闈㈠悜涓皬浼佷笟鐨勫叏鏍堜笟鍔＄鐞嗗钩鍙?鈥斺€?搴撳瓨 路 閲囪喘閿€鍞?路 璐㈠姟绋庡姟鎶ヨ〃 路 涓汉娴佹按锛屼竴绔欏紡璁拌处銆?
+> 面向中小企业的全栈业务管理平台 —— 库存 · 采购销售 · 财务税务报表 · 个人流水，一站式记账。
 
 ![Vue](https://img.shields.io/badge/Vue-3.4-42b883) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688) ![SQLite](https://img.shields.io/badge/SQLite-sqlalchemy2-003b57) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
 ---
 
-## 鐩綍
+## 目录
 
-- [蹇€熷紑濮媇(#蹇€熷紑濮?
-- [涓€閿墦鍖匽(#涓€閿墦鍖?
-- [馃 AI Agent 浣跨敤鎵嬪唽](#-ai-agent-浣跨敤鎵嬪唽)
-- [鐜鍙橀噺](#鐜鍙橀噺)
-- [娴嬭瘯](#娴嬭瘯)
-- [鏂囨。瀵艰埅](#鏂囨。瀵艰埅)
-- [璐＄尞涓庤鍙痌(#璐＄尞涓庤鍙?
+- [快速开始](#快速开始)
+- [一键打包](#一键打包)
+- [🤖 AI Agent 使用手册](#-ai-agent-使用手册)
+- [环境变量](#环境变量)
+- [测试](#测试)
+- [文档导航](#文档导航)
+- [贡献与许可](#贡献与许可)
 
 ---
 
-椤圭洰璇︽儏锛堟妧鏈爤銆佹灦鏋勫垎灞傘€佺洰褰曠粨鏋勩€佷笟鍔¤鍒欙級鍙傝 [CONTEXT.md](./CONTEXT.md)銆?
+项目详情（技术栈、架构分层、目录结构、业务规则）请参见 [CONTEXT.md](./CONTEXT.md)。
 
-## 蹇€熷紑濮?
+## 快速开始
 
-### 鐜瑕佹眰
+### 环境要求
 
-- **Python 3.10+**锛堝缓璁?3.10 / 3.11锛?
-- **Node.js 18+**锛堝惈 npm锛?
+- **Python 3.10+**（建议 3.10 / 3.11）
+- **Node.js 18+**（含 npm）
 
-### 1. 鍏嬮殕浠撳簱
+### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/bingolol/-inventory-system.git
 cd -inventory-system
 ```
 
-### 2. 鍚庣
+### 2. 后端
 
 ```bash
-# 鍒涘缓骞舵縺娲昏櫄鎷熺幆澧?
+# 创建并激活虚拟环境
 python -m venv venv
 # Windows (PowerShell)
 .\venv\Scripts\Activate.ps1
 # Windows (cmd)
 venv\Scripts\activate.bat
 
-# 瀹夎渚濊禆
+# 安装依赖
 pip install -r backend/requirements.txt
 ```
 
-### 3. 鍓嶇
+### 3. 前端
 
 ```bash
 cd frontend
 npm install
-npm run build      # 鏋勫缓鐢熶骇浜х墿鍒?frontend/dist
+npm run build      # 构建生产产物到 frontend/dist
 cd ..
 ```
 
-### 4. 鍚姩搴旂敤
+### 4. 启动应用
 
-**鎺ㄨ崘锛氫娇鐢ㄥ惎鍔ㄥ櫒锛堜笌鎵撳寘鍚庤涓轰竴鑷达級**
+**推荐：使用启动器（与打包后行为一致）**
 
 ```bash
 python launcher.py
 ```
 
-`launcher.py` 浼氾細鑷姩閫夋嫨 8000~8099 鐨勫彲鐢ㄧ鍙ｏ紙鍙敤 `INVENTORY_PORT` 鎸囧畾锛夈€佸垵濮嬪寲宸ヤ綔鍖猴紙`%APPDATA%\杩涢攢瀛樼鐞嗙郴缁焋锛夈€佸苟鍦ㄦ祻瑙堝櫒鎵撳紑搴旂敤銆?
+`launcher.py` 会自动选择 8000~8099 的可用端口（可用 `INVENTORY_PORT` 指定）、初始化工作区（`%APPDATA%\进销存管理系统`）、并在浏览器打开应用。
 
-**璋冭瘯妯″紡锛氱洿鎺ョ敤 uvicorn**
+**调试模式：直接用 uvicorn**
 
 ```bash
 cd backend
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-璁块棶 [http://localhost:8000](http://localhost:8000) 鍗冲彲浣跨敤銆?
+访问 [http://localhost:8000](http://localhost:8000) 即可使用。
 
-## 涓€閿墦鍖?
+## 一键打包
 
-浠撳簱鏍圭洰褰曠殑 `build.py` 涓茶仈锛氬墠绔瀯寤?鈫?鏁版嵁搴撴ā鏉垮垱寤?鈫?PyInstaller 鎵撳寘 鈫?瀹夎鍣ㄧ敓鎴愩€?
+仓库根目录的 `build.py` 串联：前端构建 → 数据库模板创建 → PyInstaller 打包 → 安装器生成。
 
 ```bash
-# 纭繚鍓嶇宸叉瀯寤猴紙frontend/dist 瀛樺湪锛?
+# 确保前端已构建（frontend/dist 存在）
 python build.py
 ```
 
-浜х墿锛?
+产物：
 
-- `dist/杩涢攢瀛樼鐞嗙郴缁?` 鈥斺€?搴旂敤涓荤▼搴忥紙exe + 璧勬簮锛?
-- `dist/杩涢攢瀛樼鐞嗙郴缁熷畨瑁呭寘.exe` 鈥斺€?鍗曟枃浠跺畨瑁呭櫒锛坱kinter GUI锛?
+- `dist/进销存管理系统` —— 应用主程序（exe + 资源）
+- `dist/进销存管理系统安装包.exe` —— 单文件安装器（tkinter GUI）
 
-> 鑻?PyInstaller 鎶?`missing module`锛屽湪铏氭嫙鐜涓畨瑁呯己澶卞寘锛屾垨灏嗗叾鍔犲叆 `inventory.spec` 鐨?`hiddenimports`銆?
+> 若 PyInstaller 报 `missing module`，在虚拟环境中安装缺失包，或将其加入 `inventory.spec` 的 `hiddenimports`。
 
 ---
 
-## 馃 AI Agent 浣跨敤鎵嬪唽
+## 🤖 AI Agent 使用手册
 
-鏈郴缁熶负 AI Agent锛圕laude / GPT / GLM 绛夛級鎻愪緵**瀹屾暣鐨?REST API 鎿嶄綔鑳藉姏**銆傛墍鏈夎璐︽搷浣滈兘搴旈€氳繃 API 瀹屾垚锛岀姝㈢敤鏂囨湰/琛ㄦ牸/绗旇鏇夸唬銆?
+本系统为 AI Agent（Claude / GPT / GLM 等）提供**完整的 REST API 操作能力**。所有记账操作都应通过 API 完成，禁止用文本/表格/笔记替代。
 
-### 蹇€熷叆闂紙30 绉掍笂鎵嬶級
+### 快速入门（30 秒上手）
 
 ```bash
-# 1. 鍋ュ悍妫€鏌?
+# 1. 健康检查
 curl http://localhost:8000/api/health
 
-# 2. 纭璐︽湰锛堜笉纭畾鏃跺厛闂敤鎴凤級
+# 2. 确认账本（不确定时先问用户）
 curl -H "X-Account-ID: 1" http://localhost:8000/api/accounts
 
-# 3. 璁颁竴绗旈攢鍞紙AI 璇锋眰甯?X-Operator: ai锛?
+# 3. 记一笔销售（AI 请求带 X-Operator: ai）
 curl -X POST http://localhost:8000/api/sales \
   -H "X-Account-ID: 1" \
   -H "X-Operator: ai" \
   -H "Content-Type: application/json" \
-  -d '{"customer_name":"寮犱笁","items":[{"product_id":1,"quantity":2,"unit_price":25.00}]}'
+  -d '{"customer_name":"张三","items":[{"product_id":1,"quantity":2,"unit_price":25.00}]}'
 ```
 
-**蹇呭～璇锋眰澶?*锛?
+**必填请求头**：
 
-| Header | 璇存槑 |
+| Header | 说明 |
 |--------|------|
-| `X-Account-ID` | 璐︽湰 ID锛堝尯鍒嗗濂楄处鏈紝缂哄け杩斿洖 401锛?|
-| `X-Operator: ai` | AI 璇锋眰鏍囪瘑锛堝啓鍏ユ搷浣滄棩蹇楋級 |
-| `Content-Type: application/json` | 鍐欐搷浣滃繀闇€ |
+| `X-Account-ID` | 账本 ID（区分多套账，缺失返回 401） |
+| `X-Operator: ai` | AI 请求标识（写入操作日志） |
+| `Content-Type: application/json` | 写操作必需 |
 
-### 瀹屾暣鎵嬪唽锛堟寜闇€娣卞叆锛?
+### 完整手册（按需深入）
 
-| 鏂囨。 | 鍐呭 | 閫傜敤鍦烘櫙 |
+| 文档 | 内容 | 适用场景 |
 |------|------|----------|
-| 馃摉 **[docs/璐㈠姟Agent鎵嬪唽.md](./docs/璐㈠姟Agent鎵嬪唽.md)** | 鎿嶄綔閾佸緥 + API 閫熸煡琛?+ 璁拌处鍦烘櫙 + 瀛楁閫熸煡 | **AI 鍔犺浇涓?skill锛屽揩閫熻璐?* |
-| 馃摉 **[docs/寮€鍙慉gent鎵嬪唽.md](./docs/寮€鍙慉gent鎵嬪唽.md)** | 寮€鍙戞祦绋?+ 缂栫爜瑙勮寖 + 鏋舵瀯瀵艰埅 | **AI 鍔犺浇涓?skill锛屽紑鍙戜唬鐮?* |
-| 馃梻锔?**[CONTEXT.md](./CONTEXT.md)** | 椤圭洰涓婁笅鏂?+ Agent 宸ヤ綔娴?+ 涓氬姟瑙勫垯 | Agent 鍗忎綔寮€鍙戞湰浠撳簱浠ｇ爜鏃?|
+| 📇 **[docs/财务Agent手册.md](./docs/财务Agent手册.md)** | 操作铁律 + API 速查表 + 记账场景 + 字段速查 | **AI 加载为 skill，快速记账** |
+| 📇 **[docs/开发Agent手册.md](./docs/开发Agent手册.md)** | 开发流程 + 编码规范 + 架构导航 | **AI 加载为 skill，开发代码** |
+| 🗂️ **[CONTEXT.md](./CONTEXT.md)** | 项目上下文 + Agent 工作流 + 业务规则 | Agent 协作开发本仓库代码时 |
 
-**鎿嶄綔閾佸緥**锛堣瑙?[`docs/璐㈠姟Agent鎵嬪唽.md`](./docs/璐㈠姟Agent鎵嬪唽.md)锛夛細
+**操作铁律**（详见 [`docs/财务Agent手册.md`](./docs/财务Agent手册.md)）：
 
-1. 蹇呴』璋冪敤 API 鑾峰彇鐪熷疄鏁版嵁锛岀姝㈠亣璁?缂栭€?
-2. 鎵€鏈夎璐﹁蛋鏈郴缁?API锛岀姝㈢敤鏂囨湰/琛ㄦ牸鏇夸唬
-3. 鎵€鏈夎姹傚繀椤诲甫 `X-Account-ID` header
-4. 鍏堟煡鍚庡啓锛堝箓绛夊垱寤猴紝閬垮厤閲嶅锛?
-5. 鍙戠エ褰曞叆浼樺厛鐢?`POST /api/invoices/quick`锛堣嚜鍔ㄧ畻绋庯級
+1. 必须调用 API 获取真实数据，禁止假设/编造
+2. 所有记账走本系统 API，禁止用文本/表格替代
+3. 所有请求必须带 `X-Account-ID` header
+4. 先查后写（幂等创建，避免重复）
+5. 发票录入优先用 `POST /api/invoices/quick`（自动算税）
 
-### 榛樿璐︽湰
+### 默认账本
 
-| 璐︽湰鍚嶇О | 浠ｇ爜 | 绫诲瀷 |
+| 账本名称 | 代码 | 类型 |
 |---------|------|------|
-| 鏃ヨ繍鍔炲叕 | riyun | 鍏徃 |
-| 宸ф父鐢靛瓙绉戞妧鏈夐檺鍏徃 | qiaoyou | 鍏徃 |
-| 涓汉 | personal | 涓汉 |
-| 鏉庡弸宸т釜浜烘祦姘磋处 | liyouqiao | 涓汉 |
+| 日运办公 | riyun | 公司 |
+| 巧游电子科技有限公司 | qiaoyou | 公司 |
+| 个人 | personal | 个人 |
+| 李友桥个人流水账 | liyouqiao | 个人 |
 
-> ID 鍙兘鍙樺寲锛屽缁堜互 `GET /api/accounts` 杩斿洖涓哄噯銆?
+> ID 可能变化，最终以 `GET /api/accounts` 返回为准。
 
 ---
 
-## 鐜鍙橀噺
+## 环境变量
 
-| 鍙橀噺 | 榛樿 | 璇存槑 |
+| 变量 | 默认 | 说明 |
 |------|------|------|
-| `INVENTORY_PORT` | 鑷姩 8000~8099 | 鎸囧畾绔彛鍒欒烦杩囪嚜鍔ㄦ娴?|
-| `INVENTORY_WORKSPACE` | `%APPDATA%\杩涢攢瀛樼鐞嗙郴缁焋 | 鑷畾涔夊伐浣滃尯鏍圭洰褰曪紙浼樺厛绾ф渶楂橈級 |
-| `CORS_ORIGINS` | localhost 鐧藉悕鍗?| 杩藉姞鍏佽鐨勫墠绔簮锛堥€楀彿鍒嗛殧锛?|
+| `INVENTORY_PORT` | 自动 8000~8099 | 指定端口跳过自动检测 |
+| `INVENTORY_WORKSPACE` | `%APPDATA%\进销存管理系统` | 自定义工作区根目录（优先级最高） |
+| `CORS_ORIGINS` | localhost 白名单 | 追加允许的前端源（逗号分隔） |
 
 ```bash
 # Windows (cmd)
@@ -182,32 +171,32 @@ set INVENTORY_PORT=8080
 $env:INVENTORY_PORT = '8080'
 ```
 
-**宸ヤ綔鍖哄竷灞€**锛氭暟鎹簱 `inventory.db`銆佷笂浼犳枃浠?`uploads/images`銆佹棩蹇?`app.log`銆佺鍙ｈ褰?`port.txt` 鍧囦綅浜庡伐浣滃尯鏍圭洰褰曘€?
+**工作区布局**：数据库 `inventory.db`、上传文件 `uploads/images`、日志 `app.log`、端口记录 `port.txt` 均位于工作区根目录。
 
-## 娴嬭瘯
+## 测试
 
 ```bash
 pytest
 ```
 
-鍖呭惈鍗曞厓娴嬭瘯锛坄tests/unit/`锛夈€侀泦鎴愭祴璇曪紙`tests/integration/`锛夈€丒2E 娴嬭瘯锛坄tests/e2e/`锛屽熀浜?FastAPI TestClient + 鐪熷疄 SQLite锛夈€?
+包包含单元测试（`tests/unit/`）、集成测试（`tests/integration/`）、E2E 测试（`tests/e2e/`，基于 FastAPI TestClient + 真实 SQLite）。
 
-## 鏂囨。瀵艰埅
+## 文档导航
 
-| 鏂囨。 | 鍐呭 |
+| 文档 | 内容 |
 |------|------|
-| [CONTEXT.md](./CONTEXT.md) | 椤圭洰涓婁笅鏂囥€丄gent 宸ヤ綔娴併€佹妧鏈爤銆佹灦鏋勫垎灞傘€佷笟鍔¤鍒?|
-| [docs/INDEX.md](./docs/INDEX.md) | 瀹屾暣鏂囨。绱㈠紩 |
-| [docs/璐㈠姟Agent鎵嬪唽.md](./docs/璐㈠姟Agent鎵嬪唽.md) | 璐㈠姟Agent 鎿嶄綔鎵嬪唽 |
-| [docs/寮€鍙慉gent鎵嬪唽.md](./docs/寮€鍙慉gent鎵嬪唽.md) | 寮€鍙慉gent 鎵嬪唽 |
+| [CONTEXT.md](./CONTEXT.md) | 项目上下文、Agent 工作流、技术栈、架构分层、业务规则 |
+| [docs/INDEX.md](./docs/INDEX.md) | 完整文档索引 |
+| [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | 代码百科：架构、模块、关键类与函数、运行方式 |
+| [docs/财务Agent手册.md](./docs/财务Agent手册.md) | 财务Agent 操作手册 |
+| [docs/开发Agent手册.md](./docs/开发Agent手册.md) | 开发Agent 手册 |
 
-## 璐＄尞涓庤鍙?
+## 贡献与许可
 
-- 娆㈣繋 Issue 涓?PR锛欶ork 鈫?鏂板垎鏀?鈫?娣诲姞/鏇存柊娴嬭瘯 鈫?PR
-- Issue 杩借釜锛欸itHub Issues (gh CLI)锛岃瑙?[`CONTEXT.md`](./CONTEXT.md#agent-宸ヤ綔娴?
-- 浠撳簱褰撳墠鏈寘鍚?LICENSE 鏂囦欢锛屽彂甯冨墠寤鸿琛ュ厖鍚堥€傜殑璁稿彲璇侊紙濡?MIT锛?
+- 欢迎 Issue 与 PR：Fork → 新分支 → 添加/更新测试 → PR
+- Issue 追踪：GitHub Issues (gh CLI)，详见 [`CONTEXT.md`](./CONTEXT.md#agent-工作流)
+- 仓库当前未包含 LICENSE 文件，发布前建议补充合适的许可证（如 MIT）
 
 ---
 
-<p align="center">Built with Vue 3 路 FastAPI 路 Element Plus</p>
-
+<p align="center">Built with Vue 3 · FastAPI · Element Plus</p>

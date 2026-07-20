@@ -7,3 +7,4 @@ httpx
 openpyxl
 pywebview>=6
 mcp>=1.2
+ruff>=0.5

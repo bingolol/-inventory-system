@@ -66,7 +66,7 @@
 | **L1** 编译 | 182 路由无报错 | `python -c "from main import app"` | 强制 |
 | **L2** 响应 | 所有列表端点 200 | Smoke sweep（17 个 GET） | 强制 |
 | **L3** 数值 | 关键字段期望值断言 | `pytest tests/unit/ tests/invariants/` | 改 model/schema/计算逻辑 |
-| **L4** 分录 | 单笔业务金额闭合（借方=贷方，库存=成本） | `pytest tests/unit/ tests/integration/` | 改 engine/command/journal/crud |
+| **L4** 分录 | 单笔业务金额闭合（借方=贷方，库存=成本） | `pytest tests/unit/ tests/integration/` | 改 engine_journal/command/crud |
 | **L5** 聚合 | 借贷全局平衡 + 会计方程式 + BS/IS 对账 | `pytest tests/invariants/ tests/integration/` | 改 engine_finance/engine_inventory/reports |
 
 ### L3–L5 变更-断言映射表
@@ -147,6 +147,7 @@ assert len(v1) == 0 and len(v2) == 0
 | **疑难 Bug/性能回退** | `diagnose` → 建 2s 确定性复现环 → 二分/假设-埋点 |
 | **架构深化/模块合并/接口重设计** | `improve-codebase-architecture` → 生成 HTML 报告 → Grilling |
 | **新功能/修 Bug** | `tdd` → 先写 1 个集成测 → 再写最小实现 |
+| **Router 层 NameError/import 缺漏排查** | `./scripts/test-router-smoke.ps1`（< 35s 冒烟）+ `ruff check backend/ --select F821`（启动硬约束已内置） |
 
 ---
 
@@ -264,7 +265,7 @@ L1 发票 (Invoice/PurchaseOrder)
 - 金额精度（Decimal + round(2)）
 - 价税分离工具（`utils/price.py` — `split`/`combine`/`quantize` 统一计算）
 - 危险操作拦截（readonly_middleware 403 + confirm_middleware 202）
-- 数据库自动迁移（启动时自动检测并 ALTER TABLE 新增列，`database.py` `_auto_migrate_columns`）
+- 数据库自动迁移（启动时自动检测并 ALTER TABLE 新增列，`database.py::init_db()` 调 `migrations.auto_migrate.run`）
 
 ## 目录结构
 
@@ -348,9 +349,6 @@ inventory-system/
 │   ├── middleware/         # 中间件包
 │   │   ├── readonly_middleware.py
 │   │   └── confirm_middleware.py
-│   ├── journal/            # 凭证分录构建
-│   │   ├── _cash.py / _fixed_asset.py / _misc.py / _purchase.py
-│   │   ├── _reverse.py / _sale.py / _tax.py
 │   ├── reports/            # 报表引擎
 │   │   ├── dsl.py / engine.py / reconcile.py
 │   │   └── definitions/
@@ -458,7 +456,7 @@ inventory-system/
 | `AccountMove` | `before_update` 全拦 | `trg_immutable_account_moves` | `models_finance.py` + `database.py` |
 | `SaleItem.unit_cost` | `@property` 只读 + `set_calculated_cost()` | — | `models.py` |
 
-触发器在 `init_db()` 中自动创建（`_create_immutable_triggers`），幂等可重复执行。系统内部冲红/反向操作均通过 INSERT 新记录实现，不 UPDATE 既有记录。
+触发器在 `init_db()` 中通过 `migrations.immutable_triggers.run` 自动创建，幂等可重复执行。系统内部冲红/反向操作均通过 INSERT 新记录实现，不 UPDATE 既有记录。
 
 ### BR-9: 收款/付款默认关联银行账户（故意设计）
 

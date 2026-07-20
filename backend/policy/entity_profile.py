@@ -10,6 +10,8 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from models import Account
+    from sqlalchemy.orm import Session
+    from decimal import Decimal
 
 # 保持向后兼容（accounting_engine.py 仍引用）
 SURCHARGE_HALVED_TYPES = frozenset({"small_scale", "small_micro", "personal"})

@@ -321,6 +321,40 @@ def _run_truth_source_hard_constraints():
         f"✅ Truth Source 静态扫描通过（{len(warnings)} warning, 0 error）"
     )
 
+    # ── 1b. Ruff F821 静态检查（捕获函数体内 undefined name） ──
+    # Truth Source 装饰器扫描覆盖语义层违规，但抓不到 `from X import` 缺漏
+    # 这类 NameError 在模块导入时不触发（函数体内才执行），需用 ruff F821 静态扫
+    import shutil as _shutil
+    import subprocess as _sp
+    ruff_bin = _shutil.which("ruff")
+    if ruff_bin is None:
+        logger.warning(
+            "⚠️  未安装 ruff，跳过 F821 检查。建议：pip install ruff"
+        )
+    else:
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(backend_dir, ".."))
+        try:
+            result = _sp.run(
+                [ruff_bin, "check", "backend/", "--select", "F821",
+                 "--no-cache", "--output-format", "concise"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except _sp.TimeoutExpired:
+            logger.error("❌ Ruff F821 检查超时（>30s），拒绝启动")
+            sys.exit(1)
+            return
+        if result.returncode != 0:
+            logger.error(
+                f"❌ Ruff F821 检查发现 {result.stdout.count(chr(10))} 处 undefined name，拒绝启动："
+            )
+            logger.error(result.stdout)
+            sys.exit(1)
+        logger.info("✅ Ruff F821 检查通过（0 undefined name）")
+
     # ── 2. 不变量测试 ──
     import subprocess
     import re as _re

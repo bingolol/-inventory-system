@@ -1,6 +1,6 @@
 """会计准则约束检查接口 - 让端侧Agent在操作前验证是否符合会计准则"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import date
 from decimal import Decimal
